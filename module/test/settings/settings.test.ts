@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { registerSettings } from '../../src/settings/index.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { registerSettings, settingRegistrars } from '../../src/settings/index.js';
 import { installFoundry, type FoundryStub, type Generation } from '../stubs/foundry.js';
 
 let stub: FoundryStub;
@@ -34,4 +34,20 @@ describe.each([13, 14] as Generation[])('settings on v%i', (gen) => {
       }
     }
   });
+});
+
+it('one failing registrar does not abort the others', () => {
+  stub = installFoundry(14);
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  settingRegistrars.unshift(() => {
+    throw new Error('boom');
+  });
+  try {
+    registerSettings();
+  } finally {
+    settingRegistrars.shift();
+    spy.mockRestore();
+  }
+  expect(stub.registeredSettings.has('agent-gateway.gatewayUrl')).toBe(true);
+  expect(stub.registeredMenus.has('agent-gateway.pairing')).toBe(true);
 });
