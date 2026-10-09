@@ -152,6 +152,31 @@ for (const pair of BOUNDARY_PAIRS) {
   );
 }
 
+/** Every way a word boundary can sit inside one table cell (br, br runs, blocks, lists, headings, nested tables). */
+const CELL_BOUNDARIES: string[] = [
+  'First<br>Second',
+  'First<br><br>Second',
+  'First<br><br><br>Second',
+  '<p>First</p><p>Second</p>',
+  '<div>First</div><div>Second</div>',
+  '<ul><li>First</li><li>Second</li></ul>',
+  '<h2>First</h2><h3>Second</h3>',
+  '<table><tr><td>First</td><td>Second</td></tr></table>',
+  '<table><tr><td>First<br>Second</td></tr></table>',
+];
+
+/** Tables over the 64-column cap (flattened), each separator variant in the first, middle and last cell. */
+export const WIDE_TABLES: string[] = [];
+for (const cols of [65, 200]) {
+  for (const cell of CELL_BOUNDARIES) {
+    for (const at of [0, Math.floor(cols / 2), cols - 1]) {
+      const tds = Array.from({ length: cols }, (_, c) => `<td>${c === at ? cell : `c${c}`}</td>`);
+      WIDE_TABLES.push(`<table><tr>${tds.join('')}</tr></table>`);
+    }
+  }
+}
+BOUNDARIES.push(...WIDE_TABLES);
+
 /**
  * The same cases followed by a paragraph that holds both words again. A glued `FirstSecond` in the
  * boundary must still fail: the decoy `Second` must not excuse it.

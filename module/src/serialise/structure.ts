@@ -403,9 +403,13 @@ export function parseStream(stream: string): MdBlock[] {
             cells.forEach((cell, c2) => {
               if (c2 > 0) segs.push({ md: ' / ' });
               for (const sg of cell) {
-                if (sg.br) continue;
-                segs.push(sg.sep ? { md: ' / ' } : sg);
-                if (sg.md.trim() && !sg.sep) content = true;
+                // A line break inside a cell still separates words.
+                if (sg.br) {
+                  segs.push({ md: ' ' });
+                  continue;
+                }
+                segs.push(sg);
+                if (sg.md.trim()) content = true;
               }
             });
             if (content) blocks.push({ kind: 'paragraph', segs });

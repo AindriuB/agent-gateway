@@ -7,7 +7,7 @@ import {
   PageCursorError,
   type MdDocument,
 } from '../../src/serialise/index.js';
-import { BOUNDARIES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, WIDE_TABLES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   ANCHORS,
   HTML_PATTERNS,
@@ -30,6 +30,10 @@ describe('paging oracle (sampled): every page is a complete, independently safe 
 
   it('br and block boundaries', () => {
     expect(run(sample(BOUNDARIES, 4), FAST_LIMITS)).toEqual([]);
+  });
+
+  it('tables over the column cap keep words apart in every cell', () => {
+    expect(run(sample(WIDE_TABLES, 3), FAST_LIMITS)).toEqual([]);
   });
 
   it('hazard patterns, entities and anchors', () => {
