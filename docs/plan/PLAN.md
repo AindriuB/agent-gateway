@@ -12,7 +12,7 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after fourteen attempts; a fresh PR supersedes #16. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
+Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after sixteen attempts; a fresh PR supersedes #17. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
 **In flight:** 08
 
 ### Testing topology and prerequisites
@@ -57,5 +57,7 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - The pairing test's fake `querySelector` is permissive; tighten it so a wrong selector fails.
 - The reload test should also assert the registered setting type is String and that the token is sent in hello after a reload.
 - The `stringStorage` stub change replaced an existing line; keep stubs additive.
+- A newer code entered between two stops during a pending welcome write is dropped in favour of the older-issued token. Same gateway, nothing leaks.
+- A socket closing during the welcome write retries the used code once before the token fallback (one extra round trip).
 
 ## Someday
