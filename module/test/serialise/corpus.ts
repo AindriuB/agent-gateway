@@ -151,3 +151,9 @@ for (const pair of BOUNDARY_PAIRS) {
     `${'<span>'.repeat(120)}${pair}${'</span>'.repeat(120)}`,
   );
 }
+
+/**
+ * The same cases followed by a paragraph that holds both words again. A glued `FirstSecond` in the
+ * boundary must still fail: the decoy `Second` must not excuse it.
+ */
+BOUNDARIES.push(...BOUNDARIES.map((h) => `${h}<p>First Second</p>`));

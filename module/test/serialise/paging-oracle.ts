@@ -217,8 +217,71 @@ export function inputWords(html: string): string[] {
     }
   };
   go(doc.body);
-  out = out.replace(/@UUID\[[^\]]*\](?:\{([^}]*)\})?/g, ' $1 ');
+  out = out.replace(
+    /@UUID\[([^\]]+)\](?:\{([^}]*)\})?/g,
+    (_m, id: string, label?: string) => `${label || id} (${id})`,
+  );
   return out.split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Token form for the exact text check, applied identically to input and output words: drop emphasis
+ * asterisks, the nested-table `[` `]` markers and the ` / ` `; ` separators the serialiser adds on purpose.
+ * A token that would vanish entirely is kept as it is.
+ */
+export function exactToken(w: string): string {
+  const t = w
+    .replace(/\*/g, '')
+    .replace(/^\[+/, '')
+    .replace(/[\];]+$/, '');
+  return t || w.replace(/\*/g, '');
+}
+
+/**
+ * Null when every input token appears in the output, in order, as an EXACTLY equal token (extra output
+ * tokens such as autolinked urls, list markers and separators are allowed). A glued `FirstSecond` fails
+ * however many other `Second`s the output holds. Otherwise names the first token that is missing.
+ * `seams` maps the index of each output word that ends a page to the count of words the next page opens with
+ * that are repeated table header, not content: an input word that the pager cut in two (`**bold**tail` is
+ * two segments) may match the pieces on either side of a seam, and only there.
+ */
+export function exactMissing(
+  input: readonly string[],
+  output: readonly string[],
+  seams: ReadonlyMap<number, number> = new Map(),
+): string | null {
+  const want = input.map((w) => ({ raw: w, t: exactToken(w) }));
+  const have = output.map((w, idx) => ({ w, skip: seams.get(idx) ?? -1 }));
+  let i = 0;
+  for (const { raw, t: w } of want) {
+    if (!w) continue;
+    for (;;) {
+      if (i >= have.length) return raw;
+      if (exactToken(have[i]!.w) === w) {
+        i++;
+        break;
+      }
+      const join = (j: number, joined: string): number => {
+        if (have[j]!.skip < 0 || joined.length >= raw.length + 64) return -1;
+        for (const off of new Set([0, have[j]!.skip])) {
+          const n = j + 1 + off;
+          if (n >= have.length) continue;
+          const glued = joined + have[n]!.w;
+          if (exactToken(glued) === w) return n;
+          const deeper = join(n, glued);
+          if (deeper >= 0) return deeper;
+        }
+        return -1;
+      };
+      const end = join(i, have[i]!.w);
+      if (end >= 0) {
+        i = end + 1;
+        break;
+      }
+      i++;
+    }
+  }
+  return null;
 }
 
 /** True when every char of `needle` occurs in `hay` in order. */
@@ -323,10 +386,15 @@ export function checkDocument(
     .map((w) => w.replace(/\*/g, ''))
     .filter(Boolean);
   const inJoined = inWords.join('');
+  const wholeLost = exactMissing(inWords, renderChecked(full).words);
+  if (wholeLost !== null)
+    fail(`whole document: word ${JSON.stringify(wholeLost)} lost, glued or out of order`);
   for (const limit of limits) {
     let cursor: string | null = null;
     const seen = new Set<string>();
     const words: string[] = [];
+    const seams = new Map<number, number>();
+    const pageWords: string[][] = [];
     let pages = 0;
     do {
       const p = pager(doc, cursor, limit);
@@ -342,6 +410,15 @@ export function checkDocument(
       }
       for (const pr of res.problems) fail(`limit ${limit}, page ${JSON.stringify(p.chunk)}: ${pr}`);
       for (const w of res.words) words.push(w);
+      if (res.words.length) {
+        const prev = pageWords[pageWords.length - 1];
+        if (prev) {
+          let k = 0;
+          while (k < prev.length && k < res.words.length - 1 && prev[k] === res.words[k]) k++;
+          seams.set(words.length - res.words.length - 1, k);
+        }
+        pageWords.push(res.words);
+      }
       if (p.chunk.length > limit) {
         const minimal = pager(doc, cursor, 1).chunk;
         if (p.chunk !== minimal)
@@ -363,16 +440,10 @@ export function checkDocument(
       fail(
         `limit ${limit}: pages lost input text; input ${JSON.stringify(inWords.join(' '))} output ${JSON.stringify(words.join(' '))}`,
       );
-    else if (limit >= 1000) {
-      let i = 0;
-      for (const w of inWords) {
-        while (i < words.length && !words[i]!.includes(w)) i++;
-        if (i >= words.length) {
-          fail(`limit ${limit}: word ${JSON.stringify(w)} lost or out of order`);
-          break;
-        }
-        i++;
-      }
+    else {
+      const lost = exactMissing(inWords, words, seams);
+      if (lost !== null)
+        fail(`limit ${limit}: word ${JSON.stringify(lost)} lost, glued or out of order`);
     }
   }
   return failures;

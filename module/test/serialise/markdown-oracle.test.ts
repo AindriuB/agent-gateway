@@ -5,6 +5,7 @@ import { htmlToMarkdown } from '../../src/serialise/index.js';
 import { BOUNDARIES, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   autolinkOk,
+  exactMissing,
   marked as defaultMarked,
   renderChecked,
   mditLinkify,
@@ -187,7 +188,10 @@ function inputWords(html: string): string[] {
     }
   };
   go(doc.body);
-  out = out.replace(/@UUID\[[^\]]*\](?:\{([^}]*)\})?/g, ' $1 ');
+  out = out.replace(
+    /@UUID\[([^\]]+)\](?:\{([^}]*)\})?/g,
+    (_m, id: string, label?: string) => `${label || id} (${id})`,
+  );
   return out.split(/\s+/).filter(Boolean);
 }
 
@@ -202,19 +206,14 @@ function outputWords(md: string): string[] {
   return ta.value.split(/\s+/).filter(Boolean);
 }
 
-/** The input's words must all survive, in order (extra output words are allowed). */
+/** The input's words must all survive, in order and exactly (extra output words are allowed). */
 function checkText(html: string): void {
   const md = htmlToMarkdown(html);
-  const out = outputWords(md);
-  let i = 0;
-  for (const w of inputWords(html)) {
-    while (i < out.length && !out[i]!.includes(w)) i++; // bracket/UUID decoration may touch a word
-    expect(
-      i < out.length,
-      `word ${JSON.stringify(w)} lost from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
-    ).toBe(true);
-    i++;
-  }
+  const lost = exactMissing(inputWords(html), outputWords(md));
+  expect(
+    lost,
+    `word ${JSON.stringify(lost)} lost or glued in ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
+  ).toBeNull();
 }
 
 describe('markdown serialiser oracle (marked)', () => {
