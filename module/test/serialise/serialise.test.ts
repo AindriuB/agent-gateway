@@ -390,6 +390,25 @@ describe('page', () => {
     expect(all('\u{1F600}\u{1F600}', 1).join('')).toBe('\u{1F600}\u{1F600}');
     expect(all('\\\\\\\\\\', 3).join('')).toBe('\\\\\\\\\\');
   });
+  it('treats the incoming cursor as untrusted', () => {
+    const text = '\\<img src=x onerror=alert(1)>';
+    expect(page(text, null, 1)).toEqual({ chunk: '\\<', nextCursor: '2' }); // forced cut extends forward
+    const reused = page(text, '1', 8000); // cursor just after the escaping backslash
+    expect(reused.chunk.startsWith('\\<img')).toBe(true);
+    for (let c = 0; c <= text.length; c++) {
+      const p = page(text, String(c), 5);
+      expect(p.chunk.startsWith('<img')).toBe(false);
+    }
+    // out-of-range, negative and non-integer cursors
+    expect(page('abc', '99', 2)).toEqual({ chunk: '', nextCursor: null });
+    expect(page('abc', '-5', 2).chunk).toBe('ab');
+    expect(page('abc', '1.9', 2).chunk).toBe('bc');
+    expect(page('abc', 'NaN', 2).chunk).toBe('ab');
+    // a cursor inside a surrogate pair moves back to the pair start
+    expect(page('a\u{1F600}b', '2', 5).chunk).toBe('a\u{1F600}b'.slice(1));
+    // forced cuts still progress with no cursor loop
+    expect(all('\\<img>', 1).join('')).toBe('\\<img>');
+  });
   it('concatenating pages reproduces the text for many limits', () => {
     const text = 'a\\<b\u{1F600}\\\\\\c&\\&d'.repeat(30);
     for (const limit of [1, 2, 3, 5, 7, 11, 50, 1000]) expect(all(text, limit).join('')).toBe(text);

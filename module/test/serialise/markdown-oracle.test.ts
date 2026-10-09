@@ -404,4 +404,16 @@ describe('paged markdown is safe page by page', () => {
       }
     });
   }
+  it('a page from any hand-made cursor is safe on its own', () => {
+    for (const html of inputs.slice(1, 4)) {
+      const md = htmlToMarkdown(html).slice(0, 400);
+      for (const limit of [1, 3, 8, 50]) {
+        for (let c = -1; c <= md.length + 1; c++) {
+          const p = page(md, String(c), limit);
+          noHtml(html, p.chunk);
+          for (const l of linksOf(p.chunk)) expect(allowed(l.href), `link ${l.href}`).toBe(true);
+        }
+      }
+    }
+  });
 });
