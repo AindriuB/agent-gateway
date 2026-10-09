@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done; PR #18 is open. Wave 2 PRs are merged.
-**In flight:** none (08 awaiting PR #18 merge)
+Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done on its branch; a fresh PR follows and replaces #18, which was closed. Wave 2 PRs are merged.
+**In flight:** none (08 awaiting its fresh PR, replacing #18)
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -75,5 +75,9 @@ Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 0
 - The generated-case skip filter can narrow to text containing `](`, because marked mis-parses `\](` in link text.
 - `<pre>` content inside indented code blocks shows escape backslashes literally (`\<`, `\&`, `\*`); readability only.
 - Intra-word emphasis fidelity: `x<em>*star </em>y` becomes `x*\*star* y`, where emphasis does not open after a word character (it reads `x**star*`).
+- Fidelity: literal `**` or `*` can appear from nested same-delimiter emphasis or punctuation-adjacent emphasis.
+- Multi-segment words can split across pages at small limits.
+- Very wide tables repeat the header on each page, so output grows with page count.
+- The paging oracle tolerates `*` in word comparison.
 
 ## Someday
