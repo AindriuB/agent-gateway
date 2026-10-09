@@ -50,5 +50,12 @@ export const settingRegistrars: Array<() => void> = [registerFoundation];
 settingRegistrars.push(registerPairingCredential, registerPairingMenu);
 
 export function registerSettings(): void {
-  for (const register of settingRegistrars) register();
+  for (const register of settingRegistrars) {
+    try {
+      register();
+    } catch (e) {
+      // One failing registrar must not abort the others.
+      console.error('agent-gateway | settings registrar failed', e);
+    }
+  }
 }
