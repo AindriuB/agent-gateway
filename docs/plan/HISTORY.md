@@ -17,6 +17,18 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Module skeleton and v13/v14 compat layer (task 04)
+The module now has a skeleton with a compat layer that isolates Foundry v13/v14 differences, a settings registry (gatewayUrl, pairingToken, includeOtherModuleData) and Foundry stubs for tests; it logs `agent-gateway | ready (v14)`. Tester passed (`npm test -w module` 17/17), reviewer approved. On the Mac test bed (Foundry 14.369, pf2e, headless Chromium from first navigation) there were 272 console messages with 0 errors, 0 warnings and 0 page errors, and `foundry.documents.BaseLevel` is a function on v14.369, so the Levels probe name is right.
+**Cost:** v13 is unverified because no v13 instance exists. `hasSceneLevels()` is tree-shaken out of the bundle as unused, so its live result is unchecked. The isolation test regex misses `game['release']`, destructuring and `game.version`, and `foundryGeneration()` silently returns 13 if `game.release` is missing.
+
+## 2026-10-09 — Tool definition framework (task 03)
+`protocol` now has a tool definition framework that generates JSON Schema from zod and tests that schemas stay conservative, with tool-count limits of 24 player and 36 GM (approved by Andrew). Tester passed (17 tests in 3 files), reviewer approved 7 of 7.
+**Cost:** zod v4 collapses primitive unions to `type` arrays and merges intersections, so the sweep also flags type arrays and the allOf rule is proven with a raw-schema fixture rather than a real zod schema. The walker descends into the `properties` map (false positives for properties named `properties` or `oneOf`), does not follow `$ref` (a recursive schema could bypass the depth-3 check), and checks only input property descriptions.
+
+## 2026-10-09 — Link protocol and version handshake (task 02)
+`protocol/src/link/` defines every module-gateway message in zod: hello/welcome/reject handshake with pairing, tool call and result, ping/pong and the error codes, plus a version compatibility check. PROTOCOL_VERSION is 1.0.0 and MAX_FRAME_BYTES is 1 MiB, measured with TextEncoder so it runs in browsers. Tester passed (20 tests), reviewer approved 5 of 5.
+**Cost:** `checkCompat` messages say "local/remote side" instead of naming module and gateway, so they are not yet actionable. The version regex is not end-anchored, so `1.0.0garbage` parses as major 1.
+
 ## 2026-10-09 — Workspace test wiring and scaffold follow-ups (task 01b)
 Root `vitest.config.ts` now lists `protocol`, `module` and `gateway` under `test.projects` (the inert `vitest.workspace.ts` is gone), each workspace has a `test` script so `npm test -w protocol` works, `module/tsconfig.json` sets `types: []` so Node globals no longer type-check in browser code, and root `allowScripts` approves `fsevents`. Verified by tester on the homelab, on the Mac test bed (macOS 27.0.1, Node 24.19: fsevents warning gone, `npm approve-scripts --allow-scripts-pending` reports nothing unreviewed) and by reviewer (9 of 9 criteria). A trial merge of tasks 02, 03 and 04 onto it had no conflicts and the root runner found 54 tests in 7 files.
 **Cost:** There are no tests on main yet, so the passes prove wiring only. `npm approve-scripts fsevents` cannot run on Linux because fsevents is not installed, so the entry was written by hand. Project names print only with a TTY or `--reporter=verbose`, and the module project shows its package name and default include until task 04's `module/vitest.config.ts` lands; the root config deliberately has no module `include` override.

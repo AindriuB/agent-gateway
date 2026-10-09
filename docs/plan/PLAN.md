@@ -11,9 +11,12 @@ than no plan.
 
 ## Now
 
-### Start wave 2
-Task 01 merged (PR #3) and 01b is in PR review. Tasks 02, 03 and 04 depend only on 01 and can start now; 02 and 03 use `npm test -w protocol`, which needs 01b merged first.
-**In flight:** 01b (PR awaiting Andrew)
+### Review and merge wave 2
+Tasks 02, 03 and 04 passed test and review; their code PRs (#5, #6, #7) and the record PR await Andrew. Merge the record PR after the three code PRs.
+**In flight:** PRs #5 (02), #6 (03), #7 (04), record/wave-2
+
+### Start wave 3
+Tasks 05, 06, 07 and 08 depend only on 02, 03 and 04 and can start once those PRs are merged. 05 needs 03; 06 needs 02; 07 needs 02 and 04; 08 needs 03 and 04.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -23,5 +26,15 @@ Task 01 merged (PR #3) and 01b is in PR review. Tasks 02, 03 and 04 depend only 
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
 
 ## Next
+
+### Follow-ups from wave 2
+- Handshake mismatch message must name "module" and "gateway", not "local/remote side" (pick up in task 06 or 07). The user needs to know which side to update.
+- Link version regex is not end-anchored (`1.0.0garbage` parses as major 1); tighten when 06 or 07 touches it.
+- Confirm `result.structured` being optional is what the tool framework wants.
+- Schema checker: follow `$ref`/`$defs`, stop descending into the `properties` map, and decide whether output descriptions are checked. Do before real tools land in task 09.
+- `hasSceneLevels()` is tree-shaken out of the bundle (unused), so its runtime result is unverified live. Verify once a task uses it, for example by exposing it through the module api or a log line.
+- Compat isolation test should also catch `game['release']`, destructuring and `game.version`; `foundryGeneration()` silently returns 13 if `game.release` is missing.
+- Task 04 v13 evidence is pending until the v13 instance exists.
+- Task 01b's task file was never committed (only HISTORY records it). Future mid-wave tasks put their task file in their PR.
 
 ## Someday
