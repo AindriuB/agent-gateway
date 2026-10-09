@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { exactMissing } from './paging-oracle.js';
+import { exactMissing, inputWords } from './paging-oracle.js';
 
 /** The substring check the oracles used before they were made exact. */
 function lenientMissing(input: string[], output: string[]): string | null {
@@ -48,5 +49,13 @@ describe('the exact text oracle', () => {
     expect(exactMissing(['worldx'], ['world', 'x'], new Map([[1, 0]]))).toBe('worldx');
     // repeated table header opening the next page
     expect(exactMissing(['ab'], ['a', 'H', 'b'], new Map([[0, 1]]))).toBeNull();
+  });
+
+  it('private-use input is expected as U+FFFD: deleting it or passing it through is a failure', () => {
+    const want = inputWords('<p>a&#xE010;b &#xE0FF; c&#xE100;</p>');
+    expect(want).toEqual(['a\uFFFDb', '\uFFFD', 'c\uE100']);
+    expect(exactMissing(want, ['a\uFFFDb', '\uFFFD', 'c\uE100'])).toBeNull();
+    expect(exactMissing(want, ['ab', '\uFFFD', 'c\uE100'])).toBe('a\uFFFDb');
+    expect(exactMissing(want, ['a\uE010b', '\uFFFD', 'c\uE100'])).toBe('a\uFFFDb');
   });
 });

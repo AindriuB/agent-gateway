@@ -157,3 +157,51 @@ for (const pair of BOUNDARY_PAIRS) {
  * boundary must still fail: the decoy `Second` must not excuse it.
  */
 BOUNDARIES.push(...BOUNDARIES.map((h) => `${h}<p>First Second</p>`));
+
+/**
+ * Private-use code points in input text. Every one the serialiser's intermediate stream uses (U+E000..U+E0FF
+ * is reserved and replaced with U+FFFD on the way in) must be inert: no structure, no lost text, no glued words.
+ */
+export const PRIVATE_USE_POINTS: number[] = [
+  ...Array.from({ length: 0x26 }, (_, i) => 0xe000 + i),
+  0xe0ff,
+  0xe100,
+  0xf8ff,
+];
+
+const PU_NEIGHBOURS = ['@', '!', '[', '![', '](', 'a@b.com', 'http://ok.example/p', '`', '*', '|'];
+
+/** The reviewer's fuzz document (limit 186), cut down to what matters. */
+export const PRIVATE_USE_MINIMISED: string[] = [
+  '<table><tr><td>+ a@b.com a@b.com</td><td>baz![ </td></tr><tr><td>&#xE010;&#xE012; x</td></tr></table>',
+  '<table><tr><td>&#xE010;@UUID[Actor.abc]{Bob}</td><td>&#xE012; a@b.com a@b.com baz![</td></tr></table>',
+  '<p>&#xE010;@a</p>',
+];
+
+export const PRIVATE_USE: string[] = [...PRIVATE_USE_MINIMISED];
+for (const cp of PRIVATE_USE_POINTS) {
+  const c = `&#x${cp.toString(16)};`;
+  PRIVATE_USE.push(
+    `<p>${c}</p>`,
+    `<p>one ${c} two</p>`,
+    `<p><b>${c}</b>tail</p>`,
+    `<h2>head ${c} line</h2>`,
+    `<ul><li>item ${c}<ul><li>${c} inner</li></ul></li></ul>`,
+    `<table><tr><td>${c}</td><td>x ${c} y</td></tr><tr><td><table><tr><td>${c} deep</td></tr></table></td></tr></table>`,
+    `<pre>pre ${c} text\nsecond ${c}</pre>`,
+    `<p><code>code ${c} span</code></p>`,
+    `<blockquote>quote ${c} text</blockquote>`,
+    `<p><a href="https://ok.example/p${c}q">link ${c} label</a></p>`,
+    `<p><img src="https://ok.example/i.png" alt="alt ${c} text"> after</p>`,
+    `<p>@UUID[Actor.${c}abc]{Name ${c}}</p>`,
+    `<p>${'x '.repeat(40)}${c} ${'y '.repeat(40)}</p>`,
+  );
+  for (const n of PU_NEIGHBOURS) {
+    PRIVATE_USE.push(
+      `<p>${c}${n} w</p>`,
+      `<p>w ${n}${c}</p>`,
+      `<p>w ${c} ${n} ${c} z</p>`,
+      `<table><tr><td>${n}</td><td>${c}${n}</td></tr><tr><td>${n}${c}</td><td>w</td></tr></table>`,
+    );
+  }
+}

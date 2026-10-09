@@ -2,7 +2,7 @@
 import type { Token, Tokens } from 'marked';
 import { describe, expect, it } from 'vitest';
 import { htmlToMarkdown } from '../../src/serialise/index.js';
-import { BOUNDARIES, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   autolinkOk,
   exactMissing,
@@ -188,6 +188,8 @@ function inputWords(html: string): string[] {
     }
   };
   go(doc.body);
+  // The serialiser replaces U+E000..U+E0FF (its own marker range) with U+FFFD on the way in.
+  out = out.replace(/[\uE000-\uE0FF]/g, '\uFFFD');
   out = out.replace(
     /@UUID\[([^\]]+)\](?:\{([^}]*)\})?/g,
     (_m, id: string, label?: string) => `${label || id} (${id})`,
@@ -247,6 +249,14 @@ describe('markdown serialiser oracle (marked)', () => {
   it.each(PROBES.map((p) => [p.slice(0, 70), p] as const))('probe: %s', (_n, html) => {
     check(html);
   });
+
+  it.each(PRIVATE_USE.map((p, i) => [`${i}: ${p.slice(0, 70)}`, p] as const))(
+    'private-use input stays inert and keeps its text: %s',
+    (_n, html) => {
+      checkText(html);
+      check(html);
+    },
+  );
 
   it('holds for generated combinations', () => {
     const schemes = [

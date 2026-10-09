@@ -161,6 +161,9 @@ export function fuzz(count: number, seed = 20261009): string[] {
     '1.',
     '-',
     '>',
+    '\uE010',
+    '\uE012a@b.com',
+    'baz![\uE011',
   ];
   const inline = (): string => {
     switch (rnd(7)) {

@@ -112,7 +112,10 @@ export function renderChecked(md: string, mdit: MarkdownIt = mditPlain): Rendere
   for (const a of out.matchAll(/<a href="([^"]*)">([^]*?)<\/a>/g)) {
     const href = decodeEnt(a[1]!);
     const text = decodeEnt(a[2]!.replace(/<[^>]*>/g, ''));
-    if (text === href || `http://${text}` === href || `mailto:${text}` === href) autos.add(href);
+    // linkify normalises what it links (domain punycoded, non-ASCII percent-encoded), so
+    // `a@b.comé` links to `mailto:a@b.xn--com-dma` and `http://h/p\uFFFD` to `http://h/p%EF%BF%BD`.
+    const forms = [text, `http://${text}`, `mailto:${text}`];
+    if (forms.some((f) => f === href || mditLinkify.normalizeLink(f) === href)) autos.add(href);
   }
   const problems: string[] = [];
   const re = /<([^>]*)>/g;
@@ -217,6 +220,8 @@ export function inputWords(html: string): string[] {
     }
   };
   go(doc.body);
+  // The serialiser replaces U+E000..U+E0FF (its own marker range) with U+FFFD on the way in.
+  out = out.replace(/[\uE000-\uE0FF]/g, '\uFFFD');
   out = out.replace(
     /@UUID\[([^\]]+)\](?:\{([^}]*)\})?/g,
     (_m, id: string, label?: string) => `${label || id} (${id})`,

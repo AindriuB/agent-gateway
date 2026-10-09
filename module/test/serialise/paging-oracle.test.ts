@@ -7,7 +7,7 @@ import {
   PageCursorError,
   type MdDocument,
 } from '../../src/serialise/index.js';
-import { BOUNDARIES, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   ANCHORS,
   HTML_PATTERNS,
@@ -189,4 +189,13 @@ describe('paging oracle: cursors', () => {
       }
     }
   });
+});
+
+describe('paging oracle: private-use input', () => {
+  const limits = [...SOME_LIMITS, 186, 100, 120, 160];
+
+  it('the reviewer document and the private-use corpus lose no text at any page seam', () => {
+    expect(PRIVATE_USE.length).toBeGreaterThan(1000);
+    expect(run(PRIVATE_USE, limits)).toEqual([]);
+  }, 900000);
 });
