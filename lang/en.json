@@ -1,1 +1,18 @@
-{}
+{
+  "AGENT_GATEWAY": {
+    "Settings": {
+      "gatewayUrl": {
+        "name": "Gateway URL",
+        "hint": "WebSocket address of the Agent Gateway this client connects to."
+      },
+      "pairingToken": {
+        "name": "Pairing token",
+        "hint": "Token issued when this client was paired with the gateway."
+      },
+      "includeOtherModuleData": {
+        "name": "Include other modules' data",
+        "hint": "Allow agents to read data that other modules store on documents."
+      }
+    }
+  }
+}
