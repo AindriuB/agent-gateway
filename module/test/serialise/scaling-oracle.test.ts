@@ -117,10 +117,6 @@ describe('scaling oracle over the corpora', () => {
           );
         }
       }
-      require('node:fs').appendFileSync(
-        process.env.SCTIME,
-        _name + ' ' + PATTERNS.length + ' ' + Math.round(performance.now() - t0) + '\n',
-      );
       expect(bad).toEqual([]);
     },
   );
