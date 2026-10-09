@@ -40,6 +40,36 @@ function walk(tokens: Token[], out: Token[]): void {
   }
 }
 
+/** Every token of the given type, at any depth (blocks, inlines, list items, table cells). */
+function tokensOfType(tokens: Token[], type: string, out: Token[] = []): Token[] {
+  for (const t of tokens) {
+    if (t.type === type) out.push(t);
+    const c = t as {
+      tokens?: Token[];
+      items?: Token[];
+      header?: { tokens: Token[] }[];
+      rows?: { tokens: Token[] }[][];
+    };
+    if (c.tokens) tokensOfType(c.tokens, type, out);
+    if (c.items) tokensOfType(c.items, type, out);
+    if (c.header) for (const h of c.header) tokensOfType(h.tokens, type, out);
+    if (c.rows) for (const r of c.rows) for (const cell of r) tokensOfType(cell.tokens, type, out);
+  }
+  return out;
+}
+
+/** The serialiser never emits raw HTML, so a reader must find no html token at all. */
+function noHtml(html: string, md: string): void {
+  const found = tokensOfType(
+    new Marked({ gfm: true, tokenizer: { url: () => undefined } }).lexer(md),
+    'html',
+  );
+  expect(
+    found.map((t) => t.raw),
+    `html token from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
+  ).toEqual([]);
+}
+
 /** Parse markdown with marked and return every link/image it finds. */
 function linksOf(md: string): Tokens.Link[] {
   const out: Token[] = [];
@@ -60,6 +90,7 @@ function anchorsOf(html: string): string[] {
 
 function check(html: string): void {
   const md = htmlToMarkdown(html);
+  noHtml(html, md);
   const found = linksOf(md);
   const anchors = anchorsOf(html);
   const hasImg = /<img\b/i.test(html);
@@ -195,6 +226,39 @@ SPACING.push(
   '<script>bad words</script><p>ok</p><style>.x{}</style>',
 );
 
+const SPLIT_TAGS = [
+  '<p><span>&lt;</span>a href="javascript:alert(1)"&gt;click<span>&lt;</span>/a&gt;</p>',
+  '<p><span>&lt;</span><span>a</span> href="javascript:alert(1)"&gt;x</p>',
+  '<p>&lt;<b>a</b> href="javascript:alert(1)"&gt;x&lt;/<b>a</b>&gt;</p>',
+  '<p>&lt;a hr<span>ef="javascript:alert(1)"</span>&gt;x</p>',
+  '<p>&lt;a href=<span>"javascript:alert(1)"</span> onclick=<i>"x"</i>&gt;x</p>',
+  '<p>&lt;<span>/</span>a&gt;</p>',
+  '<p><span>&lt;</span>/<span>a</span>&gt;</p>',
+  '<p><span>&lt;</span>!-- <span>hidden</span> --&gt;</p>',
+  '<p>&lt;!<span>--</span> x --&gt;</p>',
+  '<p><span>&lt;</span>![CDATA[<span>x</span>]]&gt;</p>',
+  '<p>&lt;<span>![CDATA[</span>x]]&gt;</p>',
+  '<p><span>&lt;</span>?php echo 1 ?&gt;</p>',
+  '<p>&lt;?<span>xml</span> version="1.0"?&gt;</p>',
+  '<p><span>&lt;</span>javascript:alert(1)&gt;</p>',
+  '<p>&lt;<span>javascript:</span>alert(1)&gt;</p>',
+  '<p><span>&lt;</span>https://evil.example/p&gt;</p>',
+  '<p>&amp;lt;a href="javascript:alert(1)"&amp;gt;x</p>',
+  '<p>&amp;<span>lt;</span>a href="javascript:alert(1)"&gt;x</p>',
+  '<p>&amp;#60;a href="javascript:alert(1)"&gt;x</p>',
+  '<p>&amp;#x3C;script&gt;alert(1)&amp;#x3C;/script&gt;</p>',
+  '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
+  '<p>&lt;div&gt;</p><p>x</p>',
+  '<p>&lt;<span>img</span> src=x onerror=alert(1)&gt;</p>',
+  '<ul><li>&lt;<b>a</b> href="javascript:1"&gt;x</li></ul>',
+  '<table><tr><td>&lt;</td><td>a href="javascript:1"&gt;x&lt;</td><td>/a&gt;</td></tr></table>',
+  '<table><tr><td><table><tr><td>&lt;</td><td>a href=x&gt;</td></tr></table></td></tr></table>',
+  '<p>@UUID[Actor.a]{&lt;}a href="javascript:1"&gt;x</p>',
+  '<p>&lt;@UUID[Actor.a]{a} href="javascript:1"&gt;x</p>',
+  '<h2>&lt;<span>a</span> href=x&gt;</h2>',
+  '<p>a &lt; b &amp; c &gt; d</p>',
+];
+
 const PROBES = [
   '<a href="javascript\\:alert(1)">x</a>',
   '<a href="&amp;#106;avascript:alert(1)">x</a>',
@@ -244,6 +308,14 @@ describe('markdown serialiser oracle (marked)', () => {
   it.each(PROBES.map((p) => [p.slice(0, 70), p] as const))(
     'text preserved, probe: %s',
     (_n, html) => {
+      checkText(html);
+    },
+  );
+
+  it.each(SPLIT_TAGS.map((p) => [p.slice(0, 70), p] as const))(
+    'split tags emit no html token: %s',
+    (_n, html) => {
+      check(html);
       checkText(html);
     },
   );

@@ -149,7 +149,7 @@ describe('htmlToMarkdown', () => {
     );
   });
   it('decodes entities and strips unknown tags', () => {
-    expect(htmlToMarkdown('<span>a &amp; b</span>')).toBe('a & b');
+    expect(htmlToMarkdown('<span>a &amp; b</span>')).toBe('a \\& b');
   });
   it('drops script, style, template and noscript content', () => {
     const out = htmlToMarkdown(
@@ -158,7 +158,7 @@ describe('htmlToMarkdown', () => {
     expect(out).toBe('hi');
   });
   it('keeps a literal < in text', () => {
-    expect(htmlToMarkdown('<p>a < b and c > d</p>')).toBe('a < b and c > d');
+    expect(htmlToMarkdown('<p>a < b and c > d</p>')).toBe('a \\< b and c > d');
   });
   it('keeps single-quoted and unquoted hrefs', () => {
     expect(htmlToMarkdown("<a href='http://a.example/x'>one</a>")).toBe(

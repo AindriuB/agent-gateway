@@ -21,12 +21,11 @@ const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr']);
 const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'dl', 'dt', 'dd']);
 const MAX_DEPTH = 100;
 
-/** Backslash-escape characters that could form markdown syntax (links, emphasis, code, tables, html). */
+/** Backslash-escape characters that could form markdown syntax (links, emphasis, code, tables, html, entities).
+ * Every `<` and `&` is escaped unconditionally: text nodes are escaped one at a time, so a tag or
+ * entity split across nodes must not be completed by the concatenation. */
 function escapeMd(text: string): string {
-  return text
-    .replace(/[\\[\]*_`|]/g, '\\$&')
-    .replace(/<(?=[a-z/!?])/gi, '\\<')
-    .replace(/^(\s*)([#>])/, '$1\\$2');
+  return text.replace(/[\\[\]*_`|<&]/g, '\\$&').replace(/^(\s*)([#>])/, '$1\\$2');
 }
 
 const SCHEMES = new Set(['http:', 'https:', 'mailto:']);
