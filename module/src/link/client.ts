@@ -46,7 +46,7 @@ export interface SocketLike {
 export interface LinkClientDeps {
   getGatewayUrl(): string;
   /**
-   * The stored credential as persisted. Only `{ url, token }` is honoured; anything else
+   * The stored credential as persisted (a JSON string). Only `{ url, token }` is honoured; anything else
    * counts as no token.
    */
   getToken(): unknown;
@@ -116,7 +116,14 @@ export class LinkClient {
   }
 
   private readCredential(): TokenCredential | null {
-    const raw = this.deps.getToken();
+    let raw = this.deps.getToken();
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
     if (raw && typeof raw === 'object') {
       const { url, token } = raw as Partial<TokenCredential>;
       if (typeof url === 'string' && url && typeof token === 'string' && token) {

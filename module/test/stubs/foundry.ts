@@ -25,7 +25,7 @@ const HandlebarsApplicationMixin = (base: any) => class extends base {};
 /** Install minimal Foundry globals for the given generation. */
 export function installFoundry(
   generation: Generation,
-  opts: { sceneLevels?: boolean } = {},
+  opts: { sceneLevels?: boolean; stringStorage?: boolean } = {},
 ): FoundryStub {
   const g = globalThis as any;
   const saved = {
@@ -57,7 +57,12 @@ export function installFoundry(
       },
       get: (ns: string, key: string) =>
         values.get(`${ns}.${key}`) ?? registeredSettings.get(`${ns}.${key}`)?.default,
-      set: async (ns: string, key: string, v: unknown) => void values.set(`${ns}.${key}`, v),
+      set: async (ns: string, key: string, v: unknown) =>
+        void values.set(
+          `${ns}.${key}`,
+          // Like localStorage: with stringStorage, only strings survive a round trip.
+          opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v,
+        ),
     },
     actors: collection(),
     items: collection(),

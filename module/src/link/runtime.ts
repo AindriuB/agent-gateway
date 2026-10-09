@@ -26,7 +26,12 @@ export function getLinkClient(): LinkClient {
   client ??= new LinkClient({
     getGatewayUrl: () => String(game.settings.get(NS, 'gatewayUrl')),
     getToken: () => game.settings.get(NS, 'pairingCredential'),
-    setToken: (c) => game.settings.set(NS, 'pairingCredential', c),
+    setToken: (c) =>
+      game.settings.set(
+        NS,
+        'pairingCredential',
+        c ? JSON.stringify({ url: c.url, token: c.token }) : '',
+      ),
     getIdentity: () => ({
       moduleVersion: String(game.modules?.get(NS)?.version ?? '0.0.0'),
       foundryVersion: String(game.version ?? game.data?.version ?? ''),

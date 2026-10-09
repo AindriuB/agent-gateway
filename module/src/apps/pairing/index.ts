@@ -83,15 +83,15 @@ export function createPairingApp(): any {
       const url = String(values.gatewayUrl ?? '').trim();
       const code = String(values.code ?? '').trim();
       if (!url) return;
+      // Always keep the edited URL; nothing is sent without a credential issued by it.
+      await game.settings.set(NS, 'gatewayUrl', url);
       if (code) {
-        await game.settings.set(NS, 'gatewayUrl', url);
         getLinkClient().pair(code);
         return;
       }
       if (getLinkClient().hasStoredToken()) {
         // No new code: reclaim the link with the stored token. The client sends it only
         // to the gateway that issued it; for any other URL it asks for a pairing code.
-        await game.settings.set(NS, 'gatewayUrl', url);
         getLinkClient().start();
         const after = getLinkClient().state;
         // A PAIRING_REQUIRED status is already visible in the app; do not also toast it.

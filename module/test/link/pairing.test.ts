@@ -86,7 +86,8 @@ it('submit with an empty code and a stored token reclaims via start()', async ()
 });
 
 it('submit with an empty code and no token warns and does nothing else', async () => {
-  const { client, warn } = await submitWith('', { gatewayUrl: 'ws://gw', code: '' });
+  const { client, warn, g } = await submitWith('', { gatewayUrl: 'ws://edited', code: '' });
+  expect(g.game.settings.get('agent-gateway', 'gatewayUrl')).toBe('ws://edited');
   expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
   expect(client.start).not.toHaveBeenCalled();
   expect(client.pair).not.toHaveBeenCalled();
@@ -115,8 +116,8 @@ it('a legacy pairingToken is cleared when the link is created, and never read as
   });
   g.game.settings.register('agent-gateway', 'pairingCredential', {
     scope: 'client',
-    type: Object,
-    default: null,
+    type: String,
+    default: '',
   });
   await g.game.settings.set('agent-gateway', 'pairingToken', 'legacy');
   const { getLinkClient } = await import('../../src/link/runtime.js');
@@ -164,4 +165,47 @@ it('a state change updates only the status element, never re-rendering the form'
   expect(status.textContent).toBe('L:AGENT_GATEWAY.Link.state.disconnected');
   expect(code.value).toBe('typed-code');
   vi.doUnmock('../../src/link/runtime.js');
+});
+
+it('a credential written by the link survives a reload (string-only storage)', async () => {
+  vi.resetModules();
+  stub = installFoundry(14, { stringStorage: true });
+  const g = globalThis as any;
+  g.ui = { notifications: { error: vi.fn() } };
+  g.game.settings.register('agent-gateway', 'gatewayUrl', {
+    scope: 'client',
+    type: String,
+    default: 'ws://gw',
+  });
+  const made: any[] = [];
+  g.WebSocket = class {
+    sent: string[] = [];
+    constructor() {
+      made.push(this);
+    }
+    send(d: string) {
+      this.sent.push(d);
+    }
+    close() {}
+  };
+  const first = await import('../../src/link/runtime.js');
+  first.getLinkClient().pair('code');
+  const sock = made[0];
+  sock.onopen();
+  sock.onmessage({
+    data: JSON.stringify({
+      type: 'welcome',
+      gatewayVersion: '0.1.0',
+      protocolVersion: '1.0.0',
+      connectionId: 'c1',
+      agentId: 'a1',
+      pairingToken: 'tok',
+    }),
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  expect(typeof g.game.settings.get('agent-gateway', 'pairingCredential')).toBe('string');
+  // Reload: fresh modules, same stored values.
+  vi.resetModules();
+  const second = await import('../../src/link/runtime.js');
+  expect(second.getLinkClient().hasStoredToken()).toBe(true);
 });

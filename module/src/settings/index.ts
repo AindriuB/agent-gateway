@@ -39,8 +39,8 @@ function registerPairingCredential(): void {
     hint: 'AGENT_GATEWAY.Settings.pairingCredential.hint',
     scope: 'client',
     config: false,
-    type: Object,
-    default: null,
+    type: String, // JSON `{url, token}`; an Object-typed client setting does not survive a reload
+    default: '',
   });
 }
 
