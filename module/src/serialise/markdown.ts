@@ -345,12 +345,21 @@ export function htmlToMarkdown(html: string): string {
   return domToMarkdown(doc.body);
 }
 
+/** Strip trailing spaces/tabs in one backwards scan (a `[ \t]+$` regex is quadratic). */
+function trimEndBlanks(line: string): string {
+  let end = line.length;
+  while (end > 0 && (line.charCodeAt(end - 1) === 32 || line.charCodeAt(end - 1) === 9)) end--;
+  return end === line.length ? line : line.slice(0, end);
+}
+
 /** Convert an already-parsed DOM subtree to markdown. */
 export function domToMarkdown(root: Node): string {
   return render(root, 0, false)
     .replace(/!\uE002/g, '\\!')
     .replace(/\uE002/g, '')
-    .replace(/[ \t]+\n/g, '\n')
+    .split('\n')
+    .map(trimEndBlanks)
+    .join('\n')
     .replace(/\n\n[ \t]+/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

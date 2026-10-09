@@ -55,6 +55,33 @@ describe('serialiseDocument', () => {
     expect(JSON.stringify(out)).not.toContain('secret');
     expect(out.system.flags).toEqual({ other: 'keep' });
   });
+  it('filters prototypeToken flags (no _id) but not system flags', () => {
+    setup(false);
+    const out = serialiseDocument(
+      {
+        _id: 'a1',
+        flags: {},
+        prototypeToken: { flags: { other: { secret: 1 }, core: { ok: 1 } } },
+        system: {
+          flags: { other: 'keep' },
+          deep: { list: [{ _id: 'x', flags: { other: 'keep2' } }] },
+        },
+      },
+      { includeOtherModuleData: false },
+    ) as any;
+    expect(Object.keys(out.prototypeToken.flags)).toEqual(['core']);
+    expect(out.system.flags).toEqual({ other: 'keep' });
+    expect(out.system.deep.list[0].flags).toEqual({ other: 'keep2' });
+    expect(JSON.stringify(out)).not.toContain('secret');
+  });
+  it('keeps prototypeToken flags when opted in', () => {
+    setup(true);
+    const out = serialiseDocument(
+      { prototypeToken: { flags: { other: { secret: 1 } } } },
+      { includeOtherModuleData: true },
+    ) as any;
+    expect(out.prototypeToken.flags.other).toBeDefined();
+  });
   it('keeps embedded flags when opted in', () => {
     setup(true);
     const out = serialiseDocument(nested(), { includeOtherModuleData: true }) as any;
@@ -151,6 +178,15 @@ describe('htmlToMarkdown', () => {
     ['unclosed bold', (n: number) => '<b>'.repeat(n), 8000, 32000, 20, 8],
     ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n), 32000, 128000, 2, 8],
     ['unclosed UUID labels', (n: number) => '@UUID[x]{'.repeat(n), 32000, 128000, 2, 8],
+    [
+      'long space run in pre',
+      (n: number) => '<pre>' + ' '.repeat(n) + 'x</pre>',
+      32000,
+      128000,
+      2,
+      8,
+    ],
+    ['repeated spans of a space', (n: number) => '<span> </span>'.repeat(n), 8000, 32000, 5, 8],
     [
       'mixed closed and unclosed UUID labels',
       (n: number) => '@UUID[x]{a}@UUID[y]{'.repeat(n / 2),

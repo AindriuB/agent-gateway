@@ -25,25 +25,22 @@ export function serialiseDocument(
         if (!keep.has(key)) delete flags[key];
       }
     };
-    // Root flags, then every embedded document (object with string `_id` and object `flags`).
+    // Filter every `flags` object in the tree except those under a `system` path segment
+    // (system data may use `flags` for its own purposes). Embedded documents such as
+    // prototypeToken carry flags without an `_id`, so no document heuristic is used.
     // Iterative so deep data cannot overflow the stack.
-    if (data.flags && typeof data.flags === 'object') strip(data.flags);
-    const stack: unknown[] = [data];
+    const stack: Array<[unknown, boolean]> = [[data, false]];
     while (stack.length) {
-      const node = stack.pop();
+      const [node, inSystem] = stack.pop()!;
       if (!node || typeof node !== 'object') continue;
-      const rec = node as Record<string, any>;
-      if (
-        node !== data &&
-        !Array.isArray(node) &&
-        typeof rec._id === 'string' &&
-        rec.flags &&
-        typeof rec.flags === 'object' &&
-        !Array.isArray(rec.flags)
-      ) {
-        strip(rec.flags);
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        if (!v || typeof v !== 'object') continue;
+        if (k === 'flags' && !inSystem && !Array.isArray(v)) {
+          strip(v as Record<string, unknown>);
+          continue;
+        }
+        stack.push([v, inSystem || k === 'system']);
       }
-      for (const v of Object.values(rec)) if (v && typeof v === 'object') stack.push(v);
     }
   }
   return data;
