@@ -13,6 +13,10 @@ Code style: TypeScript strict, ESM, Prettier (`.prettierrc`) and ESLint (`eslint
 
 `<workspace>/test/<area>/**` (e.g. `gateway/test/store/foo.test.ts`). Foundry API stubs live in `module/test/stubs/**`.
 
+### Test suites
+
+Tests are split into fast and slow. Slow tests (scaling oracles, min-of-runs timing tables, full oracle sweeps) are named `*.slow.test.ts` and run in their own vitest project (`module-slow`, `module/vitest.slow.config.ts`). `npm test` runs the fast suites only; `npm run test:slow` runs the slow ones; `npm run verify` runs both and is the gate. When a slow oracle is added, keep a representative fast sample of it in the fast suite so ordinary runs still catch regressions.
+
 ## Ports
 
 - Link WebSocket (module to gateway): `7420`

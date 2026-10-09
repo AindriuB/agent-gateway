@@ -12,7 +12,7 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done on its branch; a fresh PR follows and replaces #18, which was closed. Wave 2 PRs are merged.
+Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done on its branch; PR #20 carries it (updated with the table-width fix and the fast/slow test split); #18 was closed. Wave 2 PRs are merged.
 **In flight:** none (08 awaiting its fresh PR, replacing #18)
 
 ### Testing topology and prerequisites
@@ -70,16 +70,14 @@ Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 0
 - Relative links are resolved against a dummy root, so deep `../` is normalised.
 - GFM autolinks of bare URLs are typed as text.
 - Other-module data outside `flags` is still not filtered: ActiveEffect `changes[].key`, `_stats.compendiumSource`/`duplicateSource`, and module-written `system` fields, including objects named `system` outside schema system data.
-- The module test suite now takes about 27 s (full verify); consider moving the min-of-runs scaling tests to a separate slow suite.
 - Duplicate SPACING oracle cases: the second template ignores `b`, and no case has trailing whitespace inside the second element.
 - The generated-case skip filter can narrow to text containing `](`, because marked mis-parses `\](` in link text.
 - `<pre>` content inside indented code blocks shows escape backslashes literally (`\<`, `\&`, `\*`); readability only.
 - Intra-word emphasis fidelity: `x<em>*star </em>y` becomes `x*\*star* y`, where emphasis does not open after a word character (it reads `x**star*`).
 - Fidelity: literal `**` or `*` can appear from nested same-delimiter emphasis or punctuation-adjacent emphasis.
 - Multi-segment words can split across pages at small limits.
-- Very wide tables repeat the header on each page, so output grows with page count.
 - The scaling oracle samples every 2nd/8th/16th/80th item of some corpora (half of SPLIT_TAGS, PROBES and ANCHORS are uncovered) to fit the time budget.
-- Consider a slow suite (`npm run test:slow`) for scaling and full-sweep tests if verify time grows further (currently about 35 s).
+- Full verify takes about 65 s (slow suite about 51 s); review the budget if it grows.
 - The paging oracle tolerates `*` in word comparison.
 
 ## Someday
