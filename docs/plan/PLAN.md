@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done on its branch; PR #20 carries it (updated with the table-width fix and the fast/slow test split); #18 was closed. Wave 2 PRs are merged.
-**In flight:** none (08 awaiting its fresh PR, replacing #18)
+Wave 3 is complete. Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server), 07 (module LinkClient and pairing app) and 08 (module operation registry, dispatcher, serialiser and safe structured paging; PR #20) are merged. Wave 2 PRs are merged.
+**In flight:** none. Next: spike 10b (on hold until Andrew says go), then wave 4 (09, 10, 11).
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
