@@ -98,6 +98,8 @@ const SPAN_MARKS = /[-]/g;
 const BLOCK_MARKS = /[-]/g;
 
 interface Frame {
+  /** Inside a link label (this frame or an ancestor). */
+  link: boolean;
   open: string;
   md: string;
   plain: string;
@@ -119,6 +121,24 @@ function trimEndBlanks(line: string): string {
   while (end > 0 && (line.charCodeAt(end - 1) === 32 || line.charCodeAt(end - 1) === 9)) end--;
   return end === line.length ? line : line.slice(0, end);
 }
+
+/**
+ * Inside a link label every markdown-special character is a numeric entity, not a backslash
+ * escape: some readers un-escape a label once and re-lex it as inline markdown, whereas an
+ * entity survives any number of re-lexes as plain text. (`&lt;`/`&amp;` already are entities.)
+ */
+const LABEL_ENT: Record<string, string> = {
+  '!': '&#33;',
+  '[': '&#91;',
+  ']': '&#93;',
+  '*': '&#42;',
+  _: '&#95;',
+  '`': '&#96;',
+  '~': '&#126;',
+  '\\': '&#92;',
+};
+const labelSafe = (s: string): string =>
+  s.replace(/\\([\\[\]*_`~!])/g, (_m, c: string) => LABEL_ENT[c]!);
 
 const tidy = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -152,7 +172,7 @@ export function segmentize(run: string): MdSegment[] {
       const chunk = run.slice(i, end);
       const top = frames[frames.length - 1];
       if (top) {
-        top.md += chunk;
+        top.md += top.link ? labelSafe(chunk) : chunk;
         top.plain += chunk;
       } else text += chunk;
     }
@@ -173,8 +193,14 @@ export function segmentize(run: string): MdSegment[] {
       if (sb < 0) break;
       const open = run.slice(i, sb);
       i = sb + 1;
-      if (open.startsWith(M.LINK)) guardBang();
-      frames.push({ open: open.replace(M.LINK, ''), md: '', plain: '' });
+      const isLink = open.startsWith(M.LINK);
+      if (isLink) guardBang();
+      frames.push({
+        link: isLink || !!top?.link,
+        open: open.replace(M.LINK, ''),
+        md: '',
+        plain: '',
+      });
     } else if (c === M.SC) {
       const se = run.indexOf(M.SE, i);
       if (se < 0 || !top) break;

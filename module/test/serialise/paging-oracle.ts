@@ -269,6 +269,20 @@ export function pageProblems(chunk: string, s: Subject): { problems: string[]; w
       } else checkHref('marked link', href);
     }
   });
+  // The serialiser never emits an image, so none may appear anywhere unless the input had an <img>.
+  // Checked on the rendered output as well as the lexer: a reader may re-lex a link label while rendering.
+  if (!s.hasImg) {
+    let images = 0;
+    const counting = new Marked({
+      gfm: true,
+      walkTokens: (t) => void (t.type === 'image' && images++),
+    });
+    const out = counting.parse(chunk) as string;
+    if (images || /<img\b/i.test(out))
+      problems.push(`marked renders an image ${JSON.stringify(out)}`);
+    for (const rd of [mditPlain, mditLinkify])
+      if (/<img\b/i.test(rd.render(chunk))) problems.push('markdown-it renders an image');
+  }
   const r = renderChecked(chunk, mditPlain);
   for (const p of r.problems) problems.push(`markdown-it: ${p}`);
   for (const h of r.hrefs) checkHref('markdown-it link', h);

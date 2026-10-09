@@ -122,3 +122,25 @@ describe('other text escapes', () => {
     for (const p of pages.slice(1)) expect(p.startsWith('```\n')).toBe(true);
   });
 });
+
+describe('a link label survives a reader that un-escapes it once and re-lexes it', () => {
+  const T = 'http://t.example/p.gif';
+  const cases = [
+    `<p><a href="http://ok/">wow!<span>[x](${T})</span></a></p>`,
+    `<p><a href="http://ok/">wow!@UUID[a]{[x](${T})}</a></p>`,
+    `<p><a href="http://ok/"><em>wow!</em>[x](${T})</a></p>`,
+    `<p><a href="http://ok/">wow!<code>x</code><b>[x](${T})</b></a></p>`,
+    `<p><a href="http://ok/">wow&excl;<i>*</i>[x](${T})</a></p>`,
+    `<p><a href="http://ok/">wow![x](${T})</a></p>`,
+    `<p><a href="http://ok/">a\\<span>![x](${T})</span> _b_ ~c~ \`d\`</a></p>`,
+    `<table><tr><td><a href="http://ok/">wow!<span>[x](${T})</span></a></td></tr></table>`,
+    `<h2><a href="http://ok/">wow!<span>[x](${T})</span></a></h2>`,
+  ];
+  const limits = [...Array.from({ length: 200 }, (_, i) => i + 1), 1000, 8000];
+  it.each(cases)('%s', (html) => {
+    const doc = htmlToDocument(html);
+    expect(problemsOf(html)).toEqual([]);
+    for (const limit of limits) expect(problemsOf(html, limit)).toEqual([]);
+    expect(documentToMarkdown(doc)).not.toMatch(/\\[[\]!*_`~\\]/);
+  });
+});
