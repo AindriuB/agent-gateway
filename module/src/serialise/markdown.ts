@@ -71,36 +71,47 @@ const CELL_SEP = ' / ';
 const ROW_SEP = '; ';
 
 /**
- * Flatten a nested table to readable plain text in one linear pass: cells are
- * separated by " / ", rows by "; ", and the result is padded so it never glues
- * onto preceding text. Link URLs and markup inside nested tables are dropped.
+ * Flatten a nested table to readable plain text in one linear, iterative pass.
+ * Separators (" / " between cells, "; " between rows) are only emitted between
+ * siblings, so literal `;` or `/` in cell text is never touched. Every table at
+ * every depth is padded so it never glues onto neighbouring text. Link URLs and
+ * markup inside nested tables are dropped.
  */
 function flattenTable(root: Element): string {
   const parts: string[] = [];
-  const CELL = Symbol('cell');
-  const ROW = Symbol('row');
+  const END = Symbol('end');
+  // One frame per open table: whether a row / cell has been seen yet.
+  const frames: { rows: number; cells: number }[] = [];
   const stack: (Node | symbol)[] = [root];
   while (stack.length) {
     const n = stack.pop()!;
     if (typeof n === 'symbol') {
-      if (n === ROW && parts[parts.length - 1] === CELL_SEP) parts.pop();
-      parts.push(n === CELL ? CELL_SEP : ROW_SEP);
+      frames.pop();
+      parts.push(' ');
       continue;
     }
-    if (n.nodeType === 3) parts.push(n.nodeValue ?? '');
-    else if (n.nodeType === 1) {
-      const tag = (n as Element).tagName.toLowerCase();
-      if (DROP.has(tag)) continue;
-      if (tag === 'td' || tag === 'th') stack.push(CELL);
-      else if (tag === 'tr') stack.push(ROW);
-      const kids = n.childNodes;
-      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
+    if (n.nodeType === 3) {
+      parts.push(n.nodeValue ?? '');
+      continue;
     }
+    if (n.nodeType !== 1) continue;
+    const tag = (n as Element).tagName.toLowerCase();
+    if (DROP.has(tag)) continue;
+    const frame = frames[frames.length - 1];
+    if (tag === 'table') {
+      parts.push(' ');
+      frames.push({ rows: 0, cells: 0 });
+      stack.push(END);
+    } else if (tag === 'tr' && frame) {
+      if (frame.rows++ > 0) parts.push(ROW_SEP);
+      frame.cells = 0;
+    } else if ((tag === 'td' || tag === 'th') && frame) {
+      if (frame.cells++ > 0) parts.push(CELL_SEP);
+    }
+    const kids = n.childNodes;
+    for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
   }
-  let text = collapse(parts.join('')).trim();
-  while (text.endsWith(ROW_SEP.trimEnd()) || text.endsWith(CELL_SEP.trimEnd())) {
-    text = text.slice(0, -1).trimEnd();
-  }
+  const text = collapse(parts.join('')).trim();
   return text ? ` ${expandUuids(text)} ` : '';
 }
 
@@ -204,7 +215,6 @@ function render(node: Node, depth: number, pre: boolean): string {
     case 'a': {
       const t = kids();
       const href = el.getAttribute('href')?.trim();
-      // eslint-disable-next-line no-control-regex
       const scheme = (href ?? '').replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
       if (!href || /^(javascript|data|vbscript):/.test(scheme) || !t.trim()) return t;
       return `[${t.trim()}](${href})`;
@@ -232,7 +242,12 @@ function render(node: Node, depth: number, pre: boolean): string {
  */
 export function htmlToMarkdown(html: string): string {
   const doc = new DOMParser().parseFromString(html ?? '', 'text/html');
-  return render(doc.body, 0, false)
+  return domToMarkdown(doc.body);
+}
+
+/** Convert an already-parsed DOM subtree to markdown. */
+export function domToMarkdown(root: Node): string {
+  return render(root, 0, false)
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n\n[ \t]+/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')

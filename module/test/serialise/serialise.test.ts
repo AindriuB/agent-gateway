@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  domToMarkdown,
   htmlToMarkdown,
   page,
   serialiseDocument,
@@ -91,12 +92,11 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<a href=http://b.example/y>two</a>')).toBe('[two](http://b.example/y)');
   });
   // [name, input builder, small n, large n (4x), min baseline ms, max allowed 4x ratio]
-  // Linear code gives a ratio near 4; quadratic gives near 16. Bound is 8 except for
-  // tables, where the happy-dom parser itself (test-only) is mildly super-linear (~8x).
+  // Linear code gives a ratio near 4; quadratic gives near 16. Table inputs that
+  // exercise our flattener are timed on a pre-parsed DOM in the next test.
   it.each([
     ['unclosed anchors', (n: number) => '<a href="'.repeat(n), 8000, 32000, 5, 8],
     ['unclosed bold', (n: number) => '<b>'.repeat(n), 8000, 32000, 20, 8],
-    ['unclosed tables', (n: number) => '<table>'.repeat(n), 8000, 32000, 100, 12],
     ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n), 32000, 128000, 2, 8],
   ] as const)('adversarial input (%s) scales sub-quadratically', (_n, make, ns, nl, floor, max) => {
     const time = (n: number) => {
@@ -109,6 +109,30 @@ describe('htmlToMarkdown', () => {
     const large = time(nl);
     expect(large).toBeLessThan(5000);
     expect(large).toBeLessThan(small * max);
+  });
+  // Parsed outside the timed region so only our walker is measured.
+  const nested = (n: number) =>
+    '<table><tr><td>x'.repeat(n) + 'leaf' + '</td></tr></table>'.repeat(n);
+  const wide = (n: number) =>
+    '<table><tr><td>o<table>' +
+    '<tr><td>k</td><td>v</td></tr>'.repeat(n) +
+    '</table></td></tr></table>';
+  it.each([
+    ['deeply nested tables', nested, 2000, 8000],
+    ['wide nested table', wide, 5000, 20000],
+  ] as const)('flattening %s scales sub-quadratically', (_n, make, ns, nl) => {
+    const body = (n: number) => new DOMParser().parseFromString(make(n), 'text/html').body;
+    const time = (n: number) => {
+      const b = body(n);
+      const t = performance.now();
+      domToMarkdown(b);
+      return performance.now() - t;
+    };
+    time(200); // warm up
+    const small = Math.max(time(ns), 3);
+    const large = time(nl);
+    expect(large).toBeLessThan(3000);
+    expect(large).toBeLessThan(small * 8);
   });
   it('renders nested tables linearly, inner content once', () => {
     expect(
@@ -132,6 +156,23 @@ describe('htmlToMarkdown', () => {
       '<table><tr><td>Stats<table><tr><td>Str</td><td>18</td><td>+4</td></tr><tr><td>Dex</td><td>12</td><td>+1</td></tr></table></td></tr></table>',
     );
     expect(out).toContain('Str / 18 / +4; Dex / 12 / +1');
+  });
+  it('pads nested tables at every depth', () => {
+    const t = (inner: string) => `<table><tr><td>${inner}</td></tr></table>`;
+    expect(
+      htmlToMarkdown(
+        '<table><tr><td>x<table><tr><td>a<table><tr><td>b</td><td>c</td></tr></table></td><td>d</td></tr></table></td></tr></table>',
+      ),
+    ).toBe('| x a b / c / d |\n| --- |');
+    expect(htmlToMarkdown(t('p' + t('q' + t('r'))))).toBe('| p q r |\n| --- |');
+    const five = t('a' + t('b' + t('c' + t('d' + t('e')))));
+    expect(htmlToMarkdown(five)).toBe('| a b c d e |\n| --- |');
+  });
+  it('keeps literal separators in cell text', () => {
+    const out = htmlToMarkdown(
+      '<table><tr><td>x<table><tr><td>See p. 12;</td><td>;;</td><td>a/</td></tr></table></td></tr></table>',
+    );
+    expect(out).toContain('See p. 12; / ;; / a/');
   });
   it('expands UUIDs inside flattened nested tables', () => {
     expect(
