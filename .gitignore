@@ -3,3 +3,4 @@ dist/
 *.zip
 /.claude/
 /.worktrees/
+*.tsbuildinfo
