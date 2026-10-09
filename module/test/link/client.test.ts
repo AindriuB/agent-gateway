@@ -98,8 +98,13 @@ it('uses the stored token on start', () => {
 it('backoff is exponential, 1s..60s, with jitter', () => {
   expect(backoffDelay(0, 0)).toBe(1000);
   expect(backoffDelay(1, 0)).toBe(2000);
-  expect(backoffDelay(3, 0.5)).toBe(8800);
-  expect(backoffDelay(20, 1)).toBe(BACKOFF_MAX_MS);
+  expect(backoffDelay(3, 0.5)).toBe(7200);
+  expect(backoffDelay(20, 0)).toBe(BACKOFF_MAX_MS);
+  expect(backoffDelay(20, 1)).toBe(48_000);
+  expect(backoffDelay(0, 1)).toBe(1000);
+  const capped = new Set([0, 0.25, 0.5, 0.75, 1].map((r) => backoffDelay(8, r)));
+  expect(capped.size).toBeGreaterThan(1);
+  for (const d of capped) expect(d).toBeLessThanOrEqual(BACKOFF_MAX_MS);
 });
 
 it('reconnects with growing delay and resets after welcome', async () => {
@@ -133,6 +138,16 @@ it('PAIRING_INVALID clears the token and stops retrying', async () => {
   expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
   await vi.advanceTimersByTimeAsync(120_000);
   expect(sockets).toHaveLength(1);
+});
+
+it('a rejected pairing code leaves an existing token intact', async () => {
+  token = 'good';
+  client.pair('WRONG');
+  open();
+  sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(token).toBe('good');
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
 });
 
 it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async () => {

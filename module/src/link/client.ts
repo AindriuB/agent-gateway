@@ -43,10 +43,10 @@ export interface LinkClientDeps {
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
 
-/** Exponential backoff 1s..60s with up to 20% upward jitter, capped at the maximum. */
+/** Exponential backoff capped at 60s first, then up to 20% downward jitter (never below 1s). */
 export function backoffDelay(attempt: number, random: number): number {
   const base = Math.min(BACKOFF_MAX_MS, BACKOFF_MIN_MS * 2 ** attempt);
-  return Math.min(BACKOFF_MAX_MS, Math.round(base * (1 + 0.2 * random)));
+  return Math.max(BACKOFF_MIN_MS, Math.round(base * (1 - 0.2 * random)));
 }
 
 export class LinkClient {
@@ -153,8 +153,10 @@ export class LinkClient {
         this.cancelTimer();
         this.detach();
         if (msg.code === 'PAIRING_INVALID') {
+          // Only a rejected token is stale; a rejected code leaves a working token alone.
+          const usedToken = this.code === null;
           this.code = null;
-          await this.deps.setToken('');
+          if (usedToken) await this.deps.setToken('');
         } else if (msg.code === 'PROTOCOL_MAJOR_MISMATCH') {
           this.deps.notifyError(msg.message);
         }
