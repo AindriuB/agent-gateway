@@ -12,7 +12,7 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after seven attempts; a fresh PR supersedes #13. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
+Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after ten attempts; a fresh PR supersedes #14. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
 **In flight:** 08
 
 ### Testing topology and prerequisites
@@ -52,5 +52,8 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - Rename the test at `module/test/link/client.test.ts:276`; it covers the throw path only, not all reply paths.
 - Add a dedicated "replaced" close code in `protocol/`, shared by gateway and module, instead of matching 1000 plus the reason string `replaced`.
 - Submitting an empty gateway URL in the pairing app is a silent no-op; show a message.
+- The `gatewayUrl` setting has no `onChange`; editing it in Foundry's core settings does nothing until Connect or a reload.
+- One unexplained Tab-B load stall was seen once with bfcache enabled; it did not reproduce with diagnostics on. Watch for it.
+- The pairing test's fake `querySelector` is permissive; tighten it so a wrong selector fails.
 
 ## Someday
