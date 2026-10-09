@@ -51,10 +51,28 @@ function classify(v: string): { kind: 'abs' | 'rel'; url: URL } | null {
   return SCHEMES.has(url.protocol) ? { kind: 'abs', url } : null;
 }
 
-/** Percent-encode every character outside a strict safe set (markdown-special ones always). */
+/**
+ * Percent-encode every character outside a strict safe set (markdown-special ones always).
+ * `&` is emitted as `&amp;`, which a markdown reader decodes back to `&` (percent-encoding
+ * it would change the URL's meaning). `[`/`]` inside the authority (IPv6 hosts) are kept;
+ * the URL parser already constrains what can appear there.
+ */
 function encodeTarget(s: string): string {
   let out = '';
+  const m = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(s);
+  const authEnd = m ? m[0].length : 0;
+  let i = 0;
   for (const ch of s) {
+    const inAuthority = i < authEnd;
+    i += ch.length;
+    if (ch === '&') {
+      out += '&amp;';
+      continue;
+    }
+    if (inAuthority && (ch === '[' || ch === ']')) {
+      out += ch;
+      continue;
+    }
     out += /[A-Za-z0-9\-._~:/?#@!$+,;=%]/.test(ch)
       ? ch
       : encodeURIComponent(ch).replace(
@@ -67,6 +85,9 @@ function encodeTarget(s: string): string {
 
 /**
  * Return a safe link target built from the parsed URL, or null if the URL must be dropped.
+ * Relative links are resolved against a dummy root, so deep `../` paths are normalised
+ * (Foundry-internal references use `@UUID`). The test oracle disables GFM autolinks, so
+ * bare URLs typed as text may still be autolinked by GFM readers (author-written http(s) only).
  * The raw href, and its markdown-decoded form, must both classify as allowed.
  */
 function safeHref(raw: string | null | undefined): string | null {
@@ -85,6 +106,8 @@ function safeHref(raw: string | null | undefined): string | null {
     if (href.startsWith('#')) target = url.hash;
     else if (href.startsWith('?')) target = tail;
     else target = `${/^[/\\]/.test(href) ? url.pathname : url.pathname.slice(1)}${tail}`;
+    // Collapsed dot-segments must not leave a protocol-relative `//host` target.
+    if (target.startsWith('//')) target = `/.${target}`;
     // A colon in the first segment would read as a scheme; force a path.
     if (/^[^/?#]*:/.test(target)) target = `./${target}`;
   }

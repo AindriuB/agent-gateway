@@ -16,6 +16,14 @@ function allowed(href: string): boolean {
   }
 }
 
+function isAbs(h: string): boolean {
+  try {
+    return new URL(h, BASE).origin !== new URL(BASE).origin;
+  } catch {
+    return false;
+  }
+}
+
 function walk(tokens: Token[], out: Token[]): void {
   for (const t of tokens) {
     if (t.type === 'link' || t.type === 'image') out.push(t);
@@ -72,6 +80,16 @@ function check(html: string): void {
       true,
     );
     expect(allowed(l.href), `link ${l.href}`).toBe(true);
+    // Exact meaning: a relative input never gains a host; an absolute one keeps its parsed host and `&`s.
+    const src = anchors.find((a) => allowed(a) && norm(a) === norm(l.href))!;
+    const amps = (x: string) => x.split('&').length;
+    if (isAbs(src)) {
+      expect(new URL(l.href).host, `host of ${l.href}`).toBe(new URL(src, BASE).host);
+    } else {
+      expect(l.href.startsWith('//'), `protocol-relative ${l.href}`).toBe(false);
+      expect(new URL(l.href, BASE).origin, `host of ${l.href}`).toBe(new URL(BASE).origin);
+    }
+    expect(amps(l.href), `ampersands in ${l.href}`).toBe(amps(new URL(src, BASE).href));
   }
   // Never more links than anchors the author wrote.
   expect(found.length).toBeLessThanOrEqual(anchors.length);
@@ -97,6 +115,12 @@ const PROBES = [
   '<a href="http://a.example/<x>">x</a>',
   '<a href="http://a.example/a b">x [y] z</a>',
   '<a href="mailto:a@b.c">m</a>',
+  '<a href="/.//evil.example/p">x</a>',
+  '<a href="/%2e//evil.example/p">x</a>',
+  '<a href="/a/..//evil.example/p">x</a>',
+  '<a href="https://a.example/p?a=1&amp;b=2">x</a>',
+  '<a href="mailto:a@b.c?subject=s&amp;cc=d@e.f">x</a>',
+  '<a href="https://[::1]:8080/p">x</a>',
   '<a href="/rel/x\\y">r</a>',
   '<a href="#frag">f</a>',
   '<a href="&colon;">x</a>',
