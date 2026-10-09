@@ -147,7 +147,43 @@ it('a rejected pairing code leaves an existing token intact', async () => {
   sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
   await vi.advanceTimersByTimeAsync(0);
   expect(token).toBe('good');
-  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
+});
+
+it('after a rejected code with a stored token, resumes the token connection', async () => {
+  token = 'good';
+  client.pair('WRONG');
+  open();
+  sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets).toHaveLength(2);
+  expect(client.state).toEqual({ kind: 'connecting', codeRejected: true });
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'good' });
+  sockets[1]!.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.state.kind).toBe('connected');
+});
+
+it('pair() during backoff cancels the pending retry: only one chain', async () => {
+  token = 'tok';
+  client.start();
+  sockets[0]!.onclose?.();
+  expect(client.state.kind).toBe('disconnected');
+  client.pair('CODE');
+  expect(sockets).toHaveLength(2);
+  sockets[1]!.onclose?.();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(sockets).toHaveLength(3);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('start() closes an in-flight socket first', () => {
+  token = 'tok';
+  client.start();
+  client.start();
+  expect(sockets[0]!.closed).toBe(true);
+  expect(sockets).toHaveLength(2);
 });
 
 it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async () => {

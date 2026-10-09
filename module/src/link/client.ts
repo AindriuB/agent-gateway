@@ -15,7 +15,7 @@ export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResul
 
 export type LinkState =
   | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' }
-  | { kind: 'connecting' }
+  | { kind: 'connecting'; codeRejected?: boolean }
   | { kind: 'connected'; user: string; world: string };
 
 export interface SocketLike {
@@ -55,6 +55,7 @@ export class LinkClient {
   private attempt = 0;
   private active = false;
   private code: string | null = null;
+  private codeRejected = false;
   private listeners = new Set<(s: LinkState) => void>();
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
@@ -81,11 +82,13 @@ export class LinkClient {
   /** Pair with a code printed by the gateway. */
   pair(code: string): void {
     this.code = code;
+    this.codeRejected = false;
     this.begin();
   }
 
   stop(): void {
     this.active = false;
+    this.codeRejected = false;
     this.cancelTimer();
     this.detach();
     this.setState({ kind: 'disconnected' });
@@ -100,7 +103,9 @@ export class LinkClient {
   }
 
   private connect(): void {
-    this.setState({ kind: 'connecting' });
+    this.setState(
+      this.codeRejected ? { kind: 'connecting', codeRejected: true } : { kind: 'connecting' },
+    );
     let ws: SocketLike;
     try {
       ws = this.deps.createSocket(this.deps.getGatewayUrl());
@@ -143,6 +148,7 @@ export class LinkClient {
       case 'welcome': {
         if (msg.pairingToken) await this.deps.setToken(msg.pairingToken);
         this.code = null;
+        this.codeRejected = false;
         this.attempt = 0;
         const id = this.deps.getIdentity();
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
@@ -156,7 +162,14 @@ export class LinkClient {
           // Only a rejected token is stale; a rejected code leaves a working token alone.
           const usedToken = this.code === null;
           this.code = null;
-          if (usedToken) await this.deps.setToken('');
+          if (usedToken) {
+            await this.deps.setToken('');
+          } else if (this.deps.getToken()) {
+            // Rejected code: fall back to the working token connection.
+            this.codeRejected = true;
+            this.start();
+            break;
+          }
         } else if (msg.code === 'PROTOCOL_MAJOR_MISMATCH') {
           this.deps.notifyError(msg.message);
         }
