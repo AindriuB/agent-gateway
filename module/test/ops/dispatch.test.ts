@@ -108,6 +108,20 @@ describe('stages', () => {
     expect(await d(call('read_thing'), gm)).toEqual(ok);
     expect(order).toEqual(['agent-control', 'policy', 'audit', 'handler']);
   });
+  it('a stage calling next() twice runs the handler once', async () => {
+    order.length = 0;
+    const twice: Stage = {
+      name: 'twice',
+      order: 10,
+      async run(_ctx, next) {
+        await next();
+        return next();
+      },
+    };
+    const d = createDispatcher({ tools, handlers: { read_thing: handler }, stages: [twice] });
+    expect(await d(call('read_thing'), gm)).toEqual(ok);
+    expect(order).toEqual(['handler']);
+  });
   it('short-circuits', async () => {
     order.length = 0;
     const d = createDispatcher({

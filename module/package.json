@@ -12,5 +12,8 @@
   "dependencies": {
     "@agent-gateway/protocol": "0.1.0",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.14.6"
   }
 }

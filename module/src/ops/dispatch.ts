@@ -43,7 +43,9 @@ export function createDispatcher(config: DispatcherConfig) {
     const run = async (i: number): Promise<DispatchResult> => {
       const stage = stages[i];
       if (!stage) return handler(ctx);
-      return stage.run(ctx, () => run(i + 1));
+      let pending: Promise<DispatchResult> | undefined;
+      // Once-guard: a stage calling next() twice reuses the first result.
+      return stage.run(ctx, () => (pending ??= run(i + 1)));
     };
     try {
       return await run(0);

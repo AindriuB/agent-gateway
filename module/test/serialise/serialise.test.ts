@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -73,6 +74,31 @@ describe('htmlToMarkdown', () => {
   });
   it('decodes entities and strips unknown tags', () => {
     expect(htmlToMarkdown('<span>a &amp; b</span>')).toBe('a & b');
+  });
+  it('drops script, style, template and noscript content', () => {
+    const out = htmlToMarkdown(
+      '<script>alert(1)</script><style>p{x:y}</style><template>tpl</template><noscript>ns</noscript><p>hi</p>',
+    );
+    expect(out).toBe('hi');
+  });
+  it('keeps a literal < in text', () => {
+    expect(htmlToMarkdown('<p>a < b and c > d</p>')).toBe('a < b and c > d');
+  });
+  it('keeps single-quoted and unquoted hrefs', () => {
+    expect(htmlToMarkdown("<a href='http://a.example/x'>one</a>")).toBe(
+      '[one](http://a.example/x)',
+    );
+    expect(htmlToMarkdown('<a href=http://b.example/y>two</a>')).toBe('[two](http://b.example/y)');
+  });
+  it.each([
+    ['unclosed anchors', '<a href="'.repeat(4000)],
+    ['unclosed bold', '<b>'.repeat(4000)],
+    ['unclosed tables', '<table>'.repeat(4000)],
+    ['unclosed UUIDs', '@UUID['.repeat(4000)],
+  ])('adversarial input (%s) completes quickly', (_n, input) => {
+    const t = performance.now();
+    htmlToMarkdown(input);
+    expect(performance.now() - t).toBeLessThan(100);
   });
 });
 
