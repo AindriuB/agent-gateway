@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Task 05 (gateway skeleton and stdio MCP server) is done and in its PR. Tasks 06 and 08 are on attempt 2 after review defects (see the "Attempt 2" sections in their task files). Task 07 awaits the Mac live check, then attempt 2. Wave 2 PRs are merged.
-**In flight:** 06, 07, 08
+Task 05 (gateway skeleton and stdio MCP server) is done and in its PR. Tasks 06 and 08 are on attempt 2 after review defects (see the "Attempt 2" sections in their task files). Task 07 (module LinkClient and pairing app) is done; its PR follows. Wave 2 PRs are merged.
+**In flight:** 06, 08
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -38,5 +38,11 @@ Task 05 (gateway skeleton and stdio MCP server) is done and in its PR. Tasks 06 
 - `gateway/test/mcp/server.test.ts:70` waits a fixed 1500 ms; wait for the id:2 response line instead, or it can flake.
 - The CLI tests need a prior build; `npm run verify` builds first, but a bare `npm test` on a clean tree will fail them.
 - The published npm package `foundry-agent-gateway` depends on the private workspace `@agent-gateway/protocol`. Bundle it at build time (release task 41) or publish it.
+
+### Follow-ups from task 07
+- A rejected code is never visible when a token is stored: status goes Connecting to Connected in about 0.3 s. Show a one-off notification that the code was not accepted.
+- After a rejected code, retries keep re-sending it before the token fallback. Drop the code once it is rejected.
+- Verify Local Network Access behaviour once in Andrew's everyday Chrome profile. The live proof used a fresh profile only.
+- Foundry test stubs: `ApplicationV2` is empty, so pairing app rendering is covered only by the live check.
 
 ## Someday
