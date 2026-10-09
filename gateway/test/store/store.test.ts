@@ -77,7 +77,7 @@ describe('store', () => {
     expect(files.length).toBe(MIGRATIONS.length);
     for (const [i, f] of files.entries()) {
       expect(Number(f.slice(0, 3))).toBe(i + 1);
-      const mod = (await import(`../../src/store/migrations/${f.replace(/\.ts$/, '.js')}`)) as {
+      const mod = (await import(/* @vite-ignore */ `../../src/store/migrations/${f.replace(/\.ts$/, '.js')}`)) as {
         default: string;
       };
       expect(MIGRATIONS[i]).toBe(mod.default);
