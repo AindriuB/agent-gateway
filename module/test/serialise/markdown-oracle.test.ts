@@ -36,7 +36,12 @@ function walk(tokens: Token[], out: Token[]): void {
 function linksOf(md: string): Tokens.Link[] {
   const out: Token[] = [];
   walk(new Marked({ gfm: true, tokenizer: { url: () => undefined } }).lexer(md), out);
-  return out as Tokens.Link[];
+  // CommonMark decodes entities and backslash escapes in link targets; do so for any marked left raw.
+  const ta = document.createElement('textarea');
+  return (out as Tokens.Link[]).map((l) => {
+    ta.innerHTML = l.href.replace(/</g, '&lt;');
+    return { ...l, href: ta.value.replace(/\\([!-/:-@[-`{-~])/g, '$1') };
+  });
 }
 
 /** Hrefs of real anchors in the input, as the browser's DOM reports them. */
