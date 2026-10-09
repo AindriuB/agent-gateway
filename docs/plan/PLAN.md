@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after sixteen attempts; a fresh PR supersedes #17. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
-**In flight:** 08
+Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done on its branch; PR #20 carries it (updated with the table-width fix and the fast/slow test split); #18 was closed. Wave 2 PRs are merged.
+**In flight:** none (08 awaiting its fresh PR, replacing #18)
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -59,5 +59,25 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - The `stringStorage` stub change replaced an existing line; keep stubs additive.
 - A newer code entered between two stops during a pending welcome write is dropped in favour of the older-issued token. Same gateway, nothing leaks.
 - A socket closing during the welcome write retries the used code once before the token fallback (one extra round trip).
+
+### Follow-ups from task 08
+- Separators after empty cells in flattened tables (`/ /`, `; ;`).
+- A UUID split across cells is stitched with a separator.
+- The deep-nesting scaling test misses cheap O(depth)-per-node work.
+- A quadratic `@UUID` scan is detected only as a hang, since synchronous code cannot be interrupted by a vitest timeout; it is not a clean failure.
+- `_` and `*` are escaped intra-word and inside bare URLs, which hurts readability.
+- `#` and `>` after newlines inside `<pre>` are not handled.
+- Relative links are resolved against a dummy root, so deep `../` is normalised.
+- GFM autolinks of bare URLs are typed as text.
+- Other-module data outside `flags` is still not filtered: ActiveEffect `changes[].key`, `_stats.compendiumSource`/`duplicateSource`, and module-written `system` fields, including objects named `system` outside schema system data.
+- Duplicate SPACING oracle cases: the second template ignores `b`, and no case has trailing whitespace inside the second element.
+- The generated-case skip filter can narrow to text containing `](`, because marked mis-parses `\](` in link text.
+- `<pre>` content inside indented code blocks shows escape backslashes literally (`\<`, `\&`, `\*`); readability only.
+- Intra-word emphasis fidelity: `x<em>*star </em>y` becomes `x*\*star* y`, where emphasis does not open after a word character (it reads `x**star*`).
+- Fidelity: literal `**` or `*` can appear from nested same-delimiter emphasis or punctuation-adjacent emphasis.
+- Multi-segment words can split across pages at small limits.
+- The scaling oracle samples every 2nd/8th/16th/80th item of some corpora (half of SPLIT_TAGS, PROBES and ANCHORS are uncovered) to fit the time budget.
+- Full verify takes about 65 s (slow suite about 51 s); review the budget if it grows.
+- The paging oracle tolerates `*` in word comparison.
 
 ## Someday
