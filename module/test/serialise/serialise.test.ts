@@ -56,7 +56,7 @@ describe('htmlToMarkdown', () => {
       htmlToMarkdown(
         '<h2>Title</h2><p>A <strong>bold</strong> and <em>it</em> <a href="http://x.y">link</a>.</p>',
       ),
-    ).toBe('## Title\n\nA **bold** and *it* [link](http://x.y).');
+    ).toBe('## Title\n\nA **bold** and *it* [link](http://x.y/).');
   });
   it('lists', () => {
     expect(htmlToMarkdown('<ul><li>one</li><li>two</li></ul><ol><li>a</li><li>b</li></ol>')).toBe(
@@ -185,7 +185,7 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<strong>Name:</strong> <em>Bob</em>')).toBe('**Name:** *Bob*');
     expect(
       htmlToMarkdown('<a href="http://a.example">one</a> <a href="http://b.example">two</a>'),
-    ).toBe('[one](http://a.example) [two](http://b.example)');
+    ).toBe('[one](http://a.example/) [two](http://b.example/)');
   });
   it('blocks obfuscated script schemes in hrefs', () => {
     expect(htmlToMarkdown('<a href="java&#x09;script:alert(1)">x</a>')).toBe('x');
@@ -195,7 +195,7 @@ describe('htmlToMarkdown', () => {
     for (const bad of ['file:///etc/passwd', 'ftp://h/x', 'custom-app:open', 'FILE:///x'])
       expect(htmlToMarkdown(`<a href="${bad}">t</a>`)).toBe('t');
     expect(htmlToMarkdown('<a href="mailto:a@b.c">m</a>')).toBe('[m](mailto:a@b.c)');
-    expect(htmlToMarkdown('<a href="HTTPS://e.example">h</a>')).toBe('[h](HTTPS://e.example)');
+    expect(htmlToMarkdown('<a href="HTTPS://e.example">h</a>')).toBe('[h](https://e.example/)');
     expect(htmlToMarkdown('<a href="/rel/x">r</a>')).toBe('[r](/rel/x)');
     expect(htmlToMarkdown('<a href="#frag">f</a>')).toBe('[f](#frag)');
   });
@@ -217,7 +217,7 @@ describe('htmlToMarkdown', () => {
     );
     expect(htmlToMarkdown('<p>&lt;script&gt;x&lt;/script&gt;</p>')).toBe('\\<script>x\\</script>');
     expect(htmlToMarkdown('<p>[<a href="http://a.example">z</a>](q)</p>')).toBe(
-      '\\[[z](http://a.example)\\](q)',
+      '\\[[z](http://a.example/)\\](q)',
     );
   });
 });

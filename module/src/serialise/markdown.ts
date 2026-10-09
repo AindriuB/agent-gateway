@@ -29,19 +29,66 @@ function escapeMd(text: string): string {
     .replace(/^(\s*)([#>])/, '$1\\$2');
 }
 
-const SCHEMES = new Set(['http', 'https', 'mailto']);
+const SCHEMES = new Set(['http:', 'https:', 'mailto:']);
+const BASE = 'https://relative.invalid/';
 
-/** Return a safe link target, or null if the URL must be dropped (disallowed scheme). */
+/** Decode HTML entities and backslash escapes the way a markdown reader would. */
+function mdDecode(s: string): string {
+  const ta = document.createElement('textarea');
+  ta.innerHTML = s.replace(/</g, '&lt;');
+  return ta.value.replace(/\\([!-/:-@[-`{-~])/g, '$1');
+}
+
+/** Classify a URL: allowed absolute, relative to the dummy base, or disallowed/unparsable. */
+function classify(v: string): { kind: 'abs' | 'rel'; url: URL } | null {
+  let url: URL;
+  try {
+    url = new URL(v, BASE);
+  } catch {
+    return null;
+  }
+  if (url.origin === new URL(BASE).origin) return { kind: 'rel', url };
+  return SCHEMES.has(url.protocol) ? { kind: 'abs', url } : null;
+}
+
+/** Percent-encode every character outside a strict safe set (markdown-special ones always). */
+function encodeTarget(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    out += /[A-Za-z0-9\-._~:/?#@!$+,;=%]/.test(ch)
+      ? ch
+      : encodeURIComponent(ch).replace(
+          /[!'()*]/g,
+          (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+        ) || `%${ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`;
+  }
+  return out;
+}
+
+/**
+ * Return a safe link target built from the parsed URL, or null if the URL must be dropped.
+ * The raw href, and its markdown-decoded form, must both classify as allowed.
+ */
 function safeHref(raw: string | null | undefined): string | null {
   const href = raw?.trim();
   if (!href) return null;
-  const norm = href.replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
-  const m = /^([a-z][a-z0-9+.-]*):/.exec(norm);
-  if (m && !SCHEMES.has(m[1]!)) return null;
-  return href.replace(
-    /[()<>|\u0000-\u0020\u007f]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`,
-  );
+  const decoded = mdDecode(href);
+  const c = classify(href);
+  const d = classify(decoded);
+  if (!c || !d) return null;
+  if (c.kind !== d.kind) return null;
+  const { url } = c;
+  let target = url.href;
+  if (c.kind === 'rel') {
+    // Keep it relative: fragment-only and query-only links stay so; paths keep a leading slash only if written.
+    const tail = `${url.search}${url.hash}`;
+    if (href.startsWith('#')) target = url.hash;
+    else if (href.startsWith('?')) target = tail;
+    else target = `${/^[/\\]/.test(href) ? url.pathname : url.pathname.slice(1)}${tail}`;
+    // A colon in the first segment would read as a scheme; force a path.
+    if (/^[^/?#]*:/.test(target)) target = `./${target}`;
+  }
+  return encodeTarget(target);
 }
 
 /** Replace `@UUID[uuid]{label}` with `label (uuid)`; all other text is passed through `esc`. */
@@ -95,6 +142,8 @@ const ROW_SEP = '; ';
 // Private-use markers for nested-table boundaries; become escaped brackets.
 const OPEN = '\uE000';
 const CLOSE = '\uE001';
+// Marks the start of an emitted link so a literal `!` right before it can be escaped.
+const LINK = '\uE002';
 
 /**
  * Flatten a nested table to readable plain text in one linear, iterative pass.
@@ -217,7 +266,7 @@ function render(node: Node, depth: number, pre: boolean): string {
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
   if (DROP.has(tag)) return '';
-  if (depth > MAX_DEPTH) return collapse(plainText(el));
+  if (depth > MAX_DEPTH) return expandUuids(collapse(plainText(el)));
 
   const kids = () => renderChildren(el, depth, pre || tag === 'pre');
   switch (tag) {
@@ -242,7 +291,7 @@ function render(node: Node, depth: number, pre: boolean): string {
       const t = kids();
       const href = safeHref(el.getAttribute('href'));
       if (!href || !t.trim()) return t;
-      return `[${t.trim()}](${href})`;
+      return `${LINK}[${t.trim()}](${href})`;
     }
     case 'br':
       return '\n';
@@ -273,6 +322,8 @@ export function htmlToMarkdown(html: string): string {
 /** Convert an already-parsed DOM subtree to markdown. */
 export function domToMarkdown(root: Node): string {
   return render(root, 0, false)
+    .replace(/!\uE002/g, '\\!')
+    .replace(/\uE002/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n\n[ \t]+/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n')
