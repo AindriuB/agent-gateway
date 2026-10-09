@@ -8,5 +8,9 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "test": "vitest run --passWithNoTests",
     "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@agent-gateway/protocol": "0.1.0",
+    "zod": "^4.6.5"
   }
 }
