@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   BACKOFF_MAX_MS,
@@ -303,12 +305,11 @@ it('discards a reply when the originating socket is no longer open', async () =>
   expect(sockets[0]!.sent).toHaveLength(1);
 });
 
-// Pins the gateway's replacement close: `ws.close(1000, 'replaced')` in gateway/src/link/server.ts.
-const replaced = { code: 1000, reason: 'replaced' };
+const replaced = { code: REPLACED_CLOSE_CODE, reason: REPLACED_CLOSE_REASON };
 
 it('pins the close code and reason the gateway uses for replacement', () => {
-  expect(REPLACED_CLOSE_CODE).toBe(1000);
-  expect(REPLACED_CLOSE_REASON).toBe('replaced');
+  const server = readFileSync(resolve(__dirname, '../../../gateway/src/link/server.ts'), 'utf8');
+  expect(server).toContain(`ws.close(${REPLACED_CLOSE_CODE}, '${REPLACED_CLOSE_REASON}')`);
 });
 
 it('does not retry after a replacement close and reports REPLACED', async () => {
