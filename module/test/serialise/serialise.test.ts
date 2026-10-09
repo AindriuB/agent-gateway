@@ -90,22 +90,25 @@ describe('htmlToMarkdown', () => {
     );
     expect(htmlToMarkdown('<a href=http://b.example/y>two</a>')).toBe('[two](http://b.example/y)');
   });
+  // [name, input builder, small n, large n (4x), min baseline ms, max allowed 4x ratio]
+  // Linear code gives a ratio near 4; quadratic gives near 16. Bound is 8 except for
+  // tables, where the happy-dom parser itself (test-only) is mildly super-linear (~8x).
   it.each([
-    ['unclosed anchors', (n: number) => '<a href="'.repeat(n)],
-    ['unclosed bold', (n: number) => '<b>'.repeat(n)],
-    ['unclosed tables', (n: number) => '<table>'.repeat(n)],
-    ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n)],
-  ])('adversarial input (%s) scales sub-quadratically', (_n, make) => {
+    ['unclosed anchors', (n: number) => '<a href="'.repeat(n), 8000, 32000, 5, 8],
+    ['unclosed bold', (n: number) => '<b>'.repeat(n), 8000, 32000, 20, 8],
+    ['unclosed tables', (n: number) => '<table>'.repeat(n), 8000, 32000, 100, 12],
+    ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n), 32000, 128000, 2, 8],
+  ] as const)('adversarial input (%s) scales sub-quadratically', (_n, make, ns, nl, floor, max) => {
     const time = (n: number) => {
       const t = performance.now();
       htmlToMarkdown(make(n));
       return performance.now() - t;
     };
     time(500); // warm up
-    const small = Math.max(time(8000), 10);
-    const large = time(32000);
+    const small = Math.max(time(ns), floor);
+    const large = time(nl);
     expect(large).toBeLessThan(5000);
-    expect(large).toBeLessThan(small * 8);
+    expect(large).toBeLessThan(small * max);
   });
   it('renders nested tables linearly, inner content once', () => {
     expect(
