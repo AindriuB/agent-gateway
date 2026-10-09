@@ -3,8 +3,7 @@
 <!-- HARD CAP: 50 lines. This file is a router, not a manual.
      If you are adding detail here, it belongs in docs/ instead. -->
 
-Foundry VTT module plus MCP gateway (one repo, npm workspaces). Design:
-`docs/plan/specs/2026-10-09-agent-gateway.md`.
+Foundry VTT module + MCP gateway. Spec: `docs/plan/specs/2026-10-09-agent-gateway.md`.
 
 ## Read on demand, not up front
 
@@ -16,7 +15,6 @@ Foundry VTT module plus MCP gateway (one repo, npm workspaces). Design:
 | What was already built — scan, never open `HISTORY.md` whole | `docs/plan/HISTORY-INDEX.md` |
 | One task's full contract | `docs/plan/tasks/<id>.md` |
 | System shape, service boundaries, ports | `docs/architecture.md` |
-| Where the repositories live and how to obtain them | `docs/architecture.md#repository-topology` |
 
 Load exactly one of these when the task needs it. Do not preload the set.
 
@@ -49,5 +47,4 @@ Out of band, any time: `/recon <question>`, `/design <question>`.
 4. Prefer `rg` over `grep`, and read ranges over whole files.
 5. Secrets, tokens and dumps never leave the machine and never enter a doc.
 6. Only `scribe` writes docs. Only `implementer` writes code.
-7. Every change lands via a GitHub PR that Andrew reviews. Never push to or
-   merge into `main` locally; `/record` opens PRs instead of merging.
+7. Every change lands via a PR Andrew reviews; `/record` opens PRs, never merges.
