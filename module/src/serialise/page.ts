@@ -421,6 +421,8 @@ export function documentToMarkdown(doc: MdDocument): string {
  * `limit` counts characters of the finished page including structural markup. A page exceeds it only
  * when its first atomic unit (one word, one code line, one table row with its header) plus that markup
  * does not fit; at least one unit is always emitted so paging terminates.
+ * A word assembled from several segments may be split across two pages when it does not fit the
+ * remaining room; nothing is lost and no construct is cut.
  *
  * The cursor is opaque and validated; an invalid or forged one throws `PageCursorError`.
  * A plain string is treated as text, not markdown, and escaped.

@@ -201,18 +201,21 @@ describe('htmlToMarkdown', () => {
     'adversarial input (%s) scales sub-quadratically',
     { timeout: 60000 },
     (_n, make, ns, nl, floor, max) => {
-      const time = (n: number) => {
-        const input = make(n);
-        const t = performance.now();
-        htmlToMarkdown(input);
-        return performance.now() - t;
+      // Parse once per size (untimed; keeps only two documents alive); time the serialiser alone.
+      const timeOn = (n: number) => {
+        const b = new DOMParser().parseFromString(make(n), 'text/html').body;
+        return () => {
+          const t = performance.now();
+          domToMarkdown(b);
+          return performance.now() - t;
+        };
       };
-      time(500); // warm up
+      timeOn(500)(); // warm up
       const small = Math.max(
-        minTime(() => time(ns)),
+        minTime(timeOn(ns)),
         floor,
       );
-      const large = minTime(() => time(nl));
+      const large = minTime(timeOn(nl));
       expect(large).toBeLessThan(5000);
       expect(large).toBeLessThan(small * max);
     },
