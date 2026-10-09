@@ -65,3 +65,7 @@ export function stopLink(): void {
 export function isLinkActive(): boolean {
   return client?.isActive ?? false;
 }
+
+export function resumeLink(): void {
+  client?.resume();
+}

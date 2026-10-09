@@ -8,13 +8,20 @@ let counts: Map<string, number>;
 let active = true;
 const startLink = vi.fn();
 const stopLink = vi.fn();
+const resumeLink = vi.fn();
 const isLinkActive = () => active;
 
 beforeEach(async () => {
   vi.resetModules();
   startLink.mockClear();
   stopLink.mockClear();
-  vi.doMock('../../src/link/runtime.js', () => ({ startLink, stopLink, isLinkActive }));
+  resumeLink.mockClear();
+  vi.doMock('../../src/link/runtime.js', () => ({
+    startLink,
+    stopLink,
+    resumeLink,
+    isLinkActive,
+  }));
   stub = installFoundry(14);
   listeners = new Map();
   counts = new Map();
@@ -56,10 +63,11 @@ it('registers exactly one pagehide and one pageshow listener', () => {
   );
 });
 
-it('pageshow with persisted restarts the link', () => {
+it('pageshow with persisted resumes the link (not a fresh start)', () => {
   listeners.get('pagehide')!({});
   listeners.get('pageshow')!({ persisted: true });
-  expect(startLink).toHaveBeenCalledTimes(1);
+  expect(resumeLink).toHaveBeenCalledTimes(1);
+  expect(startLink).not.toHaveBeenCalled();
 });
 
 it('pageshow without persisted does nothing', () => {
@@ -74,6 +82,7 @@ it('pageshow persisted does not restart a link that was inactive at pagehide', (
   listeners.get('pagehide')!({});
   listeners.get('pageshow')!({ persisted: true });
   expect(startLink).not.toHaveBeenCalled();
+  expect(resumeLink).not.toHaveBeenCalled();
 });
 
 it('pagehide does not stop an inactive (replaced) link, so its REPLACED state survives', () => {

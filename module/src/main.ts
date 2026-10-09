@@ -1,5 +1,5 @@
 import { foundryGeneration } from './compat/index.js';
-import { isLinkActive, startLink, stopLink } from './link/runtime.js';
+import { isLinkActive, resumeLink, startLink, stopLink } from './link/runtime.js';
 import { registerSettings } from './settings/index.js';
 
 declare const Hooks: { once(hook: string, fn: () => void): void };
@@ -24,7 +24,7 @@ Hooks.once('ready', () => {
     // Only a link that was live at pagehide comes back; a replaced/stopped one stays down.
     if (e.persisted === true && wasActive) {
       wasActive = false;
-      startLink();
+      resumeLink();
     }
   });
 });

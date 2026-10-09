@@ -482,3 +482,80 @@ it('the welcome token is stored with the URL of the socket that received it', as
   expect(token).toBe('new');
   expect(tokenUrl).toBe('ws://gw');
 });
+
+const hellos = () => sockets.flatMap((s) => s.sent.filter((m) => m.type === 'hello'));
+
+it('resume after stop continues a code pairing with the same code to the same URL', () => {
+  client.pair('CODE');
+  client.stop();
+  client.resume();
+  expect(sockets).toHaveLength(2);
+  expect((sockets[1] as any).url).toBe('ws://gw');
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingCode', code: 'CODE' });
+  expect(client.isActive).toBe(true);
+});
+
+it('resume sends no code when the gateway URL changed since pair()', () => {
+  client.pair('CODE');
+  client.stop();
+  gwUrl = 'ws://other';
+  client.resume();
+  expect(sockets).toHaveLength(1);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  gwUrl = 'ws://gw';
+  client.resume();
+  expect(sockets).toHaveLength(1);
+});
+
+it('a retry after the URL changed during backoff does not send the code elsewhere', () => {
+  client.pair('CODE');
+  sockets[0]!.onclose?.({});
+  gwUrl = 'ws://other';
+  vi.advanceTimersByTime(BACKOFF_MAX_MS);
+  expect(sockets).toHaveLength(1);
+  expect(hellos()).toHaveLength(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+});
+
+it('resume reconnects with the token when a token link was active', () => {
+  token = 'T';
+  client.start();
+  client.stop();
+  client.resume();
+  expect(sockets).toHaveLength(2);
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'T' });
+});
+
+it('resume with a token for a different gateway sends nothing', () => {
+  token = 'T';
+  client.start();
+  client.stop();
+  gwUrl = 'ws://other';
+  client.resume();
+  expect(sockets).toHaveLength(1);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+});
+
+it('resume does nothing for a never-started, replaced or explicitly restarted-then-rejected client', () => {
+  client.resume();
+  expect(sockets).toHaveLength(0);
+  client.pair('CODE');
+  sockets[0]!.onclose?.({ code: REPLACED_CLOSE_CODE, reason: REPLACED_CLOSE_REASON });
+  client.resume();
+  expect(sockets).toHaveLength(1);
+  client.stop();
+  client.resume();
+  expect(sockets).toHaveLength(1);
+});
+
+it('a new pair() replaces the stopped code; start() replaces a stopped code pairing', () => {
+  client.pair('OLD');
+  client.stop();
+  client.pair('NEW');
+  client.stop();
+  client.resume();
+  open();
+  expect(sockets[2]!.sent[0].auth).toEqual({ kind: 'pairingCode', code: 'NEW' });
+});

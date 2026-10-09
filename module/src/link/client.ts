@@ -83,6 +83,10 @@ export class LinkClient {
   private attempt = 0;
   private active = false;
   private code: string | null = null;
+  /** Normalized gateway URL the code was entered for; a code is never sent anywhere else. */
+  private codeUrl: string | null = null;
+  /** What was live when stop() ran, for resume(). */
+  private resumeMode: 'code' | 'token' | null = null;
   private codeRejected = false;
   private listeners = new Set<(s: LinkState) => void>();
   private _state: LinkState = { kind: 'disconnected' };
@@ -148,14 +152,20 @@ export class LinkClient {
       this.requirePairing();
       return;
     }
-    this.code = null;
+    this.clearCode();
     this.begin();
   }
 
+  private clearCode(): void {
+    this.code = null;
+    this.codeUrl = null;
+  }
+
   private requirePairing(): void {
+    this.resumeMode = null;
     this.active = false;
     this.codeRejected = false;
-    this.code = null;
+    this.clearCode();
     this.cancelTimer();
     this.detach();
     this.setState({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
@@ -164,11 +174,31 @@ export class LinkClient {
   /** Pair with a code printed by the gateway. */
   pair(code: string): void {
     this.code = code;
+    this.codeUrl = normalizeGatewayUrl(this.deps.getGatewayUrl());
     this.codeRejected = false;
     this.begin();
   }
 
+  /**
+   * Restart whatever was live when stop() ran. A code pairing resumes with the same code, but only
+   * against the URL it was entered for; otherwise pairing is required and nothing is sent.
+   */
+  resume(): void {
+    const mode = this.resumeMode;
+    if (mode === 'token') {
+      this.start();
+    } else if (mode === 'code') {
+      if (this.code !== null && this.codeUrl === normalizeGatewayUrl(this.deps.getGatewayUrl())) {
+        this.codeRejected = false;
+        this.begin();
+      } else {
+        this.requirePairing();
+      }
+    }
+  }
+
   stop(): void {
+    if (this.active) this.resumeMode = this.code !== null ? 'code' : 'token';
     this.active = false;
     this.codeRejected = false;
     this.cancelTimer();
@@ -177,6 +207,7 @@ export class LinkClient {
   }
 
   private begin(): void {
+    this.resumeMode = null;
     this.cancelTimer();
     this.detach();
     this.active = true;
@@ -186,6 +217,11 @@ export class LinkClient {
 
   private connect(): void {
     const url = this.deps.getGatewayUrl();
+    if (this.code !== null && this.codeUrl !== normalizeGatewayUrl(url)) {
+      // Gateway URL changed since the code was entered (e.g. during backoff): never send it there.
+      this.requirePairing();
+      return;
+    }
     if (this.code === null && this.tokenForUrl(url) === null) {
       // Gateway URL changed since the token was issued (e.g. during backoff).
       this.requirePairing();
@@ -234,6 +270,7 @@ export class LinkClient {
         // Another tab took over the link; retrying would just evict it in turn.
         this.active = false;
         this.cancelTimer();
+        this.resumeMode = null;
         this.setState({ kind: 'disconnected', reason: 'REPLACED' });
         return;
       }
@@ -251,7 +288,7 @@ export class LinkClient {
         if (msg.pairingToken) {
           await this.deps.setToken({ url, token: msg.pairingToken });
         }
-        this.code = null;
+        this.clearCode();
         this.codeRejected = false;
         this.attempt = 0;
         const id = this.deps.getIdentity();
@@ -260,12 +297,13 @@ export class LinkClient {
       }
       case 'reject':
         this.active = false;
+        this.resumeMode = null;
         this.cancelTimer();
         this.detach();
         if (msg.code === 'PAIRING_INVALID') {
           // Only a rejected token is stale; a rejected code leaves a working token alone.
           const usedToken = this.code === null;
-          this.code = null;
+          this.clearCode();
           if (usedToken) {
             await this.deps.setToken(null);
           } else if (this.tokenForUrl(this.deps.getGatewayUrl()) !== null) {
