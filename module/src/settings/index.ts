@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const game: any;
-declare const CONST: any;
 
 const NS = 'agent-gateway';
 
