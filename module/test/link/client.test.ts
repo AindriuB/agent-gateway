@@ -231,3 +231,72 @@ it('stop cancels pending reconnects', async () => {
   await vi.advanceTimersByTimeAsync(120_000);
   expect(sockets).toHaveLength(1);
 });
+
+function slowCall() {
+  let release!: () => void;
+  client.onCall = () =>
+    new Promise((res) => {
+      release = () => res({ ok: true, text: 'late' });
+    });
+  return () => release();
+}
+
+it('discards a late reply when the originating socket closed', async () => {
+  token = 'tok';
+  const release = slowCall();
+  client.start();
+  open();
+  sockets[0]!.recv(call);
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[0]!.onclose?.();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(sockets).toHaveLength(2);
+  open();
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets[0]!.sent).toHaveLength(1);
+  expect(sockets[1]!.sent).toHaveLength(1);
+});
+
+it('discards a late reply when pair() started a new connection', async () => {
+  token = 'tok';
+  const release = slowCall();
+  client.start();
+  open();
+  sockets[0]!.recv(call);
+  await vi.advanceTimersByTimeAsync(0);
+  client.pair('CODE');
+  open();
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets[1]!.sent.map((m) => m.type)).toEqual(['hello']);
+  expect(sockets[0]!.sent).toHaveLength(1);
+});
+
+it('discards late TOOL_NOT_FOUND-path and throw-path replies on a new socket', async () => {
+  token = 'tok';
+  client.onCall = async () => {
+    await Promise.resolve();
+    throw new Error('boom');
+  };
+  client.start();
+  open();
+  sockets[0]!.recv(call);
+  client.pair('CODE');
+  open();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets[1]!.sent.map((m) => m.type)).toEqual(['hello']);
+});
+
+it('discards a reply when the originating socket is no longer open', async () => {
+  token = 'tok';
+  const release = slowCall();
+  client.start();
+  open();
+  (sockets[0] as any).readyState = 3;
+  sockets[0]!.recv(call);
+  await vi.advanceTimersByTimeAsync(0);
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets[0]!.sent).toHaveLength(1);
+});
