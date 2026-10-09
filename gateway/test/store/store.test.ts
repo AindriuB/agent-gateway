@@ -1,12 +1,12 @@
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openStore } from '../../src/store/index.js';
-import { applyMigrations, loadMigrations } from '../../src/store/migrate.js';
+import { applyMigrations } from '../../src/store/migrate.js';
+import { MIGRATIONS } from '../../src/store/migrations/index.js';
 
 const hashToken = (t: string): string => createHash('sha256').update(t).digest('hex');
 
@@ -41,10 +41,11 @@ describe('store', () => {
     again.close();
   });
 
-  it('never writes the raw token to the database file', () => {
+  it('persists a hash it is given and does not invent other copies of it', () => {
     const d = dir();
     const s = openStore(join(d, 'g.db'));
-    const token = 'RAW-TOKEN-should-never-be-stored';
+    // The store API only accepts hashes; the raw-token-absent end-to-end check is in server.test.ts.
+    const token = 'RAW-TOKEN-never-passed-to-store';
     s.createPairing({ id: 'a1', tokenHash: hashToken(token), worldId: 'w', userId: 'u' });
     s.close();
     const files = readdirSync(d);
@@ -57,8 +58,8 @@ describe('store', () => {
     again.close();
   });
 
-  it('applies migration files in order and records user_version', async () => {
-    const m = await loadMigrations();
+  it('applies migrations in order and records user_version', () => {
+    const m = MIGRATIONS;
     expect(m.length).toBeGreaterThanOrEqual(1);
     expect(m[0]).toContain('CREATE TABLE pairings');
     const db = new DatabaseSync(':memory:');
@@ -69,11 +70,17 @@ describe('store', () => {
     db.close();
   });
 
-  it('loads migration files from a directory sorted by name', async () => {
-    const d = dir();
-    writeFileSync(join(d, '002-b.js'), "export default 'B';");
-    writeFileSync(join(d, '001-a.js'), "export default 'A';");
-    writeFileSync(join(d, 'notes.txt'), 'ignored');
-    expect(await loadMigrations(pathToFileURL(d + '/'))).toEqual(['A', 'B']);
+  it('registry order matches NNN- filename order of the migration files', async () => {
+    const files = readdirSync(new URL('../../src/store/migrations/', import.meta.url))
+      .filter((f) => /^\d{3}-.*\.ts$/.test(f))
+      .sort();
+    expect(files.length).toBe(MIGRATIONS.length);
+    for (const [i, f] of files.entries()) {
+      expect(Number(f.slice(0, 3))).toBe(i + 1);
+      const mod = (await import(`../../src/store/migrations/${f.replace(/\.ts$/, '.js')}`)) as {
+        default: string;
+      };
+      expect(MIGRATIONS[i]).toBe(mod.default);
+    }
   });
 });

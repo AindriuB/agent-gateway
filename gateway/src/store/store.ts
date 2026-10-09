@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { applyMigrations, loadMigrations } from './migrate.js';
+import { applyMigrations } from './migrate.js';
+import { MIGRATIONS } from './migrations/index.js';
 
 export interface PairingRow {
   id: string;
@@ -24,8 +25,6 @@ export interface Store {
   revokePairing(id: string): boolean;
   close(): void;
 }
-
-const MIGRATIONS = await loadMigrations();
 
 interface Row {
   id: string;
