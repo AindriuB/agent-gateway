@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-09 | 08 | module operation registry (handlers, staged dispatcher, error mapping), document serialiser, paging, DOMParser HTML-to-markdown with link safety | ## 2026-10-09 — Module operation registry and document-to-markdown conversion (task 08) |
 | 2026-10-09 | 07 | module LinkClient (hello, token, backoff, pairing errors) and ApplicationV2 pairing app from settings menu | ## 2026-10-09 — Module LinkClient and pairing app (task 07) |
 | 2026-10-09 | 06 | gateway link server on loopback, Origin allowlist, pairing codes, hashed tokens, link registry, heartbeat | ## 2026-10-09 — Gateway link server and pairing (task 06) |
 | 2026-10-09 | 05 | gateway config, logger, stdio MCP server with empty tool registry | ## 2026-10-09 — Gateway skeleton and stdio MCP server (task 05) |

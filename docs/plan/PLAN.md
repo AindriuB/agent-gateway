@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after sixteen attempts; a fresh PR supersedes #17. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
-**In flight:** 08
+Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 07 (module LinkClient and pairing app) are merged. Task 08 (module operation registry and markdown conversion) is done; PR #18 is open. Wave 2 PRs are merged.
+**In flight:** none (08 awaiting PR #18 merge)
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -59,5 +59,15 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - The `stringStorage` stub change replaced an existing line; keep stubs additive.
 - A newer code entered between two stops during a pending welcome write is dropped in favour of the older-issued token. Same gateway, nothing leaks.
 - A socket closing during the welcome write retries the used code once before the token fallback (one extra round trip).
+
+### Follow-ups from task 08
+- Separators after empty cells in flattened tables (`/ /`, `; ;`).
+- A UUID split across cells is stitched with a separator.
+- The deep-nesting scaling test misses cheap O(depth)-per-node work.
+- A quadratic `@UUID` scan is detected only as a hang, since synchronous code cannot be interrupted by a vitest timeout; it is not a clean failure.
+- `_` and `*` are escaped intra-word and inside bare URLs, which hurts readability.
+- `#` and `>` after newlines inside `<pre>` are not handled.
+- Relative links are resolved against a dummy root, so deep `../` is normalised.
+- GFM autolinks of bare URLs are typed as text.
 
 ## Someday
