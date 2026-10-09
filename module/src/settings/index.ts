@@ -18,8 +18,8 @@ function registerFoundation(): void {
     hint: 'AGENT_GATEWAY.Settings.pairingToken.hint',
     scope: 'client',
     config: false,
-    type: String,
-    default: '',
+    type: Object,
+    default: null,
   });
   game.settings.register(NS, 'includeOtherModuleData', {
     name: 'AGENT_GATEWAY.Settings.includeOtherModuleData.name',

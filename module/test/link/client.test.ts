@@ -40,6 +40,9 @@ const welcome = (extra: object = {}) => ({
 
 let sockets: FakeSocket[];
 let token: string;
+let tokenUrl: string;
+let gwUrl: string;
+let raw: unknown;
 let errors: string[];
 let client: LinkClient;
 
@@ -47,19 +50,27 @@ beforeEach(() => {
   vi.useFakeTimers();
   sockets = [];
   token = '';
+  tokenUrl = 'ws://gw';
+  gwUrl = 'ws://gw';
+  raw = undefined;
   errors = [];
   client = new LinkClient({
-    getGatewayUrl: () => 'ws://gw',
-    getToken: () => token,
-    setToken: (t) => void (token = t),
+    getGatewayUrl: () => gwUrl,
+    getToken: () => (raw !== undefined ? raw : token ? { url: tokenUrl, token } : null),
+    setToken: (c) => {
+      raw = undefined;
+      token = c ? c.token : '';
+      if (c) tokenUrl = c.url;
+    },
     getIdentity: () => ({
       moduleVersion: '0.1.0',
       foundryVersion: '14.0',
       world: { id: 'w', title: 'My World', system: 'dnd5e', systemVersion: '5' },
       user: { id: 'u', name: 'Gm', role: 4, isGM: true },
     }),
-    createSocket: () => {
+    createSocket: (url) => {
       const s = new FakeSocket();
+      (s as any).url = url;
       sockets.push(s);
       return s;
     },
@@ -355,4 +366,110 @@ it('still retries after a normal close', async () => {
   sockets[1]!.onclose?.({ code: 1000, reason: 'bye' });
   await vi.advanceTimersByTimeAsync(2000);
   expect(sockets).toHaveLength(3);
+});
+
+// --- token is bound to the gateway that issued it ---
+
+const allHellos = () => sockets.flatMap((s) => s.sent.filter((m) => m.type === 'hello'));
+const noTokenSent = () => {
+  for (const h of allHellos()) expect(h.auth.kind).not.toBe('pairingToken');
+  expect(JSON.stringify(sockets.map((s) => s.sent))).not.toContain('secret');
+};
+
+it('stores the issued token with the URL that issued it', async () => {
+  client.pair('ABC');
+  open();
+  sockets[0]!.recv(welcome({ pairingToken: 'tok' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(tokenUrl).toBe('ws://gw');
+  expect(token).toBe('tok');
+});
+
+it('a rejected code at a different URL does not fall back to the old token', async () => {
+  token = 'secret';
+  tokenUrl = 'ws://old';
+  gwUrl = 'ws://evil';
+  client.pair('WRONG');
+  open();
+  sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sockets).toHaveLength(1);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
+  expect(token).toBe('secret');
+  noTokenSent();
+});
+
+it('start() with a changed URL sends nothing and asks for a code', () => {
+  token = 'secret';
+  tokenUrl = 'ws://old';
+  gwUrl = 'ws://new';
+  client.start();
+  expect(sockets).toHaveLength(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  expect(client.isActive).toBe(false);
+});
+
+it('URL changed during backoff: the reconnect sends no token', async () => {
+  token = 'secret';
+  client.start();
+  sockets[0]!.onclose?.();
+  gwUrl = 'ws://evil';
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(sockets).toHaveLength(1);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  noTokenSent();
+});
+
+it('URL changed between socket creation and open: no token sent', () => {
+  token = 'secret';
+  client.start();
+  tokenUrl = 'ws://elsewhere';
+  open();
+  expect(sockets[0]!.sent).toHaveLength(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+});
+
+it('bfcache-style restart (stop then start) after a URL change sends no token', () => {
+  token = 'secret';
+  client.start();
+  client.stop();
+  gwUrl = 'ws://evil';
+  client.start();
+  expect(sockets).toHaveLength(1);
+  open(0);
+  noTokenSent();
+  expect(client.state.kind).toBe('disconnected');
+});
+
+it('same URL still sends the token', () => {
+  token = 'secret';
+  client.start();
+  open();
+  expect(sockets[0]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'secret' });
+});
+
+it('treats trailing slash and host case as the same endpoint', () => {
+  token = 'secret';
+  tokenUrl = 'ws://GW.example:7420';
+  gwUrl = 'ws://gw.example:7420/';
+  client.start();
+  open();
+  expect(sockets[0]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'secret' });
+});
+
+it('localhost and 127.0.0.1 are different endpoints', () => {
+  token = 'secret';
+  tokenUrl = 'ws://localhost:7420';
+  gwUrl = 'ws://127.0.0.1:7420';
+  client.start();
+  expect(sockets).toHaveLength(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+});
+
+it('a legacy bare-string token is discarded and never sent', () => {
+  raw = 'secret';
+  client.start();
+  expect(sockets).toHaveLength(0);
+  expect(raw).toBeUndefined(); // setToken(null) ran
+  expect(token).toBe('');
 });

@@ -14,9 +14,24 @@ export type CallResult =
 export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResult;
 
 export type LinkState =
-  | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' | 'REPLACED' }
+  | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' | 'REPLACED' | 'PAIRING_REQUIRED' }
   | { kind: 'connecting'; codeRejected?: boolean }
   | { kind: 'connected'; user: string; world: string };
+
+/** A pairing token bound to the gateway endpoint that issued it. */
+export interface TokenCredential {
+  url: string;
+  token: string;
+}
+
+/** Canonical form of a gateway URL; two URLs name the same endpoint iff these are equal. */
+export function normalizeGatewayUrl(url: string): string {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+}
 
 export interface SocketLike {
   onopen: ((ev?: unknown) => void) | null;
@@ -30,8 +45,13 @@ export interface SocketLike {
 
 export interface LinkClientDeps {
   getGatewayUrl(): string;
-  getToken(): string;
-  setToken(token: string): Promise<unknown> | void;
+  /**
+   * The stored credential as persisted. Only `{ url, token }` is honoured; anything else
+   * (e.g. a legacy bare string) is discarded.
+   */
+  getToken(): unknown;
+  /** Persist the token with the gateway URL that issued it, or clear it with `null`. */
+  setToken(credential: TokenCredential | null): Promise<unknown> | void;
   /** Everything in `hello` except `type`, `protocolVersion` and `auth`. */
   getIdentity(): Omit<HelloMessage, 'type' | 'protocolVersion' | 'auth'>;
   createSocket(url: string): SocketLike;
@@ -64,6 +84,8 @@ export class LinkClient {
   private active = false;
   private code: string | null = null;
   private codeRejected = false;
+  /** URL the current socket was created for; a token is stored against this. */
+  private socketUrl = '';
   private listeners = new Set<(s: LinkState) => void>();
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
@@ -85,11 +107,54 @@ export class LinkClient {
     return () => this.listeners.delete(fn);
   }
 
-  /** Connect with the stored token (no-op when none is stored). */
+  /**
+   * The stored token, only if it was issued by the given gateway URL. A legacy or
+   * malformed stored value is discarded.
+   */
+  private tokenForUrl(url: string): string | null {
+    const cred = this.readCredential();
+    if (!cred) return null;
+    return normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url) ? cred.token : null;
+  }
+
+  private readCredential(): TokenCredential | null {
+    const raw = this.deps.getToken();
+    if (raw && typeof raw === 'object') {
+      const { url, token } = raw as Partial<TokenCredential>;
+      if (typeof url === 'string' && url && typeof token === 'string' && token) {
+        return { url, token };
+      }
+    }
+    if (raw) void this.deps.setToken(null);
+    return null;
+  }
+
+  /** True if a token is stored (for any gateway). */
+  hasStoredToken(): boolean {
+    return this.readCredential() !== null;
+  }
+
+  /**
+   * Connect with the stored token, but only to the gateway that issued it. No stored token:
+   * no-op. Token issued elsewhere: nothing is sent and a pairing code is requested.
+   */
   start(): void {
-    if (!this.deps.getToken()) return;
+    if (!this.hasStoredToken()) return;
+    if (this.tokenForUrl(this.deps.getGatewayUrl()) === null) {
+      this.requirePairing();
+      return;
+    }
     this.code = null;
     this.begin();
+  }
+
+  private requirePairing(): void {
+    this.active = false;
+    this.codeRejected = false;
+    this.code = null;
+    this.cancelTimer();
+    this.detach();
+    this.setState({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
   }
 
   /** Pair with a code printed by the gateway. */
@@ -116,23 +181,36 @@ export class LinkClient {
   }
 
   private connect(): void {
+    const url = this.deps.getGatewayUrl();
+    if (this.code === null && this.tokenForUrl(url) === null) {
+      // Gateway URL changed since the token was issued (e.g. during backoff).
+      this.requirePairing();
+      return;
+    }
     this.setState(
       this.codeRejected ? { kind: 'connecting', codeRejected: true } : { kind: 'connecting' },
     );
     let ws: SocketLike;
     try {
-      ws = this.deps.createSocket(this.deps.getGatewayUrl());
+      this.socketUrl = url;
+      ws = this.deps.createSocket(url);
     } catch {
       this.scheduleRetry('ERROR');
       return;
     }
     this.socket = ws;
     ws.onopen = () => {
-      const token = this.deps.getToken();
-      const auth: HelloMessage['auth'] =
-        this.code !== null
-          ? { kind: 'pairingCode', code: this.code }
-          : { kind: 'pairingToken', token };
+      let auth: HelloMessage['auth'];
+      if (this.code !== null) {
+        auth = { kind: 'pairingCode', code: this.code };
+      } else {
+        const token = this.tokenForUrl(url);
+        if (token === null) {
+          this.requirePairing();
+          return;
+        }
+        auth = { kind: 'pairingToken', token };
+      }
       this.send({
         type: 'hello',
         protocolVersion: PROTOCOL_VERSION,
@@ -167,7 +245,9 @@ export class LinkClient {
     const msg = parsed.message;
     switch (msg.type) {
       case 'welcome': {
-        if (msg.pairingToken) await this.deps.setToken(msg.pairingToken);
+        if (msg.pairingToken) {
+          await this.deps.setToken({ url: this.socketUrl, token: msg.pairingToken });
+        }
         this.code = null;
         this.codeRejected = false;
         this.attempt = 0;
@@ -184,9 +264,9 @@ export class LinkClient {
           const usedToken = this.code === null;
           this.code = null;
           if (usedToken) {
-            await this.deps.setToken('');
-          } else if (this.deps.getToken()) {
-            // Rejected code: fall back to the working token connection.
+            await this.deps.setToken(null);
+          } else if (this.tokenForUrl(this.deps.getGatewayUrl()) !== null) {
+            // Rejected code: fall back to the token, which is only held for this same gateway.
             this.codeRejected = true;
             this.start();
             break;

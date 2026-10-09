@@ -18,6 +18,8 @@ export function describeState(s: LinkState): string {
       return i18n.format('AGENT_GATEWAY.Link.state.connected', { user: s.user, world: s.world });
     default:
       if (s.reason === 'REPLACED') return i18n.localize('AGENT_GATEWAY.Link.replaced');
+      if (s.reason === 'PAIRING_REQUIRED')
+        return i18n.localize('AGENT_GATEWAY.Link.pairingRequired');
       return s.reason === 'PAIRING_INVALID'
         ? i18n.localize('AGENT_GATEWAY.Link.pairingInvalid')
         : i18n.localize('AGENT_GATEWAY.Link.state.disconnected');
@@ -86,10 +88,14 @@ export function createPairingApp(): any {
         getLinkClient().pair(code);
         return;
       }
-      if (String(game.settings.get(NS, 'pairingToken') ?? '')) {
-        // No new code: reclaim the link with the stored token.
+      if (getLinkClient().hasStoredToken()) {
+        // No new code: reclaim the link with the stored token. The client sends it only
+        // to the gateway that issued it; for any other URL it asks for a pairing code.
         await game.settings.set(NS, 'gatewayUrl', url);
         getLinkClient().start();
+        if (getLinkClient().state.kind === 'disconnected') {
+          ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Link.codeRequired'));
+        }
         return;
       }
       ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Link.codeRequired'));

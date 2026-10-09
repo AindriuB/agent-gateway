@@ -46,14 +46,21 @@ it('describes link state with localized strings', async () => {
   expect(describeState({ kind: 'connecting' })).toBe('L:AGENT_GATEWAY.Link.state.connecting');
 });
 
-async function submitWith(token: string, values: Record<string, string>) {
+async function submitWith(token: string, values: Record<string, string>, startState?: object) {
   vi.resetModules();
   stub = installFoundry(14);
   const g = globalThis as any;
   g.game.i18n = { localize: (k: string) => `L:${k}`, format: (k: string) => k };
   const warn = vi.fn();
   g.ui = { notifications: { warn } };
-  const client = { pair: vi.fn(), start: vi.fn() };
+  const client = {
+    pair: vi.fn(),
+    start: vi.fn(() => {
+      if (startState) client.state = startState;
+    }),
+    state: { kind: 'connecting' } as object,
+    hasStoredToken: () => token !== '',
+  };
   vi.doMock('../../src/link/runtime.js', () => ({ getLinkClient: () => client }));
   if (token) await g.game.settings.set('agent-gateway', 'pairingToken', token);
   const mod = await import('../../src/apps/pairing/index.js');
@@ -83,6 +90,26 @@ it('submit with an empty code and no token warns and does nothing else', async (
   expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
   expect(client.start).not.toHaveBeenCalled();
   expect(client.pair).not.toHaveBeenCalled();
+});
+
+it('submit with an empty code and a token from another gateway warns after start()', async () => {
+  const { client, warn } = await submitWith(
+    'tok',
+    { gatewayUrl: 'ws://new', code: '' },
+    { kind: 'disconnected', reason: 'PAIRING_REQUIRED' },
+  );
+  expect(client.start).toHaveBeenCalledTimes(1);
+  expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
+});
+
+it('describes PAIRING_REQUIRED with its own localized key', async () => {
+  vi.resetModules();
+  stub = installFoundry(14);
+  (globalThis as any).game.i18n = { localize: (k: string) => `L:${k}`, format: (k: string) => k };
+  const { describeState } = await import('../../src/apps/pairing/index.js');
+  expect(describeState({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' })).toBe(
+    'L:AGENT_GATEWAY.Link.pairingRequired',
+  );
 });
 
 it('a state change updates only the status element, never re-rendering the form', async () => {

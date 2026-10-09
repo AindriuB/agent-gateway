@@ -21,6 +21,7 @@
         "connected": "Connected as {user} to {world}"
       },
       "pairingInvalid": "The pairing code was not accepted. Check the code printed by the gateway and try again.",
+      "pairingRequired": "This gateway has not issued a pairing token to this client. Enter the pairing code printed by the gateway.",
       "replaced": "This world is connected from another tab or window. Press Connect to use this one instead.",
       "codeRequired": "Enter the pairing code printed by the gateway."
     },
