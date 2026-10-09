@@ -107,3 +107,47 @@ export const PROBES = [
   '<p>@UUID[x](javascript:1)</p>',
   '<p>@UUID[a]{[b](javascript:1)}</p>',
 ];
+
+/** Two words separated only by a line break or a block-element boundary. */
+const BOUNDARY_PAIRS = [
+  'First<br>Second',
+  'First<br><br><br>Second',
+  'First<br/> <br>Second',
+  '<p>First</p><p>Second</p>',
+  '<div>First</div><div>Second</div>',
+  'First<div>Second</div>',
+  '<ul><li>First</li><li>Second</li></ul>',
+  '<ol><li>First<li>Second</ol>',
+  '<h2>First</h2><h3>Second</h3>',
+  '<blockquote>First</blockquote>Second',
+  '<pre>First</pre><pre>Second</pre>',
+  'First<hr>Second',
+  '<section>First</section><article>Second</article>',
+  '<dl><dt>First</dt><dd>Second</dd></dl>',
+  '<b>First</b><br><i>Second</i>',
+];
+const nestTable = (inner: string, depth: number): string => {
+  let out = inner;
+  for (let i = 0; i < depth; i++) out = `<table><tr><td>${out}</td></tr></table>`;
+  return out;
+};
+
+/** Boundaries inside flattened content: nested table cells at depths 1..3 and other inline-only contexts. */
+export const BOUNDARIES: string[] = [];
+for (const pair of BOUNDARY_PAIRS) {
+  for (const depth of [0, 1, 2, 3]) {
+    BOUNDARIES.push(
+      nestTable(pair, depth),
+      `<table><tr><td>${nestTable(pair, depth)}</td><td>Third</td></tr></table>`,
+    );
+  }
+  BOUNDARIES.push(
+    `<h1>${pair}</h1>`,
+    `<a href="https://a.example/p">${pair}</a>`,
+    `<p><strong>${pair}</strong></p>`,
+    `<table><tr><td>${pair}</td><td>Third</td></tr></table>`,
+    `<ul><li><em>${pair}</em></li></ul>`,
+    `${'<div>'.repeat(120)}${pair}${'</div>'.repeat(120)}`,
+    `${'<span>'.repeat(120)}${pair}${'</span>'.repeat(120)}`,
+  );
+}

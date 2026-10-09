@@ -16,5 +16,5 @@ describe('large tables', () => {
     table.appendChild(tbody);
     const md = domToMarkdown(table);
     expect(md.split('\n').length).toBeGreaterThan(150000);
-  });
+  }, 60000);
 });

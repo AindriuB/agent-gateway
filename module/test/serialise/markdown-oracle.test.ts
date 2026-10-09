@@ -2,7 +2,7 @@
 import type { Token, Tokens } from 'marked';
 import { describe, expect, it } from 'vitest';
 import { htmlToMarkdown } from '../../src/serialise/index.js';
-import { PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   autolinkOk,
   marked as defaultMarked,
@@ -222,6 +222,13 @@ describe('markdown serialiser oracle (marked)', () => {
     checkText(html);
     check(html);
   });
+
+  it.each(BOUNDARIES.map((p) => [p.slice(0, 90), p] as const))(
+    'words kept apart at br and block boundaries: %s',
+    (_n, html) => {
+      checkText(html);
+    },
+  );
 
   it.each(PROBES.map((p) => [p.slice(0, 70), p] as const))(
     'text preserved, probe: %s',

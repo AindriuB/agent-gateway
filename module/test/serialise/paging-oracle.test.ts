@@ -7,7 +7,7 @@ import {
   PageCursorError,
   type MdDocument,
 } from '../../src/serialise/index.js';
-import { PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import {
   ANCHORS,
   HTML_PATTERNS,
@@ -47,6 +47,10 @@ describe('paging oracle: every page is a complete, independently safe markdown d
   it('existing corpora, limits 1..200 plus 1000 and 8000', () => {
     expect(run([...SPACING, ...SPLIT_TAGS, ...PROBES], ALL_LIMITS)).toEqual([]);
   }, 300000);
+
+  it('br and block boundaries inside nested cells and inline contexts keep words apart, every page', () => {
+    expect(run(BOUNDARIES, ALL_LIMITS)).toEqual([]);
+  }, 600000);
 
   it('hazard patterns alone, in every context and assembled from separate nodes', () => {
     const cases = TEXT_PATTERNS.flatMap(textCases);

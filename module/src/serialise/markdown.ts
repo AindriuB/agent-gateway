@@ -30,6 +30,51 @@ const DROP = new Set([
 const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr']);
 const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'dl', 'dt', 'dd']);
 const MAX_DEPTH = 100;
+/** Table structure whose separators flattenTable emits itself. */
+const TABLE_PARTS = new Set(['table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot']);
+/** Elements that end a word when their content is flattened to plain text (`br` and every block). */
+const BREAKS = new Set([
+  ...BLOCK,
+  'br',
+  'hr',
+  'ul',
+  'ol',
+  'li',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'table',
+  'caption',
+  'tr',
+  'td',
+  'th',
+  'thead',
+  'tbody',
+  'tfoot',
+  'header',
+  'footer',
+  'nav',
+  'aside',
+  'main',
+  'figure',
+  'figcaption',
+  'address',
+  'details',
+  'summary',
+  'form',
+  'fieldset',
+  'legend',
+  'menu',
+  'dir',
+  'center',
+  'option',
+  'optgroup',
+  'select',
+  'textarea',
+]);
 
 const SCHEMES = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
@@ -151,11 +196,17 @@ function expandUuids(text: string, esc: (s: string) => string = escapeMd): strin
 /** Iterative text collection, safe for arbitrarily deep trees. */
 function plainText(root: Node): string {
   let out = '';
-  const stack: Node[] = [root];
+  const stack: (Node | string)[] = [root];
   while (stack.length) {
     const n = stack.pop()!;
-    if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
+    if (typeof n === 'string') out += n;
+    else if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
     else if (n.nodeType === 1 && !DROP.has((n as Element).tagName.toLowerCase())) {
+      const brk = BREAKS.has((n as Element).tagName.toLowerCase());
+      if (brk) {
+        out += ' ';
+        stack.push(' ');
+      }
       const kids = n.childNodes;
       for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
     }
@@ -183,9 +234,13 @@ function flattenTable(root: Element): string {
   const END = Symbol('end');
   // One frame per open table: whether a row / cell has been seen yet.
   const frames: { rows: number; cells: number }[] = [];
-  const stack: (Node | symbol)[] = [root];
+  const stack: (Node | symbol | string)[] = [root];
   while (stack.length) {
     const n = stack.pop()!;
+    if (typeof n === 'string') {
+      parts.push(n);
+      continue;
+    }
     if (typeof n === 'symbol') {
       frames.pop();
       parts.push(CLOSE, ' ');
@@ -208,6 +263,11 @@ function flattenTable(root: Element): string {
       frame.cells = 0;
     } else if ((tag === 'td' || tag === 'th') && frame) {
       if (frame.cells++ > 0) parts.push(CELL_SEP);
+    }
+    // A line break or block boundary is a word break in flattened text.
+    if (BREAKS.has(tag) && !TABLE_PARTS.has(tag)) {
+      parts.push(' ');
+      stack.push(' ');
     }
     const kids = n.childNodes;
     for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
@@ -305,14 +365,20 @@ function wrapInline(t: string, open: string, close: string): string {
 /** Raw text of a preformatted element: text nodes verbatim, `<br>` as a newline. */
 function rawText(root: Node): string {
   let out = '';
-  const stack: Node[] = [root];
+  const stack: (Node | string)[] = [root];
   while (stack.length) {
     const n = stack.pop()!;
-    if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
+    if (typeof n === 'string') out += n;
+    else if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
     else if (n.nodeType === 1) {
       const tag = (n as Element).tagName.toLowerCase();
       if (tag === 'br') out += '\n';
       else if (!DROP.has(tag)) {
+        // Block children of a preformatted element start and end on their own line.
+        if (n !== root && BREAKS.has(tag)) {
+          if (out && !out.endsWith('\n')) out += '\n';
+          stack.push('\n');
+        }
         const kids = n.childNodes;
         for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
       }
