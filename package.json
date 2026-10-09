@@ -15,8 +15,9 @@
   "scripts": {
     "build": "npm run build -w protocol && npm run build -w module && npm run build -w gateway",
     "lint": "eslint . && prettier --check \"*.{js,ts,json}\" \"{protocol,module,gateway,lang,styles,docs}/**/*.{ts,json,css}\" \"!**/dist/**\" \"!docs/plan/**\" \"!**/package-lock.json\"",
-    "test": "vitest run --passWithNoTests",
-    "verify": "npm run build && npm run lint && npm run test"
+    "test": "vitest run --passWithNoTests --project protocol --project module --project gateway",
+    "test:slow": "vitest run --passWithNoTests --project module-slow",
+    "verify": "npm run build && npm run lint && npm test && npm run test:slow"
   },
   "allowScripts": {
     "fsevents": true

@@ -18,80 +18,33 @@ import {
   htmlCases,
   textCases,
 } from './paging-corpus.js';
-import { checkDocument, pageProblems, subjectOf, type Pager } from './paging-oracle.js';
+import { pageProblems, subjectOf } from './paging-oracle.js';
+import { FAST_LIMITS, run, sample } from './paging-run.js';
 
-const pager: Pager = (doc, cursor, limit) => page(doc, cursor, limit);
-const ALL_LIMITS = [...Array.from({ length: 200 }, (_, i) => i + 1), 1000, 8000];
-const SOME_LIMITS = [
-  ...Array.from({ length: 30 }, (_, i) => i + 1),
-  40,
-  64,
-  97,
-  150,
-  200,
-  1000,
-  8000,
-];
+// A sample of each full sweep (see paging-oracle.slow.test.ts): limits 1, 8, 50 and 1000 over every
+// 10th-or-so case, so `npm test` still exercises paging safety on every corpus.
+describe('paging oracle (sampled): every page is a complete, independently safe markdown document', () => {
+  it('existing corpora', () => {
+    expect(run(sample([...SPACING, ...SPLIT_TAGS, ...PROBES], 4), FAST_LIMITS)).toEqual([]);
+  });
 
-function run(cases: string[], limits: readonly number[]): string[] {
-  const failures: string[] = [];
-  for (const html of cases) {
-    for (const f of checkDocument(html, limits, pager, htmlToDocument, documentToMarkdown)) {
-      if (failures.length < 8) failures.push(f);
-    }
-  }
-  return failures;
-}
+  it('br and block boundaries', () => {
+    expect(run(sample(BOUNDARIES, 4), FAST_LIMITS)).toEqual([]);
+  });
 
-describe('paging oracle: every page is a complete, independently safe markdown document', () => {
-  it('existing corpora, limits 1..200 plus 1000 and 8000', () => {
-    expect(run([...SPACING, ...SPLIT_TAGS, ...PROBES], ALL_LIMITS)).toEqual([]);
-  }, 300000);
-
-  it('br and block boundaries inside nested cells and inline contexts keep words apart, every page', () => {
-    expect(run(BOUNDARIES, ALL_LIMITS)).toEqual([]);
-  }, 600000);
-
-  it('hazard patterns alone, in every context and assembled from separate nodes', () => {
-    const cases = TEXT_PATTERNS.flatMap(textCases);
-    expect(cases.length).toBeGreaterThan(1000);
-    expect(run(cases, SOME_LIMITS)).toEqual([]);
-  }, 600000);
-
-  it('entity and anchor patterns in every context', () => {
-    const cases = [...HTML_PATTERNS.flatMap(htmlCases), ...ANCHORS.flatMap(anchorCases)];
-    expect(run(cases, SOME_LIMITS)).toEqual([]);
-  }, 600000);
-
-  it('hazards at the 8000 and 1000 character boundaries', () => {
-    const cases: string[] = [];
-    for (const p of TEXT_PATTERNS) {
-      for (const pad of [7990, 7997, 7998, 7999, 8000]) {
-        cases.push(`<p>${'x'.repeat(pad)}${esc(p)} tail</p>`);
-        cases.push(`<p>${'x '.repeat(pad / 2)}${esc(p)} tail</p>`);
-      }
-    }
-    for (const a of ANCHORS) cases.push(`<p>${'x '.repeat(3997)}${a} tail</p>`);
-    expect(run(cases, [1000, 8000, 97])).toEqual([]);
-  }, 600000);
-
-  it('long mixed documents', () => {
+  it('hazard patterns, entities and anchors', () => {
     const cases = [
-      `<p>${'x'.repeat(7999)}&lt;img src=x onerror=alert(1)&gt;</p>`,
-      `<p>${'x'.repeat(7999)}<span>&lt;img src=x onerror=alert(1)&gt;</span> [a] \\ \u{1F600}</p>`,
-      '<p>a &lt;b&gt; &amp;lt; \\&lt;script&gt; [x](javascript:alert(1)) \u{1F600}&lt;i&gt;</p>'.repeat(
-        40,
-      ),
-      '<p>\\\\&lt;b&gt; \\\\\\&lt;i&gt; <a href="https://a.example/">l</a> &lt;img src=x&gt;</p>'.repeat(
-        40,
-      ),
+      ...TEXT_PATTERNS.flatMap(textCases),
+      ...HTML_PATTERNS.flatMap(htmlCases),
+      ...ANCHORS.flatMap(anchorCases),
     ];
-    expect(run(cases, [1, 2, 3, 5, 8, 13, 50, 97, 1000, 8000])).toEqual([]);
-  }, 600000);
+    expect(run(sample(cases, 25), FAST_LIMITS)).toEqual([]);
+  });
 
-  it('seeded fuzz of mixed fragments', () => {
-    expect(run(fuzz(400), SOME_LIMITS)).toEqual([]);
-  }, 600000);
+  it('seeded fuzz and private-use input', () => {
+    expect(run(fuzz(40), FAST_LIMITS)).toEqual([]);
+    expect(run(sample(PRIVATE_USE, 25), FAST_LIMITS)).toEqual([]);
+  });
 });
 
 describe('paging oracle: cursors', () => {
@@ -189,13 +142,4 @@ describe('paging oracle: cursors', () => {
       }
     }
   });
-});
-
-describe('paging oracle: private-use input', () => {
-  const limits = [...SOME_LIMITS, 186, 100, 120, 160];
-
-  it('the reviewer document and the private-use corpus lose no text at any page seam', () => {
-    expect(PRIVATE_USE.length).toBeGreaterThan(1000);
-    expect(run(PRIVATE_USE, limits)).toEqual([]);
-  }, 900000);
 });
