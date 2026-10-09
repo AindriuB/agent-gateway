@@ -57,8 +57,9 @@ describe('a literal ! never turns a following link into an image', () => {
   });
 
   it('a bare ! link text followed by a link, limit 15 (page was exactly ![x](http://a/))', () => {
-    const html = '<a href="ok"><span>!</span><a href="http://a/">x</a></a>';
-    for (const limit of [1, 5, 10, 15, 16, 20, 40]) {
+    const html = '<a href="http://ok.example/"><span>!</span><a href="http://a/">x</a></a>';
+    expect(pagesOf(htmlToDocument(html), 15)).toHaveLength(2);
+    for (let limit = 1; limit <= 60; limit++) {
       for (const c of pagesOf(htmlToDocument(html), limit)) noImage(c);
       expect(problemsOf(html, limit)).toEqual([]);
     }
