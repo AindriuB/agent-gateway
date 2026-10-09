@@ -211,10 +211,7 @@ describe('htmlToMarkdown', () => {
         };
       };
       timeOn(500)(); // warm up
-      const small = Math.max(
-        minTime(timeOn(ns)),
-        floor,
-      );
+      const small = Math.max(minTime(timeOn(ns)), floor);
       const large = minTime(timeOn(nl));
       expect(large).toBeLessThan(5000);
       expect(large).toBeLessThan(small * max);
