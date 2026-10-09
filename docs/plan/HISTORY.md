@@ -17,6 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-09 — Gateway skeleton and stdio MCP server (task 05)
+`gateway` now has config loading, a stderr-only logger, an app wiring layer and an MCP server over stdio, started by `gateway/dist/bin/cli.js`. The tool registry is empty, so `tools/list` returns no tools and an unknown `tools/call` returns `tool_not_found`; for registered tools, `WORLD_OFFLINE` is returned when no module is connected (proven by a unit test with a fixture tool). Tester passed (clean `npm ci`, `npm run verify` 65 tests in 9 files, MCP Inspector CLI against the built binary); reviewer approved 7 of 7. stdout carries only MCP frames.
+**Cost:** The server test sleeps a fixed 1500 ms rather than waiting for the response line, so it can flake. CLI tests need a prior build. The npm package depends on the private `@agent-gateway/protocol` workspace, which must be bundled or published before release.
+
 ## 2026-10-09 — Module skeleton and v13/v14 compat layer (task 04)
 The module now has a skeleton with a compat layer that isolates Foundry v13/v14 differences, a settings registry (gatewayUrl, pairingToken, includeOtherModuleData) and Foundry stubs for tests; it logs `agent-gateway | ready (v14)`. Tester passed (`npm test -w module` 17/17), reviewer approved. On the Mac test bed (Foundry 14.369, pf2e, headless Chromium from first navigation) there were 272 console messages with 0 errors, 0 warnings and 0 page errors, and `foundry.documents.BaseLevel` is a function on v14.369, so the Levels probe name is right.
 **Cost:** v13 is unverified because no v13 instance exists. `hasSceneLevels()` is tree-shaken out of the bundle as unused, so its live result is unchecked. The isolation test regex misses `game['release']`, destructuring and `game.version`, and `foundryGeneration()` silently returns 13 if `game.release` is missing.

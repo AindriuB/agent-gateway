@@ -11,12 +11,9 @@ than no plan.
 
 ## Now
 
-### Review and merge wave 2
-Tasks 02, 03 and 04 passed test and review; their code PRs (#5, #6, #7) and the record PR await Andrew. Merge the record PR after the three code PRs.
-**In flight:** PRs #5 (02), #6 (03), #7 (04), record/wave-2
-
-### Start wave 3
-Tasks 05, 06, 07 and 08 depend only on 02, 03 and 04 and can start once those PRs are merged. 05 needs 03; 06 needs 02; 07 needs 02 and 04; 08 needs 03 and 04.
+### Wave 3 status
+Task 05 (gateway skeleton and stdio MCP server) is done and in its PR. Tasks 06 and 08 are on attempt 2 after review defects (see the "Attempt 2" sections in their task files). Task 07 awaits the Mac live check, then attempt 2. Wave 2 PRs are merged.
+**In flight:** 06, 07, 08
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -36,5 +33,10 @@ Tasks 05, 06, 07 and 08 depend only on 02, 03 and 04 and can start once those PR
 - Compat isolation test should also catch `game['release']`, destructuring and `game.version`; `foundryGeneration()` silently returns 13 if `game.release` is missing.
 - Task 04 v13 evidence is pending until the v13 instance exists.
 - Task 01b's task file was never committed (only HISTORY records it). Future mid-wave tasks put their task file in their PR.
+
+### Follow-ups from task 05
+- `gateway/test/mcp/server.test.ts:70` waits a fixed 1500 ms; wait for the id:2 response line instead, or it can flake.
+- The CLI tests need a prior build; `npm run verify` builds first, but a bare `npm test` on a clean tree will fail them.
+- The published npm package `foundry-agent-gateway` depends on the private workspace `@agent-gateway/protocol`. Bundle it at build time (release task 41) or publish it.
 
 ## Someday
