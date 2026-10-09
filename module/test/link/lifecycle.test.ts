@@ -75,3 +75,11 @@ it('pageshow persisted does not restart a link that was inactive at pagehide', (
   listeners.get('pageshow')!({ persisted: true });
   expect(startLink).not.toHaveBeenCalled();
 });
+
+it('pagehide does not stop an inactive (replaced) link, so its REPLACED state survives', () => {
+  active = false;
+  listeners.get('pagehide')!({ persisted: true });
+  listeners.get('pageshow')!({ persisted: true });
+  expect(stopLink).not.toHaveBeenCalled();
+  expect(startLink).not.toHaveBeenCalled();
+});

@@ -17,7 +17,8 @@ Hooks.once('ready', () => {
   let wasActive = false;
   g.addEventListener?.('pagehide', () => {
     wasActive = isLinkActive();
-    stopLink();
+    // A replaced/stopped link keeps its terminal state (stop() would wipe REPLACED).
+    if (wasActive) stopLink();
   });
   g.addEventListener?.('pageshow', (e) => {
     // Only a link that was live at pagehide comes back; a replaced/stopped one stays down.
