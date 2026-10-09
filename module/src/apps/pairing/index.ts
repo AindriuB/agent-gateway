@@ -4,6 +4,7 @@ import { getLinkClient } from '../../link/runtime.js';
 import type { LinkState } from '../../link/client.js';
 
 declare const game: any;
+declare const ui: any;
 
 const NS = 'agent-gateway';
 
@@ -73,9 +74,19 @@ export function createPairingApp(): any {
       const values = data?.object ?? {};
       const url = String(values.gatewayUrl ?? '').trim();
       const code = String(values.code ?? '').trim();
-      if (!url || !code) return;
-      await game.settings.set(NS, 'gatewayUrl', url);
-      getLinkClient().pair(code);
+      if (!url) return;
+      if (code) {
+        await game.settings.set(NS, 'gatewayUrl', url);
+        getLinkClient().pair(code);
+        return;
+      }
+      if (String(game.settings.get(NS, 'pairingToken') ?? '')) {
+        // No new code: reclaim the link with the stored token.
+        await game.settings.set(NS, 'gatewayUrl', url);
+        getLinkClient().start();
+        return;
+      }
+      ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Link.codeRequired'));
     }
   }
   return PairingApp;
