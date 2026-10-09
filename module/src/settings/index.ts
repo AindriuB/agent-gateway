@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { registerPairingMenu } from '../apps/pairing/index.js';
 declare const game: any;
 
 const NS = 'agent-gateway';
@@ -31,9 +32,30 @@ function registerFoundation(): void {
   });
 }
 
+function registerPairingCredential(): void {
+  // The {url, token} pair issued by a gateway; the legacy string `pairingToken` is never sent.
+  game.settings.register(NS, 'pairingCredential', {
+    name: 'AGENT_GATEWAY.Settings.pairingCredential.name',
+    hint: 'AGENT_GATEWAY.Settings.pairingCredential.hint',
+    scope: 'client',
+    config: false,
+    type: String, // JSON `{url, token}`; an Object-typed client setting does not survive a reload
+    default: '',
+  });
+}
+
 /** Per-feature register functions. Later tasks append here (insertion-only). */
 export const settingRegistrars: Array<() => void> = [registerFoundation];
 
+settingRegistrars.push(registerPairingCredential, registerPairingMenu);
+
 export function registerSettings(): void {
-  for (const register of settingRegistrars) register();
+  for (const register of settingRegistrars) {
+    try {
+      register();
+    } catch (e) {
+      // One failing registrar must not abort the others.
+      console.error('agent-gateway | settings registrar failed', e);
+    }
+  }
 }
