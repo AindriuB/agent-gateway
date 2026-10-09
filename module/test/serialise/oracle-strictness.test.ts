@@ -14,9 +14,10 @@ function lenientMissing(input: string[], output: string[]): string | null {
 
 describe('the exact text oracle', () => {
   const input = ['First', 'Second'];
-  const glued = ['FirstSecond', 'then', 'Second'];
+  // An output-only token holding the word (an autolinked address, say) is all the old check needed.
+  const glued = ['FirstSecond', 'then', 'www.Second.example'];
 
-  it('is stricter than substring matching: a decoy Second excuses the old check, not this one', () => {
+  it('is stricter than substring matching: a token merely containing Second excuses the old check, not this one', () => {
     expect(lenientMissing(input, glued)).toBeNull();
     expect(exactMissing(input, glued)).toBe('First');
   });
