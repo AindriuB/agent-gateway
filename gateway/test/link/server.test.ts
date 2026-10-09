@@ -68,6 +68,17 @@ describe('PairingCodes', () => {
     t += 10 * 60 * 1000 - 1;
     expect(codes.consume(fine)).toBe(true);
   });
+
+  it('prunes expired unused codes when generating', () => {
+    let t = 0;
+    const codes = new PairingCodes(() => t);
+    codes.generate();
+    codes.generate();
+    expect(codes.size).toBe(2);
+    t = 10 * 60 * 1000;
+    codes.generate();
+    expect(codes.size).toBe(1);
+  });
 });
 
 describe('handshake', () => {

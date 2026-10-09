@@ -11,13 +11,20 @@ export class PairingCodes {
   constructor(private readonly now: () => number = Date.now) {}
 
   generate(): string {
+    const t = this.now();
+    for (const [c, exp] of this.codes) if (exp <= t) this.codes.delete(c);
     let code: string;
     do {
       const chars = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]);
       code = `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`;
     } while (this.codes.has(code));
-    this.codes.set(code, this.now() + PAIRING_CODE_TTL_MS);
+    this.codes.set(code, t + PAIRING_CODE_TTL_MS);
     return code;
+  }
+
+  /** Number of codes held (unused, including any not yet pruned). */
+  get size(): number {
+    return this.codes.size;
   }
 
   /** Single use: a code is spent whether or not it was still valid. */

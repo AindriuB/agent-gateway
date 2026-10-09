@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { applyMigrations, loadMigrations } from './migrate.js';
 
 export interface PairingRow {
   id: string;
@@ -24,17 +25,7 @@ export interface Store {
   close(): void;
 }
 
-/** Append-only: later tasks add migrations at the end. */
-export const MIGRATIONS: readonly string[] = [
-  `CREATE TABLE pairings (
-     id TEXT PRIMARY KEY,
-     token_hash TEXT NOT NULL UNIQUE,
-     world_id TEXT NOT NULL,
-     user_id TEXT NOT NULL,
-     created_at INTEGER NOT NULL,
-     revoked_at INTEGER
-   )`,
-];
+const MIGRATIONS = await loadMigrations();
 
 interface Row {
   id: string;
@@ -59,19 +50,7 @@ function toRow(r: Row): PairingRow {
 export function openStore(path: string, now: () => number = Date.now): Store {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = DELETE');
-  const current = (db.prepare('PRAGMA user_version').get() as { user_version: number })
-    .user_version;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.exec('BEGIN');
-    try {
-      db.exec(MIGRATIONS[v] as string);
-      db.exec(`PRAGMA user_version = ${v + 1}`);
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      throw e;
-    }
-  }
+  applyMigrations(db, MIGRATIONS);
   const insert = db.prepare(
     'INSERT INTO pairings (id, token_hash, world_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)',
   );
