@@ -351,8 +351,14 @@ function renderTable(el: Element, depth: number): string {
         .map((c) => collapse(renderChildren(c, depth)).trim()),
     ),
   );
-  if (!rows.length) return '';
-  let out = `${M.BB}${M.TO}`;
+  // A caption is ordinary block content, rendered as its own paragraph(s) before the table.
+  let caption = '';
+  for (const child of Array.from(el.children)) {
+    if (child.tagName.toLowerCase() === 'caption')
+      caption += `${M.BB}${renderChildren(child, depth)}${M.BB}`;
+  }
+  if (!rows.length) return caption;
+  let out = `${caption}${M.BB}${M.TO}`;
   for (const r of rows) out += `${M.RO}${r.join(M.CS)}`;
   return `${out}${M.TC}${M.BB}`;
 }

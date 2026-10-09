@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { BOUNDARIES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import { BOUNDARIES, CAPTIONS, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import { check, checkText, combinations } from './markdown-oracle-checks.js';
 
 describe('markdown serialiser oracle (marked)', () => {
@@ -13,6 +13,14 @@ describe('markdown serialiser oracle (marked)', () => {
     'words kept apart at br and block boundaries: %s',
     (_n, html) => {
       checkText(html);
+    },
+  );
+
+  it.each(CAPTIONS.map((p) => [p.slice(0, 90), p] as const))(
+    'captioned table keeps its caption: %s',
+    (_n, html) => {
+      checkText(html);
+      check(html);
     },
   );
 

@@ -165,6 +165,22 @@ const CELL_BOUNDARIES: string[] = [
   '<table><tr><td>First<br>Second</td></tr></table>',
 ];
 
+/** Captioned tables: the caption is content and must survive whole-document output and every page. */
+export const CAPTIONS: string[] = [
+  '<table><caption>Damage by level</caption><tr><td>10</td></tr></table>',
+  '<table><caption>Damage <b>by</b> level</caption><thead><tr><th>Level</th></tr></thead><tbody><tr><td>10</td></tr></tbody></table>',
+  '<table><caption><p>First</p><p>Second</p></caption><tr><td>Third</td></tr></table>',
+  '<table><caption>First<br>Second</caption><tr><td>Third</td></tr></table>',
+  '<table><caption>Only a caption</caption></table>',
+  '<table><caption>&lt;b&gt; *x* [y](javascript:1) | ! # -</caption><tr><td>a</td><td>b</td></tr></table>',
+  '<table><caption>@UUID[Actor.abc]{Bob} wins</caption><tr><td>a</td></tr></table>',
+  '<div><table><caption>Nested in a div</caption><tr><td>a</td></tr></table></div>',
+  '<ul><li><table><caption>In a list</caption><tr><td>a</td></tr></table></li></ul>',
+  '<table><tr><td><table><caption>Inner caption</caption><tr><td>a</td></tr></table></td></tr></table>',
+  `<table><caption>Wide caption</caption><tr>${'<td>a</td>'.repeat(65)}</tr></table>`,
+  `<table><caption>${'long caption words '.repeat(40)}</caption><tr><td>a</td></tr></table>`,
+];
+
 /** Tables over the 64-column cap (flattened), each separator variant in the first, middle and last cell. */
 export const WIDE_TABLES: string[] = [];
 for (const cols of [65, 200]) {
@@ -175,7 +191,7 @@ for (const cols of [65, 200]) {
     }
   }
 }
-BOUNDARIES.push(...WIDE_TABLES);
+BOUNDARIES.push(...WIDE_TABLES, ...CAPTIONS);
 
 /**
  * The same cases followed by a paragraph that holds both words again. A glued `FirstSecond` in the
