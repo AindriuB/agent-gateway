@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   BACKOFF_MAX_MS,
+  REPLACED_CLOSE_CODE,
+  REPLACED_CLOSE_REASON,
   LinkClient,
   backoffDelay,
   type SocketLike,
@@ -299,4 +301,57 @@ it('discards a reply when the originating socket is no longer open', async () =>
   release();
   await vi.advanceTimersByTimeAsync(0);
   expect(sockets[0]!.sent).toHaveLength(1);
+});
+
+// Pins the gateway's replacement close: `ws.close(1000, 'replaced')` in gateway/src/link/server.ts.
+const replaced = { code: 1000, reason: 'replaced' };
+
+it('pins the close code and reason the gateway uses for replacement', () => {
+  expect(REPLACED_CLOSE_CODE).toBe(1000);
+  expect(REPLACED_CLOSE_REASON).toBe('replaced');
+});
+
+it('does not retry after a replacement close and reports REPLACED', async () => {
+  token = 't';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome());
+  sockets[0]!.onclose?.(replaced);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'REPLACED' });
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(5 * 60_000);
+  expect(sockets).toHaveLength(1);
+});
+
+it('manual start reclaims the link after a replacement close', () => {
+  token = 't';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome());
+  sockets[0]!.onclose?.(replaced);
+  client.start();
+  expect(sockets).toHaveLength(2);
+  expect(client.state.kind).toBe('connecting');
+});
+
+it('manual pair reclaims the link after a replacement close', () => {
+  token = 't';
+  client.start();
+  open();
+  sockets[0]!.onclose?.(replaced);
+  client.pair('ABC');
+  expect(sockets).toHaveLength(2);
+});
+
+it('still retries after a normal close', async () => {
+  token = 't';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome());
+  sockets[0]!.onclose?.({ code: 1006, reason: '' });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(sockets).toHaveLength(2);
+  sockets[1]!.onclose?.({ code: 1000, reason: 'bye' });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(sockets).toHaveLength(3);
 });

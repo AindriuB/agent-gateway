@@ -16,6 +16,7 @@ export function describeState(s: LinkState): string {
     case 'connected':
       return i18n.format('AGENT_GATEWAY.Link.state.connected', { user: s.user, world: s.world });
     default:
+      if (s.reason === 'REPLACED') return i18n.localize('AGENT_GATEWAY.Link.replaced');
       return s.reason === 'PAIRING_INVALID'
         ? i18n.localize('AGENT_GATEWAY.Link.pairingInvalid')
         : i18n.localize('AGENT_GATEWAY.Link.state.disconnected');
