@@ -10,6 +10,7 @@ import {
 import {
   BOUNDARIES,
   CAPTIONS,
+  LONG_HEADERS,
   WIDE_TABLES,
   PRIVATE_USE,
   PROBES,
@@ -38,6 +39,10 @@ describe('paging oracle (sampled): every page is a complete, independently safe 
 
   it('br and block boundaries', () => {
     expect(run(sample(BOUNDARIES, 4), FAST_LIMITS)).toEqual([]);
+  });
+
+  it('long table headers are blanked on continuation pages, still safe', () => {
+    expect(run(LONG_HEADERS, FAST_LIMITS)).toEqual([]);
   });
 
   it('captioned tables keep the caption on the pages', () => {

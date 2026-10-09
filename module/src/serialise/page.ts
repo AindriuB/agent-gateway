@@ -260,6 +260,16 @@ function headerText(head: RowBlock): string {
   return t;
 }
 
+/** The header a continuation page repeats: the real one if it is small next to the page limit or
+ * next to a blank header, else a blank header of the same width. A blank header's size depends only
+ * on the (capped) column count, so a long header never multiplies by the number of pages. */
+function repeatedHeader(head: RowBlock, limit: number): string {
+  const t = headerText(head);
+  const blank = `${rowLine([], 0, head.cols)}\n${sepLine(head.cols)}\n`;
+  const max = Math.max(limit * SERIALISE_CONFIG.maxRepeatedHeaderShare, 2 * blank.length);
+  return t.length <= max ? t : blank;
+}
+
 /** A row line; `segs` fill the cells from column `startCol`. Trailing cells the row lacks stay out
  * (GFM reads them as empty), except that the line has at least `minCells` cells. */
 function rowLine(segs: { md: string; sep?: true }[], startCol: number, minCells: number): string {
@@ -293,7 +303,8 @@ function segColumns(block: RowBlock): Uint32Array {
 }
 
 function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: boolean): Fit | null {
-  const head = block.index > 0 && needHeader && block.head ? headerText(block.head) : '';
+  const head =
+    block.index > 0 && needHeader && block.head ? repeatedHeader(block.head, o.limit) : '';
   const tail = block.index === 0 ? `\n${sepLine(block.cols)}` : '';
   // `| ` + cells joined by ` | ` + ` |`: a row line carries its own cells; the header carries all columns.
   const overhead = 4 + 3 * (block.cells - 1) + head.length + tail.length;
@@ -431,7 +442,8 @@ export function documentToMarkdown(doc: MdDocument): string {
  * - a segment (word run, link, image, emphasis span, @UUID expansion) is never cut; a link or span larger
  *   than the limit is emitted as its plain escaped words, formatting dropped;
  * - a continued heading, item or quote repeats its marker, a continued code block closes and reopens its
- *   fence between lines, a continued table repeats its header row;
+ *   fence between lines, a continued table repeats its header row (a blank header of the same width
+ *   when the real one is over `maxRepeatedHeaderShare` of the limit and over twice the blank one);
  * - the first line of a page and every line after a break is escaped so it cannot open a heading,
  *   quote, list, rule, fence or table.
  *

@@ -197,6 +197,12 @@ const COMBOS: [string, (n: number) => string, number?][] = [
     (n) => `<table>${row(70)}${row(1, 'b').repeat(n)}</table>`,
     50,
   ],
+  // A header longer than the page must not be repeated in full on every continuation page.
+  [
+    'header length and row count grown together, paged small',
+    (n) => `<table><tr><th>${'head '.repeat(n)}</th></tr>${row(1, 'r').repeat(n)}</table>`,
+    50,
+  ],
   // Every continuation page of a long cell must not rescan the row's earlier segments.
   [
     'long single-cell row, paged small',

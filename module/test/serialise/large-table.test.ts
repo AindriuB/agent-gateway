@@ -114,3 +114,44 @@ describe('paging a long table cell', () => {
     expect(large / small).toBeLessThan(6);
   });
 });
+
+describe('repeated table headers', () => {
+  const paged = (stream: string, limit: number) => {
+    const doc = makeDocument(parseStream(stream));
+    const chunks: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const pg = page(doc, cursor, limit);
+      chunks.push(pg.chunk);
+      cursor = pg.nextCursor;
+    } while (cursor);
+    return chunks;
+  };
+  const chars = (chunks: string[]) => chunks.reduce((n, c) => n + c.length, 0);
+  // A header of about `h` characters (words of 10) over `rows` one-cell rows; `cols` widens the header.
+  const table = (h: number, rows: number, cols = 1) =>
+    M.TO +
+    M.RO +
+    ['hhhhhhhhh '.repeat(h / 10).trim(), ...Array<string>(cols - 1).fill('x')].join(M.CS) +
+    `${M.RO}r`.repeat(rows) +
+    M.TC;
+
+  it.each([
+    ['one column', 1],
+    ['many columns', 60],
+  ])('%s: output grows linearly as header length and row count grow together', (_n, cols) => {
+    for (const limit of [50, 200, 1000]) {
+      const small = chars(paged(table(1000, 1000, cols), limit));
+      const large = chars(paged(table(4000, 4000, cols), limit));
+      // Linear is 4x; repeating a header longer than the page on every page is about 16x.
+      expect(large / small, `limit ${limit}`).toBeLessThan(6);
+    }
+  });
+
+  it('repeats a short header and blanks a long one, keeping a valid table', () => {
+    const short = paged(M.TO + `${M.RO}Name${M.CS}HP` + `${M.RO}a${M.CS}1`.repeat(50) + M.TC, 60);
+    expect(short.at(-1)).toMatch(/^\| Name \| HP \|\n\| --- \| --- \|\n\| a \| 1 \|/);
+    const long = paged(table(1000, 50), 200);
+    expect(long.at(-1)).toMatch(/^\| +\|\n\| --- \|\n\| r \|/);
+  });
+});

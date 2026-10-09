@@ -181,6 +181,13 @@ export const CAPTIONS: string[] = [
   `<table><caption>${'long caption words '.repeat(40)}</caption><tr><td>a</td></tr></table>`,
 ];
 
+/** Tables whose header is long next to small page limits: continuation pages blank it. */
+export const LONG_HEADERS: string[] = [
+  `<table><tr><th>${'head '.repeat(60)}</th></tr>${'<tr><td>r</td></tr>'.repeat(20)}</table>`,
+  `<table><tr><th>${'a '.repeat(40)}</th><th>b</th></tr>${'<tr><td>1</td><td>2</td></tr>'.repeat(20)}</table>`,
+  `<table><thead><tr><th>*x* &lt;b&gt; | ${'w '.repeat(50)}</th></tr></thead><tbody>${'<tr><td>- y</td></tr>'.repeat(20)}</tbody></table>`,
+];
+
 /** Tables over the 64-column cap (flattened), each separator variant in the first, middle and last cell. */
 export const WIDE_TABLES: string[] = [];
 for (const cols of [65, 200]) {
