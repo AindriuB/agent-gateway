@@ -14,7 +14,7 @@ export type CallResult =
 export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResult;
 
 export type LinkState =
-  | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' }
+  | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' | 'REPLACED' }
   | { kind: 'connecting'; codeRejected?: boolean }
   | { kind: 'connected'; user: string; world: string };
 
@@ -40,6 +40,13 @@ export interface LinkClientDeps {
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
 }
+
+/**
+ * Close code and reason the gateway uses when a newer connection for the same
+ * user replaces this one: `ws.close(1000, 'replaced')` in gateway/src/link/server.ts.
+ */
+export const REPLACED_CLOSE_CODE = 1000;
+export const REPLACED_CLOSE_REASON = 'replaced';
 
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
@@ -133,9 +140,17 @@ export class LinkClient {
       void this.handle(ws, ev.data);
     };
     ws.onerror = () => {};
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (this.socket !== ws) return;
       this.socket = null;
+      const close = ev as { code?: number; reason?: string } | undefined;
+      if (close?.code === REPLACED_CLOSE_CODE && close.reason === REPLACED_CLOSE_REASON) {
+        // Another tab took over the link; retrying would just evict it in turn.
+        this.active = false;
+        this.cancelTimer();
+        this.setState({ kind: 'disconnected', reason: 'REPLACED' });
+        return;
+      }
       if (this.active) this.scheduleRetry('ERROR');
     };
   }

@@ -20,7 +20,8 @@
         "connecting": "Connecting...",
         "connected": "Connected as {user} to {world}"
       },
-      "pairingInvalid": "The pairing code was not accepted. Check the code printed by the gateway and try again."
+      "pairingInvalid": "The pairing code was not accepted. Check the code printed by the gateway and try again.",
+      "replaced": "This world is connected from another tab or window. Press Connect to use this one instead."
     },
     "Pairing": {
       "title": "Agent Gateway pairing",

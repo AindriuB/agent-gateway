@@ -40,5 +40,8 @@ it('describes link state with localized strings', async () => {
   expect(describeState({ kind: 'disconnected', reason: 'PAIRING_INVALID' })).toBe(
     'L:AGENT_GATEWAY.Link.pairingInvalid',
   );
+  expect(describeState({ kind: 'disconnected', reason: 'REPLACED' })).toBe(
+    'L:AGENT_GATEWAY.Link.replaced',
+  );
   expect(describeState({ kind: 'connecting' })).toBe('L:AGENT_GATEWAY.Link.state.connecting');
 });
