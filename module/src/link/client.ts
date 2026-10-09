@@ -287,6 +287,19 @@ export class LinkClient {
       case 'welcome': {
         if (msg.pairingToken) {
           await this.deps.setToken({ url, token: msg.pairingToken });
+          if (this.socket !== origin) {
+            // stop() or a restart ran during the write. The token is legitimately issued and now stored,
+            // but this socket is gone: do not report connected.
+            if (
+              !this.active &&
+              this.resumeMode === 'code' &&
+              this.codeUrl === normalizeGatewayUrl(url)
+            ) {
+              this.clearCode();
+              this.resumeMode = 'token';
+            }
+            return;
+          }
         }
         this.clearCode();
         this.codeRejected = false;

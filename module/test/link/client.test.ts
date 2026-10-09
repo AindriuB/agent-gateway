@@ -44,6 +44,7 @@ let tokenUrl: string;
 let gwUrl: string;
 let raw: unknown;
 let errors: string[];
+let gate: Promise<void> | null;
 let client: LinkClient;
 
 beforeEach(() => {
@@ -54,13 +55,18 @@ beforeEach(() => {
   gwUrl = 'ws://gw';
   raw = undefined;
   errors = [];
+  gate = null;
   client = new LinkClient({
     getGatewayUrl: () => gwUrl,
     getToken: () => (raw !== undefined ? raw : token ? { url: tokenUrl, token } : null),
     setToken: (c) => {
-      raw = undefined;
-      token = c ? c.token : '';
-      if (c) tokenUrl = c.url;
+      const apply = () => {
+        raw = undefined;
+        token = c ? c.token : '';
+        if (c) tokenUrl = c.url;
+      };
+      if (gate) return gate.then(apply);
+      apply();
     },
     getIdentity: () => ({
       moduleVersion: '0.1.0',
@@ -538,7 +544,7 @@ it('resume with a token for a different gateway sends nothing', () => {
   expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
 });
 
-it('resume does nothing for a never-started, replaced or explicitly restarted-then-rejected client', () => {
+it('resume does nothing for a never-started or replaced client', () => {
   client.resume();
   expect(sockets).toHaveLength(0);
   client.pair('CODE');
@@ -550,7 +556,7 @@ it('resume does nothing for a never-started, replaced or explicitly restarted-th
   expect(sockets).toHaveLength(1);
 });
 
-it('a new pair() replaces the stopped code; start() replaces a stopped code pairing', () => {
+it('a new pair() replaces the stopped code', () => {
   client.pair('OLD');
   client.stop();
   client.pair('NEW');
@@ -558,4 +564,63 @@ it('a new pair() replaces the stopped code; start() replaces a stopped code pair
   client.resume();
   open();
   expect(sockets[2]!.sent[0].auth).toEqual({ kind: 'pairingCode', code: 'NEW' });
+});
+
+it('resume does nothing after a restarted pairing was rejected', async () => {
+  client.pair('A');
+  client.stop();
+  client.pair('B');
+  sockets[1]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'bad' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
+  client.resume();
+  expect(sockets).toHaveLength(2);
+});
+
+it('start() replaces a stopped code pairing', () => {
+  token = 'T';
+  client.pair('CODE');
+  client.stop();
+  client.start();
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'T' });
+  client.stop();
+  client.resume();
+  open();
+  expect(sockets[2]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'T' });
+});
+
+it('stop() during the welcome token write keeps the token but does not connect; resume uses it', async () => {
+  let release!: () => void;
+  gate = new Promise<void>((r) => (release = r));
+  client.pair('CODE');
+  open();
+  sockets[0]!.recv(welcome({ pairingToken: 'issued' }));
+  client.stop();
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(token).toBe('issued');
+  expect(client.state).toEqual({ kind: 'disconnected' });
+  gate = null;
+  client.resume();
+  expect(client.state).toEqual({ kind: 'connecting' });
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'issued' });
+});
+
+it('a welcome token write finishing after a restart does not disturb the new connection', async () => {
+  let release!: () => void;
+  gate = new Promise<void>((r) => (release = r));
+  client.pair('CODE');
+  open();
+  sockets[0]!.recv(welcome({ pairingToken: 'issued' }));
+  client.stop();
+  client.pair('NEW');
+  release();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(token).toBe('issued');
+  expect(client.state).toEqual({ kind: 'connecting' });
+  gate = null;
+  open();
+  expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingCode', code: 'NEW' });
 });
