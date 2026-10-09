@@ -32,8 +32,9 @@ const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'd
 const MAX_DEPTH = 100;
 /** Table structure whose separators flattenTable emits itself. */
 const TABLE_PARTS = new Set(['table', 'tr', 'td', 'th', 'thead', 'tbody', 'tfoot']);
-/** Elements that end a word when their content is flattened to plain text (`br` and every block). */
-const BREAKS = new Set([
+/** Elements that end a word: `br` and every block container. The renderer gives each a boundary,
+ * so whole-document output, pages, table cells and plain-text flattening all agree. */
+export const BREAKS: ReadonlySet<string> = new Set([
   ...BLOCK,
   'br',
   'hr',
@@ -74,6 +75,9 @@ const BREAKS = new Set([
   'optgroup',
   'select',
   'textarea',
+  'hgroup',
+  'search',
+  'dialog',
 ]);
 
 const SCHEMES = new Set(['http:', 'https:', 'mailto:']);
@@ -444,7 +448,7 @@ function render(node: Node, depth: number): string {
     case 'li':
       return `${boundary()}${kids()}${boundary()}`;
     default:
-      return BLOCK.has(tag) ? `${boundary()}${kids()}${boundary()}` : kids();
+      return BREAKS.has(tag) ? `${boundary()}${kids()}${boundary()}` : kids();
   }
 }
 
