@@ -1,3 +1,13 @@
+import { documentToMarkdown } from './page.js';
+import {
+  escapeMd,
+  M,
+  makeDocument,
+  parseStream,
+  stripMarkers,
+  type MdDocument,
+} from './structure.js';
+
 /** Subtrees that never contribute readable text. */
 const DROP = new Set([
   'script',
@@ -20,13 +30,6 @@ const DROP = new Set([
 const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr']);
 const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'dl', 'dt', 'dd']);
 const MAX_DEPTH = 100;
-
-/** Backslash-escape characters that could form markdown syntax (links, emphasis, code, tables, html, entities).
- * Every `<` and `&` is escaped unconditionally: text nodes are escaped one at a time, so a tag or
- * entity split across nodes must not be completed by the concatenation. */
-function escapeMd(text: string): string {
-  return text.replace(/[\\[\]*_`|<&]/g, '\\$&').replace(/^(\s*)([#>])/, '$1\\$2');
-}
 
 const SCHEMES = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
@@ -151,7 +154,7 @@ function plainText(root: Node): string {
   const stack: Node[] = [root];
   while (stack.length) {
     const n = stack.pop()!;
-    if (n.nodeType === 3) out += n.nodeValue ?? '';
+    if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
     else if (n.nodeType === 1 && !DROP.has((n as Element).tagName.toLowerCase())) {
       const kids = n.childNodes;
       for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
@@ -167,8 +170,6 @@ const ROW_SEP = '; ';
 // Private-use markers for nested-table boundaries; become escaped brackets.
 const OPEN = '\uE000';
 const CLOSE = '\uE001';
-// Marks the start of an emitted link so a literal `!` right before it can be escaped.
-const LINK = '\uE002';
 
 /**
  * Flatten a nested table to readable plain text in one linear, iterative pass.
@@ -191,7 +192,7 @@ function flattenTable(root: Element): string {
       continue;
     }
     if (n.nodeType === 3) {
-      parts.push((n.nodeValue ?? '').replace(/[\uE000\uE001]/g, ''));
+      parts.push(stripMarkers(n.nodeValue ?? ''));
       continue;
     }
     if (n.nodeType !== 1) continue;
@@ -219,9 +220,27 @@ function flattenTable(root: Element): string {
   return ` ${body} `;
 }
 
-function renderChildren(node: Node, depth: number, pre: boolean): string {
+/**
+ * Depth of constructs that can only hold inline content (headings, table cells, links, emphasis).
+ * Inside one, block structure is flattened to plain text so no block marker can end up inside a span.
+ */
+let inlineCtx = 0;
+
+function inline<T>(fn: () => T): T {
+  inlineCtx += 1;
+  try {
+    return fn();
+  } finally {
+    inlineCtx -= 1;
+  }
+}
+
+/** A block boundary, or a single space where blocks cannot occur. */
+const boundary = () => (inlineCtx > 0 ? ' ' : M.BB);
+
+function renderChildren(node: Node, depth: number): string {
   let out = '';
-  for (const child of Array.from(node.childNodes)) out += render(child, depth + 1, pre);
+  for (const child of Array.from(node.childNodes)) out += render(child, depth + 1);
   return out;
 }
 
@@ -231,13 +250,16 @@ function renderList(el: Element, ordered: boolean, depth: number): string {
   for (const child of Array.from(el.children)) {
     if (child.tagName.toLowerCase() !== 'li') continue;
     n += 1;
-    const text = renderChildren(child, depth, false)
-      .trim()
-      .replace(/\n{2,}/g, '\n')
-      .replace(/\n/g, '\n  ');
-    items.push(`${ordered ? `${n}.` : '-'} ${text}`);
+    const marker = ordered ? `${n}.` : '-';
+    if (inlineCtx > 0) {
+      const text = renderChildren(child, depth).trim();
+      if (text) items.push(`${marker} ${text}`);
+    } else {
+      items.push(`${M.IO}${marker}${M.IM}${renderChildren(child, depth)}${M.IC}`);
+    }
   }
-  return items.length ? `\n\n${items.join('\n')}\n\n` : '';
+  if (!items.length) return '';
+  return inlineCtx > 0 ? ` ${items.join(' ')} ` : `${M.BB}${M.LO}${items.join('')}${M.LC}${M.BB}`;
 }
 
 /** Rows owned by this table only: direct `tr` children and those of its own row groups. */
@@ -255,47 +277,56 @@ function ownRows(table: Element): Element[] {
   return rows;
 }
 
-let tableNesting = 0;
-
 function renderTable(el: Element, depth: number): string {
-  // A table inside a cell is flattened to plain text so work stays linear.
-  if (tableNesting > 0) return flattenTable(el);
-  tableNesting += 1;
-  let rows: string[][];
-  try {
-    rows = ownRows(el).map((tr) =>
+  // A table inside a cell, heading or span is flattened to plain text so work stays linear.
+  if (inlineCtx > 0) return flattenTable(el);
+  const rows = inline(() =>
+    ownRows(el).map((tr) =>
       Array.from(tr.children)
         .filter((c) => /^t[dh]$/i.test(c.tagName))
-        .map((c) => collapse(renderChildren(c, depth, false)).trim()),
-    );
-  } finally {
-    tableNesting -= 1;
-  }
+        .map((c) => collapse(renderChildren(c, depth)).trim()),
+    ),
+  );
   if (!rows.length) return '';
-  let width = 0;
-  for (const r of rows) if (r.length > width) width = r.length;
-  const line = (r: string[]) =>
-    `| ${Array.from({ length: width }, (_, i) => r[i] ?? '').join(' | ')} |`;
-  const [head, ...rest] = rows as [string[], ...string[][]];
-  const sep = `| ${Array.from({ length: width }, () => '---').join(' | ')} |`;
-  return `\n\n${[line(head), sep, ...rest.map(line)].join('\n')}\n\n`;
+  let out = `${M.BB}${M.TO}`;
+  for (const r of rows) out += `${M.RO}${r.join(M.CS)}`;
+  return `${out}${M.TC}${M.BB}`;
 }
 
-/** Wrap content in delimiters, keeping its boundary whitespace outside them. */
+/** Wrap content in a span, keeping its boundary whitespace outside the delimiters. */
 function wrapInline(t: string, open: string, close: string): string {
   const core = t.trim();
   if (!core) return t;
   const lead = t.slice(0, t.length - t.trimStart().length);
   const trail = t.slice(t.trimEnd().length);
-  return `${lead}${open}${core}${close}${trail}`;
+  return `${lead}${M.SO}${open}${M.SB}${core}${M.SC}${close}${M.SE}${trail}`;
 }
 
-function render(node: Node, depth: number, pre: boolean): string {
+/** Raw text of a preformatted element: text nodes verbatim, `<br>` as a newline. */
+function rawText(root: Node): string {
+  let out = '';
+  const stack: Node[] = [root];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.nodeType === 3) out += stripMarkers(n.nodeValue ?? '');
+    else if (n.nodeType === 1) {
+      const tag = (n as Element).tagName.toLowerCase();
+      if (tag === 'br') out += '\n';
+      else if (!DROP.has(tag)) {
+        const kids = n.childNodes;
+        for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
+      }
+    }
+  }
+  return out;
+}
+
+function render(node: Node, depth: number): string {
   if (node.nodeType === 3) {
-    const raw = node.nodeValue ?? '';
+    const raw = stripMarkers(node.nodeValue ?? '');
     const parent = node.parentElement?.tagName.toLowerCase() ?? '';
-    if (!pre && LAYOUT.has(parent) && !raw.trim()) return '';
-    return expandUuids(pre ? raw : collapse(raw));
+    if (LAYOUT.has(parent) && !raw.trim()) return '';
+    return expandUuids(collapse(raw));
   }
   if (node.nodeType !== 1) return '';
   const el = node as Element;
@@ -303,44 +334,64 @@ function render(node: Node, depth: number, pre: boolean): string {
   if (DROP.has(tag)) return '';
   if (depth > MAX_DEPTH) return expandUuids(collapse(plainText(el)));
 
-  const kids = () => renderChildren(el, depth, pre || tag === 'pre');
+  const kids = () => renderChildren(el, depth);
   switch (tag) {
     case 'h1':
     case 'h2':
     case 'h3':
     case 'h4':
     case 'h5':
-    case 'h6':
-      return `\n\n${'#'.repeat(Number(tag[1]))} ${collapse(kids()).trim()}\n\n`;
+    case 'h6': {
+      if (inlineCtx > 0) return ` ${collapse(kids()).trim()} `;
+      const text = inline(() => collapse(kids()).trim());
+      return `${M.BB}${M.HO}${tag[1]}${text}${M.HC}${M.BB}`;
+    }
     case 'strong':
-    case 'b': {
-      return wrapInline(kids(), '**', '**');
-    }
+    case 'b':
+      return wrapInline(inline(kids), '**', '**');
     case 'em':
-    case 'i': {
-      return wrapInline(kids(), '*', '*');
-    }
+    case 'i':
+      return wrapInline(inline(kids), '*', '*');
     case 'a': {
-      const t = kids();
       const href = safeHref(el.getAttribute('href'));
-      if (!href) return t;
-      return wrapInline(t, `${LINK}[`, `](${href})`);
+      if (!href) return kids();
+      return wrapInline(inline(kids), `${M.LINK}[`, `](${href})`);
     }
     case 'br':
-      return '\n';
+      return inlineCtx > 0 ? ' ' : M.BR;
     case 'hr':
-      return '\n\n---\n\n';
+      return inlineCtx > 0 ? ' --- ' : `${M.BB}${M.HR}${M.BB}`;
     case 'ul':
       return renderList(el, false, depth);
     case 'ol':
       return renderList(el, true, depth);
     case 'table':
       return renderTable(el, depth);
+    case 'pre': {
+      if (inlineCtx > 0) return `${boundary()}${expandUuids(collapse(rawText(el)))}${boundary()}`;
+      return `${M.BB}${M.PO}${rawText(el)}${M.PC}${M.BB}`;
+    }
+    case 'blockquote': {
+      if (inlineCtx > 0) return `${boundary()}${kids()}${boundary()}`;
+      return `${M.BB}${M.QO}${kids()}${M.QC}${M.BB}`;
+    }
     case 'li':
-      return `\n\n${kids()}\n\n`;
+      return `${boundary()}${kids()}${boundary()}`;
     default:
-      return BLOCK.has(tag) ? `\n\n${kids()}\n\n` : kids();
+      return BLOCK.has(tag) ? `${boundary()}${kids()}${boundary()}` : kids();
   }
+}
+
+/** Convert Foundry rich-text HTML to structured markdown (blocks of atomic segments). */
+export function htmlToDocument(html: string): MdDocument {
+  const doc = new DOMParser().parseFromString(html ?? '', 'text/html');
+  return domToDocument(doc.body);
+}
+
+/** Convert an already-parsed DOM subtree to structured markdown. */
+export function domToDocument(root: Node): MdDocument {
+  inlineCtx = 0;
+  return makeDocument(parseStream(render(root, 0)));
 }
 
 /**
@@ -348,26 +399,10 @@ function render(node: Node, depth: number, pre: boolean): string {
  * Keeps `@UUID[uuid]{label}` as `label (uuid)`; drops script/style and similar subtrees.
  */
 export function htmlToMarkdown(html: string): string {
-  const doc = new DOMParser().parseFromString(html ?? '', 'text/html');
-  return domToMarkdown(doc.body);
-}
-
-/** Strip trailing spaces/tabs in one backwards scan (a `[ \t]+$` regex is quadratic). */
-function trimEndBlanks(line: string): string {
-  let end = line.length;
-  while (end > 0 && (line.charCodeAt(end - 1) === 32 || line.charCodeAt(end - 1) === 9)) end--;
-  return end === line.length ? line : line.slice(0, end);
+  return documentToMarkdown(htmlToDocument(html));
 }
 
 /** Convert an already-parsed DOM subtree to markdown. */
 export function domToMarkdown(root: Node): string {
-  return render(root, 0, false)
-    .replace(/!\uE002/g, '\\!')
-    .replace(/\uE002/g, '')
-    .split('\n')
-    .map(trimEndBlanks)
-    .join('\n')
-    .replace(/\n\n[ \t]+/g, '\n\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return documentToMarkdown(domToDocument(root));
 }

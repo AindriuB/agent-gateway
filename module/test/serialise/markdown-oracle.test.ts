@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { Marked, type Token, type Tokens } from 'marked';
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown, page } from '../../src/serialise/index.js';
+import { htmlToMarkdown } from '../../src/serialise/index.js';
+import { PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 
 const ALLOWED = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
@@ -191,114 +192,6 @@ function checkText(html: string): void {
   }
 }
 
-const SPACING: string[] = [];
-for (const tag of ['strong', 'b', 'em', 'i', 'code', 'span', 'u'])
-  for (const [a, b] of [
-    ['Hello ', 'world'],
-    ['Hello', ' world'],
-    [' Hello ', 'world'],
-    ['Hello ', ' world'],
-  ] as const)
-    SPACING.push(
-      `<p><${tag}>${a}</${tag}>${b}</p>`,
-      `<p>${a.trim()}<${tag}>${b === 'world' ? ' ' : ''}${b}</${tag}>x</p>`,
-    );
-for (const [a, b] of [
-  ['Hello ', 'world'],
-  ['Hello', ' world'],
-  [' Hello ', ' world'],
-] as const)
-  SPACING.push(
-    `<p><a href="https://a.example/p">${a}</a>${b}</p>`,
-    `<p>${a}<a href="https://a.example/p">${b}</a>!</p>`,
-    `<p><a href="javascript:1">${a}</a>${b}</p>`,
-  );
-SPACING.push(
-  '<p><strong><em>a </em></strong>b</p>',
-  '<p>a<strong> <em> b</em> </strong>c</p>',
-  '<p><strong> </strong>x</p>',
-  '<p>a<em> </em>b</p>',
-  '<p><b>a<br></b>b</p>',
-  '<p>one <a href="https://a.example/">two </a><i>three </i><b>four</b></p>',
-  '<p>@UUID[Actor.abc]{Name } here</p>',
-  '<ul><li><b>x </b>y</li></ul>',
-  '<table><tr><td><b>x </b>y</td><td>z</td></tr></table>',
-  '<script>bad words</script><p>ok</p><style>.x{}</style>',
-);
-
-const SPLIT_TAGS = [
-  '<p><span>&lt;</span>a href="javascript:alert(1)"&gt;click<span>&lt;</span>/a&gt;</p>',
-  '<p><span>&lt;</span><span>a</span> href="javascript:alert(1)"&gt;x</p>',
-  '<p>&lt;<b>a</b> href="javascript:alert(1)"&gt;x&lt;/<b>a</b>&gt;</p>',
-  '<p>&lt;a hr<span>ef="javascript:alert(1)"</span>&gt;x</p>',
-  '<p>&lt;a href=<span>"javascript:alert(1)"</span> onclick=<i>"x"</i>&gt;x</p>',
-  '<p>&lt;<span>/</span>a&gt;</p>',
-  '<p><span>&lt;</span>/<span>a</span>&gt;</p>',
-  '<p><span>&lt;</span>!-- <span>hidden</span> --&gt;</p>',
-  '<p>&lt;!<span>--</span> x --&gt;</p>',
-  '<p><span>&lt;</span>![CDATA[<span>x</span>]]&gt;</p>',
-  '<p>&lt;<span>![CDATA[</span>x]]&gt;</p>',
-  '<p><span>&lt;</span>?php echo 1 ?&gt;</p>',
-  '<p>&lt;?<span>xml</span> version="1.0"?&gt;</p>',
-  '<p><span>&lt;</span>javascript:alert(1)&gt;</p>',
-  '<p>&lt;<span>javascript:</span>alert(1)&gt;</p>',
-  '<p><span>&lt;</span>https://evil.example/p&gt;</p>',
-  '<p>&amp;lt;a href="javascript:alert(1)"&amp;gt;x</p>',
-  '<p>&amp;<span>lt;</span>a href="javascript:alert(1)"&gt;x</p>',
-  '<p>&amp;#60;a href="javascript:alert(1)"&gt;x</p>',
-  '<p>&amp;#x3C;script&gt;alert(1)&amp;#x3C;/script&gt;</p>',
-  '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
-  '<p>&lt;div&gt;</p><p>x</p>',
-  '<p>&lt;<span>img</span> src=x onerror=alert(1)&gt;</p>',
-  '<ul><li>&lt;<b>a</b> href="javascript:1"&gt;x</li></ul>',
-  '<table><tr><td>&lt;</td><td>a href="javascript:1"&gt;x&lt;</td><td>/a&gt;</td></tr></table>',
-  '<table><tr><td><table><tr><td>&lt;</td><td>a href=x&gt;</td></tr></table></td></tr></table>',
-  '<p>@UUID[Actor.a]{&lt;}a href="javascript:1"&gt;x</p>',
-  '<p>&lt;@UUID[Actor.a]{a} href="javascript:1"&gt;x</p>',
-  '<h2>&lt;<span>a</span> href=x&gt;</h2>',
-  '<p>a &lt; b &amp; c &gt; d</p>',
-];
-
-const PROBES = [
-  '<a href="javascript\\:alert(1)">x</a>',
-  '<a href="&amp;#106;avascript:alert(1)">x</a>',
-  '<a href="&amp;#x6A;avascript:alert(1)">x</a>',
-  '<a href="http://good.example/\\">a</a>@evil.example/p',
-  '<a href="http://good.example/\\">a</a> @evil.example/p)',
-  '<p>[x](javascript:1)</p>',
-  `${'<div>'.repeat(120)}[x](javascript:1)${'</div>'.repeat(120)}`,
-  `${'<div>'.repeat(120)}<a href="javascript:1">x</a>[y](javascript:2)${'</div>'.repeat(120)}`,
-  '!<a href="http://a.example/p">img</a>',
-  '<b>!</b><a href="http://a.example/p">img</a>',
-  '<a href="javascript:alert(1)">x</a>',
-  '<a href=" jav&#x09;ascript:alert(1)">x</a>',
-  '<a href="data:text/html,x">x</a>',
-  '<a href="vbscript:x">x</a>',
-  '<a href="//evil.example/p">x</a>',
-  '<a href="http://a.example/a)b(c">x</a>',
-  '<a href="http://a.example/<x>">x</a>',
-  '<a href="http://a.example/a b">x [y] z</a>',
-  '<a href="mailto:a@b.c">m</a>',
-  '<a href="/.//evil.example/p">x</a>',
-  '<a href="/%2e//evil.example/p">x</a>',
-  '<a href="/a/..//evil.example/p">x</a>',
-  '<a href="https://a.example/p?a=1&amp;b=2">x</a>',
-  '<a href="mailto:a@b.c?subject=s&amp;cc=d@e.f">x</a>',
-  '<a href="https://[::1]:8080/p">x</a>',
-  '<a href="/rel/x\\y">r</a>',
-  '<a href="#frag">f</a>',
-  '<a href="&colon;">x</a>',
-  '<a href="java&Tab;script&colon;1">x</a>',
-  '<p>![alt](http://evil.example/i.png)</p>',
-  '<img src="http://evil.example/i.png" alt="a">',
-  '<a href="http://a.example">[x](http://evil.example)</a>',
-  '<a href="http://a.example">](http://evil.example) [</a>',
-  '<table><tr><td>[x](javascript:1)</td></tr></table>',
-  '<table><tr><td><table><tr><td><a href="javascript:1">q</a>[x](javascript:2)</td></tr></table></td></tr></table>',
-  '<p>@UUID[x](javascript:1)</p>',
-  '<p>@UUID[a]{[b](javascript:1)}</p>',
-];
-
 describe('markdown serialiser oracle (marked)', () => {
   it.each(SPACING.map((p) => [p.slice(0, 70), p] as const))('text preserved: %s', (_n, html) => {
     checkText(html);
@@ -371,49 +264,4 @@ describe('markdown serialiser oracle (marked)', () => {
           }
     expect(n).toBeGreaterThan(1000);
   }, 60000);
-});
-
-describe('paged markdown is safe page by page', () => {
-  const inputs = [
-    `<p>${'x'.repeat(7999)}&lt;img src=x onerror=alert(1)&gt;</p>`,
-    `<p>${'x'.repeat(7999)}<span>&lt;img src=x onerror=alert(1)&gt;</span> [a] \\ \u{1F600}</p>`,
-    '<p>a &lt;b&gt; &amp;lt; \\&lt;script&gt; [x](javascript:alert(1)) \u{1F600}&lt;i&gt;</p>'.repeat(
-      40,
-    ),
-    '<p>\\\\&lt;b&gt; \\\\\\&lt;i&gt; <a href="https://a.example/">l</a> &lt;img src=x&gt;</p>'.repeat(
-      40,
-    ),
-  ];
-  for (const html of inputs) {
-    it(`every page parses without html or bad links (${html.length} chars)`, () => {
-      const md = htmlToMarkdown(html);
-      for (const limit of [...Array.from({ length: 50 }, (_, i) => i + 1), 97, 1000, 8000]) {
-        let cursor: string | null = null;
-        let joined = '';
-        do {
-          const p = page(md, cursor, limit);
-          joined += p.chunk;
-          noHtml(html, p.chunk);
-          for (const l of linksOf(p.chunk)) {
-            expect(l.type).toBe('link');
-            expect(allowed(l.href), `link ${l.href}`).toBe(true);
-          }
-          cursor = p.nextCursor;
-        } while (cursor);
-        expect(joined).toBe(md);
-      }
-    });
-  }
-  it('a page from any hand-made cursor is safe on its own', () => {
-    for (const html of inputs.slice(1, 4)) {
-      const md = htmlToMarkdown(html).slice(0, 400);
-      for (const limit of [1, 3, 8, 50]) {
-        for (let c = -1; c <= md.length + 1; c++) {
-          const p = page(md, String(c), limit);
-          noHtml(html, p.chunk);
-          for (const l of linksOf(p.chunk)) expect(allowed(l.href), `link ${l.href}`).toBe(true);
-        }
-      }
-    }
-  });
 });

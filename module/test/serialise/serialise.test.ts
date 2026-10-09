@@ -3,8 +3,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   domToMarkdown,
+  htmlToDocument,
   htmlToMarkdown,
   page,
+  PageCursorError,
   serialiseDocument,
   SERIALISE_CONFIG,
 } from '../../src/serialise/index.js';
@@ -344,73 +346,129 @@ describe('htmlToMarkdown', () => {
 });
 
 describe('page', () => {
-  it('pages with nextCursor', () => {
-    const a = page('abcdefg', undefined, 3);
-    expect(a).toEqual({ chunk: 'abc', nextCursor: '3' });
-    const b = page('abcdefg', a.nextCursor, 3);
-    expect(b).toEqual({ chunk: 'def', nextCursor: '6' });
-    expect(page('abcdefg', b.nextCursor, 3)).toEqual({ chunk: 'g', nextCursor: null });
-  });
-  it('uses the configured default size', () => {
-    const text = 'x'.repeat(SERIALISE_CONFIG.defaultPageSize + 5);
-    expect(page(text).chunk.length).toBe(SERIALISE_CONFIG.defaultPageSize);
-    expect(page(text).nextCursor).not.toBeNull();
-  });
-  it('tolerates a junk cursor', () => {
-    expect(page('abc', 'zzz', 2).chunk).toBe('ab');
-  });
-
-  const all = (text: string, limit?: number): string[] => {
+  const all = (source: Parameters<typeof page>[0], limit?: number): string[] => {
     const out: string[] = [];
     let cursor: string | null = null;
     do {
-      const p = page(text, cursor, limit);
+      const p = page(source, cursor, limit);
       expect(p.chunk.length).toBeGreaterThan(0);
       out.push(p.chunk);
       cursor = p.nextCursor;
     } while (cursor);
     return out;
   };
+  const pagesOf = (html: string, limit: number) => all(htmlToDocument(html), limit);
 
-  it('does not leave an escaping backslash at the end of a page', () => {
-    const text = `${'x'.repeat(7999)}\\<img src=x onerror=alert(1)>`;
-    const pages = all(text);
-    expect(pages.join('')).toBe(text);
-    expect(pages[0]).toBe('x'.repeat(7999));
-    expect(pages[1]!.startsWith('\\<img')).toBe(true);
+  it('exposes blocks of atomic segments', () => {
+    const d = htmlToDocument(
+      '<h2>T</h2><p>a <b>bold one</b> <a href="http://x.y/">link text</a></p><ul><li>i</li></ul>',
+    );
+    expect(d.blocks.map((b) => b.kind)).toEqual(['heading', 'paragraph', 'item']);
+    const p = d.blocks[1]!;
+    expect(p.segs.map((s) => s.md)).toEqual([
+      'a ',
+      '**bold one**',
+      ' ',
+      '[link text](http://x.y/)',
+    ]);
+    expect(p.segs[1]!.plain).toBe('bold one');
+    expect(htmlToMarkdown('<h2>T</h2><p>x</p>')).toBe('## T\n\nx');
   });
-  it('treats only an odd trailing run of backslashes as an escape', () => {
-    expect(page('ab\\\\<c', null, 4).chunk).toBe('ab\\\\'); // even run: cut stays
-    expect(page('ab\\\\\\<c', null, 5).chunk).toBe('ab\\\\'); // odd run: moves back one
+  it('packs whole blocks and uses the configured default size', () => {
+    const html = '<p>aaa bbb</p><p>ccc ddd</p><p>eee fff</p>';
+    expect(pagesOf(html, 20)).toEqual(['aaa bbb\n\nccc ddd', 'eee fff']);
+    expect(pagesOf(html, 7)).toEqual(['aaa bbb', 'ccc ddd', 'eee fff']);
+    const words = Array.from({ length: 4000 }, () => 'word').join(' ');
+    const first = page(htmlToDocument(`<p>${words}</p>`));
+    expect(first.chunk.length).toBeLessThanOrEqual(SERIALISE_CONFIG.defaultPageSize);
+    expect(first.nextCursor).not.toBeNull();
   });
-  it('does not split surrogate pairs and always progresses', () => {
-    const text = 'a\u{1F600}b\u{1F600}';
-    expect(page(text, null, 2).chunk).toBe('a');
-    expect(all(text, 2).join('')).toBe(text);
-    expect(all('\u{1F600}\u{1F600}', 1).join('')).toBe('\u{1F600}\u{1F600}');
-    expect(all('\\\\\\\\\\', 3).join('')).toBe('\\\\\\\\\\');
+  it('splits a large block only between segments and never inside one', () => {
+    const html = '<p>one <b>two three</b> <a href="http://x.y/">four five</a> six</p>';
+    expect(pagesOf(html, 14)).toEqual(['one', '**two three**', 'four five six']); // the link is larger than a page: plain words
+    expect(pagesOf(html, 30)).toEqual(['one **two three**', '[four five](http://x.y/) six']);
+    expect(pagesOf('<p>aaaaaaaaaa bbb</p>', 4)).toEqual(['aaaaaaaaaa', 'bbb']); // an atom larger than the limit stands alone
   });
-  it('treats the incoming cursor as untrusted', () => {
-    const text = '\\<img src=x onerror=alert(1)>';
-    expect(page(text, null, 1)).toEqual({ chunk: '\\<', nextCursor: '2' }); // forced cut extends forward
-    const reused = page(text, '1', 8000); // cursor just after the escaping backslash
-    expect(reused.chunk.startsWith('\\<img')).toBe(true);
-    for (let c = 0; c <= text.length; c++) {
-      const p = page(text, String(c), 5);
-      expect(p.chunk.startsWith('<img')).toBe(false);
+  it('emits a span larger than the limit as plain escaped words', () => {
+    const pages = pagesOf('<p><b>alpha beta gamma delta</b></p>', 12);
+    expect(pages).toEqual(['alpha beta', 'gamma delta']);
+    const link = pagesOf('<p><a href="http://x.y/p">alpha *beta* gamma</a></p>', 12);
+    expect(link.join(' ')).toBe('alpha \\*beta\\* gamma');
+  });
+  it('escapes line starts so a page never opens a heading, quote, list or rule', () => {
+    const starts = ['#', '>', '-', '+', '1.', '2)', '===', '---', '~~~', ':--', '*', '_', '`'];
+    for (const w of starts) {
+      const pages = pagesOf(`<p>aaa ${w} bbb</p>`, 5);
+      expect(pages[1], w).not.toMatch(/^(#|>|-|\+|\d+[.)]|=|~|:)/);
+      expect(pages.join(' ').replace(/\\/g, ''), w).toBe(`aaa ${w} bbb`);
     }
-    // out-of-range, negative and non-integer cursors
-    expect(page('abc', '99', 2)).toEqual({ chunk: '', nextCursor: null });
-    expect(page('abc', '-5', 2).chunk).toBe('ab');
-    expect(page('abc', '1.9', 2).chunk).toBe('bc');
-    expect(page('abc', 'NaN', 2).chunk).toBe('ab');
-    // a cursor inside a surrogate pair moves back to the pair start
-    expect(page('a\u{1F600}b', '2', 5).chunk).toBe('a\u{1F600}b'.slice(1));
-    // forced cuts still progress with no cursor loop
-    expect(all('\\<img>', 1).join('')).toBe('\\<img>');
+    const br = htmlToMarkdown('<p>a<br># b<br>- c<br>1. d<br>> e</p>');
+    expect(br).toBe('a\n\\# b\n\\- c\n1\\. d\n\\> e');
   });
-  it('concatenating pages reproduces the text for many limits', () => {
-    const text = 'a\\<b\u{1F600}\\\\\\c&\\&d'.repeat(30);
-    for (const limit of [1, 2, 3, 5, 7, 11, 50, 1000]) expect(all(text, limit).join('')).toBe(text);
+  it('keeps entities, escapes and links whole at the cut', () => {
+    const pages = pagesOf('<p>&amp;lt; &amp;#60; \\&lt;img&gt; [x](u) ![a](u)</p>', 6);
+    expect(pages.every((p) => !/^[<&]/.test(p))).toBe(true);
+    expect(pages.join(' ')).toBe('\\&lt; \\&#60; \\\\\\<img> \\[x\\](u) \\!\\[a\\](u)');
+  });
+  it('repeats the marker of a continued heading, item and quote', () => {
+    expect(pagesOf('<h2>aaa bbb</h2>', 8)).toEqual(['## aaa', '## bbb']);
+    expect(pagesOf('<ol><li>aaa bbb</li><li>ccc</li></ol>', 8)).toEqual([
+      '1. aaa',
+      '1. bbb',
+      '2. ccc',
+    ]);
+    expect(pagesOf('<blockquote>aaa bbb</blockquote>', 7)).toEqual(['> aaa', '> bbb']);
+    expect(htmlToMarkdown('<h2>Cost #</h2>')).toBe('## Cost \\#');
+  });
+  it('indents nested items relative to the page', () => {
+    const html = '<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li></ul>';
+    expect(htmlToMarkdown(html)).toBe('- a\n  - b\n    - c');
+    expect(pagesOf(html, 4)).toEqual(['- a', '- b', '- c']);
+  });
+  it('closes and reopens a code fence between lines', () => {
+    const html = '<pre>line1\n```\nline3\nline4</pre>';
+    expect(htmlToMarkdown(html)).toBe('````\nline1\n```\nline3\nline4\n````');
+    expect(pagesOf(html, 20)).toEqual([
+      '````\nline1\n```\n````',
+      '````\nline3\n````',
+      '````\nline4\n````',
+    ]);
+    expect(pagesOf(html, 30)).toEqual(['````\nline1\n```\nline3\n````', '````\nline4\n````']);
+  });
+  it('repeats the table header on a continuation page', () => {
+    const html =
+      '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr><tr><td>3</td><td>4</td></tr></table>';
+    const pages = pagesOf(html, 40);
+    expect(pages).toEqual([
+      '| A | B |\n| --- | --- |\n| 1 | 2 |',
+      '| A | B |\n| --- | --- |\n| 3 | 4 |',
+    ]);
+  });
+  it('treats a plain string as text, not markdown', () => {
+    expect(page('# not a heading\n\n- nor <b>this</b>').chunk).toBe(
+      '\\# not a heading\n\n\\- nor \\<b>this\\</b>',
+    );
+  });
+  it('returns an opaque cursor and rejects invalid or forged ones', () => {
+    const d = htmlToDocument('<p>aaa bbb ccc</p>');
+    const first = page(d, null, 4);
+    expect(first.nextCursor).toMatch(/^p1\.[0-9a-f]{8}\.\d+\.\d+\.\d+$/);
+    expect(page(d, first.nextCursor, 4).chunk).toBe('bbb');
+    expect(page(d, '', 4).chunk).toBe('aaa');
+    const bad = [
+      '3',
+      'zzz',
+      '-1',
+      'NaN',
+      '1.9',
+      'p1.00000000.0.1.0',
+      first.nextCursor!.replace(/\.\d+\.\d+\.\d+$/, '.0.99.0'),
+      first.nextCursor!.replace(/\.\d+\.\d+\.\d+$/, '.5.0.0'),
+      first.nextCursor!.replace(/\.\d+\.\d+\.\d+$/, '.0.2.1'),
+      `${first.nextCursor}9999999999`,
+      page(htmlToDocument('<p>different</p> <p>doc more</p>'), null, 5).nextCursor ?? 'x',
+    ];
+    for (const c of bad) expect(() => page(d, c, 4), c).toThrow(PageCursorError);
+    expect(() => page(d, 5 as unknown as string, 4)).toThrow(PageCursorError);
   });
 });
