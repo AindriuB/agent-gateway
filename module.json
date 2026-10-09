@@ -1,0 +1,15 @@
+{
+  "id": "agent-gateway",
+  "title": "Agent Gateway",
+  "description": "Permissioned access to a running world for AI agents over MCP.",
+  "version": "0.1.0",
+  "compatibility": { "minimum": "13", "verified": "14" },
+  "authors": [{ "name": "Andrew Bannister" }],
+  "license": "MIT",
+  "socket": true,
+  "esmodules": ["dist/module/main.js"],
+  "styles": ["styles/agent-gateway.css"],
+  "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],
+  "url": "https://github.com/AindriuB/agent-gateway",
+  "manifest": "https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json"
+}

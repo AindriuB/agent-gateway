@@ -2,4 +2,8 @@
 
 A Foundry VTT module and MCP gateway that give AI agents permissioned access to a running world. Work in progress.
 
-Design: [docs/plan/specs/2026-10-09-agent-gateway.md](docs/plan/specs/2026-10-09-agent-gateway.md)
+- Design: [docs/plan/specs/2026-10-09-agent-gateway.md](docs/plan/specs/2026-10-09-agent-gateway.md)
+- Local development: [docs/dev.md](docs/dev.md)
+- Conventions: [docs/conventions.md](docs/conventions.md)
+
+Licensed MIT.
