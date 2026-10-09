@@ -33,8 +33,19 @@ function registerFoundation(): void {
 }
 
 /** Per-feature register functions. Later tasks append here (insertion-only). */
-export const settingRegistrars: Array<() => void> = [registerFoundation, registerPairingMenu];
+export const settingRegistrars: Array<() => void> = [
+  // One registrar per line; append new ones below.
+  registerFoundation,
+  registerPairingMenu,
+];
 
 export function registerSettings(): void {
-  for (const register of settingRegistrars) register();
+  for (const register of settingRegistrars) {
+    try {
+      register();
+    } catch (e) {
+      // One failing registrar must not abort the others.
+      console.error('agent-gateway | settings registrar failed', e);
+    }
+  }
 }

@@ -13,6 +13,7 @@ export interface SettingConfig {
 
 export interface FoundryStub {
   registeredSettings: Map<string, SettingConfig>;
+  registeredMenus: Map<string, any>;
   hooks: Map<string, Array<() => void>>;
   fire(hook: string): void;
   uninstall(): void;
@@ -35,6 +36,7 @@ export function installFoundry(
     fromUuid: g.fromUuid,
   };
   const registeredSettings = new Map<string, SettingConfig>();
+  const registeredMenus = new Map<string, any>();
   const values = new Map<string, unknown>();
   const hooks = new Map<string, Array<() => void>>();
   const collection = () => ({ get: () => undefined, contents: [] as unknown[], size: 0 });
@@ -44,6 +46,15 @@ export function installFoundry(
     settings: {
       register: (ns: string, key: string, cfg: SettingConfig) =>
         registeredSettings.set(`${ns}.${key}`, cfg),
+      registerMenu: (ns: string, key: string, cfg: any) => {
+        // Same rule as Foundry: the type must be a subclass of ApplicationV2.
+        if (!(cfg?.type?.prototype instanceof ApplicationV2)) {
+          throw new Error(
+            'You must provide a menu type that is a FormApplication or ApplicationV2 instance or subclass',
+          );
+        }
+        registeredMenus.set(`${ns}.${key}`, cfg);
+      },
       get: (ns: string, key: string) =>
         values.get(`${ns}.${key}`) ?? registeredSettings.get(`${ns}.${key}`)?.default,
       set: async (ns: string, key: string, v: unknown) => void values.set(`${ns}.${key}`, v),
@@ -67,6 +78,7 @@ export function installFoundry(
 
   return {
     registeredSettings,
+    registeredMenus,
     hooks,
     fire: (hook) => (hooks.get(hook) ?? []).forEach((fn) => fn()),
     uninstall: () => Object.assign(g, saved),

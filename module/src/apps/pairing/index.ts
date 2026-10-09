@@ -67,29 +67,22 @@ export function createPairingApp(): any {
   return PairingApp;
 }
 
-let instance: any = null;
+let appClass: any = null;
 
-export function openPairingApp(): void {
-  instance ??= new (createPairingApp())();
-  void instance.render({ force: true });
+/** The one PairingApp class, built on first use. */
+export function getPairingAppClass(): any {
+  appClass ??= createPairingApp();
+  return appClass;
 }
 
-/** Settings registrar: a menu entry that opens the pairing app. */
+/** Settings registrar: a menu entry that opens the pairing app (Foundry does `new type().render(true)`). */
 export function registerPairingMenu(): void {
-  const settings = game.settings;
-  if (typeof settings.registerMenu !== 'function') return;
-  class PairingMenu {
-    constructor() {
-      openPairingApp();
-    }
-    render(): void {}
-  }
-  settings.registerMenu(NS, 'pairing', {
+  game.settings.registerMenu(NS, 'pairing', {
     name: 'AGENT_GATEWAY.Pairing.menu.name',
     label: 'AGENT_GATEWAY.Pairing.menu.label',
     hint: 'AGENT_GATEWAY.Pairing.menu.hint',
     icon: 'fa-solid fa-link',
-    type: PairingMenu,
+    type: getPairingAppClass(),
     restricted: false,
   });
 }
