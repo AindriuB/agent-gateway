@@ -11,6 +11,7 @@ export function describeState(s: LinkState): string {
   const i18n = game.i18n;
   switch (s.kind) {
     case 'connecting':
+      if (s.codeRejected) return i18n.localize('AGENT_GATEWAY.Link.pairingInvalid');
       return i18n.localize('AGENT_GATEWAY.Link.state.connecting');
     case 'connected':
       return i18n.format('AGENT_GATEWAY.Link.state.connected', { user: s.user, world: s.world });
@@ -36,6 +37,18 @@ export function createPairingApp(): any {
     static PARTS = { form: { template: `modules/${NS}/templates/pairing/pairing.hbs` } };
 
     private unsubscribe: (() => void) | null = null;
+    private static current: any = null;
+
+    constructor(...args: any[]) {
+      // A second menu click while open brings the existing window to front.
+      const open = PairingApp.current;
+      if (open?.rendered) {
+        open.bringToFront?.();
+        return open;
+      }
+      super(...args);
+      PairingApp.current = this;
+    }
 
     async _prepareContext(): Promise<object> {
       return {
