@@ -281,6 +281,15 @@ function renderTable(el: Element, depth: number): string {
   return `\n\n${[line(head), sep, ...rest.map(line)].join('\n')}\n\n`;
 }
 
+/** Wrap content in delimiters, keeping its boundary whitespace outside them. */
+function wrapInline(t: string, open: string, close: string): string {
+  const core = t.trim();
+  if (!core) return t;
+  const lead = t.slice(0, t.length - t.trimStart().length);
+  const trail = t.slice(t.trimEnd().length);
+  return `${lead}${open}${core}${close}${trail}`;
+}
+
 function render(node: Node, depth: number, pre: boolean): string {
   if (node.nodeType === 3) {
     const raw = node.nodeValue ?? '';
@@ -305,19 +314,17 @@ function render(node: Node, depth: number, pre: boolean): string {
       return `\n\n${'#'.repeat(Number(tag[1]))} ${collapse(kids()).trim()}\n\n`;
     case 'strong':
     case 'b': {
-      const t = kids();
-      return t.trim() ? `**${t.trim()}**` : t;
+      return wrapInline(kids(), '**', '**');
     }
     case 'em':
     case 'i': {
-      const t = kids();
-      return t.trim() ? `*${t.trim()}*` : t;
+      return wrapInline(kids(), '*', '*');
     }
     case 'a': {
       const t = kids();
       const href = safeHref(el.getAttribute('href'));
-      if (!href || !t.trim()) return t;
-      return `${LINK}[${t.trim()}](${href})`;
+      if (!href) return t;
+      return wrapInline(t, `${LINK}[`, `](${href})`);
     }
     case 'br':
       return '\n';

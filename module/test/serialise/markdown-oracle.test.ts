@@ -95,6 +95,106 @@ function check(html: string): void {
   expect(found.length).toBeLessThanOrEqual(anchors.length);
 }
 
+const INLINE = new Set([
+  'a',
+  'b',
+  'strong',
+  'i',
+  'em',
+  'code',
+  'span',
+  'u',
+  'sub',
+  'sup',
+  'mark',
+  'small',
+  's',
+]);
+const DROPPED = new Set(['script', 'style', 'template', 'noscript']);
+
+/** Whitespace-normalised word tokens of the input's text, skipping dropped subtrees. */
+function inputWords(html: string): string[] {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  let out = '';
+  const go = (n: Node): void => {
+    if (n.nodeType === 3) out += n.nodeValue ?? '';
+    else if (n.nodeType === 1) {
+      const tag = (n as Element).tagName.toLowerCase();
+      if (DROPPED.has(tag)) return;
+      const sep = INLINE.has(tag) ? '' : ' ';
+      out += sep;
+      n.childNodes.forEach(go);
+      out += sep;
+    }
+  };
+  go(doc.body);
+  out = out.replace(/@UUID\[[^\]]*\](?:\{([^}]*)\})?/g, ' $1 ');
+  return out.split(/\s+/).filter(Boolean);
+}
+
+/** Word tokens of the markdown as a reader sees it (marked -> HTML -> text). */
+function outputWords(md: string): string[] {
+  const rendered = new Marked({ gfm: true, tokenizer: { url: () => undefined } }).parse(
+    md,
+  ) as string;
+  const spaced = rendered
+    .replace(/<(?!\/?(?:strong|em|a|code|b|i)\b)[^>]*>/g, ' ')
+    .replace(/<[^>]*>/g, '');
+  const ta = document.createElement('textarea');
+  ta.innerHTML = spaced.replace(/</g, '&lt;');
+  return ta.value.split(/\s+/).filter(Boolean);
+}
+
+/** The input's words must all survive, in order (extra output words are allowed). */
+function checkText(html: string): void {
+  const md = htmlToMarkdown(html);
+  const out = outputWords(md);
+  let i = 0;
+  for (const w of inputWords(html)) {
+    while (i < out.length && !out[i]!.includes(w)) i++; // bracket/UUID decoration may touch a word
+    expect(
+      i < out.length,
+      `word ${JSON.stringify(w)} lost from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
+    ).toBe(true);
+    i++;
+  }
+}
+
+const SPACING: string[] = [];
+for (const tag of ['strong', 'b', 'em', 'i', 'code', 'span', 'u'])
+  for (const [a, b] of [
+    ['Hello ', 'world'],
+    ['Hello', ' world'],
+    [' Hello ', 'world'],
+    ['Hello ', ' world'],
+  ] as const)
+    SPACING.push(
+      `<p><${tag}>${a}</${tag}>${b}</p>`,
+      `<p>${a.trim()}<${tag}>${b === 'world' ? ' ' : ''}${b}</${tag}>x</p>`,
+    );
+for (const [a, b] of [
+  ['Hello ', 'world'],
+  ['Hello', ' world'],
+  [' Hello ', ' world'],
+] as const)
+  SPACING.push(
+    `<p><a href="https://a.example/p">${a}</a>${b}</p>`,
+    `<p>${a}<a href="https://a.example/p">${b}</a>!</p>`,
+    `<p><a href="javascript:1">${a}</a>${b}</p>`,
+  );
+SPACING.push(
+  '<p><strong><em>a </em></strong>b</p>',
+  '<p>a<strong> <em> b</em> </strong>c</p>',
+  '<p><strong> </strong>x</p>',
+  '<p>a<em> </em>b</p>',
+  '<p><b>a<br></b>b</p>',
+  '<p>one <a href="https://a.example/">two </a><i>three </i><b>four</b></p>',
+  '<p>@UUID[Actor.abc]{Name } here</p>',
+  '<ul><li><b>x </b>y</li></ul>',
+  '<table><tr><td><b>x </b>y</td><td>z</td></tr></table>',
+  '<script>bad words</script><p>ok</p><style>.x{}</style>',
+);
+
 const PROBES = [
   '<a href="javascript\\:alert(1)">x</a>',
   '<a href="&amp;#106;avascript:alert(1)">x</a>',
@@ -136,6 +236,18 @@ const PROBES = [
 ];
 
 describe('markdown serialiser oracle (marked)', () => {
+  it.each(SPACING.map((p) => [p.slice(0, 70), p] as const))('text preserved: %s', (_n, html) => {
+    checkText(html);
+    check(html);
+  });
+
+  it.each(PROBES.map((p) => [p.slice(0, 70), p] as const))(
+    'text preserved, probe: %s',
+    (_n, html) => {
+      checkText(html);
+    },
+  );
+
   it.each(PROBES.map((p) => [p.slice(0, 70), p] as const))('probe: %s', (_n, html) => {
     check(html);
   });
@@ -180,6 +292,9 @@ describe('markdown serialiser oracle (marked)', () => {
         for (const tx of texts)
           for (const w of wrappers) {
             check(w(`<a href="${sc}${tl}">${tx}</a>@evil.example/p [z](javascript:3)`));
+            // marked mis-parses links whose text holds escaped brackets, so text is checked without them.
+            if (!/[[\]\\]|&#9/.test(tx))
+              checkText(w(`<a href="${sc}${tl}">${tx}</a>@evil.example/p [z](javascript:3)`));
             n++;
           }
     expect(n).toBeGreaterThan(1000);

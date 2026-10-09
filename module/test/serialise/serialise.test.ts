@@ -288,6 +288,20 @@ describe('htmlToMarkdown', () => {
       ),
     ).toContain('Q (Actor.q)');
   });
+  it('keeps boundary whitespace outside inline delimiters', () => {
+    expect(htmlToMarkdown('<p><strong>Hello </strong>world</p>')).toBe('**Hello** world');
+    expect(htmlToMarkdown('<p>Hello<b> world</b></p>')).toBe('Hello **world**');
+    expect(htmlToMarkdown('<p>a<em> b </em>c</p>')).toBe('a *b* c');
+    expect(htmlToMarkdown('<p>a<i> b</i></p>')).toBe('a *b*');
+    expect(htmlToMarkdown('<p>a<code> b </code>c</p>')).toBe('a b c');
+    expect(htmlToMarkdown('<p>a <a href="http://x.y/">link </a>b</p>')).toBe(
+      'a [link](http://x.y/) b',
+    );
+    expect(htmlToMarkdown('<p>a<a href="http://x.y/"> link</a></p>')).toBe('a [link](http://x.y/)');
+    expect(htmlToMarkdown('<p><strong><em>a </em></strong>b</p>')).toBe('***a*** b');
+    expect(htmlToMarkdown('<p>a<strong> </strong>b</p>')).toBe('a b');
+    expect(htmlToMarkdown('<p>a <a href="javascript:1">x </a>b</p>')).toBe('a x b');
+  });
   it('keeps whitespace between inline siblings under body', () => {
     expect(htmlToMarkdown('<strong>Name:</strong> <em>Bob</em>')).toBe('**Name:** *Bob*');
     expect(
