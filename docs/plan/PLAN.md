@@ -49,5 +49,6 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - After a rejected code, retries keep re-sending it before the token fallback. Drop the code once it is rejected.
 - Verify Local Network Access behaviour once in Andrew's everyday Chrome profile. The live proof used a fresh profile only.
 - Foundry test stubs: `ApplicationV2` is empty, so pairing app rendering is covered only by the live check.
+- Rename the test at `module/test/link/client.test.ts:276`; it covers the throw path only, not all reply paths.
 
 ## Someday
