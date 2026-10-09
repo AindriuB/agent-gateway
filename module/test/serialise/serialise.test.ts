@@ -151,7 +151,7 @@ describe('htmlToMarkdown', () => {
   it('separates flattened nested table cells and rows', () => {
     expect(
       htmlToMarkdown('<table><tr><td>a<table><tr><td>inner</td></tr></table></td></tr></table>'),
-    ).toBe('| a inner |\n| --- |');
+    ).toBe('| a \\[inner\\] |\n| --- |');
     const out = htmlToMarkdown(
       '<table><tr><td>Stats<table><tr><td>Str</td><td>18</td><td>+4</td></tr><tr><td>Dex</td><td>12</td><td>+1</td></tr></table></td></tr></table>',
     );
@@ -163,10 +163,10 @@ describe('htmlToMarkdown', () => {
       htmlToMarkdown(
         '<table><tr><td>x<table><tr><td>a<table><tr><td>b</td><td>c</td></tr></table></td><td>d</td></tr></table></td></tr></table>',
       ),
-    ).toBe('| x a b / c / d |\n| --- |');
-    expect(htmlToMarkdown(t('p' + t('q' + t('r'))))).toBe('| p q r |\n| --- |');
+    ).toBe('| x \\[a \\[b / c\\] / d\\] |\n| --- |');
+    expect(htmlToMarkdown(t('p' + t('q' + t('r'))))).toBe('| p \\[q \\[r\\]\\] |\n| --- |');
     const five = t('a' + t('b' + t('c' + t('d' + t('e')))));
-    expect(htmlToMarkdown(five)).toBe('| a b c d e |\n| --- |');
+    expect(htmlToMarkdown(five)).toBe('| a \\[b \\[c \\[d \\[e\\]\\]\\]\\] |\n| --- |');
   });
   it('keeps literal separators in cell text', () => {
     const out = htmlToMarkdown(
@@ -190,6 +190,35 @@ describe('htmlToMarkdown', () => {
   it('blocks obfuscated script schemes in hrefs', () => {
     expect(htmlToMarkdown('<a href="java&#x09;script:alert(1)">x</a>')).toBe('x');
     expect(htmlToMarkdown('<a href=" JavaScript:alert(1)">y</a>')).toBe('y');
+  });
+  it('allows only http, https, mailto and relative link targets', () => {
+    for (const bad of ['file:///etc/passwd', 'ftp://h/x', 'custom-app:open', 'FILE:///x'])
+      expect(htmlToMarkdown(`<a href="${bad}">t</a>`)).toBe('t');
+    expect(htmlToMarkdown('<a href="mailto:a@b.c">m</a>')).toBe('[m](mailto:a@b.c)');
+    expect(htmlToMarkdown('<a href="HTTPS://e.example">h</a>')).toBe('[h](HTTPS://e.example)');
+    expect(htmlToMarkdown('<a href="/rel/x">r</a>')).toBe('[r](/rel/x)');
+    expect(htmlToMarkdown('<a href="#frag">f</a>')).toBe('[f](#frag)');
+  });
+  it('keeps hostile characters inside one link target', () => {
+    expect(htmlToMarkdown('<a href="https://e.example/a)b">e</a>')).toBe(
+      '[e](https://e.example/a%29b)',
+    );
+    expect(htmlToMarkdown('<a href="https://e.example/a b(c)<d>">e</a>')).toBe(
+      '[e](https://e.example/a%20b%28c%29%3Cd%3E)',
+    );
+  });
+  it('escapes markdown syntax in text so only real anchors are links', () => {
+    expect(htmlToMarkdown('<p>[x](javascript:1)</p>')).toBe('\\[x\\](javascript:1)');
+    expect(htmlToMarkdown('<p>a *b* _c_ `d` <i>e</i> \\</p>')).toBe(
+      'a \\*b\\* \\_c\\_ \\`d\\` *e* \\\\',
+    );
+    expect(htmlToMarkdown('<table><tr><td>[x](file:///y)</td></tr></table>')).toBe(
+      '| \\[x\\](file:///y) |\n| --- |',
+    );
+    expect(htmlToMarkdown('<p>&lt;script&gt;x&lt;/script&gt;</p>')).toBe('\\<script>x\\</script>');
+    expect(htmlToMarkdown('<p>[<a href="http://a.example">z</a>](q)</p>')).toBe(
+      '\\[[z](http://a.example)\\](q)',
+    );
   });
 });
 

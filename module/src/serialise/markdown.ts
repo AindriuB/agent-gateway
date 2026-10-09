@@ -21,16 +21,39 @@ const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr']);
 const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'dl', 'dt', 'dd']);
 const MAX_DEPTH = 100;
 
-/** Replace `@UUID[uuid]{label}` with `label (uuid)` using linear scans only. */
-function expandUuids(text: string): string {
+/** Backslash-escape characters that could form markdown syntax (links, emphasis, code, tables, html). */
+function escapeMd(text: string): string {
+  return text
+    .replace(/[\\[\]*_`|]/g, '\\$&')
+    .replace(/<(?=[a-z/!?])/gi, '\\<')
+    .replace(/^(\s*)([#>])/, '$1\\$2');
+}
+
+const SCHEMES = new Set(['http', 'https', 'mailto']);
+
+/** Return a safe link target, or null if the URL must be dropped (disallowed scheme). */
+function safeHref(raw: string | null | undefined): string | null {
+  const href = raw?.trim();
+  if (!href) return null;
+  const norm = href.replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
+  const m = /^([a-z][a-z0-9+.-]*):/.exec(norm);
+  if (m && !SCHEMES.has(m[1]!)) return null;
+  return href.replace(
+    /[()<>|\u0000-\u0020\u007f]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`,
+  );
+}
+
+/** Replace `@UUID[uuid]{label}` with `label (uuid)`; all other text is passed through `esc`. */
+function expandUuids(text: string, esc: (s: string) => string = escapeMd): string {
   const TAG = '@UUID[';
   let out = '';
   let i = 0;
   for (;;) {
     const at = text.indexOf(TAG, i);
-    if (at < 0) return out + text.slice(i);
+    if (at < 0) return out + esc(text.slice(i));
     const close = text.indexOf(']', at + TAG.length);
-    if (close < 0) return out + text.slice(i); // no later tag can close either
+    if (close < 0) return out + esc(text.slice(i)); // no later tag can close either
     const uuid = text.slice(at + TAG.length, close);
     let end = close + 1;
     let label = uuid;
@@ -42,9 +65,9 @@ function expandUuids(text: string): string {
       }
     }
     if (!uuid) {
-      out += text.slice(i, close + 1);
+      out += esc(text.slice(i, close + 1));
     } else {
-      out += `${text.slice(i, at)}${label} (${uuid})`;
+      out += `${esc(text.slice(i, at))}${esc(label)} (${esc(uuid)})`;
     }
     i = uuid ? end : close + 1;
   }
@@ -69,6 +92,9 @@ const collapse = (s: string) => s.replace(/\s+/g, ' ');
 
 const CELL_SEP = ' / ';
 const ROW_SEP = '; ';
+// Private-use markers for nested-table boundaries; become escaped brackets.
+const OPEN = '\uE000';
+const CLOSE = '\uE001';
 
 /**
  * Flatten a nested table to readable plain text in one linear, iterative pass.
@@ -87,11 +113,11 @@ function flattenTable(root: Element): string {
     const n = stack.pop()!;
     if (typeof n === 'symbol') {
       frames.pop();
-      parts.push(' ');
+      parts.push(CLOSE, ' ');
       continue;
     }
     if (n.nodeType === 3) {
-      parts.push(n.nodeValue ?? '');
+      parts.push((n.nodeValue ?? '').replace(/[\uE000\uE001]/g, ''));
       continue;
     }
     if (n.nodeType !== 1) continue;
@@ -99,7 +125,7 @@ function flattenTable(root: Element): string {
     if (DROP.has(tag)) continue;
     const frame = frames[frames.length - 1];
     if (tag === 'table') {
-      parts.push(' ');
+      parts.push(' ', OPEN);
       frames.push({ rows: 0, cells: 0 });
       stack.push(END);
     } else if (tag === 'tr' && frame) {
@@ -111,8 +137,12 @@ function flattenTable(root: Element): string {
     const kids = n.childNodes;
     for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
   }
-  const text = collapse(parts.join('')).trim();
-  return text ? ` ${expandUuids(text)} ` : '';
+  const text = collapse(parts.join(''))
+    .replace(/\uE001 +(?=\uE001)/g, CLOSE)
+    .trim();
+  if (!text) return '';
+  const body = expandUuids(text).split(OPEN).join('\\[').split(CLOSE).join('\\]');
+  return ` ${body} `;
 }
 
 function renderChildren(node: Node, depth: number, pre: boolean): string {
@@ -162,11 +192,7 @@ function renderTable(el: Element, depth: number): string {
     rows = ownRows(el).map((tr) =>
       Array.from(tr.children)
         .filter((c) => /^t[dh]$/i.test(c.tagName))
-        .map((c) =>
-          collapse(renderChildren(c, depth, false))
-            .replace(/\|/g, '\\|')
-            .trim(),
-        ),
+        .map((c) => collapse(renderChildren(c, depth, false)).trim()),
     );
   } finally {
     tableNesting -= 1;
@@ -214,9 +240,8 @@ function render(node: Node, depth: number, pre: boolean): string {
     }
     case 'a': {
       const t = kids();
-      const href = el.getAttribute('href')?.trim();
-      const scheme = (href ?? '').replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
-      if (!href || /^(javascript|data|vbscript):/.test(scheme) || !t.trim()) return t;
+      const href = safeHref(el.getAttribute('href'));
+      if (!href || !t.trim()) return t;
       return `[${t.trim()}](${href})`;
     }
     case 'br':
