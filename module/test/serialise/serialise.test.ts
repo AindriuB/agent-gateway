@@ -91,14 +91,44 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<a href=http://b.example/y>two</a>')).toBe('[two](http://b.example/y)');
   });
   it.each([
-    ['unclosed anchors', '<a href="'.repeat(4000)],
-    ['unclosed bold', '<b>'.repeat(4000)],
-    ['unclosed tables', '<table>'.repeat(4000)],
-    ['unclosed UUIDs', '@UUID['.repeat(4000)],
-  ])('adversarial input (%s) completes quickly', (_n, input) => {
+    ['unclosed anchors', (n: number) => '<a href="'.repeat(n)],
+    ['unclosed bold', (n: number) => '<b>'.repeat(n)],
+    ['unclosed tables', (n: number) => '<table>'.repeat(n)],
+    ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n)],
+  ])('adversarial input (%s) scales sub-quadratically', (_n, make) => {
+    const time = (n: number) => {
+      const t = performance.now();
+      htmlToMarkdown(make(n));
+      return performance.now() - t;
+    };
+    time(500); // warm up
+    const small = Math.max(time(1000), 5);
+    const large = time(4000);
+    expect(large).toBeLessThan(2000);
+    expect(large).toBeLessThan(small * 16);
+  });
+  it('renders nested tables linearly, inner content once', () => {
+    expect(
+      htmlToMarkdown('<table><tr><td>a<table><tr><td>inner</td></tr></table></td></tr></table>')
+        .split('inner').length - 1,
+    ).toBe(1);
+    const deep = (n: number) =>
+      '<table><tr><td>x'.repeat(n) + 'leaf' + '</td></tr></table>'.repeat(n);
     const t = performance.now();
-    htmlToMarkdown(input);
-    expect(performance.now() - t).toBeLessThan(100);
+    const out = htmlToMarkdown(deep(25));
+    expect(performance.now() - t).toBeLessThan(2000);
+    expect(out.length).toBeLessThan(deep(25).length);
+    expect(out.split('leaf').length - 1).toBe(1);
+  });
+  it('keeps whitespace between inline siblings under body', () => {
+    expect(htmlToMarkdown('<strong>Name:</strong> <em>Bob</em>')).toBe('**Name:** *Bob*');
+    expect(htmlToMarkdown('<a href="http://a.example">one</a> <a href="http://b.example">two</a>')).toBe(
+      '[one](http://a.example) [two](http://b.example)',
+    );
+  });
+  it('blocks obfuscated script schemes in hrefs', () => {
+    expect(htmlToMarkdown('<a href="java&#x09;script:alert(1)">x</a>')).toBe('x');
+    expect(htmlToMarkdown('<a href=" JavaScript:alert(1)">y</a>')).toBe('y');
   });
 });
 

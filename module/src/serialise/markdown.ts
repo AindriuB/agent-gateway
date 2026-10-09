@@ -17,7 +17,7 @@ const DROP = new Set([
   'video',
 ]);
 /** Containers whose whitespace-only text children are layout, not content. */
-const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'body', 'html']);
+const LAYOUT = new Set(['ul', 'ol', 'table', 'thead', 'tbody', 'tfoot', 'tr']);
 const BLOCK = new Set(['p', 'div', 'section', 'article', 'blockquote', 'pre', 'dl', 'dt', 'dd']);
 const MAX_DEPTH = 100;
 
@@ -88,16 +88,41 @@ function renderList(el: Element, ordered: boolean, depth: number): string {
   return items.length ? `\n\n${items.join('\n')}\n\n` : '';
 }
 
+/** Rows owned by this table only: direct `tr` children and those of its own row groups. */
+function ownRows(table: Element): Element[] {
+  const rows: Element[] = [];
+  for (const child of Array.from(table.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tag === 'tr') rows.push(child);
+    else if (tag === 'thead' || tag === 'tbody' || tag === 'tfoot') {
+      for (const tr of Array.from(child.children)) {
+        if (tr.tagName.toLowerCase() === 'tr') rows.push(tr);
+      }
+    }
+  }
+  return rows;
+}
+
+let tableNesting = 0;
+
 function renderTable(el: Element, depth: number): string {
-  const rows = Array.from(el.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.children)
-      .filter((c) => /^t[dh]$/i.test(c.tagName))
-      .map((c) =>
-        collapse(renderChildren(c, depth, false))
-          .replace(/\|/g, '\\|')
-          .trim(),
-      ),
-  );
+  // A table inside a cell is flattened to plain text so work stays linear.
+  if (tableNesting > 0) return collapse(plainText(el));
+  tableNesting += 1;
+  let rows: string[][];
+  try {
+    rows = ownRows(el).map((tr) =>
+      Array.from(tr.children)
+        .filter((c) => /^t[dh]$/i.test(c.tagName))
+        .map((c) =>
+          collapse(renderChildren(c, depth, false))
+            .replace(/\|/g, '\\|')
+            .trim(),
+        ),
+    );
+  } finally {
+    tableNesting -= 1;
+  }
   if (!rows.length) return '';
   const width = Math.max(...rows.map((r) => r.length));
   const line = (r: string[]) =>
@@ -142,7 +167,9 @@ function render(node: Node, depth: number, pre: boolean): string {
     case 'a': {
       const t = kids();
       const href = el.getAttribute('href')?.trim();
-      if (!href || /^\s*(javascript|data|vbscript):/i.test(href) || !t.trim()) return t;
+      // eslint-disable-next-line no-control-regex
+      const scheme = (href ?? '').replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
+      if (!href || /^(javascript|data|vbscript):/.test(scheme) || !t.trim()) return t;
       return `[${t.trim()}](${href})`;
     }
     case 'br':
