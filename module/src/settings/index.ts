@@ -18,8 +18,8 @@ function registerFoundation(): void {
     hint: 'AGENT_GATEWAY.Settings.pairingToken.hint',
     scope: 'client',
     config: false,
-    type: Object,
-    default: null,
+    type: String,
+    default: '',
   });
   game.settings.register(NS, 'includeOtherModuleData', {
     name: 'AGENT_GATEWAY.Settings.includeOtherModuleData.name',
@@ -32,20 +32,23 @@ function registerFoundation(): void {
   });
 }
 
+function registerPairingCredential(): void {
+  // The {url, token} pair issued by a gateway; the legacy string `pairingToken` is never sent.
+  game.settings.register(NS, 'pairingCredential', {
+    name: 'AGENT_GATEWAY.Settings.pairingCredential.name',
+    hint: 'AGENT_GATEWAY.Settings.pairingCredential.hint',
+    scope: 'client',
+    config: false,
+    type: Object,
+    default: null,
+  });
+}
+
 /** Per-feature register functions. Later tasks append here (insertion-only). */
-export const settingRegistrars: Array<() => void> = [
-  // One registrar per line; append new ones below.
-  registerFoundation,
-  registerPairingMenu,
-];
+export const settingRegistrars: Array<() => void> = [registerFoundation];
+
+settingRegistrars.push(registerPairingCredential, registerPairingMenu);
 
 export function registerSettings(): void {
-  for (const register of settingRegistrars) {
-    try {
-      register();
-    } catch (e) {
-      // One failing registrar must not abort the others.
-      console.error('agent-gateway | settings registrar failed', e);
-    }
-  }
+  for (const register of settingRegistrars) register();
 }

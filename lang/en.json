@@ -9,6 +9,10 @@
         "name": "Pairing token",
         "hint": "Token issued when this client was paired with the gateway."
       },
+      "pairingCredential": {
+        "name": "Pairing credential",
+        "hint": "Token and gateway address issued when this client was paired."
+      },
       "includeOtherModuleData": {
         "name": "Include other modules' data",
         "hint": "Allow agents to read data that other modules store on documents."

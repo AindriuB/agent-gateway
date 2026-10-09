@@ -93,7 +93,9 @@ export function createPairingApp(): any {
         // to the gateway that issued it; for any other URL it asks for a pairing code.
         await game.settings.set(NS, 'gatewayUrl', url);
         getLinkClient().start();
-        if (getLinkClient().state.kind === 'disconnected') {
+        const after = getLinkClient().state;
+        // A PAIRING_REQUIRED status is already visible in the app; do not also toast it.
+        if (after.kind === 'disconnected' && after.reason !== 'PAIRING_REQUIRED') {
           ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Link.codeRequired'));
         }
         return;

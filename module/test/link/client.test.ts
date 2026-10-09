@@ -466,10 +466,19 @@ it('localhost and 127.0.0.1 are different endpoints', () => {
   expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
 });
 
-it('a legacy bare-string token is discarded and never sent', () => {
+it('a malformed stored credential is never sent', () => {
   raw = 'secret';
   client.start();
   expect(sockets).toHaveLength(0);
-  expect(raw).toBeUndefined(); // setToken(null) ran
-  expect(token).toBe('');
+});
+
+it('the welcome token is stored with the URL of the socket that received it', async () => {
+  token = 'old';
+  client.start();
+  gwUrl = 'ws://other'; // caller changes the URL after the socket was created
+  open();
+  sockets[0]!.recv(welcome({ pairingToken: 'new' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(token).toBe('new');
+  expect(tokenUrl).toBe('ws://gw');
 });

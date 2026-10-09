@@ -62,7 +62,7 @@ async function submitWith(token: string, values: Record<string, string>, startSt
     hasStoredToken: () => token !== '',
   };
   vi.doMock('../../src/link/runtime.js', () => ({ getLinkClient: () => client }));
-  if (token) await g.game.settings.set('agent-gateway', 'pairingToken', token);
+  if (token) await g.game.settings.set('agent-gateway', 'pairingCredential', token);
   const mod = await import('../../src/apps/pairing/index.js');
   const App = mod.createPairingApp();
   await App.onSubmit(new Event('submit'), {} as HTMLFormElement, { object: values });
@@ -92,14 +92,37 @@ it('submit with an empty code and no token warns and does nothing else', async (
   expect(client.pair).not.toHaveBeenCalled();
 });
 
-it('submit with an empty code and a token from another gateway warns after start()', async () => {
+it('submit with an empty code and a token from another gateway shows only the status, no toast', async () => {
   const { client, warn } = await submitWith(
     'tok',
     { gatewayUrl: 'ws://new', code: '' },
     { kind: 'disconnected', reason: 'PAIRING_REQUIRED' },
   );
   expect(client.start).toHaveBeenCalledTimes(1);
-  expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
+  expect(warn).not.toHaveBeenCalled();
+});
+
+it('a legacy pairingToken is cleared when the link is created, and never read as a credential', async () => {
+  vi.resetModules();
+  stub = installFoundry(14);
+  const g = globalThis as any;
+  g.WebSocket = class {};
+  g.ui = { notifications: { error: vi.fn() } };
+  g.game.settings.register('agent-gateway', 'pairingToken', {
+    scope: 'client',
+    type: String,
+    default: '',
+  });
+  g.game.settings.register('agent-gateway', 'pairingCredential', {
+    scope: 'client',
+    type: Object,
+    default: null,
+  });
+  await g.game.settings.set('agent-gateway', 'pairingToken', 'legacy');
+  const { getLinkClient } = await import('../../src/link/runtime.js');
+  const c = getLinkClient();
+  expect(g.game.settings.get('agent-gateway', 'pairingToken')).toBe('');
+  expect(c.hasStoredToken()).toBe(false);
 });
 
 it('describes PAIRING_REQUIRED with its own localized key', async () => {

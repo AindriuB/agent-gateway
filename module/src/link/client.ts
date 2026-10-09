@@ -47,7 +47,7 @@ export interface LinkClientDeps {
   getGatewayUrl(): string;
   /**
    * The stored credential as persisted. Only `{ url, token }` is honoured; anything else
-   * (e.g. a legacy bare string) is discarded.
+   * counts as no token.
    */
   getToken(): unknown;
   /** Persist the token with the gateway URL that issued it, or clear it with `null`. */
@@ -84,8 +84,6 @@ export class LinkClient {
   private active = false;
   private code: string | null = null;
   private codeRejected = false;
-  /** URL the current socket was created for; a token is stored against this. */
-  private socketUrl = '';
   private listeners = new Set<(s: LinkState) => void>();
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
@@ -108,8 +106,8 @@ export class LinkClient {
   }
 
   /**
-   * The stored token, only if it was issued by the given gateway URL. A legacy or
-   * malformed stored value is discarded.
+   * The stored token, only if it was issued by the given gateway URL. A malformed
+   * stored value counts as no token.
    */
   private tokenForUrl(url: string): string | null {
     const cred = this.readCredential();
@@ -125,7 +123,6 @@ export class LinkClient {
         return { url, token };
       }
     }
-    if (raw) void this.deps.setToken(null);
     return null;
   }
 
@@ -192,7 +189,6 @@ export class LinkClient {
     );
     let ws: SocketLike;
     try {
-      this.socketUrl = url;
       ws = this.deps.createSocket(url);
     } catch {
       this.scheduleRetry('ERROR');
@@ -220,7 +216,7 @@ export class LinkClient {
     };
     ws.onmessage = (ev) => {
       if (this.socket !== ws) return;
-      void this.handle(ws, ev.data);
+      void this.handle(ws, ev.data, url);
     };
     ws.onerror = () => {};
     ws.onclose = (ev) => {
@@ -238,7 +234,7 @@ export class LinkClient {
     };
   }
 
-  private async handle(origin: SocketLike, raw: unknown): Promise<void> {
+  private async handle(origin: SocketLike, raw: unknown, url: string): Promise<void> {
     if (typeof raw !== 'string') return;
     const parsed = parseLinkMessage(raw);
     if (!parsed.ok) return;
@@ -246,7 +242,7 @@ export class LinkClient {
     switch (msg.type) {
       case 'welcome': {
         if (msg.pairingToken) {
-          await this.deps.setToken({ url: this.socketUrl, token: msg.pairingToken });
+          await this.deps.setToken({ url, token: msg.pairingToken });
         }
         this.code = null;
         this.codeRejected = false;

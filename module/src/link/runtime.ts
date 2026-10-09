@@ -8,12 +8,25 @@ const NS = 'agent-gateway';
 
 let client: LinkClient | null = null;
 
+/**
+ * The old `pairingToken` string is not tied to any gateway, so it is never sent: clear it
+ * once, when the link is first created.
+ */
+function clearLegacyToken(): void {
+  try {
+    if (game.settings.get(NS, 'pairingToken')) void game.settings.set(NS, 'pairingToken', '');
+  } catch {
+    // Setting not registered: nothing to clear.
+  }
+}
+
 /** The single per-client link; created on first use. */
 export function getLinkClient(): LinkClient {
+  if (!client) clearLegacyToken();
   client ??= new LinkClient({
     getGatewayUrl: () => String(game.settings.get(NS, 'gatewayUrl')),
-    getToken: () => game.settings.get(NS, 'pairingToken'),
-    setToken: (c) => game.settings.set(NS, 'pairingToken', c),
+    getToken: () => game.settings.get(NS, 'pairingCredential'),
+    setToken: (c) => game.settings.set(NS, 'pairingCredential', c),
     getIdentity: () => ({
       moduleVersion: String(game.modules?.get(NS)?.version ?? '0.0.0'),
       foundryVersion: String(game.version ?? game.data?.version ?? ''),
