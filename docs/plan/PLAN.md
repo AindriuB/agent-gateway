@@ -12,8 +12,8 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Task 05 (gateway skeleton and stdio MCP server) is merged. Task 06 (gateway link server) is done; PR to follow. Task 08 is on attempt 2 after review defects (see its task file). Task 07 awaits the Mac live check, then attempt 2. Wave 2 PRs are merged.
-**In flight:** 07, 08
+Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done; its PR follows. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
+**In flight:** 08
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -43,5 +43,11 @@ Task 05 (gateway skeleton and stdio MCP server) is merged. Task 06 (gateway link
 - `gateway/package.json` lacks `@agent-gateway/protocol` as a dependency; bundle it for release (task 41).
 - Add a rate limit on pairing-code attempts if `allowNonLoopback` is ever used; loopback-only makes guessing impractical today.
 - Implementers must run the full `npm run verify` before reporting done. Two attempts in this wave failed on that alone.
+
+### Follow-ups from task 07
+- A rejected code is never visible when a token is stored: status goes Connecting to Connected in about 0.3 s. Show a one-off notification that the code was not accepted.
+- After a rejected code, retries keep re-sending it before the token fallback. Drop the code once it is rejected.
+- Verify Local Network Access behaviour once in Andrew's everyday Chrome profile. The live proof used a fresh profile only.
+- Foundry test stubs: `ApplicationV2` is empty, so pairing app rendering is covered only by the live check.
 
 ## Someday
