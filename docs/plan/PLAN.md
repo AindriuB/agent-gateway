@@ -12,7 +12,7 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after ten attempts; a fresh PR supersedes #14. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
+Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after fourteen attempts; a fresh PR supersedes #16. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
 **In flight:** 08
 
 ### Testing topology and prerequisites
@@ -55,5 +55,7 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - The `gatewayUrl` setting has no `onChange`; editing it in Foundry's core settings does nothing until Connect or a reload.
 - One unexplained Tab-B load stall was seen once with bfcache enabled; it did not reproduce with diagnostics on. Watch for it.
 - The pairing test's fake `querySelector` is permissive; tighten it so a wrong selector fails.
+- The reload test should also assert the registered setting type is String and that the token is sent in hello after a reload.
+- The `stringStorage` stub change replaced an existing line; keep stubs additive.
 
 ## Someday
