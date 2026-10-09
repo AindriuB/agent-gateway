@@ -260,22 +260,27 @@ function headerText(head: RowBlock): string {
   return t;
 }
 
-/** A row line with `cols` cells; `segs` fill the cells from column `startCol`, the others stay empty. */
-function rowLine(segs: { md: string; sep?: true }[], startCol: number, cols: number): string {
-  const cells: string[] = Array.from({ length: cols }, () => '');
+/** A row line; `segs` fill the cells from column `startCol`. Trailing cells the row lacks stay out
+ * (GFM reads them as empty), except that the line has at least `minCells` cells. */
+function rowLine(segs: { md: string; sep?: true }[], startCol: number, minCells: number): string {
+  const cells: string[] = Array.from({ length: startCol }, () => '');
   let col = startCol;
   for (const sg of segs) {
     if (sg.sep) col += 1;
-    else if (col < cols) cells[col] = joinMd(cells[col]!, sg.md);
+    else {
+      while (cells.length <= col) cells.push('');
+      cells[col] = joinMd(cells[col]!, sg.md);
+    }
   }
+  while (cells.length < Math.max(1, minCells)) cells.push('');
   return `| ${cells.map((c) => c.trim()).join(' | ')} |`;
 }
 
 function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: boolean): Fit | null {
   const head = block.index > 0 && needHeader && block.head ? headerText(block.head) : '';
   const tail = block.index === 0 ? `\n${sepLine(block.cols)}` : '';
-  // `| ` + cells joined by ` | ` + ` |`: every row line carries all of its table's columns.
-  const overhead = 4 + 3 * (block.cols - 1) + head.length + tail.length;
+  // `| ` + cells joined by ` | ` + ` |`: a row line carries its own cells; the header carries all columns.
+  const overhead = 4 + 3 * (block.cells - 1) + head.length + tail.length;
   const room = o.room - overhead;
   const maxSeg = o.limit - overhead;
   const chosen: Atom[] = [];
@@ -307,7 +312,7 @@ function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: bool
   const line = rowLine(
     kept.map((a) => ({ md: a.md, sep: a.sep ? (true as const) : undefined })),
     startCol,
-    block.cols,
+    block.index === 0 ? block.cols : 0,
   );
   const text = `${head}${line}${tail}`;
   return failed

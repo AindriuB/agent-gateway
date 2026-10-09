@@ -5,6 +5,8 @@
  * whole segments is always a complete, independently safe markdown document.
  */
 
+import { SERIALISE_CONFIG } from './config.js';
+
 /** One atomic piece of a block; never cut. */
 export interface MdSegment {
   /** Complete, escaped markdown for this segment (a word run, a whole link, an emphasis span, ...). */
@@ -44,8 +46,10 @@ export interface RowBlock extends BlockBase {
   table: number;
   /** 0 is the header row. */
   index: number;
-  /** Column count of the table. */
+  /** Column count of the table (header and delimiter rows carry all of it). */
   cols: number;
+  /** Cells this row actually has; missing trailing cells stay implicit (GFM reads them as empty). */
+  cells: number;
   /** The header row; absent on the header row itself. */
   head?: RowBlock;
 }
@@ -391,16 +395,35 @@ export function parseStream(stream: string): MdBlock[] {
           .map((r) => r.split(M.CS).map(segmentize));
         let cols = 0;
         for (const r of rows) if (r.length > cols) cols = r.length;
+        if (cols > SERIALISE_CONFIG.maxTableColumns) {
+          // Too wide for a GFM table: one flattened text block per row, cells joined by " / ".
+          for (const cells of rows) {
+            const segs: MdSegment[] = [];
+            let content = false;
+            cells.forEach((cell, c2) => {
+              if (c2 > 0) segs.push({ md: ' / ' });
+              for (const sg of cell) {
+                if (sg.br) continue;
+                segs.push(sg.sep ? { md: ' / ' } : sg);
+                if (sg.md.trim() && !sg.sep) content = true;
+              }
+            });
+            if (content) blocks.push({ kind: 'paragraph', segs });
+          }
+          break;
+        }
         let head: RowBlock | undefined;
         rows.forEach((cells, index) => {
           const segs: MdSegment[] = [];
-          for (let c2 = 0; c2 < cols; c2++) {
+          // Only real cells; the header row alone is padded to the full width.
+          const count = index === 0 ? cols : cells.length;
+          for (let c2 = 0; c2 < count; c2++) {
             if (c2 > 0) segs.push({ md: '|', sep: true });
             const cell = cells[c2];
             if (cell?.length) for (const sg of cell) segs.push(sg);
             else segs.push({ md: '' });
           }
-          const row: RowBlock = { kind: 'row', table: tableId, index, cols, segs };
+          const row: RowBlock = { kind: 'row', table: tableId, index, cols, cells: count, segs };
           if (head) row.head = head;
           else head = row;
           blocks.push(row);
