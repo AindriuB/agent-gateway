@@ -69,5 +69,7 @@ Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 0
 - `#` and `>` after newlines inside `<pre>` are not handled.
 - Relative links are resolved against a dummy root, so deep `../` is normalised.
 - GFM autolinks of bare URLs are typed as text.
+- Other-module data outside `flags` is still not filtered: ActiveEffect `changes[].key`, `_stats.compendiumSource`/`duplicateSource`, and module-written `system` fields, including objects named `system` outside schema system data.
+- The module test suite now takes about 10 s; consider moving the min-of-runs scaling tests to a separate slow suite.
 
 ## Someday
