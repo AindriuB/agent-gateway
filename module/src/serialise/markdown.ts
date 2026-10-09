@@ -67,6 +67,43 @@ function plainText(root: Node): string {
 
 const collapse = (s: string) => s.replace(/\s+/g, ' ');
 
+const CELL_SEP = ' / ';
+const ROW_SEP = '; ';
+
+/**
+ * Flatten a nested table to readable plain text in one linear pass: cells are
+ * separated by " / ", rows by "; ", and the result is padded so it never glues
+ * onto preceding text. Link URLs and markup inside nested tables are dropped.
+ */
+function flattenTable(root: Element): string {
+  const parts: string[] = [];
+  const CELL = Symbol('cell');
+  const ROW = Symbol('row');
+  const stack: (Node | symbol)[] = [root];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (typeof n === 'symbol') {
+      if (n === ROW && parts[parts.length - 1] === CELL_SEP) parts.pop();
+      parts.push(n === CELL ? CELL_SEP : ROW_SEP);
+      continue;
+    }
+    if (n.nodeType === 3) parts.push(n.nodeValue ?? '');
+    else if (n.nodeType === 1) {
+      const tag = (n as Element).tagName.toLowerCase();
+      if (DROP.has(tag)) continue;
+      if (tag === 'td' || tag === 'th') stack.push(CELL);
+      else if (tag === 'tr') stack.push(ROW);
+      const kids = n.childNodes;
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]!);
+    }
+  }
+  let text = collapse(parts.join('')).trim();
+  while (text.endsWith(ROW_SEP.trimEnd()) || text.endsWith(CELL_SEP.trimEnd())) {
+    text = text.slice(0, -1).trimEnd();
+  }
+  return text ? ` ${expandUuids(text)} ` : '';
+}
+
 function renderChildren(node: Node, depth: number, pre: boolean): string {
   let out = '';
   for (const child of Array.from(node.childNodes)) out += render(child, depth + 1, pre);
@@ -107,7 +144,7 @@ let tableNesting = 0;
 
 function renderTable(el: Element, depth: number): string {
   // A table inside a cell is flattened to plain text so work stays linear.
-  if (tableNesting > 0) return collapse(plainText(el));
+  if (tableNesting > 0) return flattenTable(el);
   tableNesting += 1;
   let rows: string[][];
   try {

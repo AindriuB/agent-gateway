@@ -102,10 +102,10 @@ describe('htmlToMarkdown', () => {
       return performance.now() - t;
     };
     time(500); // warm up
-    const small = Math.max(time(1000), 5);
-    const large = time(4000);
-    expect(large).toBeLessThan(2000);
-    expect(large).toBeLessThan(small * 16);
+    const small = Math.max(time(8000), 10);
+    const large = time(32000);
+    expect(large).toBeLessThan(5000);
+    expect(large).toBeLessThan(small * 8);
   });
   it('renders nested tables linearly, inner content once', () => {
     expect(
@@ -120,6 +120,22 @@ describe('htmlToMarkdown', () => {
     expect(performance.now() - t).toBeLessThan(2000);
     expect(out.length).toBeLessThan(deep(25).length);
     expect(out.split('leaf').length - 1).toBe(1);
+  });
+  it('separates flattened nested table cells and rows', () => {
+    expect(
+      htmlToMarkdown('<table><tr><td>a<table><tr><td>inner</td></tr></table></td></tr></table>'),
+    ).toBe('| a inner |\n| --- |');
+    const out = htmlToMarkdown(
+      '<table><tr><td>Stats<table><tr><td>Str</td><td>18</td><td>+4</td></tr><tr><td>Dex</td><td>12</td><td>+1</td></tr></table></td></tr></table>',
+    );
+    expect(out).toContain('Str / 18 / +4; Dex / 12 / +1');
+  });
+  it('expands UUIDs inside flattened nested tables', () => {
+    expect(
+      htmlToMarkdown(
+        '<table><tr><td>x<table><tr><td>@UUID[Actor.q]{Q}</td></tr></table></td></tr></table>',
+      ),
+    ).toContain('Q (Actor.q)');
   });
   it('keeps whitespace between inline siblings under body', () => {
     expect(htmlToMarkdown('<strong>Name:</strong> <em>Bob</em>')).toBe('**Name:** *Bob*');
