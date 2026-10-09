@@ -78,6 +78,8 @@ Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 0
 - Fidelity: literal `**` or `*` can appear from nested same-delimiter emphasis or punctuation-adjacent emphasis.
 - Multi-segment words can split across pages at small limits.
 - Very wide tables repeat the header on each page, so output grows with page count.
+- The scaling oracle samples every 2nd/8th/16th/80th item of some corpora (half of SPLIT_TAGS, PROBES and ANCHORS are uncovered) to fit the time budget.
+- Consider a slow suite (`npm run test:slow`) for scaling and full-sweep tests if verify time grows further (currently about 35 s).
 - The paging oracle tolerates `*` in word comparison.
 
 ## Someday
