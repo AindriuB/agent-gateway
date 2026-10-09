@@ -23,6 +23,7 @@ export interface SocketLike {
   onmessage: ((ev: { data: unknown }) => void) | null;
   onclose: ((ev?: unknown) => void) | null;
   onerror: ((ev?: unknown) => void) | null;
+  readyState?: number;
   send(data: string): void;
   close(): void;
 }
@@ -129,7 +130,7 @@ export class LinkClient {
     };
     ws.onmessage = (ev) => {
       if (this.socket !== ws) return;
-      void this.handle(ev.data);
+      void this.handle(ws, ev.data);
     };
     ws.onerror = () => {};
     ws.onclose = () => {
@@ -139,7 +140,7 @@ export class LinkClient {
     };
   }
 
-  private async handle(raw: unknown): Promise<void> {
+  private async handle(origin: SocketLike, raw: unknown): Promise<void> {
     if (typeof raw !== 'string') return;
     const parsed = parseLinkMessage(raw);
     if (!parsed.ok) return;
@@ -179,16 +180,22 @@ export class LinkClient {
         this.send({ type: 'pong' });
         break;
       case 'call':
-        await this.dispatch(msg);
+        await this.dispatch(origin, msg);
         break;
       default:
         break;
     }
   }
 
-  private async dispatch(call: CallMessage): Promise<void> {
+  private async dispatch(origin: SocketLike, call: CallMessage): Promise<void> {
+    // Replies go only to the socket that received the call, and only while it is still current.
+    const reply = (msg: LinkMessage): void => {
+      if (this.socket !== origin) return;
+      if (origin.readyState !== undefined && origin.readyState !== 1) return;
+      origin.send(JSON.stringify(msg));
+    };
     if (!this.onCall) {
-      this.send({
+      reply({
         type: 'error',
         id: call.id,
         code: 'TOOL_NOT_FOUND',
@@ -199,7 +206,7 @@ export class LinkClient {
     try {
       const res = await this.onCall(call);
       if (res.ok) {
-        this.send({
+        reply({
           type: 'result',
           id: call.id,
           ok: true,
@@ -207,10 +214,10 @@ export class LinkClient {
           ...(res.structured !== undefined ? { structured: res.structured } : {}),
         });
       } else {
-        this.send({ type: 'error', id: call.id, code: res.code, message: res.message });
+        reply({ type: 'error', id: call.id, code: res.code, message: res.message });
       }
     } catch (e) {
-      this.send({
+      reply({
         type: 'error',
         id: call.id,
         code: 'INTERNAL',
