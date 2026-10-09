@@ -73,6 +73,7 @@ Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server) and 0
 - The module test suite now takes about 27 s (full verify); consider moving the min-of-runs scaling tests to a separate slow suite.
 - Duplicate SPACING oracle cases: the second template ignores `b`, and no case has trailing whitespace inside the second element.
 - The generated-case skip filter can narrow to text containing `](`, because marked mis-parses `\](` in link text.
+- `<pre>` content inside indented code blocks shows escape backslashes literally (`\<`, `\&`, `\*`); readability only.
 - Intra-word emphasis fidelity: `x<em>*star </em>y` becomes `x*\*star* y`, where emphasis does not open after a word character (it reads `x**star*`).
 
 ## Someday
