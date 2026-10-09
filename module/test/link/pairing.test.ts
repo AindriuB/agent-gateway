@@ -84,3 +84,34 @@ it('submit with an empty code and no token warns and does nothing else', async (
   expect(client.start).not.toHaveBeenCalled();
   expect(client.pair).not.toHaveBeenCalled();
 });
+
+it('a state change updates only the status element, never re-rendering the form', async () => {
+  vi.resetModules();
+  stub = installFoundry(14);
+  const g = globalThis as any;
+  g.game.i18n = { localize: (k: string) => `L:${k}`, format: (k: string) => k };
+  let fire: () => void = () => {};
+  const client = {
+    state: { kind: 'connecting' } as any,
+    onState: (fn: () => void) => {
+      fire = fn;
+      return () => {};
+    },
+  };
+  vi.doMock('../../src/link/runtime.js', () => ({ getLinkClient: () => client }));
+  const mod = await import('../../src/apps/pairing/index.js');
+  const App = mod.createPairingApp();
+  const app = new App();
+  const status = { textContent: '' };
+  const code = { value: 'typed-code' };
+  app.element = { querySelector: (q: string) => (q === '[data-role="status"]' ? status : code) };
+  const render = vi.fn();
+  app.render = render;
+  await app._onRender({}, {});
+  client.state = { kind: 'disconnected' };
+  fire();
+  expect(render).not.toHaveBeenCalled();
+  expect(status.textContent).toBe('L:AGENT_GATEWAY.Link.state.disconnected');
+  expect(code.value).toBe('typed-code');
+  vi.doUnmock('../../src/link/runtime.js');
+});

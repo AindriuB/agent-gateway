@@ -75,6 +75,11 @@ export class LinkClient {
     return this._state;
   }
 
+  /** True while the link is trying to stay connected (false once stopped or replaced). */
+  get isActive(): boolean {
+    return this.active;
+  }
+
   onState(fn: (s: LinkState) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

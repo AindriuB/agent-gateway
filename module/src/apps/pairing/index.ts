@@ -61,7 +61,13 @@ export function createPairingApp(): any {
 
     async _onRender(context: object, options: object): Promise<void> {
       await super._onRender?.(context, options);
-      this.unsubscribe ??= getLinkClient().onState(() => void this.render());
+      this.unsubscribe ??= getLinkClient().onState(() => this.updateStatus());
+    }
+
+    /** Refresh only the status line; a full render would wipe what the user is typing. */
+    private updateStatus(): void {
+      const el = this.element?.querySelector?.('[data-role="status"]');
+      if (el) el.textContent = describeState(getLinkClient().state);
     }
 
     async _onClose(options: object): Promise<void> {

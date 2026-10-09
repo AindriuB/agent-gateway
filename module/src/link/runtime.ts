@@ -43,3 +43,7 @@ export function startLink(): void {
 export function stopLink(): void {
   client?.stop();
 }
+
+export function isLinkActive(): boolean {
+  return client?.isActive ?? false;
+}
