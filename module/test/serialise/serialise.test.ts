@@ -188,6 +188,31 @@ describe('htmlToMarkdown', () => {
       2,
       8,
     ],
+    [
+      'leading blank lines in pre',
+      (n: number) => '<pre>\n' + '\n'.repeat(n) + 'x</pre>',
+      50000,
+      200000,
+      2,
+      8,
+    ],
+    [
+      'leading blank lines in nested pre and code',
+      (n: number) =>
+        '<div><blockquote><pre><code>\n' + '\n'.repeat(n) + 'x</code></pre></blockquote></div>',
+      50000,
+      200000,
+      2,
+      8,
+    ],
+    [
+      'leading blank lines in pre at page start after a table',
+      (n: number) => '<table><tr><td>a</td></tr></table><pre>\n' + '\n'.repeat(n) + 'x</pre>',
+      50000,
+      200000,
+      2,
+      8,
+    ],
     ['repeated spans of a space', (n: number) => '<span> </span>'.repeat(n), 8000, 32000, 5, 8],
     [
       'mixed closed and unclosed UUID labels',

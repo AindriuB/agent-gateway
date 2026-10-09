@@ -416,8 +416,11 @@ export function parseStream(stream: string): MdBlock[] {
         const pc = stream.indexOf(M.PC, i);
         const body = stream.slice(i, pc < 0 ? stream.length : pc);
         i = pc < 0 ? stream.length : pc + 1;
-        const lines = body.replace(/\r\n?/g, '\n').split('\n');
-        while (lines.length && !lines[0]!.trim()) lines.shift();
+        let lines = body.replace(/\r\n?/g, '\n').split('\n');
+        // Index scan, one slice: repeated shift() would move the tail once per blank line.
+        let first = 0;
+        while (first < lines.length && !lines[first]!.trim()) first++;
+        if (first > 0) lines = lines.slice(first);
         while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
         if (!lines.length) break;
         blocks.push({
