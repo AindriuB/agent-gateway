@@ -18,6 +18,9 @@
     "test": "vitest run --passWithNoTests",
     "verify": "npm run build && npm run lint && npm run test"
   },
+  "allowScripts": {
+    "fsevents": true
+  },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
