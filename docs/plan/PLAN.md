@@ -31,7 +31,7 @@ Tasks 05, 06, 07 and 08 depend only on 02, 03 and 04 and can start once those PR
 - Handshake mismatch message must name "module" and "gateway", not "local/remote side" (pick up in task 06 or 07). The user needs to know which side to update.
 - Link version regex is not end-anchored (`1.0.0garbage` parses as major 1); tighten when 06 or 07 touches it.
 - Confirm `result.structured` being optional is what the tool framework wants.
-- Schema checker: follow `$ref`/`$defs`, stop descending into the `properties` map, and decide whether output descriptions are checked. Do before real tools land in task 09.
+- Schema checker: the `properties`-map false positive and output descriptions are fixed (PR #6). Remaining: follow `$ref` (recursive schemas can bypass the depth check) and add `propertyNames` to the walker's single-schema keywords. Do before real tools land in task 09.
 - `hasSceneLevels()` is tree-shaken out of the bundle (unused), so its runtime result is unverified live. Verify once a task uses it, for example by exposing it through the module api or a log line.
 - Compat isolation test should also catch `game['release']`, destructuring and `game.version`; `foundryGeneration()` silently returns 13 if `game.release` is missing.
 - Task 04 v13 evidence is pending until the v13 instance exists.
