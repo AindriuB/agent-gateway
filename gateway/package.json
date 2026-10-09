@@ -14,7 +14,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@agent-gateway/protocol": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "ws": "^8.22.0"
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
   }
 }

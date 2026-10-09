@@ -1,10 +1,66 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
+import { parseArgs } from 'node:util';
+import { createApp } from '../app.js';
+import { ConfigError, loadConfig } from '../config/index.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
   version: string;
 };
 
-if (process.argv.includes('--version')) {
-  console.log(pkg.version);
+const USAGE = `Usage: foundry-agent-gateway [options]
+
+Options:
+  --config <path>     Config file (JSON, must be chmod 600)
+  --link-port <n>     Port for the module link (default 7420)
+  --version           Print version
+  --help              Print this help
+`;
+
+function main(): void {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: process.argv.slice(2),
+      options: {
+        version: { type: 'boolean' },
+        help: { type: 'boolean' },
+        config: { type: 'string' },
+        'link-port': { type: 'string' },
+      },
+      strict: true,
+    }));
+  } catch (err) {
+    process.stderr.write(`${(err as Error).message}\n${USAGE}`);
+    process.exit(2);
+  }
+  if (values.version) {
+    process.stdout.write(`${pkg.version}\n`);
+    return;
+  }
+  if (values.help) {
+    process.stdout.write(USAGE);
+    return;
+  }
+  let config;
+  try {
+    config = loadConfig({ configPath: values.config, flags: { linkPort: values['link-port'] } });
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      process.stderr.write(`${err.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const app = createApp(config, { version: pkg.version });
+  const shutdown = () => void app.stop().finally(() => process.exit(0));
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  process.stdin.once('end', shutdown);
+  app.start().catch((err: unknown) => {
+    process.stderr.write(`Failed to start: ${String(err)}\n`);
+    process.exit(1);
+  });
 }
+
+main();
