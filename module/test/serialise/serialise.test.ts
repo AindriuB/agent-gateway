@@ -91,6 +91,10 @@ describe('htmlToMarkdown', () => {
     );
     expect(htmlToMarkdown('<a href=http://b.example/y>two</a>')).toBe('[two](http://b.example/y)');
   });
+  // Minimum of several runs per size: background CPU load only ever adds time,
+  // so the minimum is the least noisy estimate of the true cost.
+  const RUNS = 7;
+  const minTime = (run: () => number) => Math.min(...Array.from({ length: RUNS }, run));
   // [name, input builder, small n, large n (4x), min baseline ms, max allowed 4x ratio]
   // Linear code gives a ratio near 4; quadratic gives near 16. Table inputs that
   // exercise our flattener are timed on a pre-parsed DOM in the next test.
@@ -98,18 +102,26 @@ describe('htmlToMarkdown', () => {
     ['unclosed anchors', (n: number) => '<a href="'.repeat(n), 8000, 32000, 5, 8],
     ['unclosed bold', (n: number) => '<b>'.repeat(n), 8000, 32000, 20, 8],
     ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n), 32000, 128000, 2, 8],
-  ] as const)('adversarial input (%s) scales sub-quadratically', (_n, make, ns, nl, floor, max) => {
-    const time = (n: number) => {
-      const t = performance.now();
-      htmlToMarkdown(make(n));
-      return performance.now() - t;
-    };
-    time(500); // warm up
-    const small = Math.max(time(ns), floor);
-    const large = time(nl);
-    expect(large).toBeLessThan(5000);
-    expect(large).toBeLessThan(small * max);
-  });
+  ] as const)(
+    'adversarial input (%s) scales sub-quadratically',
+    { timeout: 60000 },
+    (_n, make, ns, nl, floor, max) => {
+      const time = (n: number) => {
+        const input = make(n);
+        const t = performance.now();
+        htmlToMarkdown(input);
+        return performance.now() - t;
+      };
+      time(500); // warm up
+      const small = Math.max(
+        minTime(() => time(ns)),
+        floor,
+      );
+      const large = minTime(() => time(nl));
+      expect(large).toBeLessThan(5000);
+      expect(large).toBeLessThan(small * max);
+    },
+  );
   // Parsed outside the timed region so only our walker is measured.
   const nested = (n: number) =>
     '<table><tr><td>x'.repeat(n) + 'leaf' + '</td></tr></table>'.repeat(n);
@@ -120,17 +132,19 @@ describe('htmlToMarkdown', () => {
   it.each([
     ['deeply nested tables', nested, 2000, 8000],
     ['wide nested table', wide, 5000, 20000],
-  ] as const)('flattening %s scales sub-quadratically', (_n, make, ns, nl) => {
-    const body = (n: number) => new DOMParser().parseFromString(make(n), 'text/html').body;
-    const time = (n: number) => {
-      const b = body(n);
-      const t = performance.now();
-      domToMarkdown(b);
-      return performance.now() - t;
+  ] as const)('flattening %s scales sub-quadratically', { timeout: 60000 }, (_n, make, ns, nl) => {
+    // Parse once per size (parsing is slow and untimed); walking is read-only.
+    const timeOn = (n: number) => {
+      const b = new DOMParser().parseFromString(make(n), 'text/html').body;
+      return () => {
+        const t = performance.now();
+        domToMarkdown(b);
+        return performance.now() - t;
+      };
     };
-    time(200); // warm up
-    const small = Math.max(time(ns), 3);
-    const large = time(nl);
+    timeOn(200)(); // warm up
+    const small = Math.max(minTime(timeOn(ns)), 3);
+    const large = minTime(timeOn(nl));
     expect(large).toBeLessThan(3000);
     expect(large).toBeLessThan(small * 8);
   });

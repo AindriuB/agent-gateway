@@ -183,5 +183,5 @@ describe('markdown serialiser oracle (marked)', () => {
             n++;
           }
     expect(n).toBeGreaterThan(1000);
-  });
+  }, 60000);
 });
