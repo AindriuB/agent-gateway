@@ -1,20 +1,21 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { domToMarkdown } from '../../src/serialise/index.js';
+import { M, makeDocument, parseStream } from '../../src/serialise/index.js';
 
 describe('large tables', () => {
-  it('converts a 150k-row table without throwing', () => {
-    const table = document.createElement('table');
-    const tbody = document.createElement('tbody');
-    for (let i = 0; i < 150000; i++) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.textContent = 'r';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    const md = domToMarkdown(table);
-    expect(md.split('\n').length).toBeGreaterThan(150000);
-  }, 60000);
+  // Built as the renderer's marker stream so no DOM is needed; 150k rows is past the engine's
+  // argument limit, so a `Math.max(...rows)` over the rows throws a RangeError.
+  it('parses a 150k-row table without throwing', () => {
+    const rows = 150000;
+    const stream = M.TO + `${M.RO}r`.repeat(rows) + M.TC;
+    const blocks = parseStream(stream);
+    expect(blocks).toHaveLength(rows);
+    expect(makeDocument(blocks).blocks).toHaveLength(rows);
+  });
+
+  it('keeps the widest row as the column count of a wide table', () => {
+    const stream =
+      M.TO + `${M.RO}a${M.CS}b` + `${M.RO}c`.repeat(150000) + `${M.RO}d${M.CS}e${M.CS}f` + M.TC;
+    const blocks = parseStream(stream);
+    expect(blocks[0]).toMatchObject({ kind: 'row', cols: 3 });
+  });
 });
