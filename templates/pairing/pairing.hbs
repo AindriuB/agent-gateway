@@ -1,0 +1,15 @@
+<section class="agent-gateway-pairing">
+  <p class="status" data-role="status">{{status}}</p>
+  <div class="form-group">
+    <label>{{localize "AGENT_GATEWAY.Pairing.gatewayUrl"}}</label>
+    <input type="text" name="gatewayUrl" value="{{gatewayUrl}}" />
+  </div>
+  <div class="form-group">
+    <label>{{localize "AGENT_GATEWAY.Pairing.code"}}</label>
+    <input type="text" name="code" autocomplete="off" />
+    <p class="hint">{{localize "AGENT_GATEWAY.Pairing.codeHint"}}</p>
+  </div>
+  <footer class="form-footer">
+    <button type="submit"><i class="fa-solid fa-link"></i> {{localize "AGENT_GATEWAY.Pairing.connect"}}</button>
+  </footer>
+</section>

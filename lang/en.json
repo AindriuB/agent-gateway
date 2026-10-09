@@ -13,6 +13,26 @@
         "name": "Include other modules' data",
         "hint": "Allow agents to read data that other modules store on documents."
       }
+    },
+    "Link": {
+      "state": {
+        "disconnected": "Disconnected",
+        "connecting": "Connecting...",
+        "connected": "Connected as {user} to {world}"
+      },
+      "pairingInvalid": "The pairing code was not accepted. Check the code printed by the gateway and try again."
+    },
+    "Pairing": {
+      "title": "Agent Gateway pairing",
+      "menu": {
+        "name": "Pair with gateway",
+        "label": "Pair with gateway",
+        "hint": "Connect this client to an Agent Gateway using the code it printed."
+      },
+      "gatewayUrl": "Gateway URL",
+      "code": "Pairing code",
+      "codeHint": "The code the gateway printed when it started.",
+      "connect": "Connect"
     }
   }
 }

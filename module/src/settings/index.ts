@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { registerPairingMenu } from '../apps/pairing/index.js';
 declare const game: any;
 
 const NS = 'agent-gateway';
@@ -32,7 +33,7 @@ function registerFoundation(): void {
 }
 
 /** Per-feature register functions. Later tasks append here (insertion-only). */
-export const settingRegistrars: Array<() => void> = [registerFoundation];
+export const settingRegistrars: Array<() => void> = [registerFoundation, registerPairingMenu];
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) register();
