@@ -11,14 +11,9 @@ than no plan.
 
 ## Now
 
-### Open the scaffold PR and start wave 2
-Task 01 is in an open PR (task/01-scaffold-workspace, worktree kept because the homelab Foundry links the module to it). Tasks 02, 03 and 04 depend only on 01 and can start once it merges.
-**In flight:** 01 (PR awaiting Andrew)
-
-### Scaffold follow-ups from review and testing
-- `vitest.workspace.ts` is inert under vitest 5; move it to `test.projects` in a root `vitest.config.ts`. Until then no workspace tests are discovered by the root runner.
-- `module/tsconfig.json` has no `types` restriction, so Node globals type-check in browser code; restrict it.
-- Add `fsevents` to npm `allowScripts` (install-script warning on macOS).
+### Start wave 2
+Task 01 merged (PR #3) and 01b is in PR review. Tasks 02, 03 and 04 depend only on 01 and can start now; 02 and 03 use `npm test -w protocol`, which needs 01b merged first.
+**In flight:** 01b (PR awaiting Andrew)
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
