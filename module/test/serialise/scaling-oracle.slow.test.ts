@@ -100,13 +100,13 @@ function pipeline(body: Node, limit = LIMIT): Run {
 // Each document is parsed in its own happy-dom window and closed afterwards: the shared test
 // window keeps every parsed document alive (about 0.5 KB of heap per input byte), which runs a
 // corpus-wide test out of memory.
-async function minTime(html: string): Promise<number> {
+async function minTime(html: string, limit = LIMIT): Promise<number> {
   const win = new Window();
   try {
     const body = new win.DOMParser().parseFromString(html, 'text/html').body as unknown as Node;
-    pipeline(body); // warm up
+    pipeline(body, limit); // warm up
     let best = Infinity;
-    for (let i = 0; i < RUNS; i++) best = Math.min(best, pipeline(body).ms);
+    for (let i = 0; i < RUNS; i++) best = Math.min(best, pipeline(body, limit).ms);
     return best;
   } finally {
     await win.happyDOM.close();
@@ -197,6 +197,17 @@ const COMBOS: [string, (n: number) => string, number?][] = [
     (n) => `<table>${row(70)}${row(1, 'b').repeat(n)}</table>`,
     50,
   ],
+  // Every continuation page of a long cell must not rescan the row's earlier segments.
+  [
+    'long single-cell row, paged small',
+    (n) => `<table><tr><td>${'word '.repeat(8 * n)}</td></tr></table>`,
+    50,
+  ],
+  [
+    'long last cell of a wide row, paged small',
+    (n) => `<table><tr>${cells(40)}<td>${'word '.repeat(8 * n)}</td></tr></table>`,
+    50,
+  ],
 ];
 
 describe('scaling oracle over the corpora', () => {
@@ -242,8 +253,8 @@ describe('scaling oracle over the corpora', () => {
     async (name, build, limit = LIMIT) => {
       const n = 500;
       expect(await sizeGrowth(name, build(n), build(4 * n), limit)).toEqual([]);
-      const small = Math.max(await minTime(build(n)), BASE_MS);
-      const large = await minTime(build(4 * n));
+      const small = Math.max(await minTime(build(n), limit), BASE_MS);
+      const large = await minTime(build(4 * n), limit);
       expect(large < 3000 && large < small * MAX_RATIO, `${small}ms -> ${large}ms`).toBe(true);
     },
   );

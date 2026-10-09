@@ -276,6 +276,22 @@ function rowLine(segs: { md: string; sep?: true }[], startCol: number, minCells:
   return `| ${cells.map((c) => c.trim()).join(' | ')} |`;
 }
 
+const colCache = new WeakMap<RowBlock, Uint32Array>();
+/** The column each segment of a row sits in, computed once per row so a continuation page needn't rescan the prefix. */
+function segColumns(block: RowBlock): Uint32Array {
+  let cols = colCache.get(block);
+  if (!cols) {
+    cols = new Uint32Array(block.segs.length);
+    let col = 0;
+    for (let i = 0; i < block.segs.length; i++) {
+      cols[i] = col;
+      if (block.segs[i]!.sep) col += 1;
+    }
+    colCache.set(block, cols);
+  }
+  return cols;
+}
+
 function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: boolean): Fit | null {
   const head = block.index > 0 && needHeader && block.head ? headerText(block.head) : '';
   const tail = block.index === 0 ? `\n${sepLine(block.cols)}` : '';
@@ -304,11 +320,7 @@ function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: bool
   let from = 0;
   while (from < chosen.length && chosen[from]!.sep) from++;
   const kept = chosen.slice(from);
-  let startCol = 0;
-  if (kept.length) {
-    const first = kept[0]!.seg;
-    for (let i = 0; i < first; i++) if (block.segs[i]!.sep) startCol += 1;
-  }
+  const startCol = kept.length ? segColumns(block)[kept[0]!.seg]! : 0;
   const line = rowLine(
     kept.map((a) => ({ md: a.md, sep: a.sep ? (true as const) : undefined })),
     startCol,

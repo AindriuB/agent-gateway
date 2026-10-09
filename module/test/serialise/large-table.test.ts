@@ -75,3 +75,42 @@ describe('large tables', () => {
     expect(parseStream(stream).map((b) => b.kind)).toEqual(['row', 'row']);
   });
 });
+
+describe('paging a long table cell', () => {
+  // Counts reads of a row's segments while paging every page at a small limit. Each page must read
+  // only the segments it places, not rescan the row's prefix to find its starting column.
+  const segmentReads = (stream: string): number => {
+    const doc = makeDocument(parseStream(stream));
+    let reads = 0;
+    for (const b of doc.blocks) {
+      b.segs = new Proxy(b.segs, {
+        get(t, k, r) {
+          if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+          return Reflect.get(t, k, r);
+        },
+      });
+    }
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      cursor = page(doc, cursor, 50).nextCursor;
+      pages++;
+    } while (cursor && pages < 100000);
+    expect(pages).toBeGreaterThan(10);
+    return reads;
+  };
+  const cell = (words: number) => 'word '.repeat(words).trim();
+
+  it.each([
+    ['one-cell row', (w: number) => M.TO + M.RO + cell(w) + M.TC],
+    [
+      'last cell of a wide row',
+      (w: number) => M.TO + M.RO + `a${M.CS}`.repeat(40) + cell(w) + M.TC,
+    ],
+  ])('%s: segment reads grow linearly with the cell', (_name, build) => {
+    const small = segmentReads(build(1000));
+    const large = segmentReads(build(4000));
+    // Linear is 4x; rescanning the prefix on every page is about 16x.
+    expect(large / small).toBeLessThan(6);
+  });
+});
