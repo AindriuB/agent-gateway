@@ -11,8 +11,11 @@ Hooks.once('init', () => {
 Hooks.once('ready', () => {
   console.log(`agent-gateway | ready (v${foundryGeneration()})`);
   startLink();
-  (globalThis as { addEventListener?: (t: string, f: () => void) => void }).addEventListener?.(
-    'beforeunload',
-    stopLink,
-  );
+  const g = globalThis as {
+    addEventListener?: (t: string, f: (e: { persisted?: boolean }) => void) => void;
+  };
+  g.addEventListener?.('pagehide', () => stopLink());
+  g.addEventListener?.('pageshow', (e) => {
+    if (e.persisted === true) startLink();
+  });
 });
