@@ -45,3 +45,42 @@ it('describes link state with localized strings', async () => {
   );
   expect(describeState({ kind: 'connecting' })).toBe('L:AGENT_GATEWAY.Link.state.connecting');
 });
+
+async function submitWith(token: string, values: Record<string, string>) {
+  vi.resetModules();
+  stub = installFoundry(14);
+  const g = globalThis as any;
+  g.game.i18n = { localize: (k: string) => `L:${k}`, format: (k: string) => k };
+  const warn = vi.fn();
+  g.ui = { notifications: { warn } };
+  const client = { pair: vi.fn(), start: vi.fn() };
+  vi.doMock('../../src/link/runtime.js', () => ({ getLinkClient: () => client }));
+  if (token) await g.game.settings.set('agent-gateway', 'pairingToken', token);
+  const mod = await import('../../src/apps/pairing/index.js');
+  const App = mod.createPairingApp();
+  await App.onSubmit(new Event('submit'), {} as HTMLFormElement, { object: values });
+  vi.doUnmock('../../src/link/runtime.js');
+  return { client, warn, g };
+}
+
+it('submit with a code pairs and stores the gateway URL', async () => {
+  const { client, g } = await submitWith('tok', { gatewayUrl: 'ws://gw', code: ' abc ' });
+  expect(client.pair).toHaveBeenCalledWith('abc');
+  expect(client.start).not.toHaveBeenCalled();
+  expect(g.game.settings.get('agent-gateway', 'gatewayUrl')).toBe('ws://gw');
+});
+
+it('submit with an empty code and a stored token reclaims via start()', async () => {
+  const { client, warn, g } = await submitWith('tok', { gatewayUrl: 'ws://new', code: '' });
+  expect(client.start).toHaveBeenCalledTimes(1);
+  expect(client.pair).not.toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
+  expect(g.game.settings.get('agent-gateway', 'gatewayUrl')).toBe('ws://new');
+});
+
+it('submit with an empty code and no token warns and does nothing else', async () => {
+  const { client, warn } = await submitWith('', { gatewayUrl: 'ws://gw', code: '' });
+  expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
+  expect(client.start).not.toHaveBeenCalled();
+  expect(client.pair).not.toHaveBeenCalled();
+});
