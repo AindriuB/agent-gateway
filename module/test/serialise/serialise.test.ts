@@ -151,7 +151,7 @@ describe('htmlToMarkdown', () => {
     );
   });
   it('decodes entities and strips unknown tags', () => {
-    expect(htmlToMarkdown('<span>a &amp; b</span>')).toBe('a \\& b');
+    expect(htmlToMarkdown('<span>a &amp; b</span>')).toBe('a &amp; b');
   });
   it('drops script, style, template and noscript content', () => {
     const out = htmlToMarkdown(
@@ -160,7 +160,7 @@ describe('htmlToMarkdown', () => {
     expect(out).toBe('hi');
   });
   it('keeps a literal < in text', () => {
-    expect(htmlToMarkdown('<p>a < b and c > d</p>')).toBe('a \\< b and c > d');
+    expect(htmlToMarkdown('<p>a < b and c > d</p>')).toBe('a &lt; b and c > d');
   });
   it('keeps single-quoted and unquoted hrefs', () => {
     expect(htmlToMarkdown("<a href='http://a.example/x'>one</a>")).toBe(
@@ -338,7 +338,9 @@ describe('htmlToMarkdown', () => {
     expect(htmlToMarkdown('<table><tr><td>[x](file:///y)</td></tr></table>')).toBe(
       '| \\[x\\](file:///y) |\n| --- |',
     );
-    expect(htmlToMarkdown('<p>&lt;script&gt;x&lt;/script&gt;</p>')).toBe('\\<script>x\\</script>');
+    expect(htmlToMarkdown('<p>&lt;script&gt;x&lt;/script&gt;</p>')).toBe(
+      '&lt;script>x&lt;/script>',
+    );
     expect(htmlToMarkdown('<p>[<a href="http://a.example">z</a>](q)</p>')).toBe(
       '\\[[z](http://a.example/)\\](q)',
     );
@@ -407,8 +409,8 @@ describe('page', () => {
   });
   it('keeps entities, escapes and links whole at the cut', () => {
     const pages = pagesOf('<p>&amp;lt; &amp;#60; \\&lt;img&gt; [x](u) ![a](u)</p>', 6);
-    expect(pages.every((p) => !/^[<&]/.test(p))).toBe(true);
-    expect(pages.join(' ')).toBe('\\&lt; \\&#60; \\\\\\<img> \\[x\\](u) \\!\\[a\\](u)');
+    expect(pages.every((p) => !/^[<]/.test(p))).toBe(true);
+    expect(pages.join(' ')).toBe('&amp;lt; &amp;#60; \\\\&lt;img> \\[x\\](u) \\!\\[a\\](u)');
   });
   it('repeats the marker of a continued heading, item and quote', () => {
     expect(pagesOf('<h2>aaa bbb</h2>', 8)).toEqual(['## aaa', '## bbb']);
@@ -428,12 +430,9 @@ describe('page', () => {
   it('closes and reopens a code fence between lines', () => {
     const html = '<pre>line1\n```\nline3\nline4</pre>';
     expect(htmlToMarkdown(html)).toBe('````\nline1\n```\nline3\nline4\n````');
-    expect(pagesOf(html, 20)).toEqual([
-      '````\nline1\n```\n````',
-      '````\nline3\n````',
-      '````\nline4\n````',
-    ]);
-    expect(pagesOf(html, 30)).toEqual(['````\nline1\n```\nline3\n````', '````\nline4\n````']);
+    // The fence is sized per page from the lines on it.
+    expect(pagesOf(html, 20)).toEqual(['````\nline1\n```\n````', '```\nline3\nline4\n```']);
+    expect(pagesOf(html, 30)).toEqual(['````\nline1\n```\nline3\n````', '```\nline4\n```']);
   });
   it('repeats the table header on a continuation page', () => {
     const html =
@@ -446,7 +445,7 @@ describe('page', () => {
   });
   it('treats a plain string as text, not markdown', () => {
     expect(page('# not a heading\n\n- nor <b>this</b>').chunk).toBe(
-      '\\# not a heading\n\n\\- nor \\<b>this\\</b>',
+      '\\# not a heading\n\n\\- nor &lt;b>this&lt;/b>',
     );
   });
   it('returns an opaque cursor and rejects invalid or forged ones', () => {

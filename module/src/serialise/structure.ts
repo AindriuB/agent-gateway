@@ -15,6 +15,8 @@ export interface MdSegment {
   br?: true;
   /** A table cell separator. */
   sep?: true;
+  /** Longest run of backticks in a code line; the fence of a page is sized from the lines on it. */
+  ticks?: number;
 }
 
 interface BlockBase {
@@ -49,8 +51,7 @@ export interface RowBlock extends BlockBase {
 }
 export interface CodeBlock extends BlockBase {
   kind: 'code';
-  /** One segment per line; `md` is the raw line. */
-  fence: string;
+  /** One segment per line; `md` is the raw line. The fence is sized per page, see `fitCode`. */
 }
 export interface RuleBlock extends BlockBase {
   kind: 'rule';
@@ -393,15 +394,15 @@ export function parseStream(stream: string): MdBlock[] {
         while (lines.length && !lines[0]!.trim()) lines.shift();
         while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
         if (!lines.length) break;
-        let longest = 0;
-        for (const l of lines) {
-          const runs = l.match(/`+/g);
-          if (runs) for (const r of runs) if (r.length > longest) longest = r.length;
-        }
         blocks.push({
           kind: 'code',
-          fence: '`'.repeat(Math.max(3, longest + 1)),
-          segs: lines.map((l) => ({ md: trimEndBlanks(l) })),
+          segs: lines.map((l) => {
+            const md = trimEndBlanks(l);
+            let ticks = 0;
+            const runs = md.match(/`+/g);
+            if (runs) for (const r of runs) if (r.length > ticks) ticks = r.length;
+            return { md, ticks };
+          }),
         });
         break;
       }
@@ -422,13 +423,17 @@ export function parseStream(stream: string): MdBlock[] {
   return blocks;
 }
 
-/** Backslash-escape characters that could form markdown syntax (links, emphasis, code, tables, html, entities).
- * Every `<` and `&` is escaped unconditionally: text nodes are escaped one at a time, so a tag or
- * entity split across nodes must not be completed by the concatenation. Line-start constructs
+/** Escape characters that could form markdown syntax (links, emphasis, strikethrough, code, tables, html, entities).
+ * Every `<` and `&` is written as an entity (`&lt;`, `&amp;`), never as a backslash escape: a reader's autolink
+ * can swallow a backslash and then expose the `<`, whereas an entity only ever decodes to text. This holds
+ * unconditionally: text nodes are escaped one at a time, so a tag or entity split across nodes must not be
+ * completed by the concatenation. Line-start constructs
  * (headings, quotes, lists, rules) are handled when a line is assembled, see `escapeLineStart`. */
 export function escapeMd(text: string): string {
   // `![` is escaped as `\![` too: some readers un-escape link labels once and would then see an image.
-  return text.replace(/!(?=\[)|[\\[\]*_`|<&]/g, '\\$&');
+  return text.replace(/!(?=\[)|[\\[\]*_`|~]|[<&]/g, (c) =>
+    c === '<' ? '&lt;' : c === '&' ? '&amp;' : `\\${c}`,
+  );
 }
 
 /**

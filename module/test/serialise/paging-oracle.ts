@@ -12,8 +12,12 @@ export type Pager = (
 
 const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
-const mdit = new MarkdownIt({ html: true });
-const marked = new Marked({ gfm: true, tokenizer: { url: () => undefined } });
+/** Readers under test, all with their DEFAULT url handling: GFM autolinks on, linkify on and off. */
+export const mditLinkify = new MarkdownIt({ html: true, linkify: true });
+export const mditPlain = new MarkdownIt({ html: true, linkify: false });
+export const marked = new Marked({ gfm: true });
+/** A link a reader made from typed text (not an input anchor) is fine only if it is a plain http(s)/mailto/www one. */
+export const autolinkOk = (href: string): boolean => /^(?:https?:|mailto:)/i.test(href);
 
 const allowedHref = (href: string): boolean => {
   try {
@@ -93,15 +97,23 @@ const decodeEnt = (s: string) => s.replace(/&(amp|lt|gt|quot|#39);/g, (_m, e: st
 export interface Rendered {
   tags: Set<string>;
   hrefs: string[];
+  /** Hrefs of anchors whose text is the address itself, as an autolink renders. */
+  autos: Set<string>;
   words: string[];
   problems: string[];
 }
 
 /** Render markdown with markdown-it (html: true) and check it against the allowlist. */
-export function renderChecked(md: string): Rendered {
+export function renderChecked(md: string, mdit: MarkdownIt = mditPlain): Rendered {
   const out = mdit.render(md);
   const tags = new Set<string>();
   const hrefs: string[] = [];
+  const autos = new Set<string>();
+  for (const a of out.matchAll(/<a href="([^"]*)">([^]*?)<\/a>/g)) {
+    const href = decodeEnt(a[1]!);
+    const text = decodeEnt(a[2]!.replace(/<[^>]*>/g, ''));
+    if (text === href || `http://${text}` === href || `mailto:${text}` === href) autos.add(href);
+  }
   const problems: string[] = [];
   const re = /<([^>]*)>/g;
   let m: RegExpExecArray | null;
@@ -130,7 +142,7 @@ export function renderChecked(md: string): Rendered {
   const text = out.replace(/<\/?(strong|em|a|code)(\s[^>]*)?>/g, '').replace(/<[^>]*>/g, ' ');
   // Emphasis next to punctuation or a word may not flank, so its asterisks can stay literal; ignore them.
   const words = decodeEnt(text).replace(/\*/g, '').split(/\s+/).filter(Boolean);
-  return { tags, hrefs, words, problems };
+  return { tags, hrefs, autos, words, problems };
 }
 
 interface Nested {
@@ -250,12 +262,23 @@ export function pageProblems(chunk: string, s: Subject): { problems: string[]; w
     if (t.type === 'link') {
       const ta = (t as { href: string }).href;
       // CommonMark decodes entities and escapes in targets; marked leaves them raw.
-      checkHref('marked link', decodeEnt(ta).replace(/\\([!-/:-@[-`{-~])/g, '$1'));
+      const href = decodeEnt(ta).replace(/\\([!-/:-@[-`{-~])/g, '$1');
+      const auto = t.raw === (t as { text: string }).text;
+      if (auto && !known.has(norm(href))) {
+        if (!autolinkOk(href)) problems.push(`marked autolink ${JSON.stringify(t.raw)}: ${href}`);
+      } else checkHref('marked link', href);
     }
   });
-  const r = renderChecked(chunk);
+  const r = renderChecked(chunk, mditPlain);
   for (const p of r.problems) problems.push(`markdown-it: ${p}`);
   for (const h of r.hrefs) checkHref('markdown-it link', h);
+  const rl = renderChecked(chunk, mditLinkify);
+  for (const p of rl.problems) problems.push(`markdown-it linkify: ${p}`);
+  for (const h of rl.hrefs) {
+    if (rl.autos.has(h) && !known.has(norm(h))) {
+      if (!autolinkOk(h)) problems.push(`markdown-it linkify: autolink ${h}`);
+    } else checkHref('markdown-it linkify link', h);
+  }
   for (const t of r.tags) {
     if (BLOCK_TYPES.has(t) && !s.fullTags.has(t))
       problems.push(`new block type <${t}> not in the document`);

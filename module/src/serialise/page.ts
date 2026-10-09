@@ -101,6 +101,23 @@ function* atomsOf(block: MdBlock, s: number, w: number, maxSeg: number): Generat
   }
 }
 
+/**
+ * Append `md` to a line. A literal `!` directly before an emitted `[` would turn the link into an
+ * image, so it is escaped here, at assembly, whatever form (word run or plain fallback) either side took.
+ */
+function joinMd(cur: string, md: string): string {
+  if (md.charCodeAt(0) === 91 && cur.endsWith('!')) {
+    let k = cur.length - 1;
+    while (k > 0 && cur.charCodeAt(k - 1) === 92) k--;
+    // An even run of backslashes before the `!` leaves it unescaped.
+    if ((cur.length - 1 - k) % 2 === 0) return `${cur.slice(0, -1)}\\!${md}`;
+  }
+  return cur + md;
+}
+/** One extra character where `joinMd` may escape a `!` (an upper bound; an already escaped `!` costs nothing). */
+const bangCost = (prevMd: string, md: string): number =>
+  md.charCodeAt(0) === 91 && prevMd.endsWith('!') ? 1 : 0;
+
 /** A cut between two atoms is soft when whitespace or a line break already separates them. */
 const soft = (prev: Atom, cur: Atom): boolean =>
   cur.br || prev.sep || cur.sep || /\s$/.test(prev.md) || /^\s/.test(cur.md);
@@ -166,6 +183,7 @@ function fitText(block: MdBlock, s: number, w: number, o: Opts, indent: number):
   let lineHas = false;
   let head = '';
   let extra = 0;
+  let prevMd = '';
   for (const a of atomsOf(block, s, w, maxSeg)) {
     const newLine = a.br && chosen.length > 0;
     const lineStart = !lineHas || newLine;
@@ -175,7 +193,11 @@ function fitText(block: MdBlock, s: number, w: number, o: Opts, indent: number):
     if (nextHead.length < HEAD) nextHead = (nextHead + md).slice(0, HEAD);
     const prevExtra = newLine ? 0 : extra;
     const nextExtra = escapes && nextHead.trim() ? lsExtra(nextHead.trimStart()) : 0;
-    const cost = md.length + (newLine ? 1 + cont.length : 0) + (nextExtra - prevExtra);
+    const cost =
+      md.length +
+      (newLine ? 1 + cont.length : 0) +
+      (nextExtra - prevExtra) +
+      (newLine ? 0 : bangCost(prevMd, md));
     if ((substantive > 0 || !o.must) && len + cost > room) {
       failed = a;
       break;
@@ -185,6 +207,7 @@ function fitText(block: MdBlock, s: number, w: number, o: Opts, indent: number):
     len += cost;
     head = nextHead;
     extra = nextExtra;
+    if (md) prevMd = md;
     if (md.trim()) {
       substantive += 1;
       lineHas = true;
@@ -199,7 +222,7 @@ function fitText(block: MdBlock, s: number, w: number, o: Opts, indent: number):
       lines.push(cur);
       cur = '';
     }
-    cur += cur === '' ? a.md.trimStart() : a.md;
+    cur = joinMd(cur, cur === '' ? a.md.trimStart() : a.md);
   });
   lines.push(cur);
   const out = lines.map((l) => l.trim()).filter(Boolean);
@@ -208,8 +231,14 @@ function fitText(block: MdBlock, s: number, w: number, o: Opts, indent: number):
   }
   if (block.kind === 'heading' && out.length) {
     // A trailing run of `#` would be read as the heading's closing sequence.
+    // Unless an earlier escape (a line that is only `#`) already covers it.
     const last = out.length - 1;
-    out[last] = out[last]!.replace(/#$/, '\\#');
+    const l = out[last]!;
+    if (l.endsWith('#')) {
+      let k = l.length - 1;
+      while (k > 0 && l.charCodeAt(k - 1) === 92) k--;
+      if ((l.length - 1 - k) % 2 === 0) out[last] = `${l.slice(0, -1)}\\#`;
+    }
   }
   const text = out.map((l, k) => (k === 0 ? first : cont) + l).join('\n');
   return failed
@@ -237,7 +266,7 @@ function rowLine(segs: { md: string; sep?: true }[], startCol: number, cols: num
   let col = startCol;
   for (const sg of segs) {
     if (sg.sep) col += 1;
-    else if (col < cols) cells[col] += sg.md;
+    else if (col < cols) cells[col] = joinMd(cells[col]!, sg.md);
   }
   return `| ${cells.map((c) => c.trim()).join(' | ')} |`;
 }
@@ -253,8 +282,10 @@ function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: bool
   let failed: Atom | null = null;
   let len = 0;
   let substantive = 0;
+  let prevMd = '';
   for (const a of atomsOf(block, s, w, maxSeg)) {
-    const cost = a.sep ? 0 : a.md.length;
+    const cost = a.sep ? 0 : a.md.length + bangCost(prevMd, a.md);
+    prevMd = a.sep ? '' : a.md;
     if ((substantive > 0 || !o.must) && len + cost > room) {
       failed = a;
       break;
@@ -284,20 +315,25 @@ function fitRow(block: RowBlock, s: number, w: number, o: Opts, needHeader: bool
     : { text, complete: true, s: 0, w: 0 };
 }
 
-function fitCode(block: MdBlock & { fence: string }, s: number, o: Opts): Fit | null {
-  const room = o.room - 2 * block.fence.length - 2;
+function fitCode(block: MdBlock, s: number, o: Opts): Fit | null {
   const lines: string[] = [];
   let len = 0;
+  // The fence is as long as the longest backtick run among the lines ON THIS PAGE, plus one (minimum 3).
+  let fence = 3;
   let i = s;
   for (; i < block.segs.length; i++) {
-    const cost = block.segs[i]!.md.length + 1;
-    if ((lines.length > 0 || !o.must) && len + cost > room) break;
-    lines.push(block.segs[i]!.md);
+    const sg = block.segs[i]!;
+    const f = Math.max(fence, (sg.ticks ?? 0) + 1);
+    const cost = sg.md.length + 1;
+    if ((lines.length > 0 || !o.must) && len + cost + 2 * f + 2 > o.room) break;
+    lines.push(sg.md);
     len += cost;
+    fence = f;
   }
   const complete = i >= block.segs.length;
   if (!complete && !o.must) return null;
-  const text = `${block.fence}\n${lines.join('\n')}\n${block.fence}`;
+  const mark = '`'.repeat(fence);
+  const text = `${mark}\n${lines.join('\n')}\n${mark}`;
   return { text, complete, s: complete ? 0 : i, w: 0 };
 }
 

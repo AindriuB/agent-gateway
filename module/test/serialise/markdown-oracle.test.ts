@@ -1,8 +1,15 @@
 // @vitest-environment happy-dom
-import { Marked, type Token, type Tokens } from 'marked';
+import type { Token, Tokens } from 'marked';
 import { describe, expect, it } from 'vitest';
 import { htmlToMarkdown } from '../../src/serialise/index.js';
 import { PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
+import {
+  autolinkOk,
+  marked as defaultMarked,
+  renderChecked,
+  mditLinkify,
+  mditPlain,
+} from './paging-oracle.js';
 
 const ALLOWED = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
@@ -61,26 +68,46 @@ function tokensOfType(tokens: Token[], type: string, out: Token[] = []): Token[]
 
 /** The serialiser never emits raw HTML, so a reader must find no html token at all. */
 function noHtml(html: string, md: string): void {
-  const found = tokensOfType(
-    new Marked({ gfm: true, tokenizer: { url: () => undefined } }).lexer(md),
-    'html',
-  );
+  const found = tokensOfType(defaultMarked.lexer(md), 'html');
   expect(
     found.map((t) => t.raw),
     `html token from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
   ).toEqual([]);
+  // Whole-document output under default marked, and markdown-it with linkify on and off.
+  expect(
+    defaultMarked.parse(md) as string,
+    `marked output from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
+  ).not.toMatch(
+    /<(?!\/?(?:p|h[1-6]|ul|ol|li|blockquote|pre|code|em|strong|a|br|hr|table|thead|tbody|tr|th|td|del)\b)/i,
+  );
+  for (const [name, it] of [
+    ['linkify', mditLinkify],
+    ['plain', mditPlain],
+  ] as const) {
+    expect(
+      renderChecked(md, it).problems,
+      `markdown-it ${name} from ${JSON.stringify(html)} => ${JSON.stringify(md)}`,
+    ).toEqual([]);
+  }
 }
 
 /** Parse markdown with marked and return every link/image it finds. */
 function linksOf(md: string): Tokens.Link[] {
   const out: Token[] = [];
-  walk(new Marked({ gfm: true, tokenizer: { url: () => undefined } }).lexer(md), out);
+  walk(defaultMarked.lexer(md), out);
   // CommonMark decodes entities and backslash escapes in link targets; do so for any marked left raw.
   const ta = document.createElement('textarea');
-  return (out as Tokens.Link[]).map((l) => {
-    ta.innerHTML = l.href.replace(/</g, '&lt;');
-    return { ...l, href: ta.value.replace(/\\([!-/:-@[-`{-~])/g, '$1') };
-  });
+  return (out as Tokens.Link[])
+    .filter((l) => {
+      // A link made from typed text by GFM autolinking is fine if it is plain http(s)/mailto.
+      const auto = l.type === 'link' && l.raw === l.text;
+      if (auto) expect(autolinkOk(l.href), `autolink ${l.raw}`).toBe(true);
+      return !auto;
+    })
+    .map((l) => {
+      ta.innerHTML = l.href.replace(/</g, '&lt;');
+      return { ...l, href: ta.value.replace(/\\([!-/:-@[-`{-~])/g, '$1') };
+    });
 }
 
 /** Hrefs of real anchors in the input, as the browser's DOM reports them. */
@@ -166,9 +193,7 @@ function inputWords(html: string): string[] {
 
 /** Word tokens of the markdown as a reader sees it (marked -> HTML -> text). */
 function outputWords(md: string): string[] {
-  const rendered = new Marked({ gfm: true, tokenizer: { url: () => undefined } }).parse(
-    md,
-  ) as string;
+  const rendered = defaultMarked.parse(md) as string;
   const spaced = rendered
     .replace(/<(?!\/?(?:strong|em|a|code|b|i)\b)[^>]*>/g, ' ')
     .replace(/<[^>]*>/g, '');
