@@ -31,6 +31,54 @@ function setup(optIn: boolean) {
 }
 
 describe('serialiseDocument', () => {
+  const nested = () => ({
+    _id: 'a1',
+    flags: { core: { k: 1 }, other: { secret: 1 } },
+    system: { flags: { other: 'keep' } },
+    items: [
+      {
+        _id: 'i1',
+        flags: { other: { secret: 2 }, dnd5e: { ok: 1 } },
+        effects: [{ _id: 'e1', flags: { other: { secret: 3 }, 'agent-gateway': { ok: 1 } } }],
+      },
+    ],
+    tokens: [{ _id: 't1', flags: { other: { secret: 4 }, core: { ok: 1 } } }],
+    pages: [{ _id: 'p1', flags: { other: { secret: 5 } } }],
+  });
+  it('filters flags on embedded documents', () => {
+    setup(false);
+    const out = serialiseDocument(nested(), { includeOtherModuleData: false }) as any;
+    expect(Object.keys(out.items[0].flags)).toEqual(['dnd5e']);
+    expect(Object.keys(out.items[0].effects[0].flags)).toEqual(['agent-gateway']);
+    expect(Object.keys(out.tokens[0].flags)).toEqual(['core']);
+    expect(out.pages[0].flags).toEqual({});
+    expect(JSON.stringify(out)).not.toContain('secret');
+    expect(out.system.flags).toEqual({ other: 'keep' });
+  });
+  it('keeps embedded flags when opted in', () => {
+    setup(true);
+    const out = serialiseDocument(nested(), { includeOtherModuleData: true }) as any;
+    expect(out.items[0].effects[0].flags.other).toBeDefined();
+    expect(out.tokens[0].flags.other).toBeDefined();
+  });
+  it('filters deeply nested embedded documents without overflowing', () => {
+    setup(false);
+    let node: any = { _id: 'leaf', flags: { other: { secret: 1 } } };
+    for (let i = 0; i < 1500; i++) node = { _id: `n${i}`, flags: { other: 1 }, child: [node] };
+    const out = serialiseDocument(
+      { toObject: () => node },
+      { includeOtherModuleData: false },
+    ) as any;
+    let cur = out;
+    let depth = 0;
+    while (cur.child) {
+      expect(cur.flags).toEqual({});
+      cur = cur.child[0];
+      depth++;
+    }
+    expect(depth).toBe(1500);
+    expect(cur.flags).toEqual({});
+  });
   it('strips other modules flags by default', () => {
     setup(false);
     const out = serialiseDocument({ toObject: () => doc }, { includeOtherModuleData: false });
@@ -102,6 +150,15 @@ describe('htmlToMarkdown', () => {
     ['unclosed anchors', (n: number) => '<a href="'.repeat(n), 8000, 32000, 5, 8],
     ['unclosed bold', (n: number) => '<b>'.repeat(n), 8000, 32000, 20, 8],
     ['unclosed UUIDs', (n: number) => '@UUID['.repeat(n), 32000, 128000, 2, 8],
+    ['unclosed UUID labels', (n: number) => '@UUID[x]{'.repeat(n), 32000, 128000, 2, 8],
+    [
+      'mixed closed and unclosed UUID labels',
+      (n: number) => '@UUID[x]{a}@UUID[y]{'.repeat(n / 2),
+      32000,
+      128000,
+      2,
+      8,
+    ],
   ] as const)(
     'adversarial input (%s) scales sub-quadratically',
     { timeout: 60000 },

@@ -119,6 +119,8 @@ function expandUuids(text: string, esc: (s: string) => string = escapeMd): strin
   const TAG = '@UUID[';
   let out = '';
   let i = 0;
+  // Once a search finds no `}` there is none after any later position either; never rescan.
+  let braceGone = false;
   for (;;) {
     const at = text.indexOf(TAG, i);
     if (at < 0) return out + esc(text.slice(i));
@@ -128,7 +130,8 @@ function expandUuids(text: string, esc: (s: string) => string = escapeMd): strin
     let end = close + 1;
     let label = uuid;
     if (uuid && text[end] === '{') {
-      const brace = text.indexOf('}', end + 1);
+      const brace = braceGone ? -1 : text.indexOf('}', end + 1);
+      if (brace < 0) braceGone = true;
       if (brace >= 0) {
         label = text.slice(end + 1, brace) || uuid;
         end = brace + 1;
