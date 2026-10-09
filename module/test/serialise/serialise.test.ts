@@ -359,4 +359,39 @@ describe('page', () => {
   it('tolerates a junk cursor', () => {
     expect(page('abc', 'zzz', 2).chunk).toBe('ab');
   });
+
+  const all = (text: string, limit?: number): string[] => {
+    const out: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const p = page(text, cursor, limit);
+      expect(p.chunk.length).toBeGreaterThan(0);
+      out.push(p.chunk);
+      cursor = p.nextCursor;
+    } while (cursor);
+    return out;
+  };
+
+  it('does not leave an escaping backslash at the end of a page', () => {
+    const text = `${'x'.repeat(7999)}\\<img src=x onerror=alert(1)>`;
+    const pages = all(text);
+    expect(pages.join('')).toBe(text);
+    expect(pages[0]).toBe('x'.repeat(7999));
+    expect(pages[1]!.startsWith('\\<img')).toBe(true);
+  });
+  it('treats only an odd trailing run of backslashes as an escape', () => {
+    expect(page('ab\\\\<c', null, 4).chunk).toBe('ab\\\\'); // even run: cut stays
+    expect(page('ab\\\\\\<c', null, 5).chunk).toBe('ab\\\\'); // odd run: moves back one
+  });
+  it('does not split surrogate pairs and always progresses', () => {
+    const text = 'a\u{1F600}b\u{1F600}';
+    expect(page(text, null, 2).chunk).toBe('a');
+    expect(all(text, 2).join('')).toBe(text);
+    expect(all('\u{1F600}\u{1F600}', 1).join('')).toBe('\u{1F600}\u{1F600}');
+    expect(all('\\\\\\\\\\', 3).join('')).toBe('\\\\\\\\\\');
+  });
+  it('concatenating pages reproduces the text for many limits', () => {
+    const text = 'a\\<b\u{1F600}\\\\\\c&\\&d'.repeat(30);
+    for (const limit of [1, 2, 3, 5, 7, 11, 50, 1000]) expect(all(text, limit).join('')).toBe(text);
+  });
 });

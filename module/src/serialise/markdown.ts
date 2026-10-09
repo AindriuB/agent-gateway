@@ -272,7 +272,8 @@ function renderTable(el: Element, depth: number): string {
     tableNesting -= 1;
   }
   if (!rows.length) return '';
-  const width = Math.max(...rows.map((r) => r.length));
+  let width = 0;
+  for (const r of rows) if (r.length > width) width = r.length;
   const line = (r: string[]) =>
     `| ${Array.from({ length: width }, (_, i) => r[i] ?? '').join(' | ')} |`;
   const [head, ...rest] = rows as [string[], ...string[][]];

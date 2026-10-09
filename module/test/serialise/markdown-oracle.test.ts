@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { Marked, type Token, type Tokens } from 'marked';
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown } from '../../src/serialise/index.js';
+import { htmlToMarkdown, page } from '../../src/serialise/index.js';
 
 const ALLOWED = new Set(['http:', 'https:', 'mailto:']);
 const BASE = 'https://relative.invalid/';
@@ -371,4 +371,37 @@ describe('markdown serialiser oracle (marked)', () => {
           }
     expect(n).toBeGreaterThan(1000);
   }, 60000);
+});
+
+describe('paged markdown is safe page by page', () => {
+  const inputs = [
+    `<p>${'x'.repeat(7999)}&lt;img src=x onerror=alert(1)&gt;</p>`,
+    `<p>${'x'.repeat(7999)}<span>&lt;img src=x onerror=alert(1)&gt;</span> [a] \\ \u{1F600}</p>`,
+    '<p>a &lt;b&gt; &amp;lt; \\&lt;script&gt; [x](javascript:alert(1)) \u{1F600}&lt;i&gt;</p>'.repeat(
+      40,
+    ),
+    '<p>\\\\&lt;b&gt; \\\\\\&lt;i&gt; <a href="https://a.example/">l</a> &lt;img src=x&gt;</p>'.repeat(
+      40,
+    ),
+  ];
+  for (const html of inputs) {
+    it(`every page parses without html or bad links (${html.length} chars)`, () => {
+      const md = htmlToMarkdown(html);
+      for (const limit of [...Array.from({ length: 50 }, (_, i) => i + 1), 97, 1000, 8000]) {
+        let cursor: string | null = null;
+        let joined = '';
+        do {
+          const p = page(md, cursor, limit);
+          joined += p.chunk;
+          noHtml(html, p.chunk);
+          for (const l of linksOf(p.chunk)) {
+            expect(l.type).toBe('link');
+            expect(allowed(l.href), `link ${l.href}`).toBe(true);
+          }
+          cursor = p.nextCursor;
+        } while (cursor);
+        expect(joined).toBe(md);
+      }
+    });
+  }
 });
