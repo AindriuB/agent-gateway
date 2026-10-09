@@ -3,7 +3,7 @@ import { defineTool } from '../../src/tools/define.js';
 
 const out = z.strictObject({ ok: z.boolean().describe('Whether it worked') });
 
-function make(name: string, input: z.ZodObject) {
+function make(name: string, input: z.ZodObject, output: z.ZodObject = out) {
   return defineTool({
     name,
     minRole: 'player',
@@ -11,7 +11,7 @@ function make(name: string, input: z.ZodObject) {
     handledBy: 'module',
     description: 'Fixture tool',
     input,
-    output: out,
+    output,
   });
 }
 
@@ -48,3 +48,23 @@ export const deepTool = make(
 );
 
 export const undocumentedTool = make('fixture_undoc', z.strictObject({ id: z.string() }));
+
+export const undocumentedOutputTool = make(
+  'fixture_undoc_out',
+  z.strictObject({ id: z.string().describe('Document id') }),
+  z.strictObject({ ok: z.boolean() }),
+);
+
+export const keywordNamedFieldsTool = make(
+  'fixture_keyword_fields',
+  z.strictObject({
+    properties: z.string().describe('A field named properties'),
+    oneOf: z.string().describe('A field named oneOf'),
+    anyOf: z.string().describe('A field named anyOf'),
+    allOf: z.string().describe('A field named allOf'),
+  }),
+  z.strictObject({
+    properties: z.strictObject({ x: z.string().describe('Nested x') }).describe('Named properties'),
+    oneOf: z.boolean().describe('A field named oneOf'),
+  }),
+);
