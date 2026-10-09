@@ -12,7 +12,7 @@ than no plan.
 ## Now
 
 ### Wave 3 status
-Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done; its PR follows. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
+Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) are merged. Task 07 (module LinkClient and pairing app) is done after seven attempts; a fresh PR supersedes #13. Task 08 is on attempt 2 after review defects (see its task file). Wave 2 PRs are merged.
 **In flight:** 08
 
 ### Testing topology and prerequisites
@@ -50,5 +50,7 @@ Tasks 05 (gateway skeleton and stdio MCP server) and 06 (gateway link server) ar
 - Verify Local Network Access behaviour once in Andrew's everyday Chrome profile. The live proof used a fresh profile only.
 - Foundry test stubs: `ApplicationV2` is empty, so pairing app rendering is covered only by the live check.
 - Rename the test at `module/test/link/client.test.ts:276`; it covers the throw path only, not all reply paths.
+- Add a dedicated "replaced" close code in `protocol/`, shared by gateway and module, instead of matching 1000 plus the reason string `replaced`.
+- Submitting an empty gateway URL in the pairing app is a silent no-op; show a message.
 
 ## Someday
