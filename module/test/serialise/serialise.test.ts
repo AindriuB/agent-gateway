@@ -109,8 +109,9 @@ describe('htmlToMarkdown', () => {
   });
   it('renders nested tables linearly, inner content once', () => {
     expect(
-      htmlToMarkdown('<table><tr><td>a<table><tr><td>inner</td></tr></table></td></tr></table>')
-        .split('inner').length - 1,
+      htmlToMarkdown(
+        '<table><tr><td>a<table><tr><td>inner</td></tr></table></td></tr></table>',
+      ).split('inner').length - 1,
     ).toBe(1);
     const deep = (n: number) =>
       '<table><tr><td>x'.repeat(n) + 'leaf' + '</td></tr></table>'.repeat(n);
@@ -122,9 +123,9 @@ describe('htmlToMarkdown', () => {
   });
   it('keeps whitespace between inline siblings under body', () => {
     expect(htmlToMarkdown('<strong>Name:</strong> <em>Bob</em>')).toBe('**Name:** *Bob*');
-    expect(htmlToMarkdown('<a href="http://a.example">one</a> <a href="http://b.example">two</a>')).toBe(
-      '[one](http://a.example) [two](http://b.example)',
-    );
+    expect(
+      htmlToMarkdown('<a href="http://a.example">one</a> <a href="http://b.example">two</a>'),
+    ).toBe('[one](http://a.example) [two](http://b.example)');
   });
   it('blocks obfuscated script schemes in hrefs', () => {
     expect(htmlToMarkdown('<a href="java&#x09;script:alert(1)">x</a>')).toBe('x');
