@@ -45,9 +45,9 @@ const offline = () =>
 export function createSessionServer(opts: SessionServerOptions): Server {
   const all = opts.tools ?? TOOLS;
   const sessionId = randomUUID();
-  const binding = new SessionBinding(opts.registry, opts.selector, opts.knownIdentities, (conn) =>
+  const binding = new SessionBinding(opts.registry, opts.selector, opts.knownIdentities, (who) =>
     opts.log?.(
-      `Bound MCP session to ${safeText(conn.info.userName || conn.userId)} in ${safeText(conn.worldId)}; start with --user to choose.`,
+      `Bound MCP session to ${safeText(who.userName || who.userId)} in ${safeText(who.worldId)}; start with --user to choose.`,
     ),
   );
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -97,7 +97,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         'INVALID_ARGS',
         r.permanent
           ? `Several paired Foundry users match that name; restart the gateway with --world and --user <id> to choose one. Available: ${describePairs(r.available)}`
-          : `Several Foundry users are connected; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
+          : `Several Foundry users are paired; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
       );
     }
     if (r.kind === 'unbound' || !r.conn) return offline();
