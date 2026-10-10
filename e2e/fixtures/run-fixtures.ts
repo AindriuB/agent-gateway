@@ -45,7 +45,11 @@ export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
 
 export function exitOnError(p: Promise<void>): void {
   p.catch((err: unknown) => {
-    process.stderr.write(`${(err as Error).message ?? String(err)}\n`);
+    const e = err as Error;
+    // A plain Error carries a user-facing hint; anything else (TypeError and the like) is a bug,
+    // so print its stack.
+    const text = e?.name && e.name !== 'Error' && e.stack ? e.stack : (e?.message ?? String(err));
+    process.stderr.write(`${text}\n`);
     process.exit(1);
   });
 }

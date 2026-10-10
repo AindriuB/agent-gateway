@@ -54,10 +54,9 @@ export interface JoinPage {
 export function asJoinPage(page: Page): JoinPage {
   return {
     goto: (url) => page.goto(url),
-    optionLabels: (selector) =>
-      page.$$eval(selector + ' option', 'els => els.map((e) => e.textContent ?? "")') as Promise<
-        string[]
-      >,
+    // A locator call, not a string page function: Playwright evaluates a string as an expression,
+    // so a string `els => ...` is never called with the elements.
+    optionLabels: (selector) => page.locator(selector + ' option').allTextContents(),
     selectOption: (selector, option) => page.selectOption(selector, option),
     fill: (selector, value) => page.fill(selector, value),
     click: (selector) => page.click(selector),
