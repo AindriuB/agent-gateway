@@ -21,6 +21,7 @@ beforeEach(async () => {
     stopLink,
     resumeLink,
     isLinkActive,
+    refreshToolset: () => {},
     getLinkClient: () => ({}),
   }));
   stub = installFoundry(14);

@@ -1,3 +1,5 @@
+import type { LinkClient } from './client.js';
+import { evaluate, type PolicyInputs } from '../policy/evaluate.js';
 import {
   toolsForRole as registryToolsForRole,
   type ToolCategory,
@@ -61,4 +63,40 @@ export class ToolsetAnnouncer {
   disconnected(): void {
     this.last = undefined;
   }
+}
+
+/**
+ * Whether policy hides a category from this user: the player or headless switch is off, or the
+ * world ceiling combined with the owner policy resolves to `deny`. `ask_*` stays listed.
+ */
+export function policyDenies(
+  inputs: () => PolicyInputs,
+  isGM: () => boolean,
+): (category: ToolCategory) => boolean {
+  return (category) => {
+    const v = evaluate(inputs(), { isGM: isGM(), headless: false, category });
+    return v.kind === 'disabled' || v.decision === 'deny';
+  };
+}
+
+/**
+ * Announce the tool set once the link is welcomed (state `connected`, which the client sets only
+ * after `welcome`), and forget it when the link drops so the next welcome sends in full.
+ */
+export function installToolsetAnnouncer(
+  client: LinkClient,
+  deps: Omit<ToolsetDeps, 'send'>,
+): ToolsetAnnouncer {
+  const announcer = new ToolsetAnnouncer({ ...deps, send: (m) => client.sendMessage(m) });
+  let up = false;
+  client.onState((s) => {
+    if (s.kind === 'connected') {
+      if (!up) announcer.connected();
+      up = true;
+    } else {
+      if (up) announcer.disconnected();
+      up = false;
+    }
+  });
+  return announcer;
 }

@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { defineTool, TOOLS, toolsForRole, parseLinkMessage } from '@agent-gateway/protocol';
 import { installBridge } from '../../src/link/bridge.js';
 import { LinkClient } from '../../src/link/client.js';
-import { ToolsetAnnouncer, computeToolset } from '../../src/link/toolset.js';
+import {
+  ToolsetAnnouncer,
+  computeToolset,
+  installToolsetAnnouncer,
+  policyDenies,
+} from '../../src/link/toolset.js';
+import type { PolicyInputs } from '../../src/policy/evaluate.js';
 import { createDispatcher } from '../../src/ops/dispatch.js';
 
 const gmNames = TOOLS.filter((t) => t.minRole === 'gm').map((t) => t.name);
@@ -160,5 +166,145 @@ describe('a forged toolset does not grant anything', () => {
     });
     expect(res).toMatchObject({ ok: false, code: 'FORBIDDEN' });
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('policyDenies', () => {
+  const matrix = (over: Partial<Record<'read' | 'write' | 'destructive' | 'code', string>>) => {
+    const cls = {
+      read: 'allow',
+      write: 'ask_owner',
+      destructive: 'ask_gm',
+      code: 'ask_owner',
+      ...over,
+    };
+    return { playerAgents: cls, gmAgents: cls } as unknown as PolicyInputs['world'];
+  };
+  const inputs = (o: Partial<PolicyInputs> = {}): PolicyInputs => ({
+    world: matrix({}),
+    owner: matrix({}),
+    playerAgentsEnabled: true,
+    headlessAgentsEnabled: false,
+    ...o,
+  });
+
+  it('hides only deny; ask_* and allow stay listed', () => {
+    const d = policyDenies(
+      () => inputs({ world: matrix({ write: 'deny' }) }),
+      () => true,
+    );
+    expect(d('write')).toBe(true);
+    expect(d('read')).toBe(false);
+    expect(d('destructive')).toBe(false);
+    expect(d('code')).toBe(false);
+  });
+
+  it('the owner policy can hide a category but never reveal one the world denies', () => {
+    const owner = policyDenies(
+      () => inputs({ owner: matrix({ read: 'deny' }) }),
+      () => true,
+    );
+    expect(owner('read')).toBe(true);
+    const world = policyDenies(
+      () => inputs({ world: matrix({ read: 'deny' }), owner: matrix({ read: 'allow' }) }),
+      () => true,
+    );
+    expect(world('read')).toBe(true);
+  });
+
+  it('a player with playerAgentsEnabled off gets an empty set; a GM does not', () => {
+    const off = inputs({ playerAgentsEnabled: false });
+    expect(
+      computeToolset(
+        false,
+        policyDenies(
+          () => off,
+          () => false,
+        ),
+      ),
+    ).toEqual([]);
+    expect(
+      computeToolset(
+        true,
+        policyDenies(
+          () => off,
+          () => true,
+        ),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('judges the class of the live user', () => {
+    const w = matrix({});
+    w.playerAgents = { ...w.playerAgents, read: 'deny' };
+    let gm = false;
+    const d = policyDenies(
+      () => inputs({ world: w }),
+      () => gm,
+    );
+    expect(d('read')).toBe(true);
+    gm = true;
+    expect(d('read')).toBe(false);
+  });
+});
+
+describe('installToolsetAnnouncer on a real client', () => {
+  class Sock {
+    onopen: ((e?: unknown) => void) | null = null;
+    onmessage: ((e: { data: unknown }) => void) | null = null;
+    onclose: ((e?: unknown) => void) | null = null;
+    onerror: ((e?: unknown) => void) | null = null;
+    readyState = 1;
+    sent: { type: string }[] = [];
+    send(d: string) {
+      this.sent.push(JSON.parse(d));
+    }
+    close() {}
+    recv(m: object) {
+      this.onmessage?.({ data: JSON.stringify(m) });
+    }
+  }
+  const mkClient = () => {
+    const sock = new Sock();
+    const client = new LinkClient({
+      getGatewayUrl: () => 'ws://gw',
+      getToken: () => JSON.stringify({ url: 'ws://gw', token: 't' }),
+      setToken: () => {},
+      getIdentity: () => ({
+        moduleVersion: '0',
+        foundryVersion: '14',
+        world: { id: 'w', title: 'W', system: 's', systemVersion: '1' },
+        user: { id: 'u', name: 'U', role: 1, isGM: false },
+      }),
+      createSocket: () => sock,
+      notifyError: () => {},
+    });
+    return { sock, client };
+  };
+  const welcome = {
+    type: 'welcome',
+    gatewayVersion: '0',
+    protocolVersion: '1.0.0',
+    connectionId: 'c',
+    agentId: 'a',
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('sends toolset only after welcome, once, and again after a reconnect welcome', async () => {
+    const { sock, client } = mkClient();
+    installToolsetAnnouncer(client, { isGM: () => false });
+    client.start();
+    sock.onopen?.();
+    await flush();
+    expect(sock.sent.map((m) => m.type)).toEqual(['hello']);
+    sock.recv(welcome);
+    await flush();
+    expect(sock.sent.map((m) => m.type)).toEqual(['hello', 'toolset']);
+    client.stop();
+    client.start();
+    sock.onopen?.();
+    sock.recv(welcome);
+    await flush();
+    expect(sock.sent.filter((m) => m.type === 'toolset')).toHaveLength(2);
   });
 });

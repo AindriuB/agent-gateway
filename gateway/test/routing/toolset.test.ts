@@ -129,3 +129,49 @@ describe('ToolsetStore', () => {
     expect(n).toBe(2);
   });
 });
+
+describe('toolset frames over the real link', () => {
+  const send = (m: FakeModule, tools: string[]) => m.tc.send({ type: 'toolset', tools });
+
+  it('a denied category disappears from tools/list with exactly one list_changed', async () => {
+    h = await startServer();
+    const m = await pairModule(h, 'uA', { userName: 'alice', isGM: true });
+    modules.push(m);
+    const s = await openSession(h, {}, undefined, 5000, { listChangedIntervalMs: 20 });
+    sessions.push(s);
+    expect(await names(s)).toEqual(['fixture_tool', 'fixture_gm_tool']);
+    send(m, ['fixture_tool']);
+    await until(() => s.listChanged.count === 1);
+    send(m, ['fixture_tool']);
+    await tick(80);
+    expect(s.listChanged.count).toBe(1);
+    expect(await names(s)).toEqual(['fixture_tool']);
+    expect(m.tc.closed).toBe(false);
+  });
+
+  it('a toolset from connection A never changes the list of a session bound to B', async () => {
+    h = await startServer();
+    const a = await pairModule(h, 'uA', { userName: 'alice', isGM: true });
+    const b = await pairModule(h, 'uB', { userName: 'bob', isGM: true });
+    modules.push(a, b);
+    const sb = await openSession(h, { user: 'uB' }, undefined, 5000, { listChangedIntervalMs: 20 });
+    const sa = await openSession(h, { user: 'uA' }, undefined, 5000, { listChangedIntervalMs: 20 });
+    sessions.push(sa, sb);
+    await names(sa);
+    await names(sb);
+    send(a, []);
+    await until(() => sa.listChanged.count === 1);
+    await tick(80);
+    expect(sb.listChanged.count).toBe(0);
+    expect(await names(sb)).toEqual(['fixture_tool', 'fixture_gm_tool']);
+    expect(await names(sa)).toEqual([]);
+  });
+
+  it('a malformed toolset still closes the link', async () => {
+    h = await startServer();
+    const m = await pairModule(h, 'uA', { userName: 'alice' });
+    modules.push(m);
+    m.tc.send({ type: 'toolset', tools: 'x' });
+    await until(() => m.tc.closed);
+  });
+});
