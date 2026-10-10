@@ -163,9 +163,15 @@ describe('audit journal', () => {
     expect(typeof d.system.targets[0].before).toBe('string');
   });
 
-  it('stores a relayed record view-only: no snapshot, never undoable', () => {
-    const d = pageData(record({ relayed: true, targets: [target({ undoable: true })] })) as any;
-    expect(d.system.targets[0]).toMatchObject({ before: '', undoable: false });
+  it('stores the targets it is given: a sanitised relayed record is view-only, a witnessed one keeps its GM-captured snapshot', () => {
+    const viewOnly = pageData(
+      record({ relayed: true, targets: [target({ undoable: false, before: null })] }),
+    ) as any;
+    expect(viewOnly.system.targets[0]).toMatchObject({ before: '', undoable: false });
+    const witnessed = pageData(
+      record({ relayed: true, targets: [target({ changedPaths: ['name'] })] }),
+    ) as any;
+    expect(witnessed.system.targets[0]).toMatchObject({ undoable: true, changedPaths: ['name'] });
   });
 });
 

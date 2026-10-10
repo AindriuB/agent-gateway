@@ -4,7 +4,7 @@ import { fromUuidCompat } from '../compat/index.js';
 import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
 import { assertNotAudit } from './guard.js';
-import { submitAudit } from './sink.js';
+import { requestAuditIntent, submitAudit } from './sink.js';
 import { boundedJson, jsonSize, newEntryId, safeText } from './record.js';
 import {
   AUDIT_LIMITS as L,
@@ -23,6 +23,19 @@ declare module '../ops/types.js' {
     snapshot?(uuid: string): Promise<void>;
     /** Record a document the handler created, after creating it. Undo deletes it. */
     created?(uuid: string): Promise<void>;
+    /**
+     * Declare, before the handler creates anything, that this call will create documents. On a
+     * player's client this is how the GM client learns to watch for the creation.
+     */
+    intendCreate?(): Promise<void>;
+    /** The id of this audited call (also its audit entry id). */
+    callId?: string;
+    /**
+     * Pass as the operation options of every create, update and delete the handler makes
+     * (`{...ctx.callOptions, ...other}`). A GM client uses it only to correlate a document hook
+     * with this call; trust comes from the hook's server-set user id.
+     */
+    callOptions?: { agentGateway: { callId: string } };
   }
 }
 
@@ -34,6 +47,10 @@ export interface AuditStageDeps {
   fromUuid(uuid: string): Promise<any>;
   /** Hand the finished record to the journal (GM client) or the relay (player client). */
   submit(record: AuditRecord): Promise<void>;
+  /** This client belongs to a GM, so it captures and undoes with its own data. */
+  isGM(): boolean;
+  /** Player client: tell the active GM what the call will touch and wait for it to be copied. */
+  requestIntent(callId: string, what: { uuid?: string; creates?: boolean }): Promise<boolean>;
   now(): number;
   newId(): string;
 }
@@ -42,6 +59,8 @@ const defaultDeps: AuditStageDeps = {
   categoryOf: (tool) => TOOLS.find((t) => t.name === tool)?.category,
   fromUuid: (uuid) => fromUuidCompat(uuid),
   submit: submitAudit,
+  isGM: () => (globalThis as { game?: { user?: { isGM?: boolean } } }).game?.user?.isGM === true,
+  requestIntent: (callId, what) => requestAuditIntent(callId, what),
   now: () => Date.now(),
   newId: newEntryId,
 };
@@ -51,7 +70,16 @@ class Snapshots {
   private readonly pending = new Map<string, Promise<AuditTarget | null>>();
   private chars = 0;
   dropped = 0;
+  /** Set on a player's client: declarations go to the GM, which captures the data itself. */
+  witnessed: ((what: { uuid?: string; creates?: boolean }) => Promise<boolean>) | null = null;
+  private createsDeclared = false;
   constructor(private readonly fromUuid: AuditStageDeps['fromUuid']) {}
+
+  intendCreate(): Promise<void> {
+    if (!this.witnessed || this.createsDeclared) return Promise.resolve();
+    this.createsDeclared = true;
+    return this.witnessed({ creates: true }).then(() => undefined);
+  }
 
   private async lookup(uuid: string): Promise<any> {
     try {
@@ -64,6 +92,12 @@ class Snapshots {
   snapshot(uuid: string): Promise<void> {
     return this.add(uuid, async () => {
       const doc = await this.lookup(uuid);
+      if (this.witnessed) {
+        // A player's snapshot is never used: the GM client copies the document from its own data.
+        if (doc) assertNotAudit(doc);
+        await this.witnessed({ uuid });
+        return viewOnlyTarget(uuid);
+      }
       // The write-side guard: a handler cannot snapshot (so cannot change) the audit log.
       if (doc) assertNotAudit(doc);
       if (!doc) return blank(uuid, false);
@@ -84,6 +118,7 @@ class Snapshots {
   }
 
   created(uuid: string): Promise<void> {
+    if (this.witnessed) return this.add(uuid, async () => viewOnlyTarget(uuid));
     return this.add(uuid, async () => blank(uuid, false));
   }
 
@@ -111,6 +146,10 @@ class Snapshots {
     for (const p of this.pending.values()) {
       const t = await p.catch(() => null);
       if (!t) continue;
+      if (this.witnessed) {
+        out.push(t);
+        continue;
+      }
       const doc = await this.lookup(t.uuid);
       const mod = Number(doc?._stats?.modifiedTime);
       out.push({
@@ -123,6 +162,11 @@ class Snapshots {
   }
 }
 
+/** A target a player's client names; the GM's own capture decides whether it can be undone. */
+function viewOnlyTarget(uuid: string): AuditTarget {
+  return { ...blank(uuid, false), undoable: false };
+}
+
 function blank(uuid: string, existed: boolean): AuditTarget {
   return {
     uuid,
@@ -131,6 +175,7 @@ function blank(uuid: string, existed: boolean): AuditTarget {
     existsAfter: false,
     afterModifiedTime: null,
     undoable: true,
+    changedPaths: [],
     note: '',
   };
 }
@@ -160,8 +205,13 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
       const category = deps.categoryOf(ctx.tool);
       if (category === 'read') return next();
       const snaps = new Snapshots(deps.fromUuid);
+      const callId = deps.newId();
+      if (!deps.isGM()) snaps.witnessed = (what) => deps.requestIntent(callId, what);
+      ctx.callId = callId;
+      ctx.callOptions = { agentGateway: { callId } };
       ctx.snapshot = (uuid) => snaps.snapshot(uuid);
       ctx.created = (uuid) => snaps.created(uuid);
+      ctx.intendCreate = () => snaps.intendCreate();
       let res: DispatchResult | undefined;
       let thrown = false;
       try {
@@ -171,7 +221,7 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
         thrown = true;
         throw err;
       } finally {
-        await record(ctx, category, snaps, summarise(res, thrown), deps);
+        await record(ctx, category, snaps, summarise(res, thrown), deps, callId);
       }
     },
   };
@@ -183,6 +233,7 @@ async function record(
   snaps: Snapshots,
   outcome: { text: string; ok: boolean },
   deps: AuditStageDeps,
+  callId: string,
 ): Promise<void> {
   try {
     const args = boundedJson(ctx.args);
@@ -190,7 +241,7 @@ async function record(
       category === 'destructive' || category === 'code' ? category : 'write'
     ) as AuditCategory;
     await deps.submit({
-      entryId: deps.newId(),
+      entryId: callId,
       timestamp: deps.now(),
       userId: ctx.user.id,
       agentId: safeText(ctx.agent.id),

@@ -2,7 +2,9 @@
 import { getAuditAppClass } from '../apps/audit/index.js';
 import { createAuditModel } from './model.js';
 import { AuditRelay } from './relay.js';
-import { setAuditSink } from './sink.js';
+import { fromUuidCompat } from '../compat/index.js';
+import { AuditWitness, installWitnessHooks } from './witness.js';
+import { setAuditSink, setIntentRequester } from './sink.js';
 import {
   ensureAuditJournal,
   findAuditJournal,
@@ -18,6 +20,9 @@ declare const game: any;
 declare const CONFIG: any;
 declare const foundry: any;
 declare const Hooks: any;
+
+/** How long a GM client waits for trailing document hooks before it assembles a relayed record. */
+const GRACE_MS = 1500;
 
 let installed = false;
 let relay: AuditRelay | null = null;
@@ -46,6 +51,11 @@ function readyAudit(): void {
   const user = game?.user;
   if (!user || !game.socket) return;
   const self = () => String(game.user.id);
+  const witness = new AuditWitness({
+    fromUuid: (uuid) => fromUuidCompat(uuid),
+    now: () => Date.now(),
+    grace: () => new Promise((res) => setTimeout(res, GRACE_MS)),
+  });
   relay = new AuditRelay({
     selfId: self,
     isGM: () => game.user.isGM === true,
@@ -53,12 +63,22 @@ function readyAudit(): void {
     isUserGM: (id) => game.users.get(id)?.isGM === true,
     emit: (msg, recipients) => game.socket.emit(AUDIT_SOCKET, msg, { recipients }),
     // Relayed records are written as view-only (sanitiseRecord and pageData both enforce it).
-    write: async (record) => void (await writeAuditEntry(record)),
+    write: async (record, senderId) => {
+      const final = record.relayed ? await witness.assemble(record, senderId) : record;
+      await writeAuditEntry(final);
+    },
+    onIntent: (msg, senderId) => witness.onIntent(msg, senderId),
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     now: () => Date.now(),
   });
   const r = relay;
+  setIntentRequester((callId, what) => r.requestIntent(callId, what));
+  installWitnessHooks(
+    Hooks,
+    witness,
+    () => game.user.isGM === true && game.users.activeGM?.id === game.user.id,
+  );
   setAuditSink((record) => r.submit(record));
   game.socket.on(AUDIT_SOCKET, (data: unknown, senderId: unknown) => {
     void r.onMessage(data, senderId);

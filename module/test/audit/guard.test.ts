@@ -57,6 +57,7 @@ describe('write-side guard', () => {
       },
       stages: [
         createAuditStage({
+          isGM: () => true,
           categoryOf: () => 'write',
           fromUuid: store.fromUuid,
           submit: async (r) => void records.push(r),

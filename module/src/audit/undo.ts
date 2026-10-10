@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fromUuidCompat } from '../compat/index.js';
 import { isAuditDocument } from './guard.js';
+import { undoClasses } from './undo-classes.js';
+export { UNDO_CLASSES, UNDO_EMBEDDED, undoClasses } from './undo-classes.js';
 import { decodeBefore } from './record.js';
 import type { AuditTarget, StoredTarget } from './types.js';
 
@@ -48,51 +50,6 @@ const defaultDeps = (confirm: UndoDeps['confirmConflicts']): UndoDeps => ({
   now: () => Date.now(),
 });
 
-/**
- * World document classes undo may touch (update, delete or recreate). Deliberately not `User`,
- * `Setting`, `Macro`, `Adventure` or anything that carries credentials, scripts or world config.
- */
-export const UNDO_CLASSES: readonly string[] = [
-  'Actor',
-  'Item',
-  'JournalEntry',
-  'Scene',
-  'RollTable',
-  'Playlist',
-  'Cards',
-  'Folder',
-  'ChatMessage',
-];
-
-/** Embedded document classes undo may recreate inside an allowed parent. */
-export const UNDO_EMBEDDED: readonly string[] = [
-  'Item',
-  'ActiveEffect',
-  'JournalEntryPage',
-  'Token',
-  'Tile',
-  'Drawing',
-  'Note',
-  'Wall',
-  'AmbientLight',
-  'AmbientSound',
-  'MeasuredTemplate',
-  'TableResult',
-  'PlaylistSound',
-  'Card',
-];
-
-/** The class of the document a uuid names, and of its root; null for a uuid undo will not handle. */
-export function undoClasses(uuid: string): { root: string; own: string } | null {
-  const parts = uuid.split('.');
-  if (parts.length < 2 || parts.length % 2 !== 0) return null;
-  const root = parts[0]!;
-  const own = parts[parts.length - 2]!;
-  if (!UNDO_CLASSES.includes(root)) return null;
-  if (parts.length > 2 && !UNDO_EMBEDDED.includes(own)) return null;
-  return { root, own };
-}
-
 /** Audit pages being undone right now, so a double click cannot run an undo twice. */
 const inFlight = new Set<string>();
 
@@ -117,6 +74,36 @@ export function conflictFor(target: AuditTarget, current: any): Conflict | null 
   if (!Number.isFinite(now)) return null;
   const after = target.afterModifiedTime;
   return after === null || now > after ? { uuid: target.uuid, reason: 'modified' } : null;
+}
+
+/**
+ * A minimal update restoring only the observed key paths to their values in the GM's snapshot. A
+ * path the snapshot lacks is removed (`-=key`). Prototype-pollution segments are refused.
+ */
+export function minimalRestore(
+  before: Record<string, unknown>,
+  paths: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const path of paths) {
+    const segs = path.split('.');
+    if (segs.some((s) => !s || s === '__proto__' || s === 'constructor' || s === 'prototype')) {
+      continue;
+    }
+    let node: unknown = before;
+    let present = true;
+    for (const s of segs) {
+      if (node && typeof node === 'object' && Object.hasOwn(node, s)) {
+        node = (node as Record<string, unknown>)[s];
+      } else {
+        present = false;
+        break;
+      }
+    }
+    if (present) out[path] = JSON.parse(JSON.stringify(node ?? null));
+    else out[[...segs.slice(0, -1), `-=${segs[segs.length - 1]}`].join('.')] = null;
+  }
+  return out;
 }
 
 export function restoreData(before: Record<string, unknown>, doc: any): Record<string, unknown> {
@@ -159,9 +146,9 @@ export async function undoEntry(
   const deps = { ...defaultDeps(confirm), ...overrides };
   const out: UndoOutcome = { status: 'done', restored: 0, skipped: [], failed: [], conflicts: [] };
   const system = page?.system;
-  // Only a snapshot the acting user's own client took is ever applied: a relayed record is
+  // Undo applies only data this GM client captured or observed. A relayed record's own fields
   // view-only in the log, whatever its stored fields say.
-  if (!deps.isGM() || !system || system.undoneAt || system.relayed === true) {
+  if (!deps.isGM() || !system || system.undoneAt) {
     return { ...out, status: 'refused' };
   }
   const key = String(page.id ?? system.entryId ?? '');
@@ -187,7 +174,10 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
   }
   const plan: Array<{ target: AuditTarget; doc: any }> = [];
   for (const t of targets) {
-    if (!t.undoable || !undoClasses(t.uuid)) {
+    // A relayed record's update is restorable only for the paths this GM client observed.
+    const unobserved =
+      system.relayed === true && t.existed && t.existsAfter && (t.changedPaths ?? []).length === 0;
+    if (!t.undoable || unobserved || !undoClasses(t.uuid)) {
       out.skipped.push(t.uuid);
       continue;
     }
@@ -217,7 +207,12 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
         }
       } else if (doc) {
         if (!deps.canModify(doc, 'update')) throw new Error('not permitted to update');
-        await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false });
+        if (target.changedPaths.length) {
+          // Observed by this GM client: restore just those paths from the GM's own snapshot.
+          await doc.update(minimalRestore(target.before!, target.changedPaths), { diff: false });
+        } else {
+          await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false });
+        }
       } else {
         await recreate(target, deps);
       }

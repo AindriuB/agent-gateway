@@ -18,6 +18,12 @@ export interface AuditTarget {
   /** `_stats.modifiedTime` after the call; undo warns when the document is newer than this. */
   afterModifiedTime: number | null;
   undoable: boolean;
+  /**
+   * Key paths the GM's client observed changing (a witnessed update). Non-empty means undo restores
+   * only these paths from `before`; empty means the whole document, which only a record captured by
+   * the acting GM's own client may do.
+   */
+  changedPaths: string[];
   /** Why the target cannot be undone, when it cannot. */
   note: string;
 }
@@ -73,4 +79,16 @@ export const AUDIT_LIMITS = {
   uuid: 300,
   /** Records held on a player client while no GM is online. */
   buffer: 200,
+  /** Key paths kept per witnessed update, and the longest one. */
+  changedPaths: 200,
+  changedPath: 200,
+  /** Witnessed calls a sender may have open at once, and uuids per call. */
+  openCalls: 30,
+  callUuids: 50,
+  /** Observed changes kept per call. */
+  observed: 200,
+  /** How long a witnessed call stays open. */
+  callTtlMs: 600_000,
+  /** How long a player client waits for the GM to witness an intent. */
+  intentWaitMs: 5000,
 } as const;

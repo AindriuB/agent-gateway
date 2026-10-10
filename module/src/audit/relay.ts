@@ -1,7 +1,11 @@
 import { sanitiseRecord } from './record.js';
 import { AUDIT_LIMITS as L, type AuditRecord } from './types.js';
 
-type Msg = { kind: 'audit.entry'; record: AuditRecord } | { kind: 'audit.ack'; id: string };
+type Msg =
+  | { kind: 'audit.entry'; record: AuditRecord }
+  | { kind: 'audit.ack'; id: string }
+  | { kind: 'audit.intent'; callId: string; uuid?: string; creates?: boolean }
+  | { kind: 'audit.intent.ack'; callId: string; uuid: string; ok: boolean };
 
 export interface RelayDeps {
   selfId(): string;
@@ -13,6 +17,8 @@ export interface RelayDeps {
   emit(msg: Msg, recipients: string[]): void;
   /** GM side: check a record from `senderId`, then write it to the journal. */
   write(record: AuditRecord, senderId: string): Promise<void>;
+  /** GM side: copy what an intent names from this client's own world data. True when witnessed. */
+  onIntent(msg: unknown, senderId: string): Promise<boolean>;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
   now(): number;
@@ -21,7 +27,7 @@ export interface RelayDeps {
 export const RESEND_MS = 10_000;
 const SEEN_MAX = 1000;
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 60;
+const RATE_MAX = 120;
 
 /**
  * Carries audit records from player clients to the active GM over the module socket. A player
@@ -34,6 +40,8 @@ export class AuditRelay {
   private readonly seen = new Set<string>();
   private readonly sent = new Map<string, number[]>();
   private timer: unknown = null;
+  private readonly waiting = new Map<string, (ok: boolean) => void>();
+  private readonly unwitnessed = new Set<string>();
 
   constructor(private readonly deps: RelayDeps) {}
 
@@ -75,6 +83,33 @@ export class AuditRelay {
     }, RESEND_MS);
   }
 
+  /**
+   * Player side: tell the active GM what this call will touch, and wait (bounded) until the GM
+   * client has copied it. False when no GM is online or none answered in time; the call then runs
+   * anyway but nothing in it can be undone.
+   */
+  requestIntent(callId: string, what: { uuid?: string; creates?: boolean }): Promise<boolean> {
+    const gm = this.deps.activeGMId();
+    if (!gm || this.unwitnessed.has(callId)) return Promise.resolve(false);
+    const key = `${callId}\u0000${what.uuid ?? '*creates'}`;
+    return new Promise<boolean>((resolve) => {
+      const timer = this.deps.setTimer(() => {
+        if (this.waiting.delete(key)) {
+          this.unwitnessed.add(callId);
+          if (this.unwitnessed.size > SEEN_MAX) {
+            this.unwitnessed.delete(this.unwitnessed.values().next().value as string);
+          }
+          resolve(false);
+        }
+      }, L.intentWaitMs);
+      this.waiting.set(key, (ok) => {
+        this.deps.clearTimer(timer);
+        resolve(ok);
+      });
+      this.deps.emit({ kind: 'audit.intent', callId, ...what }, [gm]);
+    });
+  }
+
   /** A GM joined or left: try now rather than waiting for the timer. */
   onPresenceChange(): void {
     if (this.buffer.size > 0) this.flush();
@@ -89,7 +124,39 @@ export class AuditRelay {
     ) {
       return;
     }
-    const msg = data as { kind?: unknown; record?: unknown; id?: unknown };
+    const msg = data as {
+      kind?: unknown;
+      record?: unknown;
+      id?: unknown;
+      callId?: unknown;
+      uuid?: unknown;
+      ok?: unknown;
+    };
+    if (msg.kind === 'audit.intent.ack') {
+      if (!this.deps.isUserGM(senderId)) return;
+      const key = `${String(msg.callId)}\u0000${typeof msg.uuid === 'string' ? msg.uuid : '*creates'}`;
+      this.waiting.get(key)?.(msg.ok === true);
+      this.waiting.delete(key);
+      return;
+    }
+    if (msg.kind === 'audit.intent') {
+      if (!this.deps.isGM() || this.deps.activeGMId() !== this.deps.selfId()) return;
+      if (senderId === this.deps.selfId()) return;
+      // Rate limit first, as for entries: nothing is read from the payload until it passes.
+      if (!this.allow(senderId)) return;
+      const callId = typeof msg.callId === 'string' ? msg.callId.slice(0, 40) : '';
+      const uuid = typeof msg.uuid === 'string' ? msg.uuid.slice(0, L.uuid) : undefined;
+      let ok = false;
+      try {
+        ok = await this.deps.onIntent(data, senderId);
+      } catch (err) {
+        console.error('agent-gateway | audit intent failed', err);
+      }
+      this.deps.emit({ kind: 'audit.intent.ack', callId, uuid: uuid ?? '*creates', ok }, [
+        senderId,
+      ]);
+      return;
+    }
     if (msg.kind === 'audit.ack') {
       // Only a GM can acknowledge: a player must not be able to make another client drop records.
       if (typeof msg.id === 'string' && this.deps.isUserGM(senderId)) this.buffer.delete(msg.id);

@@ -103,9 +103,9 @@ export function pageData(record: AuditRecord): Record<string, unknown> {
     ...record,
     targets: record.targets.map((t) => ({
       ...t,
-      // A relayed record is view-only whatever it says: no snapshot, never undoable.
-      undoable: record.relayed ? false : t.undoable,
-      before: !record.relayed && t.before ? JSON.stringify(t.before) : '',
+      // Targets are final here: a relayed record's targets were either rebuilt by the GM client
+      // from its own capture (AuditWitness.assemble) or are view-only (sanitiseTarget).
+      before: t.before ? JSON.stringify(t.before) : '',
     })),
     undoneAt: null,
     undoneBy: '',

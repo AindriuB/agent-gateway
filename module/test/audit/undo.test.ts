@@ -175,15 +175,6 @@ describe('undoEntry', () => {
     expect(order).toEqual(['B', 'A']);
   });
 
-  it('refuses a relayed record outright, whatever its stored targets say', async () => {
-    const { store, confirm, deps } = rig();
-    const doc = store.add(writable('Actor.a1', {}, 10, store));
-    const page = makePage([target()], { relayed: true });
-    expect((await undoEntry(page, confirm, deps)).status).toBe('refused');
-    expect(doc.calls.update).toEqual([]);
-    expect(doc.calls.deleted).toBe(0);
-  });
-
   it('never creates, updates or deletes a class outside the allowlist (User, Setting, Macro)', async () => {
     const { store, confirm, deps } = rig();
     const created: unknown[] = [];

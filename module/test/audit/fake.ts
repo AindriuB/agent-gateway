@@ -54,6 +54,7 @@ export const target = (over: Partial<AuditTarget> = {}): AuditTarget => ({
   existsAfter: true,
   afterModifiedTime: 10,
   undoable: true,
+  changedPaths: [],
   note: '',
   ...over,
 });

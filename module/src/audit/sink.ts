@@ -12,3 +12,18 @@ export async function submitAudit(record: AuditRecord): Promise<void> {
   if (!sink) throw new Error('audit sink is not installed');
   await sink(record);
 }
+
+type IntentFn = (callId: string, what: { uuid?: string; creates?: boolean }) => Promise<boolean>;
+let intent: IntentFn | null = null;
+
+export function setIntentRequester(fn: IntentFn | null): void {
+  intent = fn;
+}
+
+/** Player client: ask the active GM to witness part of a call. False when it cannot. */
+export async function requestAuditIntent(
+  callId: string,
+  what: { uuid?: string; creates?: boolean },
+): Promise<boolean> {
+  return intent ? intent(callId, what) : false;
+}

@@ -81,7 +81,7 @@
       "user": "User",
       "agent": "Agent",
       "relayed": "relayed from a player client",
-      "relayedNoUndo": "Made by a player's agent; undo from that player's client.",
+      "relayedNoUndo": "Made by a player's agent. No GM witnessed this change, so it cannot be undone.",
       "args": "Arguments",
       "truncated": "cut",
       "notUndoable": "cannot be undone",

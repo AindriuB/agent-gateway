@@ -32,6 +32,7 @@ export function createAuditModel(): any {
             existsAfter: new f.BooleanField({ initial: true }),
             afterModifiedTime: new f.NumberField({ required: true, nullable: true, initial: null }),
             undoable: new f.BooleanField({ initial: true }),
+            changedPaths: new f.ArrayField(new f.StringField()),
             note: new f.StringField({ required: true, blank: true, initial: '' }),
           }),
         ),

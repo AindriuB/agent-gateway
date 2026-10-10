@@ -17,6 +17,7 @@ function rig(self: { id: string; gm: boolean }, world: { activeGM: string | null
     isUserGM: (id) => world.gms.includes(id),
     emit: (m, to) => (sent.push(m), void recipients.push(to)),
     write: async (r, sender) => void written.push({ record: r, sender }),
+    onIntent: async () => true,
     setTimer: (fn, ms) => {
       const t = { fn, ms, live: true };
       timers.push(t);
@@ -194,15 +195,15 @@ describe('audit relay: GM side', () => {
   it('rate-limits a sender', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const g = rig({ id: 'gm1', gm: true }, { activeGM: 'gm1', gms: ['gm1'] });
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0; i < 130; i++) {
       await g.relay.onMessage(entry({ entryId: `entry-${String(i).padStart(8, '0')}` }), 'p1');
     }
-    expect(g.written).toHaveLength(60);
+    expect(g.written).toHaveLength(120);
     await g.relay.onMessage(entry({ entryId: 'entry-other-user' }), 'p2');
-    expect(g.written).toHaveLength(61);
+    expect(g.written).toHaveLength(121);
     g.tick(61_000);
     await g.relay.onMessage(entry({ entryId: 'entry-later-one' }), 'p1');
-    expect(g.written).toHaveLength(62);
+    expect(g.written).toHaveLength(122);
   });
 });
 
@@ -221,6 +222,7 @@ describe('audit relay: who receives what', () => {
       isUserGM: (u) => u === 'gm1',
       emit: emitFrom as RelayDeps['emit'],
       write: async () => {},
+      onIntent: async () => true,
       setTimer: () => 0,
       clearTimer: () => {},
       now: () => 1,
@@ -252,7 +254,7 @@ describe('audit relay: who receives what', () => {
       'p1',
     );
     expect(g.written[0]!.record.targets[0]).toMatchObject({ before: null, undoable: false });
-    expect(g.written[0]!.record.targets[0]!.note).toContain("undo from that player's client");
+    expect(g.written[0]!.record.targets[0]!.undoable).toBe(false);
   });
 
   it('applies the rate limit before reading anything from the payload', async () => {
@@ -273,12 +275,12 @@ describe('audit relay: who receives what', () => {
           ownKeys: (t) => (reads++, Reflect.ownKeys(t)),
         },
       );
-    for (let i = 0; i < 60; i++)
+    for (let i = 0; i < 120; i++)
       await g.relay.onMessage({ kind: 'audit.entry', record: hostile(i) }, 'p1');
     const before = reads;
     for (let i = 100; i < 150; i++)
       await g.relay.onMessage({ kind: 'audit.entry', record: hostile(i) }, 'p1');
     expect(reads).toBe(before);
-    expect(g.written).toHaveLength(60);
+    expect(g.written).toHaveLength(120);
   });
 });

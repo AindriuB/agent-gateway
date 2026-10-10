@@ -38,6 +38,7 @@ function rig(opts: { stages?: Stage[]; submit?: (r: AuditRecord) => Promise<void
   const store = makeStore();
   const records: AuditRecord[] = [];
   const stage = createAuditStage({
+    isGM: () => true,
     categoryOf: (t) => tools.find((x) => x.name === t)?.category,
     fromUuid: store.fromUuid,
     submit: opts.submit ?? (async (r) => void records.push(r)),
@@ -117,6 +118,7 @@ describe('audit stage', () => {
         existsAfter: true,
         afterModifiedTime: 99,
         undoable: true,
+        changedPaths: [],
         note: '',
       },
     ]);
@@ -158,6 +160,7 @@ describe('audit stage', () => {
     store.add(writable('Actor.a1', { name: 'Old' }, 3));
     const records: AuditRecord[] = [];
     const stage = createAuditStage({
+      isGM: () => true,
       categoryOf: () => 'write',
       fromUuid: store.fromUuid,
       submit: async (r) => void records.push(r),
@@ -235,6 +238,7 @@ describe('audit stage', () => {
     const store = makeStore();
     const records: AuditRecord[] = [];
     const stage = createAuditStage({
+      isGM: () => true,
       categoryOf: () => 'write',
       fromUuid: store.fromUuid,
       submit: async (r) => void records.push(r),
@@ -275,6 +279,7 @@ describe('audit stage', () => {
     store.add(writable('Compendium.w.p.Actor.x', {}, 1));
     const records: AuditRecord[] = [];
     const stage = createAuditStage({
+      isGM: () => true,
       categoryOf: () => 'write',
       fromUuid: store.fromUuid,
       submit: async (r) => void records.push(r),

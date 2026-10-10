@@ -102,7 +102,7 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The note on every target of a record that came from a player's client. */
-export const RELAYED_NOTE = "made by a player's agent; undo from that player's client";
+export const RELAYED_NOTE = 'not witnessed by a GM';
 
 /**
  * One target from anywhere (a handler or a socket), reduced to the allowed shape and sizes. A
@@ -124,6 +124,7 @@ export function sanitiseTarget(
     existed,
     existsAfter: raw.existsAfter === true,
     afterModifiedTime: typeof mod === 'number' && Number.isFinite(mod) ? mod : null,
+    changedPaths: [] as string[],
   };
   if (viewOnly) return { ...base, before: null, undoable: false, note: RELAYED_NOTE };
   let before: Record<string, unknown> | null = null;
