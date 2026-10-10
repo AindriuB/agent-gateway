@@ -46,7 +46,7 @@ export class SessionBinding {
   constructor(
     private readonly registry: LinkRegistry,
     private readonly selector: UserSelector = {},
-    /** Paired identities beyond the connected ones, so a name is checked against all of them. */
+    /** Active paired identities, connected or not: the implicit-binding pool and what names are checked against. */
     private readonly knownIdentities: () => readonly Identity[] = () => [],
     /** Called when the session binds without a user selector. */
     private readonly onImplicitBind?: (who: Identity) => void,
@@ -88,15 +88,13 @@ export class SessionBinding {
 
   private matching(): Identity[] {
     const { world, user } = this.selector;
-    const connected = this.registry.list().map(identityOf);
-    // Every paired identity counts, connected or not, so binding never depends on who connects first.
-    let pool: Identity[];
-    {
-      const byKey = new Map<string, Identity>();
-      for (const i of this.knownIdentities()) byKey.set(idOf(i), i);
-      for (const i of connected) byKey.set(idOf(i), i);
-      pool = [...byKey.values()];
-    }
+    // Every active pairing counts, connected or not, so binding never depends on who connects
+    // first. Without a user selector only active pairings count, so a pairing revoked while its
+    // connection lingers cannot be bound implicitly.
+    const byKey = new Map<string, Identity>();
+    for (const i of this.knownIdentities()) byKey.set(idOf(i), i);
+    if (user !== undefined) for (const c of this.registry.list()) byKey.set(idOf(c), identityOf(c));
+    let pool: Identity[] = [...byKey.values()];
     if (world !== undefined) pool = pool.filter((i) => i.worldId === world);
     if (user === undefined) return pool;
     // An exact id match wins over any name match.

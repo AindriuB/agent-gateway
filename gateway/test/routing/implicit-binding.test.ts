@@ -109,4 +109,33 @@ describe('implicit binding does not depend on connection timing', () => {
     expect((await answer(a, call(s))).isError).toBeFalsy();
     await silent(b);
   });
+
+  it('a session bound to an offline single pairing stays bound when another user pairs', async () => {
+    h = await startServer();
+    const a = await pairModule(h, 'uA', { userName: 'alice' });
+    a.tc.ws.close();
+    await until(() => h!.registry.list().length === 0);
+    const s = await openSession(h);
+    sessions.push(s);
+    expectErrorCode(await call(s), 'WORLD_OFFLINE');
+    const b = await pairModule(h, 'uB', { userName: 'bob' });
+    modules.push(b);
+    expectErrorCode(await call(s), 'WORLD_OFFLINE');
+    await silent(b);
+    const a2 = await reconnectModule(h, a);
+    modules.push(a2);
+    expect((await answer(a2, call(s))).isError).toBeFalsy();
+    await silent(b);
+  });
+
+  it('does not bind implicitly to a pairing revoked while still connected', async () => {
+    h = await startServer();
+    const b = await pairModule(h, 'uB', { userName: 'bob' });
+    modules.push(b);
+    for (const row of h.store.listActivePairings()) h.store.revokePairing(row.id);
+    const s = await openSession(h);
+    sessions.push(s);
+    expectErrorCode(await call(s), 'WORLD_OFFLINE');
+    await silent(b);
+  });
 });
