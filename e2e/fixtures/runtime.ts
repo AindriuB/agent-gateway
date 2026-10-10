@@ -1,0 +1,99 @@
+/**
+ * Page-side code for seed and clean, kept as plain JavaScript source. It is sent to the browser
+ * as an expression, so no transpiler helper can leak into it; a unit test runs it against a
+ * fake `game`. The argument is `{ mode: 'seed' | 'clean', plan, flagScope, flagKey }` and the
+ * result is `{ before, after, totals, uuids }` with per-type flagged and unflagged counts.
+ */
+export const FIXTURE_RUNTIME = String.raw`async (arg) => {
+  const { mode, plan, flagScope, flagKey } = arg;
+  if (!game.user.isGM) throw new Error('fixtures must run as a GM user');
+  const TYPES = ['Folder', 'JournalEntry', 'ChatMessage', 'Token', 'Drawing', 'Note', 'Wall'];
+  const isFlagged = (d) => d.getFlag(flagScope, flagKey) === true;
+  const scene = game.scenes.active;
+  const world = {
+    Folder: () => game.folders.contents,
+    JournalEntry: () => game.journal.contents,
+    ChatMessage: () => game.messages.contents,
+  };
+  const embedded = { Token: 'tokens', Drawing: 'drawings', Note: 'notes', Wall: 'walls' };
+  const docs = (type) => {
+    if (world[type]) return world[type]();
+    if (!scene) return [];
+    return scene[embedded[type]].contents;
+  };
+  const folderDocs = () => game.folders.contents.filter((f) => f.type === 'JournalEntry');
+  const count = () => {
+    const out = {};
+    for (const t of TYPES) {
+      const list = t === 'Folder' ? folderDocs() : docs(t);
+      const flagged = list.filter(isFlagged).length;
+      out[t] = { flagged, unflagged: list.length - flagged };
+    }
+    return out;
+  };
+  const before = count();
+  if (mode === 'seed' && !scene) {
+    throw new Error('no active scene: activate a scene in the world first; the seed does not create one');
+  }
+  const wipe = async () => {
+    if (scene) {
+      for (const t of ['Token', 'Drawing', 'Note', 'Wall']) {
+        const ids = docs(t).filter(isFlagged).map((d) => d.id);
+        if (ids.length) await scene.deleteEmbeddedDocuments(t, ids);
+      }
+    }
+    const msgs = game.messages.contents.filter(isFlagged).map((d) => d.id);
+    if (msgs.length) await getDocumentClass('ChatMessage').deleteDocuments(msgs);
+    const entries = game.journal.contents.filter(isFlagged).map((d) => d.id);
+    if (entries.length) await getDocumentClass('JournalEntry').deleteDocuments(entries);
+    const folders = folderDocs().filter(isFlagged).map((d) => d.id);
+    if (folders.length) await getDocumentClass('Folder').deleteDocuments(folders);
+  };
+  await wipe();
+  const totals = {};
+  const uuids = {};
+  if (mode === 'seed') {
+    const refs = {};
+    const gmIds = game.users.contents.filter((u) => u.isGM).map((u) => u.id);
+    const userId = (name) => {
+      const u = game.users.getName(name);
+      if (!u) throw new Error('no Foundry user named ' + name);
+      return u.id;
+    };
+    const resolve = (v) => {
+      if (Array.isArray(v)) return v.map(resolve);
+      if (v && typeof v === 'object') {
+        if ('$ref' in v) {
+          if (!(v.$ref in refs)) throw new Error('unknown fixture ref ' + v.$ref);
+          return refs[v.$ref];
+        }
+        if ('$user' in v) return userId(v.$user);
+        if ('$gms' in v) return gmIds;
+        const out = {};
+        for (const [k, x] of Object.entries(v)) out[k] = resolve(x);
+        return out;
+      }
+      return v;
+    };
+    for (const step of plan) {
+      const data = resolve(step.data);
+      if (step.roll) {
+        const roll = await new Roll(step.roll).evaluate();
+        data.rolls = [roll.toJSON()];
+        if (step.recordTotal) totals[step.recordTotal] = roll.total;
+      }
+      let created;
+      if (step.parent === 'scene') {
+        [created] = await scene.createEmbeddedDocuments(step.type, [data]);
+      } else {
+        created = await getDocumentClass(step.type).create(data);
+      }
+      if (step.ref) {
+        refs[step.ref] = created.id;
+        uuids[step.ref] = created.uuid;
+      }
+    }
+    uuids.activeScene = scene.uuid;
+  }
+  return { before, after: count(), totals, uuids };
+}`;

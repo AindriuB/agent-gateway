@@ -1,0 +1,70 @@
+# End-to-end testing
+
+The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It is separate from `npm test` and `npm run verify`, which never run it. It needs a machine with Chrome or Chromium and access to the Foundry instance (the Mac test bed).
+
+## Prerequisites
+
+- Foundry v14 at `FOUNDRY_URL` with world `test-world` (game system `pf2e`) launched, the Agent Gateway module linked and enabled, and an active scene.
+- Foundry users that exist already: GM `dev-gm`, players `player1` and `player2`. `player1` owns `Actor.6i6mZ5g8vX8iU9RD`.
+- `npm ci` and `npm run build` in this repo. `playwright-core` is a dev dependency and downloads no browser; the harness uses the system Chrome (channel `chrome`), or the binary named by `CHROME_PATH` (`AGENT_GATEWAY_E2E_CHANNEL` selects another channel, for example `chromium`). Set `AGENT_GATEWAY_E2E_INSECURE_TLS=1` only if Chrome does not trust the Foundry certificate.
+- Optional `~/.config/agent-gateway/test.env` (`KEY=value` lines). The environment overrides it.
+
+| Key | Default |
+| --- | --- |
+| `FOUNDRY_URL` | `https://foundry.local` |
+| `FOUNDRY_WORLD` | `test-world` |
+| `FOUNDRY_GM_USER` | `dev-gm` |
+| `FOUNDRY_PLAYER_USER` | `player1` |
+| `FOUNDRY_PLAYER2_USER` | `player2` |
+| `FOUNDRY_PASSWORD` | unset; the password field is filled only when set |
+| `AGENT_GATEWAY_E2E_LINK_PORT` | `7429` (never `7420`, the dev port) |
+| `AGENT_GATEWAY_E2E_V13_URL` | unset; enables `--foundry v13` |
+| `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S` | `300`; how long setup waits for a human |
+| `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `30`; how long a run waits for a stored pairing to connect |
+| `AGENT_GATEWAY_E2E_HEADED` | `1` shows the browsers during seed, clean and runs |
+
+Keep passwords out of the repo; they belong in the environment or `test.env`.
+
+## Commands
+
+1. `npm run test:e2e:setup` (once per user, repeat if a pairing is lost). For each user it starts a gateway on the e2e port, opens a headed window whose title and red banner show the user name and the pairing code, joins the world, sets the client `gatewayUrl` to `ws://localhost:<port>`, opens the pairing app, and waits for a human to type the code. The harness never types the code. It confirms each pairing with `world_info`, prints `paired <user>`, and exits 0 when everyone is paired. Add `--player2` to pair the second player too (used by the multi-user suites).
+2. `npm run test:e2e:seed` creates the `ag-test-*` fixtures as the GM. **This writes to the world.** Run it only with the world owner's consent (Andrew), once; running it again leaves exactly one of each fixture. It prints per-type flagged and unflagged counts before and after, and records the blind roll total and the fixture UUIDs in the state directory.
+3. `npm run test:e2e [-- --foundry v14|v13]` runs unattended: local state checks (under 5 s), then reconnects each user with the stored token (fails within 30 s plus browser start), checks the fixtures, runs the read suites sequentially and writes the summary. Failure messages say `run npm run test:e2e:setup` or `run npm run test:e2e:seed`.
+4. `npm run test:e2e:clean` deletes only documents flagged `flags['agent-gateway'].fixture` and restores the world to its pre-seed state. It prints per-type counts before and after: flagged goes to 0, unflagged is unchanged.
+
+Offline checks of the harness itself (no browser, no Foundry): `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, then `npx tsc -p e2e/tsconfig.json --noEmit` and `npx eslint e2e`.
+
+## State directory
+
+Everything persistent is under `~/.config/agent-gateway/e2e/`, mode 0700 for directories and 0600 for files; nothing is written inside the repo.
+
+- `profiles/<user>/`: one persistent Chromium profile per user (holds the Foundry session and the module's stored credential)
+- `gateway.db`: the gateway's pairings
+- `fixture-state.json`: blind roll total and fixture UUIDs written by the seed
+- `e2e-summary.json`: written by every run (Foundry URL and version, per-suite pass, fail and skip counts, tool counts per role, leak-check summary)
+- `run-data.jsonl`, `vitest-report.json`: scratch files of the current run
+
+One gateway process is one MCP session and one link server, so a run that needs a different `--user` restarts the gateway on the same port and database. Only one browser per user is open at a time.
+
+## Fixtures
+
+Folder `ag-test-hidden-folder` with JournalEntry `ag-test-hidden` (NONE); `ag-test-public` (OBSERVER; pages `public` with a secret section, `gm` with page ownership NONE, `markdown` with a secret); `ag-test-limited` (LIMITED); on the active scene a hidden and a visible token, a hidden drawing, a public and a hidden note and a secret-door wall; six chat messages (public, GM whisper, player1 whisper to the GM, player1 blind `7d6` roll, an NPC message with a secret, player1 speaking as their character with a secret). Edit `e2e/fixtures/spec.ts` and `manifest.ts` together: the manifest lists the strings a player must never receive.
+
+## What the read suites assert
+
+Player (`player1`): journal search and `document_get` visibility ("not found", never `FORBIDDEN`), stripped secrets, `ownership` of `{ yours: 2 }`, chat visibility, the LIMITED compendium pack hidden, paging of a long compendium entry. GM (`dev-gm`): every fixture is visible. Both roles: `world_info`, and the player's tool list is a subset of the GM's with no `minRole: 'gm'` tool. Every player result is scanned for every hidden string; the summary reports `leak check: <n> results x <m> strings, <hits> hits`. The blind roll total is matched only where labelled (`"rollTotal": n` or `= n`), because a bare number matches timestamps.
+
+## The v13 gap
+
+`npm run test:e2e -- --foundry v13` targets `AGENT_GATEWAY_E2E_V13_URL`. Without it the run prints `SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)` and exits 0. The v13 instance is a homelab prerequisite; until it exists the v13 evidence for tools 09, 10 and 11 is pending.
+
+## Permission rules on the Mac (auto mode)
+
+Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
+
+- Needs Andrew's approval each time (human in the loop): `npm run test:e2e:setup` (headed browsers, a human types the code), `npm run test:e2e:seed` and `npm run test:e2e:clean` (writes to the world).
+- Allow rule once the above has been done: `npm run test:e2e` and `npm run test:e2e -- --foundry v13`. It logs in with stored profiles, spawns `node gateway/dist/bin/cli.js` as a child, launches Chrome with a profile under `~/.config/agent-gateway/e2e/`, and makes read-only tool calls. It writes nothing to the world.
+- Also needed: read and write under `~/.config/agent-gateway/e2e/`, read of `~/.config/agent-gateway/test.env`, a listener on `127.0.0.1:7429`, and outbound access to `FOUNDRY_URL`.
+- Run unattended: `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, `npx tsc -p e2e/tsconfig.json --noEmit`, `npx eslint e2e`.
+
+Processes are stopped only by their own recorded PID; the harness never matches processes by name.

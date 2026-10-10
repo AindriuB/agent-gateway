@@ -1,0 +1,31 @@
+import { defineConfig } from 'vitest/config';
+
+// Two projects. `e2e-unit` is offline (the harness's own checks); `e2e-live` needs the Mac test
+// bed. Neither is listed by the root vitest.config.ts. Files and workers run one at a time: one
+// gateway link port and one browser per user.
+const shared = { fileParallelism: false, maxWorkers: 1, environment: 'node' } as const;
+
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        test: {
+          ...shared,
+          name: 'e2e-unit',
+          root: import.meta.dirname,
+          include: ['lib/**/*.test.ts', 'fixtures/**/*.test.ts', 'setup/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          ...shared,
+          name: 'e2e-live',
+          root: import.meta.dirname,
+          include: ['read/**/*.e2e.test.ts'],
+          testTimeout: 120_000,
+          hookTimeout: 240_000,
+        },
+      },
+    ],
+  },
+});
