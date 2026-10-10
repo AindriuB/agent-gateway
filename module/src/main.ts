@@ -1,5 +1,6 @@
 import { foundryGeneration } from './compat/index.js';
-import { isLinkActive, resumeLink, startLink, stopLink } from './link/runtime.js';
+import { installBridge } from './link/bridge.js';
+import { getLinkClient, isLinkActive, resumeLink, startLink, stopLink } from './link/runtime.js';
 import { registerSettings } from './settings/index.js';
 
 declare const Hooks: { once(hook: string, fn: () => void): void };
@@ -10,6 +11,7 @@ Hooks.once('init', () => {
 
 Hooks.once('ready', () => {
   console.log(`agent-gateway | ready (v${foundryGeneration()})`);
+  installBridge(getLinkClient());
   startLink();
   const g = globalThis as {
     addEventListener?: (t: string, f: (e: { persisted?: boolean }) => void) => void;

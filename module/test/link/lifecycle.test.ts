@@ -21,6 +21,7 @@ beforeEach(async () => {
     stopLink,
     resumeLink,
     isLinkActive,
+    getLinkClient: () => ({}),
   }));
   stub = installFoundry(14);
   listeners = new Map();

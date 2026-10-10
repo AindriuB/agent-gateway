@@ -1,4 +1,8 @@
 import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -44,14 +48,27 @@ describe('mcp server', () => {
     const res = await (await connect([fixture])).callTool({ name: 'fixture_tool', arguments: {} });
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toContain('world offline');
-    expect(res.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    expect(res.structuredContent).toBeUndefined();
+    expect(JSON.stringify(res.content)).toContain('WORLD_OFFLINE: ');
   });
 });
 
 describe('cli', () => {
   const cli = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));
+  const freePort = (): Promise<number> =>
+    new Promise((resolve) => {
+      const s = createNetServer().listen(0, '127.0.0.1', () => {
+        const { port } = s.address() as { port: number };
+        s.close(() => resolve(port));
+      });
+    });
   it('writes only JSON-RPC to stdout', async () => {
-    const child = spawn(process.execPath, [cli], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const dir = mkdtempSync(join(tmpdir(), 'ag-mcp-cli-'));
+    const child = spawn(
+      process.execPath,
+      [cli, '--link-port', String(await freePort()), '--db', join(dir, 'g.db')],
+      { stdio: ['pipe', 'pipe', 'pipe'] },
+    );
     let out = '';
     child.stdout.on('data', (d: Buffer) => (out += d.toString()));
     const send = (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`);
@@ -69,6 +86,8 @@ describe('cli', () => {
     send({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
     await new Promise((r) => setTimeout(r, 1500));
     child.kill();
+    await new Promise((r) => child.once('close', r));
+    rmSync(dir, { recursive: true, force: true });
     const lines = out.split('\n').filter(Boolean);
     expect(lines.length).toBeGreaterThanOrEqual(2);
     for (const l of lines) expect(JSON.parse(l).jsonrpc).toBe('2.0');

@@ -36,8 +36,9 @@ export function createMcpServer(opts: McpServerOptions): Server {
     if (!tool) {
       return {
         isError: true,
-        content: [{ type: 'text' as const, text: `Unknown tool: ${req.params.name}` }],
-        structuredContent: { code: 'UNKNOWN_TOOL' },
+        content: [
+          { type: 'text' as const, text: `UNKNOWN_TOOL: Unknown tool: ${req.params.name}` },
+        ],
       };
     }
     // Routing to a connected module arrives in task 11; until then the world is offline.
@@ -46,10 +47,9 @@ export function createMcpServer(opts: McpServerOptions): Server {
       content: [
         {
           type: 'text' as const,
-          text: 'world offline: no Foundry world is connected to the gateway',
+          text: 'WORLD_OFFLINE: world offline: no Foundry world is connected to the gateway',
         },
       ],
-      structuredContent: { code: 'WORLD_OFFLINE' },
     };
   });
 
