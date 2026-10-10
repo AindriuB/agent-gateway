@@ -43,7 +43,8 @@ export function e2ePaths(
   const base = join(home, '.config', 'agent-gateway');
   // A run may use a throwaway state directory (the stale-token suite does).
   const override = env.AGENT_GATEWAY_E2E_STATE_DIR;
-  const stateDir = override !== undefined && override !== '' ? override : join(base, 'e2e');
+  if (override === '') throw new ConfigError('AGENT_GATEWAY_E2E_STATE_DIR is set but empty');
+  const stateDir = override !== undefined ? override : join(base, 'e2e');
   return {
     stateDir,
     profilesDir: join(stateDir, 'profiles'),

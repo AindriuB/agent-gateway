@@ -9,21 +9,21 @@ The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It i
 - `npm ci` and `npm run build` in this repo. `playwright-core` is a dev dependency and downloads no browser; the harness uses the system Chrome (channel `chrome`), or the binary named by `CHROME_PATH` (`AGENT_GATEWAY_E2E_CHANNEL` selects another channel, for example `chromium`). Set `AGENT_GATEWAY_E2E_INSECURE_TLS=1` only if Chrome does not trust the Foundry certificate.
 - Optional `~/.config/agent-gateway/test.env` (`KEY=value` lines). The environment overrides it.
 
-| Key                                   | Default                                                                                                     |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `FOUNDRY_URL`                         | `https://foundry.local`                                                                                     |
-| `FOUNDRY_WORLD`                       | `test-world`                                                                                                |
-| `FOUNDRY_GM_USER`                     | `dev-gm`                                                                                                    |
-| `FOUNDRY_PLAYER_USER`                 | `player1`                                                                                                   |
-| `FOUNDRY_PLAYER2_USER`                | `player2`                                                                                                   |
-| `FOUNDRY_GM_PASSWORD`                 | unset; filled only for the GM user, and only when set                                                       |
-| `FOUNDRY_PLAYER_PASSWORD`             | unset; filled only for the player user                                                                      |
-| `FOUNDRY_PLAYER2_PASSWORD`            | unset; filled only for the second player                                                                    |
-| `AGENT_GATEWAY_E2E_LINK_PORT`         | `7429` (never `7420`, the dev port)                                                                         |
-| `AGENT_GATEWAY_E2E_V13_URL`           | unset; enables `--foundry v13`                                                                              |
-| `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S`    | `300`; how long setup waits for a human                                                                     |
+| Key | Default |
+| --- | --- |
+| `FOUNDRY_URL` | `https://foundry.local` |
+| `FOUNDRY_WORLD` | `test-world` |
+| `FOUNDRY_GM_USER` | `dev-gm` |
+| `FOUNDRY_PLAYER_USER` | `player1` |
+| `FOUNDRY_PLAYER2_USER` | `player2` |
+| `FOUNDRY_GM_PASSWORD` | unset; filled only for the GM user, and only when set |
+| `FOUNDRY_PLAYER_PASSWORD` | unset; filled only for the player user |
+| `FOUNDRY_PLAYER2_PASSWORD` | unset; filled only for the second player |
+| `AGENT_GATEWAY_E2E_LINK_PORT` | `7429` (never `7420`, the dev port) |
+| `AGENT_GATEWAY_E2E_V13_URL` | unset; enables `--foundry v13` |
+| `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S` | `300`; how long setup waits for a human |
 | `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `20`; the most one user's wait for a stored pairing to connect may take (the two users share a 43 s budget) |
-| `AGENT_GATEWAY_E2E_HEADED`            | `1` shows the browsers during seed, clean and runs                                                          |
+| `AGENT_GATEWAY_E2E_HEADED` | `1` shows the browsers during seed, clean and runs |
 
 Keep passwords out of the repo; they belong in the environment or `test.env`. The old single `FOUNDRY_PASSWORD` is no longer read: if it is set, the harness prints a one-line warning and ignores it. A password variable that is defined but empty in the environment means "no password" and overrides a value in `test.env`.
 
@@ -65,7 +65,7 @@ The suites under `e2e/multi/` prove the guarantees of tasks 11 and 11b with two 
 - `isolation`: with a gateway started `--user player1`, `world_info`, `document_search`, `document_get` and `chat_read` answer as player1 (role Player) and the GM page's link WebSocket gets 0 call frames while player1's gets 4. The same with `--user dev-gm` reverses the counts. Frames are counted from Playwright WebSocket events on the link port, so pings do not count. With player2 paired, a gateway started `--user player2` returns a `chat_read` without player1's whisper, passes the hidden-string check, and player1's page gets 0 call frames.
 - `ambiguity`: a gateway started with `--world` and no `--user` while two pairings are active answers `world_info`, `document_search`, `document_get`, `compendium_search`, `compendium_get` and `chat_read` with `INVALID_ARGS` naming both users, and neither page receives a call frame.
 - `resilience`: reloading player1's tab gives `WORLD_OFFLINE` on the next call, then a call succeeds within `AGENT_GATEWAY_E2E_RELOAD_S` seconds (default 30; expect about 5 to 15 s). Stopping the gateway by its PID and starting a new one on the same port and DB recovers within 60 s (the module's reconnect backoff caps at 60 s with jitter; expect under 30 s) with no code entered and the same number of active pairings.
-- `stale-token`: against a throwaway state directory (`AGENT_GATEWAY_E2E_STATE_DIR`, created under the system temp directory and removed afterwards) holding a fabricated pairing no browser has a token for, opening the user's session fails within 45 s with `run npm run test:e2e:setup`. The real state directory is only read (the player profile is copied).
+- `stale-token`: against a throwaway state directory (`AGENT_GATEWAY_E2E_STATE_DIR`, created under the system temp directory and removed afterwards) holding a fabricated pairing and a copy of the real player profile (whose token the scratch DB does not know), the gateway answers the module with a `PAIRING_INVALID` reject frame and the run fails within 45 s, end to end, with `run npm run test:e2e:setup`. It skips with a `SKIP:` line when there is no stored player profile to copy. The real state directory is only read.
 
 Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_PLAYER2_USER` has no active pairing in the DB (pair it with `npm run test:e2e:setup -- --player2`). Measured frame counts and recovery times are printed as `[multi] ...` lines and listed in the printed summary and `e2e-summary.json` (`multi`).
 

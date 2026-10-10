@@ -4,6 +4,7 @@ import {
   FrameCounter,
   frameKind,
   isLinkUrl,
+  rejectCode,
   waitFor,
   type PageLike,
   type WsLike,
@@ -31,6 +32,23 @@ describe('frameKind', () => {
   });
   it('reads binary payloads', () => {
     expect(frameKind(Buffer.from(call))).toBe('call');
+  });
+});
+
+describe('rejectCode', () => {
+  it('reads the code of a reject frame only', () => {
+    const rej = '{"type":"reject","code":"PAIRING_INVALID","message":"m"}';
+    expect(rejectCode(rej)).toBe('PAIRING_INVALID');
+    expect(rejectCode(call)).toBeUndefined();
+    expect(rejectCode('{"type":"reject"}')).toBeUndefined();
+  });
+  it('FrameCounter records reject codes', () => {
+    const { page, socket } = fakePage();
+    const c = new FrameCounter(7429).attach(page);
+    socket('ws://localhost:7429').emit('framereceived', {
+      payload: '{"type":"reject","code":"PAIRING_INVALID","message":"m"}',
+    });
+    expect(c.rejectCodes).toEqual(['PAIRING_INVALID']);
   });
 });
 
@@ -71,7 +89,7 @@ describe('FrameCounter', () => {
     const again = socket('ws://localhost:7429');
     again.emit('framereceived', { payload: welcome });
     again.emit('framereceived', { payload: call });
-    expect(c.snapshot).toEqual({ calls: 3, welcomes: 2, closes: 1 });
+    expect(c.snapshot).toEqual({ opens: 2, calls: 3, welcomes: 2, closes: 1 });
     expect(c.calls).toBe(3);
   });
 });

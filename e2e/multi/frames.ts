@@ -16,6 +16,14 @@ export function frameKind(payload: string | Uint8Array | Buffer): FrameKind {
   }
 }
 
+/** The error code of a `reject` frame, or undefined for any other frame. */
+export function rejectCode(payload: string | Uint8Array | Buffer): string | undefined {
+  if (frameKind(payload) !== 'reject') return undefined;
+  const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
+  const code = (JSON.parse(text) as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 /** Does this WebSocket URL point at the gateway link port? */
 export function isLinkUrl(url: string, linkPort: number): boolean {
   try {
@@ -39,6 +47,7 @@ export interface PageLike {
 }
 
 export interface FrameCounts {
+  opens: number;
   calls: number;
   welcomes: number;
   closes: number;
@@ -46,17 +55,23 @@ export interface FrameCounts {
 
 /** Counts frames on the link WebSocket(s) of one page. Attach before the page navigates. */
 export class FrameCounter {
-  private counts: FrameCounts = { calls: 0, welcomes: 0, closes: 0 };
+  private counts: FrameCounts = { opens: 0, calls: 0, welcomes: 0, closes: 0 };
+  readonly rejectCodes: string[] = [];
 
   constructor(private readonly linkPort: number) {}
 
   attach(page: PageLike): this {
     page.on('websocket', (ws) => {
       if (!isLinkUrl(ws.url(), this.linkPort)) return;
+      this.counts.opens++;
       ws.on('framereceived', (e) => {
         const kind = frameKind(e.payload);
         if (kind === 'call') this.counts.calls++;
         else if (kind === 'welcome') this.counts.welcomes++;
+        else if (kind === 'reject') {
+          const code = rejectCode(e.payload);
+          if (code) this.rejectCodes.push(code);
+        }
       });
       ws.on('close', () => {
         this.counts.closes++;
@@ -67,6 +82,11 @@ export class FrameCounter {
 
   get snapshot(): FrameCounts {
     return { ...this.counts };
+  }
+
+  /** Link WebSockets opened. Playwright does not always fire `close` on a reload; opens always count. */
+  get opens(): number {
+    return this.counts.opens;
   }
 
   get calls(): number {

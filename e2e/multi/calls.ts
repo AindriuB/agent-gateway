@@ -1,4 +1,5 @@
 import { leakMatchers, messageIdFromUuid } from '../fixtures/manifest.js';
+import type { LeakMatcher } from '../fixtures/manifest.js';
 import { FIXTURE } from '../fixtures/spec.js';
 import { requireUuids, type Context } from '../lib/context.js';
 import type { CallResult } from '../lib/gateway.js';
@@ -8,11 +9,28 @@ import type { GatewayProcess } from '../lib/gateway.js';
 export const ISOLATION_TOOLS = ['world_info', 'document_search', 'document_get', 'chat_read'];
 
 /** A leak checker with the same matchers 12a's PlayerCaller uses. */
-export function leakCheckerFor(ctx: Context): LeakChecker {
+export function leakCheckerFor(ctx: Context, extraHidden: readonly string[] = []): LeakChecker {
   const messageId = messageIdFromUuid(requireUuids(ctx).blindRoll);
   if (!messageId) throw new Error('blind roll message id missing; run npm run test:e2e:seed');
-  return new LeakChecker(leakMatchers({ total: ctx.fixtures.blindRollTotal, messageId }));
+  return new LeakChecker([
+    ...leakMatchers({ total: ctx.fixtures.blindRollTotal, messageId }),
+    ...extraMatchers(extraHidden),
+  ]);
 }
+
+/** Plain case-insensitive matchers for strings only some viewers may see. */
+export function extraMatchers(strings: readonly string[]): LeakMatcher[] {
+  return strings.map((s) => ({
+    label: s,
+    test: (h: string) => h.toLowerCase().includes(s.toLowerCase()),
+  }));
+}
+
+/** Hidden from player2 in addition to the standard set: player1's whisper and own-character secret. */
+export const PLAYER2_EXTRA_HIDDEN: readonly string[] = [
+  FIXTURE.text.playerWhisper,
+  FIXTURE.text.ownSecret,
+];
 
 /**
  * world_info, document_search, document_get (the public fixture entry, visible to everyone) and

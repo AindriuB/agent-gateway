@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { ambiguityProblems, countActivePairings, hasPairing, isWorldOffline } from './pairs.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import {
+  activePairingIds,
+  ambiguityProblems,
+  countActivePairings,
+  hasPairing,
+  isWorldOffline,
+  judgeReloadProbe,
+} from './pairs.js';
 
 const rows = [
   { worldId: 'test-world', userName: 'dev-gm' },
@@ -37,9 +48,47 @@ describe('ambiguityProblems', () => {
   });
 });
 
+describe('judgeReloadProbe', () => {
+  const ok = { isError: false, text: 'fine' };
+  const off = { isError: true, text: 'WORLD_OFFLINE: world offline' };
+  it('waits through successes before the navigation, then needs an offline result first', () => {
+    expect(judgeReloadProbe(ok, { sawOffline: false, navigated: false }).verdict).toBe('continue');
+    expect(judgeReloadProbe(off, { sawOffline: false, navigated: false })).toMatchObject({
+      verdict: 'continue',
+      sawOffline: true,
+    });
+    expect(judgeReloadProbe(ok, { sawOffline: true, navigated: true }).verdict).toBe('recovered');
+  });
+  it('fails on a success after navigation with no offline result, and on other errors', () => {
+    expect(judgeReloadProbe(ok, { sawOffline: false, navigated: true }).verdict).toBe('failed');
+    expect(
+      judgeReloadProbe(
+        { isError: true, text: 'INTERNAL: x' },
+        { sawOffline: true, navigated: true },
+      ).verdict,
+    ).toBe('failed');
+  });
+});
+
 describe('isWorldOffline', () => {
   it('matches the WORLD_OFFLINE prefix only', () => {
     expect(isWorldOffline('WORLD_OFFLINE: world offline: x')).toBe(true);
     expect(isWorldOffline('INVALID_ARGS: world offline')).toBe(false);
+  });
+});
+
+describe('activePairingIds', () => {
+  it('lists active ids sorted and skips revoked rows', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ag-pairs-'));
+    try {
+      const path = join(dir, 'g.db');
+      const db = new DatabaseSync(path);
+      db.exec('CREATE TABLE pairings (id TEXT PRIMARY KEY, revoked_at INTEGER)');
+      db.exec("INSERT INTO pairings VALUES ('b', NULL), ('a', NULL), ('c', 5)");
+      db.close();
+      expect(activePairingIds(path)).toEqual(['a', 'b']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
