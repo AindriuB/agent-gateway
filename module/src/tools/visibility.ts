@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { isAuditDocument } from '../audit/guard.js';
 declare const foundry: any;
 
 /** What the requesting user may see of one document and, recursively, its embedded documents. */
@@ -69,6 +70,9 @@ const ROOT_RULES: Record<string, (c: { user: any; doc: any }) => boolean> = {
 };
 
 export function rootVisible(doc: any, user: any): boolean {
+  // The agent audit journal (task 19) is invisible to every tool for every user, GMs included:
+  // agents must not read or tamper with the log. Humans use the audit app.
+  if (isAuditDocument(doc)) return false;
   if (user?.isGM === true) return true;
   const rule = ROOT_RULES[doc.documentName];
   return rule ? rule({ user, doc }) : true;

@@ -1,6 +1,7 @@
 import { policyStage } from '../policy/stage.js';
 import { createApprovalStage } from '../approvals/stage.js';
 import { getApprovalManager } from '../approvals/live.js';
+import { auditStage, installAudit } from '../audit/index.js';
 import { rateLimitStage } from '../ratelimit/stage.js';
 import type { DispatchResult, OpContext } from './types.js';
 
@@ -22,3 +23,6 @@ STAGES.push(policyStage);
 STAGES.push(rateLimitStage); // order 25: after policy (20), before approval
 
 STAGES.push(createApprovalStage(getApprovalManager));
+// Audit (task 19): order 40, after approval. Records calls that are not reads.
+STAGES.push(auditStage);
+installAudit();
