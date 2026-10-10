@@ -1,7 +1,7 @@
 # 23 — Add GM tools document_create, document_update, document_delete and compendium_import
 
 **Repo:** .
-**Depends on:** 21
+**Depends on:** 21, 20d, 20e
 **Owns:**
 - protocol/src/tools/document-create.ts
 - protocol/src/tools/document-update.ts
@@ -25,6 +25,7 @@ default; deletes are destructive.
 - docs/plan/specs/2026-10-09-agent-gateway.md:151-153 — GM tools; `document_update` raw data, diff-approved, ask by default
 - module/src/apps/approval/** diff (17); module/src/tools/_write.ts (21)
 
+- These are core tools: add them to `protocol/src/tools/index.ts` `TOOLS` and `module/src/tools/index.ts` `HANDLERS` as before; `module/src/ops/core-tools.ts` (20c) registers them through the same registry path as pack tools, and `checkToolDefinition(…, 'core')` (20b) must pass for each (the 20b test sweeps `TOOLS`)
 ## Acceptance
 - [ ] `document_create` (gm, write): args `type`, `data` (JSON string, parsed and size-limited, so the schema stays closed), optional `folder`, optional `parentUuid` for embedded docs
 - [ ] `document_update` (gm, write): args `uuid`, `update` (JSON string of raw update data); the approval dialog shows a diff of current vs merged result
