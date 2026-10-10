@@ -52,19 +52,33 @@ describe('judgeReloadProbe', () => {
   const ok = { isError: false, text: 'fine' };
   const off = { isError: true, text: 'WORLD_OFFLINE: world offline' };
   it('waits through successes before the navigation, then needs an offline result first', () => {
-    expect(judgeReloadProbe(ok, { sawOffline: false, navigated: false }).verdict).toBe('continue');
-    expect(judgeReloadProbe(off, { sawOffline: false, navigated: false })).toMatchObject({
+    expect(judgeReloadProbe(ok, { sawOffline: false, startedAfterNavigation: false }).verdict).toBe(
+      'continue',
+    );
+    expect(
+      judgeReloadProbe(off, { sawOffline: false, startedAfterNavigation: false }),
+    ).toMatchObject({
       verdict: 'continue',
       sawOffline: true,
     });
-    expect(judgeReloadProbe(ok, { sawOffline: true, navigated: true }).verdict).toBe('recovered');
+    expect(judgeReloadProbe(ok, { sawOffline: true, startedAfterNavigation: true }).verdict).toBe(
+      'recovered',
+    );
+  });
+  it('ignores a success from a probe sent before the navigation, even if it returns after', () => {
+    // The probe began on the old connection; navigation committed while it was in flight.
+    expect(judgeReloadProbe(ok, { sawOffline: false, startedAfterNavigation: false }).verdict).toBe(
+      'continue',
+    );
   });
   it('fails on a success after navigation with no offline result, and on other errors', () => {
-    expect(judgeReloadProbe(ok, { sawOffline: false, navigated: true }).verdict).toBe('failed');
+    expect(judgeReloadProbe(ok, { sawOffline: false, startedAfterNavigation: true }).verdict).toBe(
+      'failed',
+    );
     expect(
       judgeReloadProbe(
         { isError: true, text: 'INTERNAL: x' },
-        { sawOffline: true, navigated: true },
+        { sawOffline: true, startedAfterNavigation: true },
       ).verdict,
     ).toBe('failed');
   });

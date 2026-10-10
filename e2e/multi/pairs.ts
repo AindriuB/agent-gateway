@@ -64,12 +64,14 @@ export type ReloadVerdict = 'continue' | 'recovered' | 'failed';
 
 /**
  * Judge one probe call after a reload. The link must be seen down (WORLD_OFFLINE) before a call
- * succeeds; a success after the reload's navigation without an earlier WORLD_OFFLINE means the
- * reload never dropped the link. Any other error is a failure.
+ * succeeds; a success from a probe sent after the reload's navigation, without an earlier
+ * WORLD_OFFLINE, means the reload never dropped the link. Any other error is a failure.
  */
 export function judgeReloadProbe(
   probe: { isError: boolean; text: string },
-  state: { sawOffline: boolean; navigated: boolean },
+  /** `startedAfterNavigation`: the probe was sent after the reload's navigation committed. A
+   * probe sent earlier may be answered on the old connection, so its success says nothing. */
+  state: { sawOffline: boolean; startedAfterNavigation: boolean },
 ): { verdict: ReloadVerdict; sawOffline: boolean; reason?: string } {
   if (isWorldOffline(probe.text)) return { verdict: 'continue', sawOffline: true };
   if (probe.isError) {
@@ -80,7 +82,7 @@ export function judgeReloadProbe(
     };
   }
   if (state.sawOffline) return { verdict: 'recovered', sawOffline: true };
-  if (state.navigated) {
+  if (state.startedAfterNavigation) {
     return {
       verdict: 'failed',
       sawOffline: false,

@@ -110,8 +110,12 @@ export async function waitFor(
 ): Promise<number | undefined> {
   const start = Date.now();
   for (;;) {
-    if (await ready()) return Date.now() - start;
-    if (Date.now() - start >= timeoutMs) return undefined;
+    const ok = await ready();
+    const elapsed = Date.now() - start;
+    // A probe that only answers after the deadline does not count.
+    if (elapsed > timeoutMs) return undefined;
+    if (ok) return elapsed;
+    if (elapsed >= timeoutMs) return undefined;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }

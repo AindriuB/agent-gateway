@@ -33,9 +33,9 @@ describe('link recovery (bound to player1, dev-gm also connected)', () => {
     async () => {
       expect((await info()).isError).toBe(false);
       const page = rig.users.get(playerUser)!.browser.page;
-      let navigated = false;
+      let navigatedAt: number | undefined;
       page.on('framenavigated', (f) => {
-        if (f === page.mainFrame()) navigated = true;
+        if (f === page.mainFrame() && navigatedAt === undefined) navigatedAt = Date.now();
       });
       const t0 = Date.now();
       const reloading = page.reload().catch(() => undefined);
@@ -44,7 +44,12 @@ describe('link recovery (bound to player1, dev-gm also connected)', () => {
       let verdict: 'continue' | 'recovered' | 'failed' = 'continue';
       let reason = `no successful call within ${RELOAD_S} s of the reload`;
       while (Date.now() - t0 < RELOAD_S * 1000) {
-        const j = judgeReloadProbe(await info(), { sawOffline, navigated });
+        // Note when the probe was sent: one sent before the navigation committed may be answered
+        // on the old connection after it, and must not count as recovery.
+        const sentAt = Date.now();
+        const probe = await info();
+        const startedAfterNavigation = navigatedAt !== undefined && sentAt >= navigatedAt;
+        const j = judgeReloadProbe(probe, { sawOffline, startedAfterNavigation });
         sawOffline = j.sawOffline;
         verdict = j.verdict;
         if (j.reason) reason = j.reason;
@@ -76,7 +81,12 @@ describe('link recovery (bound to player1, dev-gm also connected)', () => {
       await rig.gateway!.stop();
       await rig.startGateway(playerUser);
       expect(rig.gateway!.childPid).not.toBe(oldPid);
-      const ms = await waitFor(async () => !(await info()).isError, RESTART_S * 1000, 500);
+      // The budget runs from before the stop: polling gets only what is left of it.
+      const remaining = RESTART_S * 1000 - (Date.now() - t0);
+      const ms =
+        remaining > 0
+          ? await waitFor(async () => !(await info()).isError, remaining, 500)
+          : undefined;
       const total = Date.now() - t0;
       const after = activePairingIds(ctx.paths.db);
       recordResult(ctx.paths.stateDir, {
@@ -88,6 +98,7 @@ describe('link recovery (bound to player1, dev-gm also connected)', () => {
             : `${seconds(total)}; active pairings ${before.length} -> ${after.length}`,
       });
       expect(ms, `no successful call within ${RESTART_S} s of the restart`).toBeDefined();
+      expect(total, 'restart recovery (ms)').toBeLessThanOrEqual(RESTART_S * 1000);
       expect(rig.frames(playerUser).welcomes).toBeGreaterThan(welcomes);
       expect(after, 'active pairing ids').toEqual(before);
     },

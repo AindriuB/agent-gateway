@@ -100,4 +100,8 @@ describe('waitFor', () => {
     expect(await waitFor(() => ++n >= 3, 1000, 5)).toBeGreaterThanOrEqual(0);
     expect(await waitFor(() => false, 30, 5)).toBeUndefined();
   });
+  it('does not accept a success that arrives after the deadline', async () => {
+    const slow = () => new Promise<boolean>((r) => setTimeout(() => r(true), 60));
+    expect(await waitFor(slow, 20, 5)).toBeUndefined();
+  });
 });
