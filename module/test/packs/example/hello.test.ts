@@ -114,6 +114,7 @@ describe('journal mutation contract', () => {
     };
     const page = {
       documentName: 'JournalEntryPage',
+      uuid: 'JournalEntry.j.JournalEntryPage.p',
       parent: journal,
       type: 'text',
       flags: {},
@@ -183,5 +184,145 @@ describe('journal mutation contract', () => {
     ctx.snapshot.mockRejectedValue(new Error('snapshot failed'));
     await expect(journalStamp(ctx)).rejects.toThrow('snapshot failed');
     expect(page.update).not.toHaveBeenCalled();
+    ctx.snapshot.mockResolvedValue(undefined);
+    expect(await journalStamp(ctx)).toMatchObject({ text: 'Journal line appended' });
+    expect(page.update).toHaveBeenCalledOnce();
+  });
+  it('preserves overlapping stamps through the real dispatcher with delayed updates', async () => {
+    const { page } = setup();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const updates: Array<{ data: Record<string, string>; options: unknown }> = [];
+    page.update.mockImplementation(async (data: Record<string, string>, options: unknown) => {
+      updates.push({ data, options });
+      if (updates.length === 1) await blocked;
+      page.text.content = data['text.content']!;
+    });
+    const snapshot = vi.fn(async () => {});
+    const { api, dispatch } = rig(true, [
+      {
+        name: 'audit-fixture',
+        order: 40,
+        async run(ctx, next) {
+          ctx.snapshot = snapshot;
+          ctx.callOptions = { agentGateway: { callId: ctx.sessionId } } as never;
+          return next();
+        },
+      },
+    ]);
+    registerHelloPack(api);
+    const first = dispatch(
+      {
+        ...call('hello-journal_stamp', { pageUuid: 'page', line: 'first-line' }),
+        sessionId: 'first',
+      },
+      user,
+    );
+    await vi.waitFor(() => expect(updates).toHaveLength(1));
+    const second = dispatch(
+      {
+        ...call('hello-journal_stamp', { pageUuid: 'alias', line: 'second-line' }),
+        sessionId: 'second',
+      },
+      user,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Both calls overlap, but the second cannot snapshot or replace stale content.
+    try {
+      expect(updates).toHaveLength(1);
+      expect(snapshot).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+    }
+    expect(await first).toMatchObject({ text: 'Journal line appended' });
+    expect(await second).toMatchObject({ text: 'Journal line appended' });
+    expect(page.text.content.match(/first-line/g)).toHaveLength(1);
+    expect(page.text.content.match(/second-line/g)).toHaveLength(1);
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(updates.map((update) => update.options)).toEqual([
+      { agentGateway: { callId: 'first' } },
+      { agentGateway: { callId: 'second' } },
+    ]);
+  });
+
+  it('allows unrelated pages to progress while one page update is suspended', async () => {
+    const { page, ctx } = setup();
+    let release!: () => void;
+    page.update.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const other = {
+      ...page,
+      uuid: 'JournalEntry.j.JournalEntryPage.other',
+      update: vi.fn(async () => {}),
+    };
+    vi.stubGlobal(
+      'fromUuid',
+      vi.fn(async (uuid: string) => (uuid === other.uuid ? other : page)),
+    );
+    const first = journalStamp(ctx);
+    await vi.waitFor(() => expect(page.update).toHaveBeenCalledOnce());
+    try {
+      const result = await journalStamp({ ...ctx, args: { ...ctx.args, pageUuid: other.uuid } });
+      expect(result).toMatchObject({ text: 'Journal line appended' });
+      expect(other.update).toHaveBeenCalledOnce();
+    } finally {
+      release();
+    }
+    await first;
+  });
+
+  it('releases a failed update turn and rechecks the waiting caller permission', async () => {
+    const { page, ctx } = setup();
+    let fail!: (error: Error) => void;
+    page.update.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const first = journalStamp(ctx);
+    const rejected = expect(first).rejects.toThrow('update failed');
+    await vi.waitFor(() => expect(page.update).toHaveBeenCalledOnce());
+    const secondSnapshot = vi.fn(async () => {});
+    const second = journalStamp({ ...ctx, snapshot: secondSnapshot });
+    page.testUserPermission.mockReturnValue(false);
+    fail(new Error('update failed'));
+    await rejected;
+    expect(await second).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(secondSnapshot).not.toHaveBeenCalled();
+    expect(page.update).toHaveBeenCalledOnce();
+    page.testUserPermission.mockReturnValue(true);
+    expect(await journalStamp(ctx)).toMatchObject({ text: 'Journal line appended' });
+    expect(page.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds pending identity resolution and recovers after overflow', async () => {
+    const { page, ctx } = setup();
+    let release!: (page: unknown) => void;
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fromUuid',
+      vi.fn(() => blocked),
+    );
+    const pending = Array.from({ length: 64 }, () => journalStamp(ctx));
+    expect(await journalStamp(ctx)).toMatchObject({
+      error: { code: 'FORBIDDEN', message: expect.stringContaining('Too many pending') },
+    });
+    release(null);
+    for (const result of await Promise.all(pending))
+      expect(result).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    vi.stubGlobal(
+      'fromUuid',
+      vi.fn(async () => page),
+    );
+    expect(await journalStamp(ctx)).toMatchObject({ text: 'Journal line appended' });
   });
 });

@@ -33,18 +33,53 @@ export function diceOdds({ count, sides, target }) {
   return { text: `Probability: ${probability}`, structured: { probability } };
 }
 
+// This queue coordinates this browser's pack instance, not other tabs or manual edits.
+const journalTurns = new Map();
+const MAX_PENDING_STAMPS = 64;
+let pendingStamps = 0;
+const forbidden = () => ({
+  error: { code: 'FORBIDDEN', message: 'An owned text journal page is required' },
+});
+
 /** @param {PackContext} ctx */
 export async function journalStamp(ctx) {
-  const { pageUuid, line } = ctx.args;
+  if (pendingStamps >= MAX_PENDING_STAMPS)
+    return { error: { code: 'FORBIDDEN', message: 'Too many pending journal stamps; try again' } };
+  pendingStamps++;
+  try {
+    // Resolve identity only here. All document reads and authorization run again in the turn.
+    const identity = await fromUuid(ctx.args.pageUuid);
+    const pageUuid = identity?.uuid;
+    if (typeof pageUuid !== 'string' || !pageUuid) return forbidden();
+    const previous = journalTurns.get(pageUuid) ?? Promise.resolve();
+    let release;
+    const turn = new Promise((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => turn);
+    journalTurns.set(pageUuid, tail);
+    await previous;
+    try {
+      return await stampPage(ctx, pageUuid);
+    } finally {
+      release();
+      if (journalTurns.get(pageUuid) === tail) journalTurns.delete(pageUuid);
+    }
+  } finally {
+    pendingStamps--;
+  }
+}
+
+/** @param {PackContext} ctx @param {string} pageUuid */
+async function stampPage(ctx, pageUuid) {
+  const { line } = ctx.args;
   const page = await fromUuid(pageUuid);
   const journal = page?.parent;
   const user = game.users.get(ctx.user.id);
-  const forbidden = () => ({
-    error: { code: 'FORBIDDEN', message: 'An owned text journal page is required' },
-  });
   if (
     !user ||
     page?.documentName !== 'JournalEntryPage' ||
+    page.uuid !== pageUuid ||
     journal?.documentName !== 'JournalEntry' ||
     page.type !== 'text' ||
     page.text?.format !== 1 ||
