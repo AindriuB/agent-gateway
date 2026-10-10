@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { compendiumGet } from '@agent-gateway/protocol';
-import type { OpHandler } from '../ops/types.js';
+import type { OpError, OpHandler } from '../ops/types.js';
 import {
   domToDocument,
   page,
@@ -45,26 +45,20 @@ function entryToDocument(data: any, fallbackName: string): MdDocument {
   return domToDocument(inert.body);
 }
 
-const fail = (uuid: string, message: string) => ({
-  text: message,
-  structured: { uuid, name: '', type: '', pack: '', markdown: '', error: message },
-});
+const fail = (message: string): OpError => ({ error: { code: 'INVALID_ARGS', message } });
 
 export const compendiumGetHandler: OpHandler = async (ctx) => {
   const { uuid, cursor } = compendiumGet.input.parse(ctx.args);
   const parts = uuid.split('.');
   if (parts[0] !== 'Compendium' || parts.length < 5) {
-    return fail(
-      uuid,
-      'Not a compendium entry UUID (expected Compendium.<scope>.<pack>.<Type>.<id>).',
-    );
+    return fail('Not a compendium entry UUID (expected Compendium.<scope>.<pack>.<Type>.<id>).');
   }
   const packId = `${parts[1]}.${parts[2]}`;
   const pack = game.packs.get(packId);
   // Checked before anything is loaded; the answer is the same as for a missing pack.
-  if (!pack || !canObservePack(pack, ctx.user.id)) return fail(uuid, 'Compendium entry not found.');
+  if (!pack || !canObservePack(pack, ctx.user.id)) return fail('Compendium entry not found.');
   const doc = await fromUuid(uuid);
-  if (!doc) return fail(uuid, 'Compendium entry not found.');
+  if (!doc) return fail('Compendium entry not found.');
 
   const data = serialiseDocument(doc);
   const name = String(data.name ?? doc.name ?? '');
@@ -74,7 +68,7 @@ export const compendiumGetHandler: OpHandler = async (ctx) => {
   try {
     result = page(mdDoc, cursor);
   } catch (err) {
-    if (err instanceof PageCursorError) return fail(uuid, 'Invalid page cursor for this entry.');
+    if (err instanceof PageCursorError) return fail('Invalid page cursor for this entry.');
     throw err;
   }
   const structured: Record<string, unknown> = {

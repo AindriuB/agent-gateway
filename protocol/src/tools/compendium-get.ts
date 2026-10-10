@@ -19,6 +19,5 @@ export const compendiumGet = defineTool({
     pack: z.string().describe('Pack id the entry belongs to'),
     markdown: z.string().describe('This page of the entry as markdown'),
     nextCursor: z.string().optional().describe('Cursor for the next page; absent on the last page'),
-    error: z.string().optional().describe('Set when the cursor was invalid for this entry'),
   }),
 });

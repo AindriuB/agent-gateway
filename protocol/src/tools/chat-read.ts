@@ -31,6 +31,5 @@ export const chatRead = defineTool({
       .string()
       .optional()
       .describe('Pass as before to read older messages; absent when none remain'),
-    error: z.string().optional().describe('Set when the before id was not found'),
   }),
 });

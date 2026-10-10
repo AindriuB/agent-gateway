@@ -179,23 +179,33 @@ describe('compendium_get', () => {
   it('rejects a forged cursor without throwing', async () => {
     setup([makePack('w.journals', 'JournalEntry', [])], { [uuid]: entry('<p>x</p>') });
     const r = (await get({ uuid, cursor: 'p1.deadbeef.1.1.1' })) as any;
-    expect(r.structured.error).toMatch(/cursor/i);
-    expect(r.structured.markdown).toBe('');
+    expect(r).toMatchObject({
+      error: { code: 'INVALID_ARGS', message: expect.stringMatching(/cursor/i) },
+    });
   });
 
   it('rejects non-compendium uuids', async () => {
     setup([], {});
     const r = (await get({ uuid: 'Actor.abc' })) as any;
-    expect(r.structured.error).toMatch(/Compendium/);
+    expect(r).toMatchObject({
+      error: { code: 'INVALID_ARGS', message: expect.stringMatching(/Compendium/) },
+    });
     expect((globalThis as any).fromUuid).not.toHaveBeenCalled();
   });
 
   it('does not load entries from packs the user cannot observe', async () => {
     setup([makePack('w.journals', 'JournalEntry', [], [])], { [uuid]: entry('<p>x</p>') });
     const r = (await get({ uuid })) as any;
-    expect(r.structured.error).toBe('Compendium entry not found.');
+    expect(r).toEqual({ error: { code: 'INVALID_ARGS', message: 'Compendium entry not found.' } });
     expect((globalThis as any).fromUuid).not.toHaveBeenCalled();
     expect(JSON.stringify(r)).not.toContain('Lore');
+  });
+
+  it('answers a missing pack exactly like a hidden one', async () => {
+    setup([], { [uuid]: entry('<p>x</p>') });
+    expect(await get({ uuid })).toEqual({
+      error: { code: 'INVALID_ARGS', message: 'Compendium entry not found.' },
+    });
   });
 
   it('does not expose other modules data in the entry', async () => {

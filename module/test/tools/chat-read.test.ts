@@ -119,8 +119,8 @@ describe('chat_read', () => {
   it('before must be a visible message', async () => {
     setup([msg({ whisper: ['u2'] }), msg()]);
     const r = await read({ before: 'm1' });
-    expect(r.structured.error).toBe('Message not found.');
-    expect((await read({ before: 'nope' })).structured.messages).toEqual([]);
+    expect(r).toEqual({ error: { code: 'INVALID_ARGS', message: 'Message not found.' } });
+    expect(await read({ before: 'nope' })).toEqual(r);
   });
 
   it('treats content as untrusted: no raw HTML or live links in output', async () => {

@@ -43,8 +43,7 @@ export const chatReadHandler: OpHandler = (ctx) => {
   if (before !== undefined) {
     const at = all.findIndex((m) => m.id === before);
     if (at < 0 || !visibleTo(all[at], ctx.user.id, ctx.user.isGM)) {
-      const error = 'Message not found.';
-      return { text: error, structured: { messages: [], error } };
+      return { error: { code: 'INVALID_ARGS', message: 'Message not found.' } };
     }
     end = at;
   }
