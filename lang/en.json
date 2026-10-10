@@ -67,6 +67,37 @@
       "code": "Pairing code",
       "codeHint": "The code the gateway printed when it started.",
       "connect": "Connect"
+    },
+    "Audit": {
+      "journalName": "Agent Gateway Audit",
+      "typeLabel": "Agent audit entry",
+      "title": "Agent Gateway Audit",
+      "menu": {
+        "name": "Audit log",
+        "label": "Open audit log",
+        "hint": "Review what agents changed and undo it. Only a GM can see or undo entries."
+      },
+      "empty": "No agent changes have been recorded.",
+      "user": "User",
+      "agent": "Agent",
+      "relayed": "relayed from a player client",
+      "args": "Arguments",
+      "truncated": "cut",
+      "notUndoable": "cannot be undone",
+      "targetsDropped": "Targets not recorded:",
+      "undo": "Undo",
+      "undone": "Undone",
+      "undoDone": "Restored {count} document(s).",
+      "undoSkipped": "{count} document(s) cannot be undone and were left as they are.",
+      "undoFailed": "Undo failed for {count} document(s). The entry stays open; see the console.",
+      "undoRefused": "Only a GM can undo an entry, and an entry can be undone once.",
+      "conflict": {
+        "title": "Changed since the agent's call",
+        "body": "These documents changed after the agent's call. Undoing will overwrite those later changes. Continue?",
+        "modified": "modified since",
+        "recreated": "exists again",
+        "deleted": "was deleted since"
+      }
     }
   }
 }

@@ -7,6 +7,7 @@
   "authors": [{ "name": "Andrew Bannister" }],
   "license": "MIT",
   "socket": true,
+  "documentTypes": { "JournalEntryPage": { "audit": {} } },
   "esmodules": ["dist/module/main.js"],
   "styles": ["styles/agent-gateway.css"],
   "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],

@@ -1,0 +1,41 @@
+<section class="agent-gateway-audit">
+  {{#if empty}}
+    <p class="notes">{{localize "AGENT_GATEWAY.Audit.empty"}}</p>
+  {{/if}}
+  <ol class="audit-entries">
+    {{#each entries}}
+      <li class="audit-entry{{#if undone}} undone{{/if}}" data-page-id="{{id}}">
+        <header>
+          <strong class="tool">{{tool}}</strong>
+          <span class="category">{{category}}</span>
+          <span class="status status-{{status}}">{{status}}</span>
+          <time>{{time}}</time>
+          {{#if undone}}
+            <span class="undone-note">{{localize "AGENT_GATEWAY.Audit.undone"}} {{undoneTime}}</span>
+          {{else if canUndo}}
+            <button type="button" data-action="undo" data-page-id="{{id}}">
+              <i class="fa-solid fa-rotate-left"></i> {{localize "AGENT_GATEWAY.Audit.undo"}}
+            </button>
+          {{/if}}
+        </header>
+        <p class="who">
+          {{localize "AGENT_GATEWAY.Audit.user"}}: {{user}}
+          &middot; {{localize "AGENT_GATEWAY.Audit.agent"}}: {{agent}}
+          {{#if relayed}}&middot; {{localize "AGENT_GATEWAY.Audit.relayed"}}{{/if}}
+        </p>
+        <p class="result">{{result}}</p>
+        <details>
+          <summary>{{localize "AGENT_GATEWAY.Audit.args"}}{{#if argsTruncated}} ({{localize "AGENT_GATEWAY.Audit.truncated"}}){{/if}}</summary>
+          <pre>{{args}}</pre>
+        </details>
+        {{#each targets}}
+          <details class="target">
+            <summary>{{kind}}: {{uuid}}{{#unless undoable}} ({{localize "AGENT_GATEWAY.Audit.notUndoable"}}{{#if note}}: {{note}}{{/if}}){{/unless}}</summary>
+            {{#if before}}<pre>{{before}}</pre>{{/if}}
+          </details>
+        {{/each}}
+        {{#if targetsDropped}}<p class="notes">{{localize "AGENT_GATEWAY.Audit.targetsDropped"}} {{targetsDropped}}</p>{{/if}}
+      </li>
+    {{/each}}
+  </ol>
+</section>
