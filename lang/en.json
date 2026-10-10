@@ -45,6 +45,20 @@
       "approvalRequired": "approval required: the {approver} must approve this {category} action, and approval is not available yet.",
       "unknownCategory": "The policy cannot classify the tool \"{tool}\", so it is denied."
     },
+    "Approvals": {
+      "pending": "Approval is pending (id {id}). Call approval_status with this id to check the outcome.",
+      "denied": "Denied by {approver}: {reason}",
+      "deniedNoReason": "Denied by {approver}.",
+      "expired": "The approval request expired before anyone answered.",
+      "tooMany": "Too many approvals are already pending for this agent. Wait for them to be answered.",
+      "notFound": "No approval with that id exists for this agent.",
+      "mismatch": "The approved call no longer matches the request, so it was not run.",
+      "statusPending": "Approval {id} is still pending.",
+      "statusApproved": "Approval {id} was approved. Result: {result}",
+      "statusRunning": "Approval {id} was approved and the call is still running.",
+      "statusDenied": "Approval {id} was denied: {reason}",
+      "statusExpired": "Approval {id} expired before anyone answered."
+    },
     "Link": {
       "state": {
         "disconnected": "Disconnected",

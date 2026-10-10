@@ -5,6 +5,7 @@ import { worldInfoHandler } from './world-info.js';
 import { chatReadHandler } from './chat-read.js';
 import { compendiumGetHandler } from './compendium-get.js';
 import { compendiumSearchHandler } from './compendium-search.js';
+import { approvalStatusHandler } from './approval-status.js';
 
 /** Map from tool name to handler. Later tasks only insert entries. */
 export const HANDLERS: Record<string, OpHandler> = {
@@ -14,4 +15,5 @@ export const HANDLERS: Record<string, OpHandler> = {
   compendium_search: compendiumSearchHandler,
   compendium_get: compendiumGetHandler,
   chat_read: chatReadHandler,
+  approval_status: approvalStatusHandler,
 };

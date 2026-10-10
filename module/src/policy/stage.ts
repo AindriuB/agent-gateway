@@ -70,8 +70,8 @@ export function createPolicyStage(
       if (decision === 'allow') return next();
       const approver = decision === 'ask_gm' ? 'gm' : 'owner';
       ctx.approval = { approver };
-      // Until the approval stage exists (task 16), a call that needs approval cannot proceed.
-      return denied(t('AGENT_GATEWAY.Policy.approvalRequired', { category, approver }));
+      // The approval stage (30) takes it from here; the dispatcher refuses an unapproved call.
+      return next();
     },
   };
 }

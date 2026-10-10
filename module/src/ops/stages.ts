@@ -1,4 +1,6 @@
 import { policyStage } from '../policy/stage.js';
+import { createApprovalStage } from '../approvals/stage.js';
+import { getApprovalManager } from '../approvals/live.js';
 import type { DispatchResult, OpContext } from './types.js';
 
 /**
@@ -16,3 +18,5 @@ export interface Stage {
 export const STAGES: Stage[] = [];
 
 STAGES.push(policyStage);
+
+STAGES.push(createApprovalStage(getApprovalManager));
