@@ -42,7 +42,13 @@ export function createDispatcher(config: DispatcherConfig) {
     const stages = [...config.stages].sort((a, b) => a.order - b.order);
     const run = async (i: number): Promise<DispatchResult> => {
       const stage = stages[i];
-      if (!stage) return handler(ctx);
+      if (!stage) {
+        // Fail closed: a call that needs approval never reaches its handler without it.
+        if (ctx.approval && ctx.approved !== true) {
+          return fail('DENIED', `Approval is required for "${def.name}" and was not obtained`);
+        }
+        return handler(ctx);
+      }
       let pending: Promise<DispatchResult> | undefined;
       // Once-guard: a stage calling next() twice reuses the first result.
       return stage.run(ctx, () => (pending ??= run(i + 1)));
