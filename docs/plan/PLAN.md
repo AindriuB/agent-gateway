@@ -13,16 +13,19 @@ than no plan.
 
 ### Wave 3 status
 Wave 3 is complete. Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server), 07 (module LinkClient and pairing app) and 08 (module operation registry, dispatcher, serialiser and safe structured paging; PR #20) are merged. Wave 2 PRs are merged.
-**In flight:** none. Next: spike 10b (on hold until Andrew says go), then wave 4 (09, 10, 11).
+**In flight:** wave 4 (09, 10, 11) in progress. Spike 10b is done and merged (PR #22).
 
 ### Testing topology and prerequisites
-- Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
+- Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). The Mac test bed is now a new session. Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
 - Task 12 (e2e harness) must read Foundry test credentials from `~/.config/agent-gateway/test.env` (`FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`; mode 600, outside the repo). It should log in once and reuse Playwright `storageState`, because Claude agents decline to type passwords into non-localhost logins. Test user is `dev-gm` (GM role) in `test-world`.
 - A newly linked module only appears after `test-world` is relaunched from the setup screen (admin key, Andrew only).
 - **Prerequisite still open:** homelab Foundry v13 instance, needed for the v13 test evidence every PR owes.
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
 
 ## Next
+
+### Pointer for task 36
+36 must use the 10b recommendation (docs/spikes/foundry-socket-identity.md); identity only from server-set args; v13 re-check list in the spike.
 
 ### Follow-ups from wave 2
 - Handshake mismatch message must name "module" and "gateway", not "local/remote side" (pick up in task 06 or 07). The user needs to know which side to update.
