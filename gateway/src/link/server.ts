@@ -12,6 +12,7 @@ import {
 } from '@agent-gateway/protocol';
 import type { Store } from '../store/index.js';
 import type { PairingCodes } from './pairing-codes.js';
+import { toolsets } from '../routing/toolsets.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -152,6 +153,10 @@ export class LinkServer {
           break;
         case 'error':
           conn.settle(msg.id, { err: new LinkCallError(msg.code, msg.message) });
+          break;
+        case 'toolset':
+          // Only for the connection that sent it, never another's.
+          toolsets.set(conn, msg.tools);
           break;
         default:
           ws.close(1008, 'unexpected message');

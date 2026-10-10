@@ -49,6 +49,16 @@ export function installFoundry(
       gmAgents: { read: 'allow', write: 'ask_owner', destructive: 'ask_owner', code: 'ask_owner' },
     }),
   );
+  // Tool tests share one rate limiter and call far more than 60 times; give them a generous limit.
+  // Rate-limit tests set the setting they mean.
+  values.set(
+    'agent-gateway.rateLimits',
+    JSON.stringify({
+      playerAgents: { read: 10000, write: 10000 },
+      gmAgents: { read: 10000, write: 10000 },
+      agents: {},
+    }),
+  );
   const collection = () => ({ get: () => undefined, contents: [] as unknown[], size: 0 });
 
   g.game = {

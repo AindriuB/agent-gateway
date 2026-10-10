@@ -1,0 +1,156 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { randomBytes } from 'node:crypto';
+import type { ToolDefinition } from '@agent-gateway/protocol';
+import { ApprovalManager } from '../../src/approvals/manager.js';
+import type { ApprovalEnv, EnvUser } from '../../src/approvals/types.js';
+
+export interface HubUser {
+  id: string;
+  name: string;
+  isGM: boolean;
+  online: boolean;
+}
+
+export interface Client {
+  user: HubUser;
+  manager: ApprovalManager;
+  /** Hook calls seen by this client, in order. */
+  hooks: Array<{ name: string; payload: any }>;
+  /** What this browser's storage holds. */
+  storage: { text: string };
+}
+
+/**
+ * Several Foundry clients in one process, joined by a fake module socket that behaves like the
+ * server: it appends the true sender id as the second argument and delivers only to online users.
+ */
+export class Hub {
+  now = 1_000_000;
+  /** What the policy says now; by default the same as when the request was made. */
+  policyNow:
+    | ((f: {
+        requesterId: string;
+        headless: boolean;
+        category: string;
+        approver: 'owner' | 'gm';
+      }) => { kind: 'allow' } | { kind: 'deny' } | { kind: 'ask'; approver: 'owner' | 'gm' })
+    | undefined;
+  /** The tool registry approver clients use to classify requests. */
+  tools: readonly ToolDefinition[] | undefined;
+  private held: Array<() => void> | undefined;
+  users = new Map<string, HubUser>();
+  clients = new Map<string, Client>();
+  private timers: Array<{ at: number; fn: () => void; id: number }> = [];
+  private nextTimer = 1;
+  /** Every message sent: who sent it (server-attested) and to whom. */
+  sent: Array<{ sender: string; data: any; to: string[] | undefined }> = [];
+
+  addUser(id: string, isGM: boolean, online = true): HubUser {
+    const u = { id, name: id.toUpperCase(), isGM, online };
+    this.users.set(id, u);
+    return u;
+  }
+
+  client(
+    id: string,
+    opts: {
+      waitMs?: number;
+      storage?: { text: string };
+      random?: (n: number) => Uint8Array;
+      /** Make every save throw, as a full localStorage does. */
+      saveThrows?: boolean;
+    } = {},
+  ): Client {
+    const user = this.users.get(id)!;
+    const hooks: Client['hooks'] = [];
+    const storage = opts.storage ?? { text: '' };
+    const view = (u: HubUser): EnvUser => ({
+      id: u.id,
+      name: u.name,
+      isGM: u.isGM,
+      active: u.online,
+    });
+    const env: ApprovalEnv = {
+      currentDecision: (f) =>
+        this.policyNow ? this.policyNow(f) : { kind: 'ask', approver: f.approver },
+      localUser: () => view(user),
+      user: (uid) => (this.users.has(uid) ? view(this.users.get(uid)!) : undefined),
+      users: () => [...this.users.values()].map(view),
+      emit: (data, recipients) => this.deliver(id, data, recipients),
+      callHook: (name, payload) => hooks.push({ name, payload }),
+      load: () => storage.text,
+      save: (t) => {
+        if (opts.saveThrows) throw new Error('QuotaExceededError');
+        storage.text = t;
+      },
+      now: () => this.now,
+      setTimer: (fn, ms) => {
+        const t = { at: this.now + ms, fn, id: this.nextTimer++ };
+        this.timers.push(t);
+        return t.id;
+      },
+      clearTimer: (h) => void (this.timers = this.timers.filter((t) => t.id !== h)),
+      random: opts.random ?? ((n) => new Uint8Array(randomBytes(n))),
+      t: (key, data = {}) => `${key}${Object.keys(data).length ? ' ' + JSON.stringify(data) : ''}`,
+    };
+    const manager = new ApprovalManager(env, { waitMs: opts.waitMs, tools: this.tools });
+    const c: Client = {
+      user,
+      manager,
+      hooks,
+      storage,
+    };
+    this.clients.set(id, c);
+    return c;
+  }
+
+  /** Deliver as the server does: the sender id is the real sender, whatever the payload says. */
+  deliver(sender: string, data: unknown, recipients?: string[]): void {
+    const copy = JSON.parse(JSON.stringify(data));
+    this.sent.push({ sender, data: copy, to: recipients });
+    for (const [uid, c] of this.clients) {
+      if (uid === sender || !this.users.get(uid)!.online) continue;
+      if (recipients && !recipients.includes(uid)) continue;
+      const go = () => c.manager.handleSocket(JSON.parse(JSON.stringify(data)), sender);
+      if (this.held) this.held.push(go);
+      else go();
+    }
+  }
+
+  /** Queue deliveries instead of making them, so two users can act at the same moment. */
+  hold(): void {
+    this.held = [];
+  }
+
+  /** Deliver everything held, in order, including what that delivery sends in turn. */
+  release(): void {
+    const queue = this.held ?? [];
+    this.held = undefined;
+    for (const go of queue) go();
+  }
+
+  /** A user comes online: the `userConnected` hook fires on every other client. */
+  connect(id: string): void {
+    this.users.get(id)!.online = true;
+    for (const [uid, c] of this.clients) if (uid !== id) c.manager.representTo(id);
+  }
+
+  /** Move the clock and run due timers, letting promises settle between them. */
+  async advance(ms: number): Promise<void> {
+    const end = this.now + ms;
+    for (;;) {
+      const due = this.timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0];
+      if (!due) break;
+      this.timers = this.timers.filter((t) => t !== due);
+      this.now = Math.max(this.now, due.at);
+      due.fn();
+      await settle();
+    }
+    this.now = end;
+    await settle();
+  }
+}
+
+export const settle = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+};

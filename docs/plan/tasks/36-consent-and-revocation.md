@@ -1,7 +1,7 @@
 # 36 — Add the OAuth consent page, token revocation and server-mode pairing confirmation
 
 **Repo:** .
-**Depends on:** 35, 18, 10b, 37
+**Depends on:** 35, 18, 10b, 37, 35b
 **Owns:**
 - gateway/src/oauth/consent/**
 - gateway/test/oauth/consent/**
@@ -36,6 +36,7 @@ never silently replaces an existing one.
 - gateway/src/link/server.ts:180-200 — first pairing trusts the `hello` world/user ids; stored tokens are bound on reconnect
 - gateway/src/link/registry.ts:115-125 — a new connection for the same (world, user) silently replaces the old one
 - gateway/test/routing/isolation.test.ts (11) — isolation guarantees that must keep passing
+- docs/plan/tasks/35b-gateway-audit-trail.md — if 35 has no revoke path, record the `oauth_revoke` audit event by calling 35b's exported `recordAuth` where tokens are revoked
 
 ## Acceptance
 - [ ] Consent page lists connected (world, user) pairs and scope checkboxes; approval requires the user to enter a one-time code shown in that Foundry user's client (proves control of the Foundry session); CSRF-protected form

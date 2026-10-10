@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { loadLimits, validateLimits } from '../../module/src/ratelimit/config.js';
 import { HIDDEN_STRINGS, leakMatchers } from './manifest.js';
 import { FIXTURE_RUNTIME } from './runtime.js';
 import {
@@ -7,11 +8,17 @@ import {
   FIXTURE_FLAG_KEY,
   FIXTURE_FLAG_SCOPE,
   PLAYER_AGENTS_SETTING,
+  E2E_RATE_LIMITS,
+  RATE_LIMITS_SETTING,
   FIXTURE_PREFIX,
   OWN_ACTOR_ID,
   type SeedStep,
 } from './spec.js';
 import { verifyFixtureResult, type FixtureResult } from './verify.js';
+
+const RATE_KEY = 'agent-gateway.rateLimits';
+const PRODUCT_DEFAULT =
+  '{"playerAgents":{"read":60,"write":10},"gmAgents":{"read":60,"write":10},"agents":{}}';
 
 const plan = buildSeedPlan({ gmUser: 'dev-gm', playerUser: 'player1' });
 const named = (t: SeedStep['type']) => plan.filter((s) => s.type === t);
@@ -86,7 +93,9 @@ describe('fixture spec', () => {
 });
 
 // A small in-memory Foundry, enough for the runtime's seed and clean.
-function fakeWorld(opts: { activeScene?: boolean; settingRegistered?: boolean } = {}) {
+function fakeWorld(
+  opts: { activeScene?: boolean; settingRegistered?: boolean; rateLimitsRegistered?: boolean } = {},
+) {
   let n = 0;
   const mk = (data: Record<string, unknown>) => {
     const id = `id${++n}`;
@@ -167,7 +176,12 @@ function fakeWorld(opts: { activeScene?: boolean; settingRegistered?: boolean } 
   world.messages?.contents.push(mk({ content: 'real chat' }));
   sceneCols.tokens?.contents.push(mk({ name: 'Real Token' }));
   const registered = new Set<string>(
-    opts.settingRegistered === false ? [] : ['agent-gateway.playerAgentsEnabled'],
+    opts.settingRegistered === false
+      ? []
+      : [
+          'agent-gateway.playerAgentsEnabled',
+          ...(opts.rateLimitsRegistered === false ? [] : ['agent-gateway.rateLimits']),
+        ],
   );
   const users = [
     { id: 'gm1', name: 'dev-gm', isGM: true },
@@ -180,7 +194,8 @@ function fakeWorld(opts: { activeScene?: boolean; settingRegistered?: boolean } 
       get: (ns: string, key: string) => {
         const k = `${ns}.${key}`;
         if (!settings.has(k) && !registered.has(k)) throw new Error(`not registered: ${k}`);
-        return settings.has(k) ? settings.get(k) : false;
+        if (settings.has(k)) return settings.get(k);
+        return k === RATE_KEY ? PRODUCT_DEFAULT : false;
       },
       set: async (ns: string, key: string, v: unknown) => void settings.set(`${ns}.${key}`, v),
     },
@@ -207,6 +222,7 @@ async function run(
   w: ReturnType<typeof fakeWorld>,
   mode: 'seed' | 'clean',
   restorePlayerAgents?: boolean,
+  restoreRateLimits?: string,
 ): Promise<FixtureResult> {
   const fn = new Function('game', 'getDocumentClass', 'Roll', `return (${FIXTURE_RUNTIME});`)(
     w.game,
@@ -220,6 +236,9 @@ async function run(
     flagKey: FIXTURE_FLAG_KEY,
     policySetting: PLAYER_AGENTS_SETTING,
     restorePlayerAgents,
+    rateLimitSetting: RATE_LIMITS_SETTING,
+    e2eRateLimits: E2E_RATE_LIMITS,
+    restoreRateLimits,
   });
 }
 
@@ -325,6 +344,74 @@ describe('fixture runtime: player agents setting', () => {
     expect(verifyFixtureResult('clean', { ...cleaned, policy: { after: true } }, false)).toContain(
       'clean did not restore playerAgentsEnabled to false',
     );
+  });
+});
+
+describe('fixture runtime: rate limits setting', () => {
+  it('seed raises the limits above the product default and reports the previous value', async () => {
+    const w = fakeWorld();
+    const r = await run(w, 'seed');
+    expect(r.rateLimits).toEqual({ before: PRODUCT_DEFAULT, after: E2E_RATE_LIMITS });
+    expect(w.settings.get(RATE_KEY)).toBe(E2E_RATE_LIMITS);
+    expect(verifyFixtureResult('seed', r)).toEqual([]);
+  });
+
+  it('the seeded limits are well above the product default of 60 reads and 10 writes', () => {
+    const p = JSON.parse(E2E_RATE_LIMITS);
+    for (const cls of ['playerAgents', 'gmAgents']) {
+      expect(p[cls].read).toBeGreaterThanOrEqual(600);
+      expect(p[cls].write).toBeGreaterThanOrEqual(100);
+      expect(p[cls].read).toBeLessThanOrEqual(10000);
+    }
+  });
+
+  it('the module accepts the seeded limits as written (they do not fall to the strict limit)', () => {
+    expect(() => validateLimits(JSON.parse(E2E_RATE_LIMITS))).not.toThrow();
+    const l = loadLimits(E2E_RATE_LIMITS);
+    expect(l.classes.playerAgents.read).toBe(JSON.parse(E2E_RATE_LIMITS).playerAgents.read);
+  });
+
+  it('clean restores the recorded previous value, including a customised one', async () => {
+    for (const previous of [PRODUCT_DEFAULT, '{"custom":true}']) {
+      const w = fakeWorld();
+      await run(w, 'seed');
+      const r = await run(w, 'clean', undefined, previous);
+      expect(w.settings.get(RATE_KEY)).toBe(previous);
+      expect(verifyFixtureResult('clean', r, undefined, previous)).toEqual([]);
+    }
+  });
+
+  it('clean with nothing recorded leaves the setting alone', async () => {
+    const w = fakeWorld();
+    w.settings.set(RATE_KEY, '{"mine":1}');
+    const r = await run(w, 'clean');
+    expect(w.settings.get(RATE_KEY)).toBe('{"mine":1}');
+    expect(r.rateLimits).toEqual({});
+  });
+
+  it('seed fails clearly when the setting is not registered', async () => {
+    const w = fakeWorld({ rateLimitsRegistered: false });
+    await expect(run(w, 'seed')).rejects.toThrow(/rateLimits is not registered: rebuild/);
+  });
+
+  it('verification catches a seed that left the product limits and a clean that did not restore', async () => {
+    const w = fakeWorld();
+    const seeded = await run(w, 'seed');
+    expect(
+      verifyFixtureResult('seed', {
+        ...seeded,
+        rateLimits: { before: 'x', after: PRODUCT_DEFAULT },
+      }),
+    ).toContain('the seed did not leave the e2e rate limits in place');
+    const cleaned = await run(w, 'clean', undefined, PRODUCT_DEFAULT);
+    expect(
+      verifyFixtureResult(
+        'clean',
+        { ...cleaned, rateLimits: { after: E2E_RATE_LIMITS } },
+        undefined,
+        PRODUCT_DEFAULT,
+      ),
+    ).toContain('clean did not restore the rateLimits setting');
   });
 });
 

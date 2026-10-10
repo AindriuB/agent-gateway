@@ -8,6 +8,8 @@ import {
   SessionBinding,
   describePairs,
   safeText,
+  toolsets as sharedToolsets,
+  type ToolsetStore,
   type Identity,
   type UserSelector,
 } from '../routing/index.js';
@@ -25,6 +27,8 @@ export interface SessionServerOptions {
   knownIdentities?: () => readonly Identity[];
   /** Status lines for the operator (stderr). */
   log?: (line: string) => void;
+  /** Where announced tool sets are read from. Defaults to the one the link server writes. */
+  toolsets?: ToolsetStore;
   /** Minimum gap between `list_changed` notifications. */
   listChangedIntervalMs?: number;
 }
@@ -56,8 +60,18 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     { capabilities: { tools: { listChanged: true } } },
   );
 
-  const visibleFor = (conn: LinkConnection | undefined): readonly ToolDefinition[] =>
-    conn?.info.isGM ? all : all.filter((t) => t.minRole === 'player');
+  const toolsets = opts.toolsets ?? sharedToolsets;
+
+  // What the module last announced for this user, limited to tools the gateway knows. That
+  // announcement is the module's own view of the user's current role and policy, so it replaces
+  // the hello `isGM` hint, which goes stale when a role changes. Neither is authority: the
+  // module re-checks role and policy on every call. Until a module has announced anything, the
+  // hint's role tools stand.
+  const visibleFor = (conn: LinkConnection | undefined): readonly ToolDefinition[] => {
+    const announced = conn ? toolsets.get(conn) : undefined;
+    if (announced) return all.filter((t) => announced.includes(t.name));
+    return conn?.info.isGM ? all : all.filter((t) => t.minRole === 'player');
+  };
 
   const currentConn = (): LinkConnection | undefined => {
     const r = binding.resolve();
@@ -103,7 +117,8 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     if (r.kind === 'unbound' || !r.conn) return offline();
     const conn = r.conn;
     if (!visibleFor(conn).includes(tool)) {
-      return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
+      // Answered here: not in this user's current set, so nothing goes over the link.
+      return failure('FORBIDDEN', `Tool not available to this user: ${req.params.name}`);
     }
     const parsed = tool.input.safeParse(req.params.arguments ?? {});
     if (!parsed.success) {
@@ -165,10 +180,13 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   const onDisconnected = changed(false);
   opts.registry.on('connected', onConnected);
   opts.registry.on('disconnected', onDisconnected);
+  const onToolset = changed(false);
+  toolsets.on('changed', onToolset);
   const previousOnClose = server.onclose;
   server.onclose = () => {
     opts.registry.off('connected', onConnected);
     opts.registry.off('disconnected', onDisconnected);
+    toolsets.off('changed', onToolset);
     if (timer) clearTimeout(timer);
     previousOnClose?.();
   };

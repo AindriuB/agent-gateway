@@ -1,9 +1,21 @@
 import { foundryGeneration } from './compat/index.js';
 import { installBridge } from './link/bridge.js';
-import { getLinkClient, isLinkActive, resumeLink, startLink, stopLink } from './link/runtime.js';
+import {
+  getLinkClient,
+  isLinkActive,
+  refreshToolset,
+  resumeLink,
+  startLink,
+  stopLink,
+} from './link/runtime.js';
+import { onPolicyChange } from './policy/store.js';
 import { registerSettings } from './settings/index.js';
 
-declare const Hooks: { once(hook: string, fn: () => void): void };
+declare const Hooks: {
+  once(hook: string, fn: () => void): void;
+  on(hook: string, fn: (user: { id?: string }) => void): void;
+};
+declare const game: { user?: { id?: string } } | undefined;
 
 Hooks.once('init', () => {
   registerSettings();
@@ -12,6 +24,11 @@ Hooks.once('init', () => {
 Hooks.once('ready', () => {
   console.log(`agent-gateway | ready (v${foundryGeneration()})`);
   installBridge(getLinkClient());
+  // Role changes and policy edits change what this user may call; tell the gateway.
+  Hooks.on('updateUser', (user: { id?: string }) => {
+    if (user?.id === game?.user?.id) refreshToolset();
+  });
+  onPolicyChange(refreshToolset);
   startLink();
   const g = globalThis as {
     addEventListener?: (t: string, f: (e: { persisted?: boolean }) => void) => void;
