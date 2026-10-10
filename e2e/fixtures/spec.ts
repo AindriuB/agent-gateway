@@ -13,6 +13,24 @@ export const PLAYER_AGENTS_SETTING = {
   key: 'playerAgentsEnabled',
 } as const;
 
+/**
+ * The world's rate limits. The product default (60 reads and 10 writes a minute) would trip the
+ * suites, which make bursts of calls as one player agent and one GM agent, so the seed raises
+ * them for the run; the seed records what it found and clean puts it back. The product defaults
+ * stay as they are.
+ */
+export const RATE_LIMITS_SETTING = {
+  scope: 'agent-gateway',
+  key: 'rateLimits',
+} as const;
+/** Generous for a test run, and inside the module's 1..10000 range. */
+export const E2E_RATE_LIMIT = 1000;
+export const E2E_RATE_LIMITS = JSON.stringify({
+  playerAgents: { read: E2E_RATE_LIMIT, write: E2E_RATE_LIMIT },
+  gmAgents: { read: E2E_RATE_LIMIT, write: E2E_RATE_LIMIT },
+  agents: {},
+});
+
 export const FIXTURE_FLAG_KEY = 'fixture';
 export const FIXTURE_PREFIX = 'ag-test-';
 /** The player character that player1 speaks as. */

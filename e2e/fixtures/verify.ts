@@ -1,4 +1,4 @@
-import { expectedFlaggedCounts, type SeedType } from './spec.js';
+import { E2E_RATE_LIMITS, expectedFlaggedCounts, type SeedType } from './spec.js';
 
 export type Counts = Record<string, { flagged: number; unflagged: number }>;
 
@@ -10,6 +10,8 @@ export interface FixtureResult {
   uuids: Record<string, string>;
   /** The playerAgentsEnabled setting around the run: `before` is read by seed; `after` is set when the run changed it. */
   policy?: { before?: boolean; after?: boolean };
+  /** The rateLimits setting around the run, as stored (a JSON string): same semantics as `policy`. */
+  rateLimits?: { before?: string; after?: string };
 }
 
 /** Problems found in a seed or clean result; empty means the run did what it promised. */
@@ -17,6 +19,7 @@ export function verifyFixtureResult(
   mode: 'seed' | 'clean',
   r: FixtureResult,
   restore?: boolean,
+  restoreRateLimits?: string,
 ): string[] {
   const problems: string[] = [];
   const want = expectedFlaggedCounts();
@@ -39,6 +42,16 @@ export function verifyFixtureResult(
   }
   if (mode === 'clean' && restore !== undefined && r.policy?.after !== restore) {
     problems.push(`clean did not restore playerAgentsEnabled to ${restore}`);
+  }
+  if (mode === 'seed' && r.rateLimits?.after !== E2E_RATE_LIMITS) {
+    problems.push('the seed did not leave the e2e rate limits in place');
+  }
+  if (
+    mode === 'clean' &&
+    restoreRateLimits !== undefined &&
+    r.rateLimits?.after !== restoreRateLimits
+  ) {
+    problems.push('clean did not restore the rateLimits setting');
   }
   if (mode === 'seed' && typeof r.totals.blindRollTotal !== 'number') {
     problems.push('the blind roll total was not recorded');

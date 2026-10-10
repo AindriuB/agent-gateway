@@ -86,6 +86,17 @@ export function folderAllowlist(cls: AgentClass): string[] {
 
 export const DEFAULT_FOLDER_ALLOWLIST = JSON.stringify({ playerAgents: [], gmAgents: [] });
 
+const policyListeners = new Set<() => void>();
+
+/** Called when a setting that decides the visible tool set changes (the folder list does not). */
+export function onPolicyChange(fn: () => void): () => void {
+  policyListeners.add(fn);
+  return () => policyListeners.delete(fn);
+}
+const policyChanged = (): void => {
+  for (const fn of policyListeners) fn();
+};
+
 export function registerPolicySettings(): void {
   game.settings.register(NS, PLAYER_AGENTS_KEY, {
     name: 'AGENT_GATEWAY.Settings.playerAgentsEnabled.name',
@@ -94,6 +105,7 @@ export function registerPolicySettings(): void {
     config: true,
     type: Boolean,
     default: false,
+    onChange: policyChanged,
     restricted: true,
   });
   game.settings.register(NS, HEADLESS_AGENTS_KEY, {
@@ -103,6 +115,7 @@ export function registerPolicySettings(): void {
     config: true,
     type: Boolean,
     default: false,
+    onChange: policyChanged,
     restricted: true,
   });
   game.settings.register(NS, WORLD_POLICY_KEY, {
@@ -112,6 +125,7 @@ export function registerPolicySettings(): void {
     config: false,
     type: String, // JSON matrix; edited through saveWorldPolicy, which validates
     default: JSON.stringify(DEFAULT_WORLD_MATRIX),
+    onChange: policyChanged,
     restricted: true,
   });
   game.settings.register(NS, FOLDER_ALLOWLIST_KEY, {
@@ -130,5 +144,6 @@ export function registerPolicySettings(): void {
     config: false,
     type: String, // JSON matrix; edited through saveOwnerPolicy, which validates
     default: JSON.stringify(DEFAULT_OWNER_MATRIX),
+    onChange: policyChanged,
   });
 }

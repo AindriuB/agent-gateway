@@ -16,6 +16,9 @@ const defaults: BridgeDeps = {
   getUser: () => (typeof game === 'undefined' ? undefined : game.user),
 };
 
+/** Whether calls arriving over the link count as headless. The tool listing uses the same value. */
+export const LINK_AGENT_HEADLESS = false;
+
 /**
  * Run inbound link calls through the dispatcher as the local Foundry user. Identity comes only
  * from `game.user`; nothing about who is calling is read from the call frame, which is why the
@@ -33,7 +36,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       {
         tool: frame.tool,
         args: frame.args,
-        agent: { id: client.agentId ?? '', ownerUserId: user.id, headless: false },
+        agent: { id: client.agentId ?? '', ownerUserId: user.id, headless: LINK_AGENT_HEADLESS },
         sessionId: frame.sessionId,
       },
       user,
