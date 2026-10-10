@@ -103,6 +103,25 @@ and PR #48 incorporated that predecessor through a clean merge with no direct
 runtime edits. The subsequent integrated gates passed at PR #47 and the
 record branch: 2,337 fast + 2,227 slow tests each, after the security fix.
 
+Subsequent protocol compatibility review fix (2026-10-10): PR #46 commit
+`871bf5` bumps `PROTOCOL_VERSION` to `2.0.0` because full tool-definition objects
+are incompatible with protocol 1.x tool-name arrays. A 1.x peer is rejected
+before welcome or credential consumption, with an upgrade diagnostic. The
+module's existing fatal mismatch path stops automatic reconnect and preserves
+its token. Old/new handshake regression tests passed; task20e verification
+passed 2,287 fast + 2,227 slow tests and independent review. These are new
+post-review results, not replacements for the earlier source-head evidence.
+PR #47 propagated the fix at `8679c7280f588b558565f3c3934f24bf0b85ce11`,
+and the recording branch incorporated it through a clean merge with no direct
+runtime edits. The exact protocol-2 bundle from `871bf5` subsequently passed
+on Foundry v14.369: 21 read/role tests (GM 6, player 11, roles 4), seven tools
+for each role, and 20 results × 21 hidden strings with zero leaks. Bundle
+SHA-256: `0856561e7690dcc9870d3e71f0f407c331165fee50a08e5cacfc3fe9ec9d22de`.
+This is the current live compatibility evidence; the earlier protocol-1 result
+remains historical. Subsequent integrated verification at PR #47 head
+`8679c7280f588b558565f3c3934f24bf0b85ce11` and this recording branch each
+passed 2,343 fast + 2,227 slow tests after the exact protocol-2 live gate.
+
 Author docs distinguish project publishing requirements from primary-source
 facts checked 2026-10-10: the Publisher Handbook names a fee without a public
 amount or cadence; the AI policy has an older-premium-agreement transition and
