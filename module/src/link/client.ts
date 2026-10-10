@@ -413,6 +413,11 @@ export class LinkClient {
     }
   }
 
+  /** Send a frame on the live socket, if there is one. Used for `toolset`, after `welcome`. */
+  sendMessage(msg: LinkMessage): void {
+    this.send(msg);
+  }
+
   private send(msg: LinkMessage): void {
     this.socket?.send(JSON.stringify(msg));
   }

@@ -43,6 +43,7 @@ const samples: LinkMessage[] = [
   { type: 'error', id: '1', code: 'WORLD_OFFLINE', message: 'off' },
   { type: 'ping' },
   { type: 'pong' },
+  { type: 'toolset', tools: ['world_info'] },
 ];
 
 describe('parseLinkMessage', () => {

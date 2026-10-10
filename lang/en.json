@@ -33,6 +33,10 @@
         "name": "Folder allowlist",
         "hint": "Folders agents may read, per agent class. Empty means no restriction."
       },
+      "rateLimits": {
+        "name": "Rate limits",
+        "hint": "How many read and write calls an agent may make per minute, per agent class, with optional per-agent overrides."
+      },
       "ownerPolicy": {
         "name": "Owner policy",
         "hint": "Your own policy for your agents. It can only be stricter than the world policy."
@@ -55,6 +59,9 @@
       "pairingRequired": "This gateway has not issued a pairing token to this client. Enter the pairing code printed by the gateway.",
       "replaced": "This world is connected from another tab or window. Press Connect to use this one instead.",
       "codeRequired": "Enter the pairing code printed by the gateway."
+    },
+    "RateLimit": {
+      "exceeded": "Rate limit reached: this agent may make {limit} {bucket} calls per minute. Try again in {seconds} seconds."
     },
     "Pairing": {
       "title": "Agent Gateway pairing",

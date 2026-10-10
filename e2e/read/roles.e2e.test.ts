@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { TOOLS } from '@agent-gateway/protocol/tools';
 import { toolListProblems, worldInfoProblems } from '../lib/expect.js';
 import { loadContext, PlayerCaller } from '../lib/context.js';
+import { E2E_RATE_LIMITS } from '../fixtures/spec.js';
 import { recordRunData } from '../lib/rundata.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 
@@ -50,6 +51,13 @@ describe('roles', () => {
       s.browser.page.evaluate("game.settings.get('agent-gateway', 'playerAgentsEnabled')"),
     );
     expect(enabled).toBe(true);
+  });
+
+  it('the world rate limits are the e2e limits during the run (the seed raised them above the product default)', async () => {
+    const raw = await inSession(ctx.config.playerUser, (s) =>
+      s.browser.page.evaluate("game.settings.get('agent-gateway', 'rateLimits')"),
+    );
+    expect(JSON.parse(String(raw))).toEqual(JSON.parse(E2E_RATE_LIMITS));
   });
 
   it("tools/list: the player's tools are a subset of the GM's and include no GM-only tool", async () => {

@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { liveInputs } from '../policy/stage.js';
 import { LinkClient } from './client.js';
+import { installToolsetAnnouncer, policyDenies, type ToolsetAnnouncer } from './toolset.js';
 
 declare const game: any;
 declare const ui: any;
@@ -7,6 +9,7 @@ declare const ui: any;
 const NS = 'agent-gateway';
 
 let client: LinkClient | null = null;
+let announcer: ToolsetAnnouncer | null = null;
 
 /**
  * The old `pairingToken` string is not tied to any gateway, so it is never sent: clear it
@@ -51,7 +54,16 @@ export function getLinkClient(): LinkClient {
     createSocket: (url) => new WebSocket(url) as any,
     notifyError: (m) => ui.notifications.error(m),
   });
+  announcer ??= installToolsetAnnouncer(client, {
+    isGM: () => Boolean(game.user?.isGM),
+    isCategoryDenied: policyDenies(liveInputs, () => Boolean(game.user?.isGM)),
+  });
   return client;
+}
+
+/** Re-announce the tool set if it changed: a role change or a policy setting edit. */
+export function refreshToolset(): void {
+  announcer?.refresh();
 }
 
 export function startLink(): void {
