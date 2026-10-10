@@ -1,3 +1,5 @@
+import type { ApprovalRequest } from '../policy/types.js';
+
 export interface OpUser {
   id: string;
   isGM: boolean;
@@ -22,6 +24,10 @@ export interface OpContext {
   sessionId: string;
   tool: string;
   args: unknown;
+  /** Set by the policy stage when the call needs an approver's answer. */
+  approval?: ApprovalRequest;
+  /** Set by the approval stage once an approver (or a session grant) allowed this very call. */
+  approved?: true;
 }
 
 export interface OpResult {

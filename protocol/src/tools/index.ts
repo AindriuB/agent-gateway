@@ -5,6 +5,7 @@ import { worldInfo } from './world-info.js';
 import { chatRead } from './chat-read.js';
 import { compendiumGet } from './compendium-get.js';
 import { compendiumSearch } from './compendium-search.js';
+import { approvalStatus } from './approval-status.js';
 
 export * from './define.js';
 export * from './json-schema.js';
@@ -14,6 +15,7 @@ export * from './world-info.js';
 export * from './chat-read.js';
 export * from './compendium-get.js';
 export * from './compendium-search.js';
+export * from './approval-status.js';
 
 /** Registry of all tools. Later tasks only append entries. */
 export const TOOLS: readonly ToolDefinition[] = [
@@ -23,6 +25,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   compendiumSearch,
   compendiumGet,
   chatRead,
+  approvalStatus,
 ];
 
 export function toolsForRole(isGM: boolean): readonly ToolDefinition[] {

@@ -48,7 +48,19 @@ function setup() {
   registerPolicySettings();
   handler.mockClear();
   seen.length = 0;
-  return createDispatcher({ tools, handlers, stages: [createPolicyStage({ tools })] });
+  lastApproval = undefined;
+  return createDispatcher({
+    tools,
+    handlers,
+    stages: [
+      createPolicyStage({ tools }),
+      {
+        name: 'record',
+        order: 30,
+        run: async (ctx, next) => ((lastApproval = ctx.approval?.approver), next()),
+      },
+    ],
+  });
 }
 const run = (
   d: ReturnType<typeof setup>,
@@ -100,11 +112,10 @@ describe('policy stage', () => {
     ['destructive', gm, 'owner'],
     ['code', gm, 'owner'],
   ] as const)(
-    '%s by %o asks the %s: sets ctx.approval, then DENIED approval required',
+    '%s by %o asks the %s: sets ctx.approval and continues; without an approval stage the dispatcher refuses',
     async (category, user, approver) => {
       setup();
       await setSetting('playerAgentsEnabled', true);
-      // A probe stage ordered after policy must never be reached.
       const probe: OpContext[] = [];
       const dd = createDispatcher({
         tools,
@@ -116,10 +127,10 @@ describe('policy stage', () => {
       });
       const r = await run(dd, category, user);
       expect(r).toMatchObject({ error: { code: 'DENIED' } });
-      expect((r as any).error.message).toMatch(/^approval required: the /);
-      expect((r as any).error.message).toContain(approver);
+      expect((r as any).error.message).toMatch(/^Approval is required for /);
       expect(handler).not.toHaveBeenCalled();
-      expect(probe).toHaveLength(0); // short-circuited before later stages
+      expect(probe).toHaveLength(1);
+      expect(probe[0]!.approval).toEqual({ approver });
     },
   );
 
@@ -225,6 +236,14 @@ describe('enable toggles', () => {
   });
 });
 
+/** Which approver the policy asked for, read off ctx.approval by a stage placed after it. */
+async function asked(d: ReturnType<typeof setup>, category: ToolCategory, user = player) {
+  const r = (await run(d, category, user)) as any;
+  expect(r).toMatchObject({ error: { code: 'DENIED' } });
+  return lastApproval;
+}
+let lastApproval: string | undefined;
+
 describe('owner policy against the world ceiling', () => {
   const m = (patch: (x: PolicyMatrix) => void): PolicyMatrix => {
     const x = structuredClone(DEFAULT_WORLD_MATRIX);
@@ -257,10 +276,8 @@ describe('owner policy against the world ceiling', () => {
     });
     // Destructive stays at the world's ask_gm, code stays an ask.
     await setSetting('worldPolicy', JSON.stringify(DEFAULT_WORLD_MATRIX));
-    const r = (await run(d, 'destructive')) as any;
-    expect(r.error.message).toContain('the gm must approve');
-    const code = (await run(d, 'code')) as any;
-    expect(code.error.message).toMatch(/approval required/);
+    expect(await asked(d, 'destructive')).toBe('gm');
+    expect(await asked(d, 'code')).toBe('gm');
   });
 
   it('a tighter owner value wins over a looser world value', async () => {
@@ -268,16 +285,14 @@ describe('owner policy against the world ceiling', () => {
     await setSetting('playerAgentsEnabled', true);
     await saveWorldPolicy(m((x) => (x.playerAgents.write = 'ask_owner')));
     await saveOwnerPolicy(m((x) => (x.playerAgents.write = 'ask_gm')));
-    const r = (await run(d, 'write')) as any;
-    expect(r.error.message).toContain('the gm must approve');
+    expect(await asked(d, 'write')).toBe('gm');
   });
 
   it('a world policy of allow for code still asks', async () => {
     const d = setup();
     await setSetting('playerAgentsEnabled', true);
     await setSetting('worldPolicy', JSON.stringify(m((x) => (x.gmAgents.code = 'allow'))));
-    const r = (await run(d, 'code', gm)) as any;
-    expect(r.error.message).toMatch(/approval required/);
+    expect(await asked(d, 'code', gm)).toBe('owner');
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -286,7 +301,6 @@ describe('owner policy against the world ceiling', () => {
     await setSetting('playerAgentsEnabled', true);
     await saveWorldPolicy(m((x) => (x.playerAgents.write = 'allow')));
     expect(await run(d, 'write', player)).toEqual(ok);
-    const g = (await run(d, 'write', gm)) as any;
-    expect(g.error.message).toMatch(/approval required/);
+    expect(await asked(d, 'write', gm)).toBe('owner');
   });
 });
