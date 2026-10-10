@@ -17,6 +17,7 @@ bulk, and conditions with values.
 - docs/plan/specs/2026-10-09-agent-gateway.md:159-161 — adapter interface
 - homelab `test-world` runs pf2e 8.6.0
 - module/src/adapters/types.ts, module/test/adapters/contract.ts (31)
+- This adapter is internal to the core, not a tool pack (see 31); it adds no tool names and nothing to the pack API
 
 ## Acceptance
 - [ ] Passes `contract.ts` with pf2e fixtures

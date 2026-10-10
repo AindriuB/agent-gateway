@@ -17,6 +17,7 @@ interface can be adjusted.
 ## Context
 - docs/plan/specs/2026-10-09-agent-gateway.md:159-161 — two adapters deliberately, to expose abstraction leaks
 - module/src/adapters/types.ts, module/test/adapters/contract.ts (31)
+- This adapter is internal to the core, not a tool pack (see 31); it adds no tool names and nothing to the pack API
 
 ## Acceptance
 - [ ] Passes `contract.ts` with dnd5e fixtures

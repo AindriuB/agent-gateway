@@ -3,6 +3,12 @@
 > Agreed with Andrew on 2026-10-09 through a shaping conversation. This is the
 > input to `/plan`. Where a later decision changes something here, update this
 > file in the same PR.
+>
+> Revised 2026-10-10 (Andrew): free core plus an open, versioned tool-pack API;
+> premium packs are sold separately by their authors. See "Free core, open
+> tool-pack API, premium packs sold separately", section 1 "Tool packs",
+> section 2 "Dynamic tool definitions" and section 6 "Tool packs: distribution
+> and licensing".
 
 ## Outcome
 
@@ -12,18 +18,43 @@ AI agents structured, permissioned access to a running Foundry world. It is a
 "AI Tools" tag, and a GM or player can connect their own AI client in under five
 minutes.
 
-- Free forever; donations accepted (Ko-fi / GitHub Sponsors links in README and
-  listing). No tiers, no licence server.
+- The core is free forever; donations accepted (Ko-fi / GitHub Sponsors links
+  in README and listing). The core has no tiers and no licence server.
 - Bring your own AI: the product ships no model and holds no model keys.
 - Cross-vendor: must work with Claude (Desktop, Code, claude.ai), ChatGPT,
   Gemini (CLI and web app), and any standard MCP client.
 - Foundry **v13 and v14** (`minimum: 13`, `verified: 14`).
 
+### Free core, open tool-pack API, premium packs sold separately
+
+- **The core stays free forever and MIT-licensed**: the module, the gateway,
+  policy, approvals, audit and undo, rate limits, the read tools and the general
+  write tools. Nothing in it is ever moved behind a pack.
+- **An open, documented, versioned tool-pack API** lets anyone ship a separate
+  Foundry module (a "tool pack") that registers extra AI tools with the core.
+  Andrew will sell some premium packs separately; anyone else may build free or
+  paid packs of their own.
+- **The core dogfoods the API**: its own tools are registered through the same
+  registry and the same checks as a pack's (section 1). The pack API lands
+  before the write tools (task 21 onwards).
+- **The core does no licensing.** No licence server, no tiers, no DRM, no
+  licence checks for packs. Licensing and distribution belong to each pack
+  (section 6). The core never requires a pack.
+
 ## Differentiators (vs existing Foundry MCP bridges)
 
 Per-agent scoped permissions, GM and owner approval queue with diffs, audit log
 with undo, event log with replay and gap detection, role-based tool sets,
-headless agents, policy-native design.
+headless agents, policy-native design, and an open tool-pack API whose packs get
+the same guarantees as core tools.
+
+Position the core on the permission model (players and GMs, approvals, undo,
+audit, multi-user isolation, any AI vendor), not on tool count. Competitors in
+the "AI Tools" category as of 2026-10-10: Foundry API Bridge (hosted MCP;
+Patreon tiers of 61 tools free, 80 for EUR 3 and 123 for EUR 10 a month);
+Familiar (USD 6 a month or USD 99 lifetime, 200+ tools, GM confirmation for
+risky actions, licence-server key); Foundry MCP Bridge (free, open source);
+Ninjo's Foundry MCP (free).
 
 ## Names
 
@@ -60,7 +91,13 @@ system logic in client JS).
 - Plain MCP spec only; no vendor extensions in core.
 - Streamable HTTP + OAuth 2.1 (PKCE, dynamic client registration).
 - Conservative JSON Schema (no `oneOf`, no deep nesting, no open objects).
-- Keep tools per session small (about 18 player, about 28 GM).
+- Keep tools per session small (about 18 player, about 28 GM core tools; pack
+  tools are capped separately per session, see section 2).
+- Tool names use only `[a-z0-9_-]` and stay short enough to survive client
+  prefixing (for example Claude Code's `mcp__<server>__`): this is the
+  intersection of the MCP naming guidance and the OpenAI, Anthropic and Gemini
+  function-name rules. Core names have no `-`; pack names are
+  `<prefix>-<tool>` (section 1).
 - Never rely on a client's own write confirmation; approvals live in Foundry.
 - Compatibility matrix: automated MCP Inspector conformance; manual check
   against Claude, ChatGPT and Gemini before each release.
@@ -71,9 +108,46 @@ system logic in client JS).
   features (e.g. Scene Levels) used only when present.
 - **Connection**: WebSocket client; one-time pairing code shown by the gateway;
   pairing token in **client** settings.
-- **Operation registry**: each tool = name, minimum role, schema, category
-  (`read` | `write` | `destructive` | `code`), handler, undo snapshot. Handlers
-  use the normal Foundry document API as the logged-in user.
+- **Operation registry (the public tool API)**: each tool = name, minimum role,
+  input and output schema, category (`read` | `write` | `destructive` |
+  `code`), description, handler, undo snapshot. Handlers use the normal Foundry
+  document API as the logged-in user. The registry is the single source every
+  part of the module asks about a tool: the dispatcher, policy, rate limits,
+  approvals, audit and the tool-set announcement. Nothing looks a tool up in the
+  protocol's static list directly. Core tools are registered through the same
+  registry path as pack tools, with their zod schemas in `protocol/` as their
+  source; the registry is sealed when the module's `ready` handler starts, so
+  the set of tools is fixed for the life of the page.
+- **Tool packs**: a pack is a separate Foundry module that calls
+  `game.modules.get('agent-gateway').api.registerPack({id, version, apiVersion,
+  prefix, tools: [{name, description, category, minRole, inputSchema,
+  outputSchema, handler}]})` during the `agentGateway.registerPacks` hook (fired
+  in `setup`) or between the core's `init` and `ready`.
+  - Pack tool names are `<prefix>-<name>`; a pack can never shadow a core tool
+    or another pack's tool, and reserved prefixes are refused.
+  - The category is mandatory and must be one of the four; policy, rate limits
+    and approvals use it. Unknown or missing fails closed (refused at
+    registration, denied at dispatch).
+  - Schemas are plain JSON Schema in the conservative subset (an allowlist of
+    keywords), size-limited, and copied and frozen at registration.
+    Descriptions are plain text with length caps (section 2).
+  - The pack's `apiVersion` major must match the core's; the pack's `id` must
+    be an active Foundry module. A pack disabled in the world loads no code,
+    so its tools are absent after the reload Foundry requires.
+  - Every pack call goes through the same dispatcher pipeline (argument
+    validation, role, agent control, policy, rate limit, approval, audit). The
+    public API exposes no handler, no stage list and no dispatch function, so
+    nothing reached through it can run a tool outside the pipeline. A throwing
+    or misbehaving pack handler returns `INTERNAL` for that call only.
+  - **Trust model, stated plainly**: a pack is a Foundry module with full
+    JavaScript in the user's browser. The core cannot sandbox it: a pack can
+    call Foundry's document API directly, patch the core, or read anything the
+    user can read. The core's guarantees (policy, rate limit, approval, audit)
+    hold for every call that goes through the dispatcher, and only for those.
+    Installing a pack means trusting its author, exactly as with any other
+    Foundry module. The GM enabling the module in the world is that decision.
+  - System adapters are not packs: they implement a fixed interface behind the
+    fixed core adapter tools, and stay internal in v1.
 - **Policy engine**: combines world policy (GM ceiling) and owner client policy;
   result is never more permissive than the ceiling.
 - **Approvals**: AppV2 diff dialog; queued requests from headless agents relayed
@@ -94,10 +168,35 @@ system logic in client JS).
 - Node/TS; distributed as `npx foundry-agent-gateway`, a Claude Desktop `.mcpb`
   bundle, and a Docker image (server mode). Thin: no game logic.
 - **Repo layout**: `module.json` at repo root (so `foundry-link` works);
-  `gateway/` and `protocol/` workspaces. Tool schemas defined once in
+  `gateway/` and `protocol/` workspaces. Core tool schemas defined once in
   `protocol/` (zod), generating client-facing JSON Schema and module validators.
-- MCP sessions bind to one Foundry user in one world; tool list from that
-  user's role; `tools/list_changed` on change.
+  `protocol/` also holds the runtime rules every tool definition must meet
+  (conservative-schema allowlist, size and description limits, name rules) and
+  a validator for that JSON Schema subset, shared by module and gateway.
+- MCP sessions bind to one Foundry user in one world; tool list from what that
+  user's module announces (role and policy applied there);
+  `tools/list_changed` on change, coalesced.
+- **Dynamic tool definitions**: the module announces the full definitions
+  (name, description, category, minimum role, input and output JSON Schema,
+  pack id and version) of the tools its user may use. The gateway:
+  - lists a core name only if it is in its own static registry, and then shows
+    its own definition and validates with its own zod schema (an announcement
+    can never rewrite a core tool's description or schema);
+  - accepts a non-core name only in pack form (`<prefix>-<name>`), re-checks
+    it with the protocol's runtime rules, and drops any tool that fails, with
+    one safe-text log line naming the tool and the reason;
+  - validates a pack tool's arguments against the announced input schema
+    before anything goes over the link;
+  - caps the announcement (tool count and bytes) and the pack tools listed per
+    session;
+  - treats every pack description as untrusted text that reaches the AI
+    client: plain text only (no control, format or bidi characters, no markup,
+    no URLs), capped in length, and prefixed by the gateway with a fixed
+    provenance tag naming the pack. This narrows, but cannot remove, the
+    prompt-injection risk of a hostile description steering the AI towards
+    the user's other tools; the docs say so.
+  - Tool lists stay per session and per user; the change signature covers
+    definitions, not only names.
 - Auth: stdio none; local HTTP bearer on `127.0.0.1`; remote OAuth 2.1 with a
   consent page (world, Foundry user, scopes); short-lived tokens, revocable from
   inside Foundry.
@@ -160,6 +259,9 @@ Adapter interface: `actorSummary`, `listActions`, `performAction`,
 `inventorySemantics`, `conditions`. Two adapters in v1 deliberately, to expose
 abstraction leaks.
 
+These are the core tools. Pack tools come on top, always named
+`<prefix>-<name>`, and are subject to the same layers in section 3.
+
 ## 5. Event log
 
 - Event types: chat (incl. rolls), combat lifecycle and turns, create/update/
@@ -199,6 +301,43 @@ abstraction leaks.
   Code, ChatGPT with tunnel, Gemini CLI, Gemini app); headless and server-mode
   guide; security model; privacy statement.
 - Support: GitHub issues and a Foundry Discord thread.
+
+### Tool packs: distribution and licensing
+
+From research on Foundry's rules, 2026-10-10:
+
+- **Selling is allowed.** The EULA's Limited License for Package Development
+  says "You are allowed to sell or lease package content"
+  (https://foundryvtt.com/article/license/).
+- **Two routes** (Publisher Handbook,
+  https://foundryvtt.com/article/publisher-handbook/):
+  - self-publishing: a Patreon-gated or private manifest, or the author's own
+    store plus a licence key. No fee and no protection; the author enforces
+    access;
+  - the Premium Content Partnership: a `protected: true` manifest and
+    account-bound content keys (sold through DriveThruRPG, Itch, the author's
+    store or a Patreon mapping), for a quarterly fee that is not published.
+- **The AI policy applies to paid packs equally**
+  (https://foundryvtt.com/article/ai-policy, revised 18 March 2026): the "AI
+  Tools" category for runtime AI; prepared content and listing copy made by
+  humans; an attestation that the author understands any AI-assisted code (the
+  burden of proof is on the author); runtime-generated code shown and consented
+  to before it runs; no automatic collection of context from sources the author
+  lacks rights to, such as other installed modules.
+- **Dependencies**: a pack declares the core in `relationships.requires`. The
+  core never requires, recommends by manifest or bundles a paid pack.
+- **No DRM in the core.** A pack that does licensing does it itself and must
+  stay attestable, so the core never requires or encourages obfuscation.
+
+**Ask Foundry before submitting** (task 41 records the answers):
+
+1. May paid packs be sold outside Premium Content while the core is listed?
+2. What is the Premium Content fee, and do code-only modules fit it?
+3. Does each pack need the "AI Tools" tag and its own attestation?
+4. Do agents reading compendium or game-system data trip the other-modules
+   context rule?
+5. Is minified or obfuscated code acceptable in premium packs?
+6. What consent UI satisfies the runtime-code rule for agent-run macros?
 
 ## Prerequisites (homelab, outside this repo)
 
