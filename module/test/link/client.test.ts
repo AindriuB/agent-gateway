@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PROTOCOL_VERSION, checkCompat } from '@agent-gateway/protocol';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -32,7 +33,7 @@ class FakeSocket implements SocketLike {
 const welcome = (extra: object = {}) => ({
   type: 'welcome',
   gatewayVersion: '0.1.0',
-  protocolVersion: '1.0.0',
+  protocolVersion: PROTOCOL_VERSION,
   connectionId: 'c1',
   agentId: 'a1',
   ...extra,
@@ -98,7 +99,7 @@ it('pairs with a code, stores the issued token, reports connected', async () => 
   open();
   expect(sockets[0]!.sent[0]).toMatchObject({
     type: 'hello',
-    protocolVersion: '1.0.0',
+    protocolVersion: PROTOCOL_VERSION,
     auth: { kind: 'pairingCode', code: 'ABC-123' },
     user: { name: 'Gm' },
     world: { title: 'My World' },
@@ -222,6 +223,36 @@ it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async
   await vi.advanceTimersByTimeAsync(120_000);
   expect(sockets).toHaveLength(1);
 });
+
+it.each(['1.0.0', '1.99.7'])(
+  'stops after an older gateway %s rejects the v2 hello, without welcome or retrying',
+  async (legacy) => {
+    token = 'tok';
+    const states: string[] = [];
+    client.onState((state) => states.push(state.kind));
+    client.start();
+    open();
+    const socket = sockets[0]!;
+    expect(socket.sent).toHaveLength(1);
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '2.0.0' });
+    // A v1 gateway uses the same major check before authentication or welcome.
+    const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
+    if (compatibility.ok) throw new Error('Legacy gateway must reject v2');
+    expect(compatibility.message).toContain(`local ${legacy}, remote ${PROTOCOL_VERSION}`);
+    expect(compatibility.message).toMatch(/upgrade the local side/i);
+    socket.recv({ type: 'reject', code: compatibility.code, message: compatibility.message });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.state).toEqual({ kind: 'disconnected', reason: 'PROTOCOL_MAJOR_MISMATCH' });
+    expect(states).not.toContain('connected');
+    expect(errors).toEqual([compatibility.message]);
+    expect(token).toBe('tok');
+    expect(socket.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(sockets).toHaveLength(1);
+    expect(socket.sent).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
 const call = { type: 'call', id: 'k1', sessionId: 's', tool: 'x', args: {} };
 
