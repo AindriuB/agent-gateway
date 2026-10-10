@@ -1,6 +1,7 @@
 import type { ErrorCode } from './errors.js';
 
-export const PROTOCOL_VERSION = '1.0.0';
+/** v2 replaces name-only toolsets with full announced definitions; v1 peers must upgrade. */
+export const PROTOCOL_VERSION = '2.0.0';
 
 export type CompatResult = { ok: true } | { ok: false; code: ErrorCode; message: string };
 

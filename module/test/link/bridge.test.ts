@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installBridge } from '../../src/link/bridge.js';
 import { LinkClient, type SocketLike } from '../../src/link/client.js';
@@ -50,7 +51,7 @@ beforeEach(async () => {
   socket.recv({
     type: 'welcome',
     gatewayVersion: '0',
-    protocolVersion: '1.0.0',
+    protocolVersion: PROTOCOL_VERSION,
     connectionId: 'c',
     agentId: 'agent-77',
   });

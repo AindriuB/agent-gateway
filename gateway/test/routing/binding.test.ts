@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync } from 'node:fs';
@@ -244,7 +245,7 @@ describe('store upgrade from version 1', () => {
     const tc = await (await import('../link/helpers.js')).TestClient.connect(h.port);
     tc.send({
       type: 'hello',
-      protocolVersion: '1.0.0',
+      protocolVersion: PROTOCOL_VERSION,
       moduleVersion: '0',
       foundryVersion: '14',
       world: { id: 'w1', title: 'W', system: 's', systemVersion: '1' },

@@ -88,7 +88,7 @@ describe('handshake', () => {
     const c = await connect(h.port);
     c.send(hello({ kind: 'pairingCode', code }));
     const w = await c.next();
-    expect(w.type).toBe('welcome');
+    expect(w).toMatchObject({ type: 'welcome', protocolVersion: PROTOCOL_VERSION });
     if (w.type !== 'welcome') return;
     expect(w.pairingToken).toBeTruthy();
     const token = w.pairingToken as string;
@@ -143,6 +143,32 @@ describe('handshake', () => {
     c.send(hello({ kind: 'pairingToken', token }));
     expect(await c.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
   });
+
+  it.each(['1.0.0', '1.99.7'])(
+    'rejects legacy module %s before welcome or consuming its pairing code',
+    async (legacy) => {
+      h = await startServer();
+      const code = h.codes.generate();
+      const c = await connect(h.port);
+      c.send(hello({ kind: 'pairingCode', code }, { protocolVersion: legacy }));
+      const expected = checkCompat(PROTOCOL_VERSION, legacy);
+      expect(expected.ok).toBe(false);
+      const reject = await c.next();
+      expect(reject).toMatchObject({
+        type: 'reject',
+        code: 'PROTOCOL_MAJOR_MISMATCH',
+        message: expected.ok ? '' : expected.message,
+      });
+      if (reject.type !== 'reject') throw new Error('Expected a protocol rejection');
+      expect(reject.message).toContain(`local ${PROTOCOL_VERSION}, remote ${legacy}`);
+      expect(reject.message).toMatch(/upgrade the remote side/i);
+      await c.untilClosed();
+      expect(c.messages).toEqual([]);
+      expect(h.registry.list()).toEqual([]);
+      expect(h.store.listActivePairings()).toEqual([]);
+      expect(h.codes.consume(code)).toBe(true);
+    },
+  );
 
   it('rejects a major protocol mismatch with the checkCompat message', async () => {
     h = await startServer();
