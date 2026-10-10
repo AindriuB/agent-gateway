@@ -148,7 +148,16 @@ records these limits. Combined PR #47 predecessor
 error-code validation and protocol 2. This record branch merges that source
 without direct runtime edits. On 2026-10-11, PR #47 and this recording branch
 passed the combined gate with 2,355 fast + 2,227 slow tests. Subsequent
-reconciliation with concurrently updated main is recorded separately.
+reconciliation merged main `4aa8ce63` through PR #47 head
+`87d050e47340b536131c2161019762bff79c32af` without file changes. That final
+PR #47 head and the final reconciled record branch each passed 2,355 fast +
+2,227 slow tests. PR #47 was confirmed open, mergeable and clean.
+
+The remote Hello Pack installation last confirmed above is from `dfd8a04`,
+before the journal queue fix. Synchronization of the four pack files from
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4` was dispatched to the remote chat;
+confirmation is still pending. No updated installation or live enabled/disabled
+pass is claimed.
 
 Author docs distinguish project publishing requirements from primary-source
 facts checked 2026-10-10: the Publisher Handbook names a fee without a public
