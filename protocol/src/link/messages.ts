@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { TOOL_LIMITS } from '../tools/limits.js';
+import type { AnnouncedTool } from '../tools/pack.js';
 import { ErrorCode } from './errors.js';
 
 export const MAX_FRAME_BYTES = 1024 * 1024;
@@ -67,14 +69,44 @@ export const ErrorMessage = z.strictObject({
 export const PingMessage = z.strictObject({ type: z.literal('ping') });
 export const PongMessage = z.strictObject({ type: z.literal('pong') });
 
-/**
- * Module to gateway: the tool names this user may use right now (role, minus categories denied
- * by policy). Sent after `welcome` and whenever it changes. The gateway shows no tool outside it;
- * the module still re-checks every call, so it is a list to show, never a grant.
- */
+/** Full definitions for the user's current role and policy; the module re-checks every call. */
 export const ToolsetMessage = z.strictObject({
   type: z.literal('toolset'),
-  tools: z.array(z.string()),
+  tools: z
+    .array(
+      z.custom<AnnouncedTool>((value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        const t = value as Record<string, unknown>;
+        return (
+          typeof t.name === 'string' &&
+          typeof t.description === 'string' &&
+          typeof t.category === 'string' &&
+          ['read', 'write', 'destructive', 'code'].includes(t.category) &&
+          typeof t.minRole === 'string' &&
+          ['player', 'gm'].includes(t.minRole) &&
+          t.inputSchema !== null &&
+          typeof t.inputSchema === 'object' &&
+          !Array.isArray(t.inputSchema) &&
+          t.outputSchema !== null &&
+          typeof t.outputSchema === 'object' &&
+          !Array.isArray(t.outputSchema) &&
+          (t.pack === undefined ||
+            (t.pack !== null &&
+              typeof t.pack === 'object' &&
+              !Array.isArray(t.pack) &&
+              ['id', 'version', 'prefix'].every(
+                (k) => typeof (t.pack as Record<string, unknown>)[k] === 'string',
+              )))
+        );
+      }),
+    )
+    .max(TOOL_LIMITS.announcementTools)
+    .refine(
+      (tools) =>
+        new TextEncoder().encode(JSON.stringify({ type: 'toolset', tools })).length <=
+        TOOL_LIMITS.announcementBytes,
+      'toolset exceeds announcement byte cap',
+    ),
 });
 
 // Insertion-only: later tasks add schemas above and members below.
