@@ -11,6 +11,18 @@ page and its parent journal must be owned by the calling user. Non-HTML text
 pages are refused. The tool requires normal write approval
 and records the snapshot for audit and undo. Audit journals are refused.
 
+Journal stamps resolve the canonical page UUID and queue each page's fresh
+read, permission check, snapshot and update within this browser's pack instance.
+Aliases for the same page share the queue; different pages can proceed in
+parallel. At most 64 calls may be outstanding across the instance, including
+identity resolution. Overflow returns `FORBIDDEN`; failures release their turn
+and idle queue entries are removed.
+
+This queue coordinates only this browser instance. Concurrent stamps from
+other browsers and manual edits are not atomic with its read/update sequence;
+those edits can still race. The example provides no world-wide lock or
+cross-browser transaction guarantee.
+
 The core release packaging contract excludes this directory; the release
 builder is a later task. See [the pack API](../../docs/packs/api.md)
 and [testing guide](../../docs/packs/testing.md) before adapting it.

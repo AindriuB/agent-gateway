@@ -75,3 +75,46 @@ describe('authenticated dynamic toolset caps', () => {
     expect(h.registry.list()).toHaveLength(0);
   });
 });
+
+describe('hostile toolset depth over the real link', () => {
+  it('rejects a pre-authentication 10000-deep frame and still serves a healthy paired core call', async () => {
+    h = await startServer();
+    const { TestClient } = await import('./helpers.js');
+    const attacker = await TestClient.connect(h.port);
+    try {
+      const raw =
+        '{"type":"toolset","tools":[{"name":"world_info","description":"Fixture","category":"read","minRole":"player","inputSchema":' +
+        '{"x":'.repeat(10000) +
+        '{}' +
+        '}'.repeat(10000) +
+        ',"outputSchema":{"type":"object","additionalProperties":false}}]}';
+      expect(Buffer.byteLength(raw)).toBeLessThan(256 * 1024);
+      attacker.ws.send(raw);
+      expect(await attacker.next()).toMatchObject({ type: 'reject', code: 'INVALID_ARGS' });
+      await attacker.untilClosed();
+      m = await pairModule(h, 'healthy', { isGM: true });
+      s = await openSession(h, {}, TOOLS);
+      const call = s.client.callTool({ name: 'world_info', arguments: {} });
+      const frame = await m.tc.next('call');
+      expect(frame).toMatchObject({ type: 'call', tool: 'world_info' });
+      m.tc.send({ type: 'result', id: (frame as { id: string }).id, ok: true, text: 'healthy' });
+      expect((await call).isError).not.toBe(true);
+      expect(m.tc.closed).toBe(false);
+    } finally {
+      attacker.ws.terminate();
+    }
+  });
+  it('does not misclassify excessive depth as a recoverable count-cap failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await setup();
+    const deep = JSON.parse('{"x":'.repeat(40) + '{}' + '}'.repeat(40));
+    m.tc.send({
+      type: 'toolset',
+      tools: Array.from({ length: 65 }, () => ({ ...definition(), inputSchema: deep })),
+    });
+    await until(() => m.tc.closed);
+    expect(warn).not.toHaveBeenCalledWith(
+      'ignored toolset: announcement count or byte cap exceeded',
+    );
+  });
+});

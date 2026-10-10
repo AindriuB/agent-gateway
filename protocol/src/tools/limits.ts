@@ -7,6 +7,9 @@ export const TOOL_LIMITS = Object.freeze({
   toolDescriptionLength: 500,
   propertyDescriptionLength: 200,
   toolsPerPack: 32,
+  // Representation bounds precede recursive JSON serialization; legitimate schemas are much shallower.
+  announcementDepth: 32,
+  announcementWork: 1024 * 1024,
   announcementTools: 64,
   announcementBytes: 256 * 1024,
   sessionPackTools: 24,
