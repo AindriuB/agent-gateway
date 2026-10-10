@@ -1,3 +1,4 @@
+import { safeText } from './sanitize.js';
 import type { LinkConnection, LinkRegistry } from '../link/index.js';
 
 export interface UserSelector {
@@ -21,7 +22,7 @@ export type Resolution =
   /** Bound to a pair; `conn` is whatever is connected for exactly that pair right now. */
   | { kind: 'bound'; pair: BoundPair; conn: LinkConnection | undefined }
   /** Not bound, and several identities match with no way to choose. */
-  | { kind: 'ambiguous'; available: Identity[] }
+  | { kind: 'ambiguous'; available: Identity[]; permanent: boolean }
   /** Not bound, and nothing matches yet. */
   | { kind: 'unbound' };
 
@@ -64,7 +65,12 @@ export class SessionBinding {
       const matched = this.matching();
       if (matched.length > 1) {
         this.sawAmbiguity = true;
-        return { kind: 'ambiguous', available: matched };
+        // Several paired users sharing a name or id stay ambiguous until the operator picks by id.
+        return {
+          kind: 'ambiguous',
+          available: matched,
+          permanent: this.selector.user !== undefined,
+        };
       }
       const only = matched[0];
       const conn = only ? this.registry.get(only.worldId, only.userId) : undefined;
@@ -98,5 +104,7 @@ export class SessionBinding {
 }
 
 export function describePairs(pairs: readonly Identity[]): string {
-  return pairs.map((c) => `world ${c.worldId} / user ${c.userName || c.userId}`).join('; ');
+  return pairs
+    .map((c) => `world ${safeText(c.worldId)} / user ${safeText(c.userName || c.userId)}`)
+    .join('; ');
 }

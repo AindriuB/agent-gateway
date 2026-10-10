@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hashToken } from '../../src/link/index.js';
+import m001 from '../../src/store/migrations/001-pairings.js';
+import { openStore } from '../../src/store/index.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import {
   expectErrorCode,
@@ -169,5 +176,101 @@ describe('list_changed coalescing', () => {
     const elapsed = Date.now() - t0;
     await tick(400);
     expect(s.listChanged.count - base).toBeLessThanOrEqual(Math.floor(elapsed / 250) + 2);
+  });
+});
+
+describe('terminal-safe operator output', () => {
+  it.each([['\x1b[2J'], ['\x1b]0;x\x07'], ['\nPairing code: FAKE-CODE']])(
+    'logs the implicit bind as one clean line for a name or world containing %j',
+    async (evil) => {
+      h = await startServer();
+      const a = await pairModule(h, 'uA', { userName: `al${evil}ice`, worldId: `w${evil}1` });
+      modules.push(a);
+      const lines: string[] = [];
+      const s = await openSession(h, {}, undefined, 5000, { log: (l) => lines.push(l) });
+      sessions.push(s);
+      await s.client.listTools();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
+      expect(lines[0]).toMatch(/^Bound MCP session to al/);
+    },
+  );
+
+  it('caps a very long name in the log line', async () => {
+    h = await startServer();
+    const a = await pairModule(h, 'uA', { userName: 'n'.repeat(500) });
+    modules.push(a);
+    const lines: string[] = [];
+    const s = await openSession(h, {}, undefined, 5000, { log: (l) => lines.push(l) });
+    sessions.push(s);
+    await s.client.listTools();
+    expect(lines[0]!.length).toBeLessThan(200);
+  });
+});
+
+describe('ambiguity messages', () => {
+  it('tells the operator to restart with --user <id> when a name is permanently shared', async () => {
+    h = await startServer();
+    const s1 = await pairModule(h, 'uA', { userName: 'sam' });
+    const s2 = await pairModule(h, 'uB', { userName: 'sam' });
+    modules.push(s1, s2);
+    const s = await openSession(h, { user: 'sam' });
+    sessions.push(s);
+    const res = await call(s);
+    expectErrorCode(res, 'INVALID_ARGS');
+    expect(JSON.stringify(res.content)).toContain(
+      'restart the gateway with --world and --user <id>',
+    );
+  });
+});
+
+describe('store upgrade from version 1', () => {
+  it('reads old pairings with an empty name: bindable by id, not by name', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ag-v1-')), 'g.db');
+    const old = new DatabaseSync(path);
+    old.exec(m001);
+    old.exec('PRAGMA user_version = 1');
+    old
+      .prepare(
+        'INSERT INTO pairings (id, token_hash, world_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run('p1', hashToken('old-token'), 'w1', 'uA', 1);
+    old.close();
+
+    const store = openStore(path);
+    expect(store.findPairingByHash(hashToken('old-token'))?.userName).toBe('');
+    h = await startServer({ store });
+
+    const tc = await (await import('../link/helpers.js')).TestClient.connect(h.port);
+    tc.send({
+      type: 'hello',
+      protocolVersion: '1.0.0',
+      moduleVersion: '0',
+      foundryVersion: '14',
+      world: { id: 'w1', title: 'W', system: 's', systemVersion: '1' },
+      user: { id: 'uA', name: 'alice', role: 1, isGM: false },
+      auth: { kind: 'pairingToken', token: 'old-token' },
+    });
+    await tc.next('welcome');
+    modules.push({
+      tc,
+      userId: 'uA',
+      userName: '',
+      worldId: 'w1',
+      token: 'old-token',
+      agentId: 'p1',
+    });
+
+    const byName = await openSession(h, { user: 'alice' });
+    sessions.push(byName);
+    expectErrorCode(await call(byName), 'WORLD_OFFLINE');
+    await silent(modules[0]!);
+
+    const byId = await openSession(h, { user: 'uA' });
+    sessions.push(byId);
+    const p = call(byId);
+    const frame = (await tc.next('call')) as { id: string };
+    tc.send({ type: 'result', id: frame.id, ok: true, text: 't', structured: { b: 'A' } });
+    expect((await p).isError).toBeFalsy();
   });
 });

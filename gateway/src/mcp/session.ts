@@ -7,6 +7,7 @@ import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/i
 import {
   SessionBinding,
   describePairs,
+  safeText,
   type Identity,
   type UserSelector,
 } from '../routing/index.js';
@@ -46,7 +47,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   const sessionId = randomUUID();
   const binding = new SessionBinding(opts.registry, opts.selector, opts.knownIdentities, (conn) =>
     opts.log?.(
-      `Bound MCP session to ${conn.info.userName || conn.userId} in ${conn.worldId}; start with --user to choose.`,
+      `Bound MCP session to ${safeText(conn.info.userName || conn.userId)} in ${safeText(conn.worldId)}; start with --user to choose.`,
     ),
   );
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -94,7 +95,9 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     if (r.kind === 'ambiguous') {
       return failure(
         'INVALID_ARGS',
-        `Several Foundry users are connected; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
+        r.permanent
+          ? `Several paired Foundry users match that name; restart the gateway with --world and --user <id> to choose one. Available: ${describePairs(r.available)}`
+          : `Several Foundry users are connected; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
       );
     }
     if (r.kind === 'unbound' || !r.conn) return offline();
