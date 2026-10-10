@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { chatRead } from '@agent-gateway/protocol';
 import type { OpHandler } from '../ops/types.js';
-import { htmlToDocument, inlineText, page } from '../serialise/index.js';
+import { domToDocument, inlineText, page, stripSecrets } from '../serialise/index.js';
 
 declare const game: any;
+declare const CONST: any;
 
 const NS = 'agent-gateway';
 /** Per-message content cap, in characters of markdown. */
@@ -35,13 +36,44 @@ function visibleTo(msg: any, userId: string, isGM: boolean): boolean {
 /** `before` is `<timestamp>.<message id>`, the form `nextBefore` is returned in. */
 const BEFORE_RE = /^(\d{1,16})\.(.+)$/;
 
+const OOC = 1;
+const isOOC = (msg: any): boolean => msg.style === (CONST?.CHAT_MESSAGE_STYLES?.OOC ?? OOC);
+
+const authorOf = (msg: any): any => game.users?.get(authorIdOf(msg) ?? '');
+
+/**
+ * The actor behind a message, as ChatMessage#speakerActor and .getSpeakerActor do
+ * (client/documents/chat-message.mjs L115-117 and L337-353): the token's actor, else the explicit
+ * actor, else the author's character.
+ */
+function speakerActorOf(msg: any): any {
+  const sp = msg.speaker;
+  let actor: any = null;
+  if (sp?.scene && sp?.token) actor = game.scenes?.get(sp.scene)?.tokens?.get(sp.token)?.actor;
+  if (sp?.actor && !actor) actor = game.actors?.get(sp.actor);
+  return actor || authorOf(msg)?.character || null;
+}
+
+/**
+ * ChatMessage#alias (chat-message.mjs L46-51): the author's name for OOC messages, else the speaker
+ * alias, else the speaker actor's name, else the author's name.
+ */
 function speakerOf(msg: any): string {
-  const alias = msg.speaker?.alias;
-  if (typeof alias === 'string' && alias.trim()) return alias;
-  const actor = msg.speaker?.actor ? game.actors?.get(msg.speaker.actor) : undefined;
-  if (actor?.name) return String(actor.name);
-  const author = game.users?.get(authorIdOf(msg) ?? '');
-  return String(author?.name ?? 'Unknown');
+  const authorName = authorOf(msg)?.name ?? msg.author?.name ?? 'Unknown User';
+  if (isOOC(msg)) return String(authorName);
+  const alias = msg.speaker?.alias || null;
+  return String(alias ?? speakerActorOf(msg)?.name ?? authorName);
+}
+
+/**
+ * Are secrets shown to this user? As in renderHTML (chat-message.mjs L412-415):
+ * `speakerActor?.isOwner ?? game.user.isGM`, with no speaker actor for OOC, evaluated for `ctx.user`.
+ */
+function secretsVisible(msg: any, userId: string, isGM: boolean): boolean {
+  const actor = isOOC(msg) ? null : speakerActorOf(msg);
+  if (!actor) return isGM;
+  const user = game.users?.get(userId) ?? { id: userId, isGM };
+  return actor.testUserPermission?.(user, 'OWNER') === true;
 }
 
 export const chatReadHandler: OpHandler = (ctx) => {
@@ -72,7 +104,9 @@ export const chatReadHandler: OpHandler = (ctx) => {
   picked.reverse();
 
   const messages = picked.map((msg) => {
-    const first = page(htmlToDocument(String(msg.content ?? '')), null, CONTENT_CAP);
+    const dom = new DOMParser().parseFromString(String(msg.content ?? ''), 'text/html');
+    if (!secretsVisible(msg, ctx.user.id, ctx.user.isGM)) stripSecrets(dom.body);
+    const first = page(domToDocument(dom.body), null, CONTENT_CAP);
     const roll = Array.isArray(msg.rolls) ? msg.rolls[0] : undefined;
     const out: Record<string, unknown> = {
       id: String(msg.id),

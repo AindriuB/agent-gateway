@@ -7,6 +7,24 @@ declare const game: any;
 
 const NAME_CAP = 200;
 
+/**
+ * Pack document types a compendium tool will search or read. An Adventure holds whole worlds' worth of
+ * GM data in set fields that the embedded-visibility rules cannot see into, so it is GM only; any type
+ * not listed (including future ones) is refused for everyone.
+ */
+const PACK_TYPES = [
+  'Actor',
+  'Item',
+  'JournalEntry',
+  'RollTable',
+  'Macro',
+  'Playlist',
+  'Scene',
+  'Cards',
+];
+export const packTypeAllowed = (type: unknown, isGM: boolean): boolean =>
+  typeof type === 'string' && (PACK_TYPES.includes(type) || (isGM && type === 'Adventure'));
+
 /** True when the user may observe the pack. Unknown users and packs without the API are denied. */
 export function canObservePack(pack: any, userId: string): boolean {
   const user = game.users?.get(userId);
@@ -21,6 +39,7 @@ export const compendiumSearchHandler: OpHandler = async (ctx) => {
   let truncated = false;
 
   search: for (const pack of game.packs.contents as any[]) {
+    if (!packTypeAllowed(pack.documentName, ctx.user.isGM)) continue;
     if (packType && pack.documentName !== packType) continue;
     if (packId && pack.collection !== packId) continue;
     if (!canObservePack(pack, ctx.user.id)) continue;

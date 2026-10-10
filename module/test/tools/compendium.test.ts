@@ -115,6 +115,27 @@ describe('compendium_search', () => {
     expect(few.structured.truncated).toBe(false);
   });
 
+  describe('document type allowlist', () => {
+    const adv = () =>
+      makePack('w.adv', 'Adventure', [{ _id: 'a1', name: 'Secret Adventure' }], ['u1', 'gm1']);
+    const odd = () =>
+      makePack('w.odd', 'FutureType', [{ _id: 'o1', name: 'Secret Odd' }], ['u1', 'gm1']);
+    const ok = () => makePack('w.ok', 'Cards', [{ _id: 'c1', name: 'Secret Deck' }], ['u1', 'gm1']);
+    it('a non-GM never lists Adventure packs or unknown types, and their indexes are not read', async () => {
+      const [a, o, c] = [adv(), odd(), ok()];
+      setup([a, o, c]);
+      const r = (await search({ query: 'secret' })) as any;
+      expect(r.structured.results.map((x: any) => x.pack)).toEqual(['w.ok']);
+      expect(a.getIndex).not.toHaveBeenCalled();
+      expect(o.getIndex).not.toHaveBeenCalled();
+    });
+    it('a GM lists Adventure packs but still not unknown types', async () => {
+      setup([adv(), odd(), ok()]);
+      const r = (await dispatch(call('compendium_search', { query: 'secret' }), gmUser)) as any;
+      expect(r.structured.results.map((x: any) => x.pack)).toEqual(['w.adv', 'w.ok']);
+    });
+  });
+
   it('rejects an unknown packType', async () => {
     setup([]);
     expect(await search({ query: 'a', packType: 'Cards' })).toMatchObject({
@@ -160,7 +181,7 @@ describe('compendium_get', () => {
       ...extra,
     });
   const run = (d: any, user: any = playerUser, args: Record<string, unknown> = {}) => {
-    setup([makePack('w.journals', 'JournalEntry', [], WATCHERS)], { [d.uuid]: d });
+    setup([makePack('w.journals', d.uuid.split('.')[3], [], WATCHERS)], { [d.uuid]: d });
     return dispatch(call('compendium_get', { uuid: d.uuid, ...args }), user) as Promise<any>;
   };
   const get = (args: unknown, user: any = playerUser) =>
@@ -245,6 +266,43 @@ describe('compendium_get', () => {
     const r = await run(d);
     expect(r.text).not.toMatch(/<b>|<img/);
     expect(md(r)).toContain('\\[a\\]');
+  });
+
+  describe('document type allowlist', () => {
+    const NOT_FOUND = { error: { code: 'INVALID_ARGS', message: 'Compendium entry not found.' } };
+    const advUuid = 'Compendium.w.adv.Adventure.a1';
+    const adventure = () =>
+      fakeDoc({
+        id: 'a1',
+        name: 'Big Adventure',
+        uuid: advUuid,
+        documentName: 'Adventure',
+        observers: WATCHERS,
+        data: { actors: [{ name: 'GMNPC' }], journal: [{ name: 'GMJOURNAL' }] },
+      });
+    const advSetup = () =>
+      setup([makePack('w.adv', 'Adventure', [], WATCHERS)], { [advUuid]: adventure() });
+
+    it('a player cannot read an Adventure, and nothing is loaded', async () => {
+      advSetup();
+      const r = await get({ uuid: advUuid });
+      expect(r).toEqual(NOT_FOUND);
+      expect((globalThis as any).fromUuid).not.toHaveBeenCalled();
+    });
+    it('a GM can read an Adventure', async () => {
+      advSetup();
+      const r = await get({ uuid: advUuid }, gmUser);
+      expect(md(r)).toContain('Big Adventure');
+    });
+    it('the pack type must be allowed and match the uuid type', async () => {
+      setup([makePack('w.adv', 'Adventure', [], WATCHERS)], {});
+      expect(await get({ uuid: 'Compendium.w.adv.Actor.a1' })).toEqual(NOT_FOUND);
+      setup([makePack('w.act', 'Actor', [], WATCHERS)], {});
+      expect(await get({ uuid: 'Compendium.w.act.Adventure.a1' })).toEqual(NOT_FOUND);
+      setup([makePack('w.odd', 'FutureType', [], WATCHERS)], {});
+      expect(await get({ uuid: 'Compendium.w.odd.FutureType.a1' }, gmUser)).toEqual(NOT_FOUND);
+      expect((globalThis as any).fromUuid).not.toHaveBeenCalled();
+    });
   });
 
   describe('names are inert in text results (shared inlineText)', () => {

@@ -31,12 +31,35 @@ function setup(messages: any[]) {
   n = 0;
   stub = installFoundry(14);
   const g = globalThis as any;
-  g.game.users = {
-    get: (id: string) => ({ u1: { id: 'u1', name: 'Pat' }, u2: { id: 'u2', name: 'Quinn' } })[id],
+  const users: Record<string, any> = {
+    u1: { id: 'u1', name: 'Pat', character: undefined },
+    u2: { id: 'u2', name: 'Quinn' },
+    gm: { id: 'gm', name: 'Gamemaster', isGM: true },
   };
+  g.game.users = { get: (id: string) => users[id] };
+  const actor = (id: string, name: string, owners: string[]) => ({
+    id,
+    name,
+    testUserPermission: (u: any, level: string) =>
+      level === 'OWNER' && (u.isGM === true || owners.includes(u.id)),
+  });
+  const actors: Record<string, any> = {
+    npc: actor('npc', 'Goblin Boss', []),
+    pc: actor('pc', 'Hero', ['u1']),
+  };
+  g.game.actors = { get: (id: string) => actors[id] };
+  const tokenActor = actor('tk', 'Token Name', []);
+  g.game.scenes = {
+    get: (id: string) =>
+      id === 's1'
+        ? { tokens: { get: (t: string) => (t === 't1' ? { actor: tokenActor } : null) } }
+        : null,
+  };
+  g.users = users;
   g.game.messages = { contents: messages };
 }
 
+const readUsers = () => (globalThis as any).users;
 const read = async (args: unknown, user = player) => (await dispatch(call(args), user)) as any;
 
 describe('chat_read', () => {
@@ -247,5 +270,70 @@ describe('chat_read', () => {
   it('no flags of other modules leave the module', async () => {
     setup([msg({ flags: { evil: { secret: 'leak' }, 'agent-gateway': { ai: true } } })]);
     expect(JSON.stringify(await read({}))).not.toContain('leak');
+  });
+
+  describe('secrets follow the speaker actor, evaluated for the requesting user', () => {
+    const body =
+      '<p>PUBLIC</p><section class="secret"><p>SECRETONE</p></section><p class="secret revealed">REVEALED</p>';
+    const npcMsg = () => msg({ author: { id: 'gm' }, speaker: { actor: 'npc' }, content: body });
+
+    it('a GM-posted NPC message: secrets stripped for a player, kept for the GM, .revealed kept', async () => {
+      setup([npcMsg()]);
+      const p = (await read({})).structured.messages[0].content;
+      expect(p).toContain('PUBLIC');
+      expect(p).toContain('REVEALED');
+      expect(p).not.toContain('SECRETONE');
+      const g = (await read({}, gm)).structured.messages[0].content;
+      expect(g).toContain('SECRETONE');
+      expect(g).toContain('REVEALED');
+    });
+    it('a player speaking as an owned character keeps secrets', async () => {
+      setup([msg({ author: { id: 'u1' }, speaker: { actor: 'pc' }, content: body })]);
+      expect((await read({})).structured.messages[0].content).toContain('SECRETONE');
+      expect(
+        (await read({}, { id: 'u2', isGM: false })).structured.messages[0].content,
+      ).not.toContain('SECRETONE');
+    });
+    it('the speaker actor is the token actor first, then the actor, then the author character', async () => {
+      setup([
+        msg({ speaker: { scene: 's1', token: 't1', actor: 'pc' }, content: body }),
+        msg({ author: { id: 'u1' }, speaker: {}, content: body }),
+      ]);
+      readUsers().u1.character = (globalThis as any).game.actors.get('pc');
+      const [tok, chr] = (await read({})).structured.messages;
+      // the token's actor (not owned) wins over the owned `actor`
+      expect(tok.content).not.toContain('SECRETONE');
+      // no speaker: the author's character, which this player owns
+      expect(chr.content).toContain('SECRETONE');
+    });
+    it('an OOC message has no speaker actor, so only a GM sees secrets', async () => {
+      setup([msg({ author: { id: 'u1' }, style: 1, speaker: { actor: 'pc' }, content: body })]);
+      expect((await read({})).structured.messages[0].content).not.toContain('SECRETONE');
+      expect((await read({}, gm)).structured.messages[0].content).toContain('SECRETONE');
+    });
+    it('a message with no speaker actor at all is GM only', async () => {
+      setup([msg({ speaker: {}, content: body })]);
+      expect((await read({})).structured.messages[0].content).not.toContain('SECRETONE');
+      expect((await read({}, gm)).structured.messages[0].content).toContain('SECRETONE');
+    });
+  });
+
+  describe('speaker mirrors ChatMessage#alias', () => {
+    it('OOC: the author name, whatever the alias', async () => {
+      setup([msg({ style: 1, speaker: { alias: 'Bob', actor: 'pc' } })]);
+      expect((await read({})).structured.messages[0].speaker).toBe('Quinn');
+    });
+    it('in character: alias, else the speaker actor name (token first, then actor, then character)', async () => {
+      setup([
+        msg({ speaker: { alias: 'Bob', actor: 'pc' } }),
+        msg({ speaker: { scene: 's1', token: 't1', actor: 'pc' } }),
+        msg({ speaker: { actor: 'pc' } }),
+        msg({ author: { id: 'u1' }, speaker: {} }),
+        msg({ speaker: {} }),
+      ]);
+      readUsers().u1.character = (globalThis as any).game.actors.get('pc');
+      const names = (await read({})).structured.messages.map((m: any) => m.speaker);
+      expect(names).toEqual(['Bob', 'Token Name', 'Hero', 'Hero', 'Quinn']);
+    });
   });
 });

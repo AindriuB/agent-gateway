@@ -3,7 +3,7 @@ import { compendiumGet } from '@agent-gateway/protocol';
 import type { OpError, OpHandler } from '../ops/types.js';
 import { fromUuidCompat } from '../compat/index.js';
 import { inlineText, page, PageCursorError, serialiseDocument } from '../serialise/index.js';
-import { canObservePack } from './compendium-search.js';
+import { canObservePack, packTypeAllowed } from './compendium-search.js';
 import { toMdDocument } from './document-get.js';
 import { applyTree, findNode, presentedName, visibleTree, type DocContext } from './visibility.js';
 
@@ -20,7 +20,15 @@ export const compendiumGetHandler: OpHandler = async (ctx) => {
   const packId = `${parts[1]}.${parts[2]}`;
   const pack = game.packs.get(packId);
   // Checked before anything is loaded; the answer is the same as for a missing pack.
-  if (!pack || !canObservePack(pack, ctx.user.id)) return fail('Compendium entry not found.');
+  // The type allowlist is checked too, from the pack and from the uuid, before anything is loaded.
+  if (
+    !pack ||
+    !canObservePack(pack, ctx.user.id) ||
+    !packTypeAllowed(pack.documentName, ctx.user.isGM) ||
+    parts[3] !== pack.documentName
+  ) {
+    return fail('Compendium entry not found.');
+  }
   let doc: any = null;
   try {
     doc = await fromUuidCompat(uuid);
