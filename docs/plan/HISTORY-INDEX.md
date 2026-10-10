@@ -20,6 +20,8 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-10 | 12b | e2e multi-user suites: bound isolation, cross-player, no-user ambiguity, reload, restart, stale token | ## 2026-10-10 — E2E multi-user isolation, binding and resilience suites (task 12b) |
+| 2026-10-10 | 12a | e2e harness, one-time headed pairing setup, ag-test fixtures seed/clean, single-user read flows, leak check | ## 2026-10-10 — E2E harness and single-user read flows (task 12a) |
 | 2026-10-10 | 11, 11b | gateway wiring, session binding by paired identity, isolation tests, text-only errors, live evidence on v14 | ## 2026-10-10 — Gateway wiring, session binding and isolation (tasks 11, 11b) |
 | 2026-10-10 | 10 | compendium_search, compendium_get, chat_read with chat visibility rules and Adventure GM-only | ## 2026-10-10 — Compendium and chat read tools (task 10) |
 | 2026-10-10 | 09 | world_info, document_search, document_get with allowlist visibility and secret stripping | ## 2026-10-10 — World document read tools and the visibility allowlists (task 09) |
