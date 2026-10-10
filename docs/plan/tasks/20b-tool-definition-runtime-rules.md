@@ -12,6 +12,11 @@
 - protocol/test/tools/fixtures.ts (insertions only)
 - protocol/test/tools/rules/**
 - docs/packs/naming.md
+- docs/plan/tasks/20b-tool-definition-runtime-rules.md (scope and acceptance amendments only)
+- protocol/vitest.config.ts
+- protocol/vitest.slow.config.ts
+- vitest.config.ts
+- package.json (scripts insertions only)
 
 ## Goal
 Move the conservative-schema check out of a test and into `protocol/src`, so the
@@ -45,6 +50,7 @@ same rules.
 - [ ] Name tests: `hello-world_clock` passes for a pack with prefix `hello`; refused with a reason: no prefix, prefix not matching the declared one, `ag-x1` (reserved), `Hello-x1`, `hello.x1`, `hello-x-y`, a 37-character name, and any core-pattern name with `origin: 'pack'`
 - [ ] `validateArgs` tests: accepts a valid value; rejects a missing required property, an extra property, a wrong type, an integer given 1.5, out-of-range number, too-long string, too-many items, an enum miss; applies a top-level default without mutating the input object (`Object.isFrozen` input still accepted); for every `TOOLS` input schema, a value that zod accepts is accepted and a value with an extra property is rejected by both
 - [ ] `validateArgs` on a 10,000-element array of objects at depth 3 finishes and its run time ratio for n versus 4n is under 6 (min of 5 runs), placed in a `*.slow.test.ts` file with a small fast sample
+- [ ] Fast `npm test` excludes `*.slow.test.ts`; the protocol slow project is wired into root `test:slow` and `npm run verify`
 - [ ] `docs/packs/naming.md` lists each vendor rule with source URL and the date checked
 - [ ] `npm run verify` passes
 
