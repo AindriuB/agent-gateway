@@ -258,7 +258,7 @@ describe('an approval is bound to the exact call', () => {
     const fresh = hub.client('p1', { storage: edited });
     fresh.manager.load();
     fresh.manager.representAll();
-    expect(fresh.manager.listPending()).toEqual([]);
+    expect(fresh.manager.ownRecords()).toEqual([]);
     void gm;
   });
 
@@ -371,5 +371,59 @@ describe('the dispatcher fails closed', () => {
     );
     expect(r).toMatchObject({ error: { code: 'DENIED' } });
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('further guards', () => {
+  it('the local answer path also refuses an expired request', async () => {
+    const { hub, p1, call, handler } = setup('owner');
+    void call('write_thing');
+    await settle();
+    const id = p1.manager.ownRecords()[0]!.id;
+    hub.now += APPROVAL_CONFIG.APPROVAL_TTL_MS + 1;
+    expect(p1.manager.resolveApproval(id, { decision: 'approve' })).toBe(false);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('ids come straight from the random source: 16 random bytes, base64url', async () => {
+    const hub = world();
+    const bytes = Uint8Array.from({ length: 16 }, (_, i) => 250 - i * 7);
+    const c = hub.client('p1', { random: () => bytes });
+    void pipeline(c).call('write_thing');
+    await settle();
+    const expected = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    expect(c.manager.ownRecords()[0]!.id).toBe(expected);
+  });
+
+  it('a message that claims to come from this very user is ignored', async () => {
+    const { p1, call, handler } = setup('owner');
+    void call('write_thing');
+    await settle();
+    p1.manager.handleSocket(resolveMsg(p1), 'p1');
+    await settle();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('a stored call whose arguments changed before it runs is refused', async () => {
+    const { hub, p1, gm, call } = setup('gm');
+    void call('write_thing', { id: 'orig' });
+    await settle();
+    const id = p1.manager.ownRecords()[0]!.id;
+    const p1b = hub.client('p1', { storage: p1.storage });
+    const again = pipeline(p1b, 'gm');
+    // The re-run reaches the pipeline with different arguments than were approved.
+    p1b.setRerun((c, u) => again.dispatcher({ ...c, args: { id: 'swapped' } }, u));
+    p1b.manager.load();
+    p1b.manager.representAll();
+    gm.manager.resolveApproval(id, { decision: 'approve' });
+    await settle();
+    expect(again.handler).not.toHaveBeenCalledWith(
+      expect.objectContaining({ args: { id: 'swapped' } }),
+    );
+    // The swapped call is treated as a new call: it asks again instead of using the old approval.
+    expect(p1b.manager.ownRecords().filter((r) => r.status === 'pending')).toHaveLength(1);
   });
 });
