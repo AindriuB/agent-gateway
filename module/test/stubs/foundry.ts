@@ -69,6 +69,8 @@ export function installFoundry(
     scenes: collection(),
     journal: collection(),
     users: collection(),
+    packs: collection(),
+    messages: collection(),
   };
   g.Hooks = {
     once: (name: string, fn: () => void) => hooks.set(name, [...(hooks.get(name) ?? []), fn]),
