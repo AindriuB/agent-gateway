@@ -110,3 +110,22 @@ describe('announced tool sets', () => {
     expect(toolsets.get(h!.registry.get('w1', 'uC')!)).toBeUndefined();
   });
 });
+
+describe('ToolsetStore', () => {
+  it('emits changed only for a different set, whatever the order or repeats', async () => {
+    h = await startServer();
+    const m = await pairModule(h, 'uA', { userName: 'alice' });
+    modules.push(m);
+    const conn = h.registry.list()[0]!;
+    const store = new ToolsetStore();
+    let n = 0;
+    store.on('changed', () => n++);
+    store.set(conn, ['b', 'a']);
+    store.set(conn, ['a', 'b']);
+    store.set(conn, ['a', 'a', 'b']);
+    expect(n).toBe(1);
+    expect(store.get(conn)).toEqual(['a', 'b']);
+    store.set(conn, ['a']);
+    expect(n).toBe(2);
+  });
+});
