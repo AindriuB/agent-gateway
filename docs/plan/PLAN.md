@@ -11,9 +11,8 @@ than no plan.
 
 ## Now
 
-### Wave 3 status
-Wave 3 is complete. Tasks 05 (gateway skeleton and stdio MCP server), 06 (gateway link server), 07 (module LinkClient and pairing app) and 08 (module operation registry, dispatcher, serialiser and safe structured paging; PR #20) are merged. Wave 2 PRs are merged.
-**In flight:** wave 4 (09, 10, 11) in progress. Spike 10b is done and merged (PR #22).
+### Wave 4 status
+Wave 4 is complete: tasks 09 (world read tools, PR #25), 10 (compendium and chat read tools, PR #26), 11 (wiring and isolation, PR #24) and 11b (implicit binding, PR #27) are merged. Nothing is in flight. Next is task 12 (the e2e harness), which should reuse the `ag-test-*` fixtures and the seed and clean scripts on the Mac.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). The Mac test bed is now a new session. Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -31,7 +30,6 @@ Wave 3 is complete. Tasks 05 (gateway skeleton and stdio MCP server), 06 (gatewa
 - Handshake mismatch message must name "module" and "gateway", not "local/remote side" (pick up in task 06 or 07). The user needs to know which side to update.
 - Link version regex is not end-anchored (`1.0.0garbage` parses as major 1); tighten when 06 or 07 touches it.
 - Confirm `result.structured` being optional is what the tool framework wants.
-- Schema checker: the `properties`-map false positive and output descriptions are fixed (PR #6). Remaining: follow `$ref` (recursive schemas can bypass the depth check) and add `propertyNames` to the walker's single-schema keywords. Do before real tools land in task 09.
 - `hasSceneLevels()` is tree-shaken out of the bundle (unused), so its runtime result is unverified live. Verify once a task uses it, for example by exposing it through the module api or a log line.
 - Compat isolation test should also catch `game['release']`, destructuring and `game.version`; `foundryGeneration()` silently returns 13 if `game.release` is missing.
 - Task 04 v13 evidence is pending until the v13 instance exists.
@@ -82,5 +80,18 @@ Wave 3 is complete. Tasks 05 (gateway skeleton and stdio MCP server), 06 (gatewa
 - The scaling oracle samples every 2nd/8th/16th/80th item of some corpora (half of SPLIT_TAGS, PROBES and ANCHORS are uncovered) to fit the time budget.
 - Full verify takes about 65 s (slow suite about 51 s); review the budget if it grows.
 - The paging oracle tolerates `*` in word comparison.
+
+### Follow-ups from wave 4
+- `chat_read` drops roll flavour, even for the GM.
+- `chat_read` renders only the first roll of a message.
+- Plain tool text shows markdown escapes (`8\.6.0`).
+- LIMITED journals are "not found" for players, stricter than Foundry, which shows the title.
+- Players cannot get the active Scene without ownership, stricter than Foundry.
+- A same-millisecond duplicate can appear after a deleted paging anchor.
+- Players have no scene layout until task 22, which must apply vision.
+- `gateway/src/mcp/server.ts` and `EmptyModuleConnections` are unused; remove them.
+- Name-collision denial of service on `--user <name>`: bind by id instead.
+- Task 36 must prove the claimed identity at pairing per spike 10b, and must add pairing revocation (11b already ignores revoked pairings).
+- v13 evidence is still pending for 09, 10 and 11.
 
 ## Someday
