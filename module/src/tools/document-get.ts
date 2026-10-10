@@ -15,6 +15,8 @@ import {
   applyTree,
   findNode,
   pathMatches,
+  presentedName,
+  rootVisible,
   treeStamp,
   visibleTree,
   type DocContext,
@@ -168,7 +170,10 @@ function readable(doc: any, user: any): VisibleNode | undefined {
   while (root.parent) root = root.parent;
   if (
     user.isGM !== true &&
-    !(typeof root.testUserPermission === 'function' && root.testUserPermission(user, 'OBSERVER'))
+    (!(
+      typeof root.testUserPermission === 'function' && root.testUserPermission(user, 'OBSERVER')
+    ) ||
+      !rootVisible(root, user))
   )
     return undefined;
   return findNode(visibleTree(root, user), doc);
@@ -215,7 +220,7 @@ export const documentGetHandler: OpHandler = async (ctx) => {
         : 'Invalid page cursor',
     );
   }
-  const name = String(doc.name ?? '');
+  const name = presentedName(doc, user);
   const type = String(doc.documentName ?? doc.constructor?.documentName ?? '');
   const structured: Record<string, unknown> = {
     uuid: String(doc.uuid ?? uuid),

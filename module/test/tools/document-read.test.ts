@@ -108,7 +108,11 @@ describe('document_search', () => {
     ['Playlist', 'playlists'],
   ])('searches %s', async (type, key) => {
     stub = setupWorld({
-      docs: { [key]: [fakeDoc({ id: 'x', name: 'Thing', documentName: type, observers: ['p1'] })] },
+      docs: {
+        [key]: [
+          fakeDoc({ id: 'x', name: 'Thing', documentName: type, observers: ['p1'], playing: true }),
+        ],
+      },
     });
     const out = structured(await call('document_search', { type }));
     expect(out.results).toEqual([{ uuid: `${type}.x`, name: 'Thing', type, folder: '' }]);
@@ -336,23 +340,14 @@ describe('document_get embedded documents', () => {
     expect(gm).toContain('VISIBLEBODY');
     expect(gm).toContain('HIDDENBODY');
   });
-  it('omits hidden tokens, hidden drawings and GM-only notes; the GM sees all', async () => {
-    stub = setupWorld({ docs: { scenes: [scene()] } });
-    const player = text(await get2('Scene.sc'));
-    expect(player).toContain('OPENTOKEN');
-    expect(player).toContain('OKNOTE');
-    for (const secret of ['HIDDENTOKEN', 'GMDRAWING', 'GMNOTE', 'ORPHANNOTE'])
-      expect(player).not.toContain(secret);
-    const gm = text(await get2('Scene.sc', gmUser));
-    for (const s of ['OPENTOKEN', 'HIDDENTOKEN', 'GMDRAWING', 'OKNOTE', 'GMNOTE', 'ORPHANNOTE'])
-      expect(gm).toContain(s);
-  });
   it('an embedded document the user cannot see is not found by uuid', async () => {
     stub = setupWorld({ docs: { journal: [journal()], scenes: [scene()] } });
     for (const uuid of [
       'JournalEntry.ej.JournalEntryPage.none',
+      'Scene.sc.Token.t1',
       'Scene.sc.Token.t2',
       'Scene.sc.Drawing.d1',
+      'Scene.sc.Note.n1',
     ]) {
       const r = await get2(uuid);
       expect(r, uuid).toMatchObject({ error: { code: 'INVALID_ARGS' } });
@@ -593,121 +588,6 @@ describe('document_get embedded allowlist', () => {
     expect(text(await get2('Scene.sx', gmUser))).toContain(marker);
   });
 
-  it('keeps token-level fields but drops the actor data unless the user can observe the actor', async () => {
-    const token = (id: string, actor?: unknown) =>
-      fakeDoc({
-        id,
-        name: `Tok ${id}`,
-        documentName: 'Token',
-        data: { label: `TOKENFIELD${id}` },
-        actor,
-        singular: {
-          delta: fakeDoc({
-            id: `d${id}`,
-            name: 'Delta',
-            documentName: 'ActorDelta',
-            data: { biography: `DELTASECRET${id}` },
-          }),
-        },
-      });
-    const seen = fakeDoc({ id: 'act1', name: 'A', documentName: 'Actor', observers: ['p1'] });
-    const unseen = fakeDoc({ id: 'act2', name: 'B', documentName: 'Actor' });
-    const scene = fakeDoc({
-      id: 'st',
-      name: 'Tokens',
-      documentName: 'Scene',
-      observers: ['p1'],
-      embedded: { tokens: [token('a', seen), token('b', unseen), token('c')] },
-    });
-    stub = setupWorld({ docs: { scenes: [scene] } });
-    const player = text(await get2('Scene.st'));
-    for (const id of ['a', 'b', 'c']) expect(player).toContain(`TOKENFIELD${id}`);
-    expect(player).toContain('DELTASECRETa');
-    expect(player).not.toContain('DELTASECRETb');
-    expect(player).not.toContain('DELTASECRETc');
-    const gm = text(await get2('Scene.st', gmUser));
-    for (const id of ['a', 'b', 'c']) expect(gm).toContain(`DELTASECRET${id}`);
-  });
-
-  it('hides a secret-disposition token from a user who cannot observe it', async () => {
-    const scene = fakeDoc({
-      id: 'ss',
-      name: 'S',
-      documentName: 'Scene',
-      observers: ['p1'],
-      embedded: {
-        tokens: [
-          fakeDoc({
-            id: 's1',
-            name: 'S1',
-            documentName: 'Token',
-            disposition: -2,
-            data: { label: 'SECRETDISP' },
-          }),
-          fakeDoc({
-            id: 's2',
-            name: 'S2',
-            documentName: 'Token',
-            disposition: -2,
-            observers: ['p1'],
-            data: { label: 'SECRETSEEN' },
-          }),
-        ],
-      },
-    });
-    stub = setupWorld({ docs: { scenes: [scene] } });
-    const player = text(await get2('Scene.ss'));
-    expect(player).not.toContain('SECRETDISP');
-    expect(player).toContain('SECRETSEEN');
-  });
-
-  it('applies Foundry note visibility: LIMITED on the page, else the entry, else the author', async () => {
-    const entry = (id: string, extra: object = {}) =>
-      fakeDoc({ id, name: id, documentName: 'JournalEntry', ...extra });
-    const note = (id: string, extra: object) =>
-      fakeDoc({ id, name: id, documentName: 'Note', data: { text: `NOTE${id}` }, ...extra });
-    const scene = fakeDoc({
-      id: 'sn',
-      name: 'Notes',
-      documentName: 'Scene',
-      observers: ['p1'],
-      embedded: {
-        notes: [
-          note('limitedpage', { page: entry('p', { limited: ['p1'] }), entry: entry('e') }),
-          note('deniedpage', { page: entry('p2'), entry: entry('e2', { observers: ['p1'] }) }),
-          note('limitedentry', { entry: entry('e3', { limited: ['p1'] }) }),
-          note('deniedentry', { entry: entry('e4') }),
-        ],
-      },
-    });
-    stub = setupWorld({ docs: { scenes: [scene] } });
-    const player = text(await get2('Scene.sn'));
-    expect(player).toContain('NOTElimitedpage');
-    expect(player).toContain('NOTElimitedentry');
-    expect(player).not.toContain('NOTEdeniedpage');
-    expect(player).not.toContain('NOTEdeniedentry');
-    const gm = text(await get2('Scene.sn', gmUser));
-    expect(gm).toContain('NOTEdeniedpage');
-  });
-
-  it('a note with no journal link follows its author: unauthored is visible, GM-authored is not', async () => {
-    const note = (id: string, data: object) =>
-      fakeDoc({ id, name: id, documentName: 'Note', data: { text: `NOTE${id}`, ...data } });
-    const scene = fakeDoc({
-      id: 'sa',
-      name: 'Authors',
-      documentName: 'Scene',
-      observers: ['p1'],
-      embedded: {
-        notes: [note('unauthored', { author: null }), note('gmauthored', { author: 'gm1' })],
-      },
-    });
-    stub = setupWorld({ docs: { scenes: [scene] } });
-    const player = text(await get2('Scene.sa'));
-    expect(player).toContain('NOTEunauthored');
-    expect(player).not.toContain('NOTEgmauthored');
-  });
-
   it('actor items and effects are included for an observer; unknown embedded names are not', async () => {
     const actor = fakeDoc({
       id: 'ai',
@@ -849,27 +729,284 @@ describe('document_get performance', () => {
     structured(await get2('Macro.k2'));
     expect(reads.count).toBe(1); // read for k1, cached for k2
   });
-  it('caches a scene whose visible placeable lacks a modified time, and rebuilds when it changes', async () => {
-    const tok = fakeDoc({
-      id: 'tk',
-      name: 'T',
-      documentName: 'Token',
-      modifiedTime: null,
-      data: { label: 'ONE' },
-    });
+});
+
+describe('document_get scenes for players', () => {
+  const placeables = () => ({
+    tokens: [
+      fakeDoc({
+        id: 'k1',
+        name: 'Open',
+        documentName: 'Token',
+        observers: ['p1'],
+        data: { label: 'OPENTOKEN' },
+      }),
+    ],
+    notes: [
+      fakeDoc({
+        id: 'k2',
+        name: 'N',
+        documentName: 'Note',
+        observers: ['p1'],
+        data: { text: 'OKNOTE' },
+      }),
+    ],
+    drawings: [
+      fakeDoc({
+        id: 'k3',
+        name: 'D',
+        documentName: 'Drawing',
+        observers: ['p1'],
+        data: { text: 'OKDRAWING' },
+      }),
+    ],
+  });
+  it('a player gets no tokens, notes or drawings, even visible ones; a GM gets all', async () => {
     const scene = fakeDoc({
-      id: 'sm',
-      name: 'M',
+      id: 'sp',
+      name: 'Plain',
       documentName: 'Scene',
       observers: ['p1'],
-      embedded: { tokens: [tok] },
+      embedded: placeables(),
     });
     stub = setupWorld({ docs: { scenes: [scene] } });
-    structured(await get2('Scene.sm'));
-    structured(await get2('Scene.sm'));
-    expect(scene.toObjectCalls.count).toBe(1);
-    tok.data.label = 'TWO';
-    expect(text(await get2('Scene.sm'))).toContain('TWO');
-    expect(scene.toObjectCalls.count).toBe(2);
+    const player = text(await get2('Scene.sp'));
+    for (const m of ['OPENTOKEN', 'OKNOTE', 'OKDRAWING']) expect(player).not.toContain(m);
+    const gm = text(await get2('Scene.sp', gmUser));
+    for (const m of ['OPENTOKEN', 'OKNOTE', 'OKDRAWING']) expect(gm).toContain(m);
+  });
+  const scene = () =>
+    fakeDoc({
+      id: 'sn2',
+      name: 'Dragon Lair Plans',
+      documentName: 'Scene',
+      observers: ['p1'],
+      navName: 'Cellar',
+    });
+  it('presents the navigation name to players in get, and the real name to the GM', async () => {
+    stub = setupWorld({ docs: { scenes: [scene()] } });
+    const r = await get2('Scene.sn2');
+    const player = structured(r);
+    expect(player.name).toBe('Cellar');
+    expect(text(r)).not.toContain('Dragon');
+    expect(('text' in r && r.text) || '').toContain('Cellar');
+    expect(('text' in r && r.text) || '').not.toContain('Dragon');
+    expect(structured(await get2('Scene.sn2', gmUser)).name).toBe('Dragon Lair Plans');
+  });
+  it('searches scenes by navigation name for players', async () => {
+    stub = setupWorld({ docs: { scenes: [scene()] } });
+    const byReal = structured(await call('document_search', { type: 'Scene', query: 'dragon' }));
+    expect(byReal.results).toEqual([]);
+    const byNav = structured(await call('document_search', { type: 'Scene', query: 'cell' }));
+    expect(byNav.results.map((r: any) => r.name)).toEqual(['Cellar']);
+    const gm = structured(
+      await call('document_search', { type: 'Scene', query: 'dragon' }, gmUser),
+    );
+    expect(gm.results.map((r: any) => r.name)).toEqual(['Dragon Lair Plans']);
+  });
+  it('falls back to the name when there is no navigation name', async () => {
+    const s = fakeDoc({ id: 'nn', name: 'Plain Name', documentName: 'Scene', observers: ['p1'] });
+    stub = setupWorld({ docs: { scenes: [s] } });
+    expect(structured(await get2('Scene.nn')).name).toBe('Plain Name');
+  });
+});
+
+describe('document_get top-level fields for players', () => {
+  const stats = {
+    modifiedTime: 5,
+    createdTime: 1,
+    createdBy: 'CREATEDBY',
+    lastModifiedBy: 'MODIFIEDBY',
+    compendiumSource: 'COMPSRC',
+    duplicateSource: 'DUPSRC',
+  };
+  const base = (documentName: string, extra: object = {}) => ({
+    ownership: { default: 0, p1: 2, p2: 3, gm1: 3 },
+    _stats: stats,
+    flags: { core: { sourceId: 'SOURCEID', keepme: 'KEPTFLAG' } },
+    ...extra,
+  });
+  it('replaces ownership with only the requesting users own level', async () => {
+    const m = fakeDoc({
+      id: 'o1',
+      name: 'O',
+      documentName: 'Macro',
+      observers: ['p1', 'p2'],
+      owners: ['p2'],
+      data: base('Macro'),
+    });
+    stub = setupWorld({ docs: { macros: [m] } });
+    const player = text(await get2('Macro.o1'));
+    expect(player).toContain('ownership.yours');
+    expect(player).toMatch(/ownership\.yours\*\*: 2/);
+    expect(player).not.toMatch(/ownership\.(default|p1|p2|gm1)/);
+    expect(text(await get2('Macro.o1', ownerUser))).toMatch(/ownership\.yours\*\*: 3/);
+    expect(text(await get2('Macro.o1', gmUser))).toMatch(/ownership\.p2/);
+  });
+  it('keeps only modifiedTime and createdTime of _stats', async () => {
+    const m = fakeDoc({
+      id: 'o2',
+      name: 'O',
+      documentName: 'Macro',
+      observers: ['p1'],
+      data: base('Macro'),
+    });
+    stub = setupWorld({ docs: { macros: [m] } });
+    const player = text(await get2('Macro.o2'));
+    expect(player).toMatch(/_stats\.modifiedTime/);
+    expect(player).toMatch(/_stats\.createdTime/);
+    for (const x of ['CREATEDBY', 'MODIFIEDBY', 'COMPSRC', 'DUPSRC'])
+      expect(player).not.toContain(x);
+    expect(text(await get2('Macro.o2', gmUser))).toContain('CREATEDBY');
+  });
+  it('drops flags.core.sourceId but keeps other core flags', async () => {
+    const m = fakeDoc({
+      id: 'o3',
+      name: 'O',
+      documentName: 'Macro',
+      observers: ['p1'],
+      data: base('Macro'),
+    });
+    stub = setupWorld({ docs: { macros: [m] } });
+    const player = text(await get2('Macro.o3'));
+    expect(player).not.toContain('SOURCEID');
+    expect(player).toContain('KEPTFLAG');
+    expect(text(await get2('Macro.o3', gmUser))).toContain('SOURCEID');
+  });
+  it('drops the scene links to journal and playlist', async () => {
+    const sc = fakeDoc({
+      id: 'o4',
+      name: 'S',
+      documentName: 'Scene',
+      observers: ['p1'],
+      data: base('Scene', {
+        journal: 'JOURNALID',
+        journalEntryPage: 'PAGEID',
+        playlist: 'PLAYLISTID',
+        playlistSound: 'SOUNDID',
+        width: 4000,
+      }),
+    });
+    stub = setupWorld({ docs: { scenes: [sc] } });
+    const player = text(await get2('Scene.o4'));
+    for (const x of ['JOURNALID', 'PAGEID', 'PLAYLISTID', 'SOUNDID'])
+      expect(player).not.toContain(x);
+    expect(player).toContain('4000');
+    expect(text(await get2('Scene.o4', gmUser))).toContain('JOURNALID');
+  });
+  it('applies to embedded documents too', async () => {
+    const page = mkPage('fp', '<p>x</p>', {
+      observers: ['p1'],
+      data: { text: { content: '<p>x</p>' }, ...base('JournalEntryPage') },
+    });
+    const j = fakeDoc({
+      id: 'o5',
+      name: 'J',
+      documentName: 'JournalEntry',
+      observers: ['p1'],
+      embedded: { pages: [page] },
+    });
+    stub = setupWorld({ docs: { journal: [j] } });
+    const player = text(await get2('JournalEntry.o5'));
+    for (const x of ['CREATEDBY', 'SOURCEID']) expect(player).not.toContain(x);
+    expect(player).toMatch(/ownership\.yours/);
+  });
+});
+
+describe('playlists for players', () => {
+  const sound = (id: string, playing: boolean) =>
+    fakeDoc({
+      id,
+      name: `Sound ${id}`,
+      documentName: 'PlaylistSound',
+      playing,
+      data: { path: `PATH${id}` },
+    });
+  const playlist = (id: string, extra: object = {}) =>
+    fakeDoc({
+      id,
+      name: `List ${id}`,
+      documentName: 'Playlist',
+      observers: ['p1', 'p2'],
+      ...extra,
+    });
+  it('is visible only to its owner or while playing, in search and get', async () => {
+    const lists = [
+      playlist('idle'),
+      playlist('playing', { playing: true }),
+      playlist('owned', { owners: ['p2'] }),
+    ];
+    stub = setupWorld({ docs: { playlists: lists } });
+    const names = async (user: typeof playerUser) =>
+      structured(await call('document_search', { type: 'Playlist' }, user)).results.map(
+        (r: any) => r.name,
+      );
+    expect(await names(playerUser)).toEqual(['List playing']);
+    expect(await names(ownerUser)).toEqual(['List owned', 'List playing']);
+    expect((await get2('Playlist.idle')) as object).toMatchObject({
+      error: { code: 'INVALID_ARGS' },
+    });
+    expect(structured(await get2('Playlist.playing')).name).toBe('List playing');
+    expect(structured(await get2('Playlist.owned', ownerUser)).name).toBe('List owned');
+    expect(structured(await get2('Playlist.idle', gmUser)).name).toBe('List idle');
+  });
+  it('shows a non-owner only the playing sounds, an owner all of them', async () => {
+    const mk = (id: string, owners: string[]) =>
+      playlist(id, {
+        playing: true,
+        owners,
+        embedded: { sounds: [sound(`${id}a`, true), sound(`${id}b`, false)] },
+      });
+    stub = setupWorld({ docs: { playlists: [mk('pl', ['p2'])] } });
+    const player = text(await get2('Playlist.pl'));
+    expect(player).toContain('PATHpla');
+    expect(player).not.toContain('PATHplb');
+    const owner = text(await get2('Playlist.pl', ownerUser));
+    expect(owner).toContain('PATHpla');
+    expect(owner).toContain('PATHplb');
+  });
+});
+
+describe('revealed secrets', () => {
+  it('strips unrevealed secrets and keeps revealed ones', async () => {
+    const m = fakeDoc({
+      id: 'rv',
+      name: 'R',
+      documentName: 'Macro',
+      observers: ['p1'],
+      schema: { note: htmlField },
+      data: {
+        note: '<p>PUB</p><section class="secret">UNREVEALED</section><section class="secret revealed">REVEALED</section>',
+      },
+    });
+    stub = setupWorld({ docs: { macros: [m] } });
+    const player = text(await get2('Macro.rv'));
+    expect(player).toContain('REVEALED');
+    expect(player).not.toContain('UNREVEALED');
+    expect(text(await get2('Macro.rv', gmUser))).toContain('UNREVEALED');
+  });
+});
+
+describe('cache for nodes without a modified time', () => {
+  it('caches and rebuilds when a visible embedded document lacks a modified time', async () => {
+    const page = mkPage('nt', '<p>x</p>', {
+      observers: ['p1'],
+      modifiedTime: null,
+      data: { text: { content: '<p>ONE</p>' } },
+    });
+    const j = fakeDoc({
+      id: 'nj',
+      name: 'N',
+      documentName: 'JournalEntry',
+      observers: ['p1'],
+      embedded: { pages: [page] },
+    });
+    stub = setupWorld({ docs: { journal: [j] } });
+    structured(await get2('JournalEntry.nj'));
+    structured(await get2('JournalEntry.nj'));
+    expect(j.toObjectCalls.count).toBe(1);
+    page.data.text.content = '<p>TWO</p>';
+    expect(text(await get2('JournalEntry.nj'))).toContain('TWO');
+    expect(j.toObjectCalls.count).toBe(2);
   });
 });

@@ -5,6 +5,8 @@ declare const CONST: any;
 /** What the requesting user may see of one document and, recursively, its embedded documents. */
 export interface VisibleNode {
   doc: any;
+  /** The requesting user. */
+  user: any;
   /** The user owns this document, so its HTML secrets are shown. */
   owner: boolean;
   /** Embedded collection (or singular embedded document) name to the embedded documents the user may see. */
@@ -26,48 +28,102 @@ const can = (doc: any, user: any, level: string, opts?: object): boolean =>
   typeof doc?.testUserPermission === 'function' &&
   doc.testUserPermission(user, level, opts) === true;
 
-const SECRET_DISPOSITION = (): number => CONST?.TOKEN_DISPOSITIONS?.SECRET ?? -2;
-
 const inherit: Rule = () => true;
 const parentObserver: Rule = ({ user, parent }) => can(parent, user, 'OBSERVER');
 const childObserver: Rule = ({ user, child }) => can(child, user, 'OBSERVER');
-const notHidden: Rule = ({ child }) => child.hidden !== true;
-
-/** Foundry's `Token.isSecret` and the hidden flag, evaluated for `user`. */
-const tokenVisible: Rule = ({ user, child }) =>
-  child.hidden !== true &&
-  !(child.disposition === SECRET_DISPOSITION() && !can(child, user, 'OBSERVER'));
 
 /**
- * Foundry's `Note.isVisible` (client/canvas/placeables/note.mjs): GMs and the author see a note;
- * otherwise LIMITED access to the page, else the entry; with neither, a note is visible unless
- * its author is a GM or unknown.
+ * A playlist is visible to its owners and while it plays (client/documents/playlist.mjs `visible`).
+ * Its sounds follow playlist-directory.mjs: all of them to an owner of the playlist, else only the
+ * ones playing.
  */
-const noteVisible: Rule = ({ user, child }) => {
-  const test = child.page ?? child.entry;
-  if (test !== undefined && test !== null) return can(test, user, 'LIMITED');
-  const authorId = child._source?.author ?? child.author?.id ?? null;
-  if (authorId === user.id) return true;
-  return child._source?.author === null || !(child.author?.isGM ?? true);
-};
-
-/** An unlinked token's actor data is shown only to someone who may observe the actor. */
-const actorObserver: Rule = ({ user, parent }) => can(parent?.actor, user, 'OBSERVER');
+const soundVisible: Rule = ({ user, parent, child }) =>
+  can(parent, user, 'OWNER') || child.playing === true;
 
 /**
  * THE allowlist for non-GM users: parent document type, embedded name, rule. Anything not listed
- * (walls, regions, lights, sounds, templates, tiles, levels, categories and any future embedded
- * type) is excluded. GMs bypass the table.
+ * is excluded: walls, regions, lights, sounds, templates, tiles, levels, categories and any future
+ * embedded type. A Scene lists nothing: every placeable (tokens, notes, drawings, ...) shows only
+ * what vision, fog and the canvas allow, and that belongs to later tools that apply vision. GMs
+ * bypass the table.
  */
 const EMBEDDED_RULES: Record<string, Record<string, Rule>> = {
   JournalEntry: { pages: childObserver },
   Actor: { items: parentObserver, effects: parentObserver },
   Item: { effects: parentObserver },
-  Scene: { tokens: tokenVisible, notes: noteVisible, drawings: notHidden },
+  Scene: {},
   RollTable: { results: inherit },
-  Playlist: { sounds: inherit },
-  Token: { delta: actorObserver },
-  ActorDelta: { items: inherit, effects: inherit },
+  Playlist: { sounds: soundVisible },
+};
+
+/**
+ * May a non-GM user see this top-level document at all, beyond OBSERVER? A playlist is visible
+ * only to its owners or while playing (client/documents/playlist.mjs `visible`).
+ */
+const ROOT_RULES: Record<string, (c: { user: any; doc: any }) => boolean> = {
+  Playlist: ({ user, doc }) => can(doc, user, 'OWNER') || doc.playing === true,
+};
+
+export function rootVisible(doc: any, user: any): boolean {
+  if (user?.isGM === true) return true;
+  const rule = ROOT_RULES[doc.documentName];
+  return rule ? rule({ user, doc }) : true;
+}
+
+/** The name a user is shown: players see a scene's navigation name, never the working name. */
+export function presentedName(doc: any, user: any): string {
+  const name = String(doc?.name ?? '');
+  if (user?.isGM === true || doc?.documentName !== 'Scene') return name;
+  return String(doc.navName || name);
+}
+
+const LEVELS: Array<[string, number]> = [
+  ['OWNER', 3],
+  ['OBSERVER', 2],
+  ['LIMITED', 1],
+];
+const levelOf = (doc: any, user: any): number =>
+  LEVELS.find(([name]) => can(doc, user, name))?.[1] ?? 0;
+
+type FieldRule = (c: { data: Record<string, any>; doc: any; user: any }) => void;
+const dropPath =
+  (path: string): FieldRule =>
+  ({ data }) => {
+    const parts = path.split('.');
+    let obj: any = data;
+    for (const p of parts.slice(0, -1)) obj = obj?.[p];
+    if (obj && typeof obj === 'object') delete obj[parts[parts.length - 1]!];
+  };
+const keepOnly =
+  (key: string, keep: string[]): FieldRule =>
+  ({ data }) => {
+    const v = data[key];
+    if (!v || typeof v !== 'object') return;
+    for (const k of Object.keys(v)) if (!keep.includes(k)) delete v[k];
+  };
+
+/**
+ * Top-level fields a non-GM user does not get as stored, by document type (`*` for every one,
+ * embedded documents included). Each rule rewrites the serialised data.
+ */
+const FIELD_RULES: Record<string, FieldRule[]> = {
+  '*': [
+    // Other users' levels are not theirs to see: only the requester's own level remains.
+    ({ data, doc, user }) => {
+      if ('ownership' in data) data.ownership = { yours: levelOf(doc, user) };
+    },
+    keepOnly('_stats', ['modifiedTime', 'createdTime']),
+    dropPath('flags.core.sourceId'),
+  ],
+  Scene: [
+    dropPath('journal'),
+    dropPath('journalEntryPage'),
+    dropPath('playlist'),
+    dropPath('playlistSound'),
+    ({ data, doc, user }) => {
+      if ('name' in data) data.name = presentedName(doc, user);
+    },
+  ],
 };
 
 /** Fields only an owner may read, by document type, as dotted paths. */
@@ -97,6 +153,7 @@ export function visibleTree(doc: any, user: any): VisibleNode {
   const gm = user?.isGM === true;
   const node: VisibleNode = {
     doc,
+    user,
     owner: gm || can(doc, user, 'OWNER'),
     children: {},
     excluded: [],
@@ -214,6 +271,10 @@ export function applyTree(
     code: sets ? sets.code : [],
     isMacro: tree.doc.documentName === 'Macro',
   });
+  if (tree.user?.isGM !== true) {
+    for (const rule of [...(FIELD_RULES['*'] ?? []), ...(FIELD_RULES[tree.doc.documentName] ?? [])])
+      rule({ data, doc: tree.doc, user: tree.user });
+  }
   if (!tree.owner) {
     for (const path of OWNER_ONLY_FIELDS[tree.doc.documentName] ?? []) {
       const parts = path.split('.');

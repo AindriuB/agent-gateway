@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { OpHandler } from '../ops/types.js';
 import { inlineText } from '../serialise/index.js';
+import { presentedName, rootVisible } from './visibility.js';
 
 declare const game: any;
 
@@ -30,14 +31,8 @@ export const documentSearchHandler: OpHandler = (ctx) => {
   const folder = args.folder?.toLowerCase();
   const matches = docs
     .filter((d) => {
-      if (!user || !d.testUserPermission(user, 'OBSERVER')) return false;
-      if (
-        query &&
-        !String(d.name ?? '')
-          .toLowerCase()
-          .includes(query)
-      )
-        return false;
+      if (!user || !d.testUserPermission(user, 'OBSERVER') || !rootVisible(d, user)) return false;
+      if (query && !presentedName(d, user).toLowerCase().includes(query)) return false;
       if (folder) {
         const f = d.folder;
         if (!f || (f.id?.toLowerCase() !== folder && String(f.name ?? '').toLowerCase() !== folder))
@@ -47,7 +42,7 @@ export const documentSearchHandler: OpHandler = (ctx) => {
     })
     .map((d) => ({
       uuid: String(d.uuid),
-      name: String(d.name ?? ''),
+      name: presentedName(d, user),
       type: args.type,
       folder: String(d.folder?.name ?? ''),
     }))

@@ -26,6 +26,8 @@ export interface FakeDocInit {
   limited?: string[];
   hidden?: boolean;
   disposition?: number;
+  playing?: boolean;
+  navName?: string;
   data?: Record<string, unknown>;
   /** Schema fields (SchemaField-like `{ fields }`, `{ element }`, HTMLField, JavaScriptField, plain objects) */
   schema?: Record<string, unknown>;
@@ -65,6 +67,8 @@ export function fakeDoc(init: FakeDocInit): any {
     folder: init.folder,
     hidden: init.hidden,
     disposition: init.disposition,
+    playing: init.playing,
+    navName: init.navName,
     entry: init.entry,
     page: init.page,
     actor: init.actor,
@@ -83,6 +87,7 @@ export function fakeDoc(init: FakeDocInit): any {
     toObject() {
       toObjectCalls.count += 1;
       const out: Record<string, unknown> = { _id: init.id, name: init.name, ...this.data };
+      if (init.navName) out.navName = init.navName;
       for (const [coll, kids] of Object.entries(embedded))
         out[coll] = kids.map((k) => k.toObject());
       for (const [name, one] of Object.entries(singular)) out[name] = one.toObject();
