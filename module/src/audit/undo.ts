@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fromUuidCompat } from '../compat/index.js';
 import { isAuditDocument } from './guard.js';
+import { reserveUndo, type UndoReservation } from './reservation.js';
 import { undoClasses } from './undo-classes.js';
 export { UNDO_CLASSES, UNDO_EMBEDDED, undoClasses } from './undo-classes.js';
 import { decodeBefore } from './record.js';
@@ -20,6 +21,8 @@ export interface UndoDeps {
   /** May the acting GM create documents of this class (a world class, or a parent's embedded one)? */
   canCreate(docName: string): boolean;
   now(): number;
+  /** Reserve the entry across clients and read its current state from the server. */
+  reserve(page: any): Promise<UndoReservation | null>;
 }
 
 export interface Conflict {
@@ -48,6 +51,7 @@ const defaultDeps = (confirm: UndoDeps['confirmConflicts']): UndoDeps => ({
   },
   canCreate: (name) => getDocumentClass(name)?.canUserCreate?.(game.user) !== false,
   now: () => Date.now(),
+  reserve: reserveUndo,
 });
 
 /** Audit pages being undone right now, so a double click cannot run an undo twice. */
@@ -190,6 +194,7 @@ async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
  * Undo one audit entry. Humans only: nothing here is a tool, and a non-GM is refused. Targets are
  * restored last to first. If any target changed since the call, nothing is touched until the GM
  * confirms. Changes during a confirmation require renewed confirmation before any restore.
+ * A server reservation serializes callers across GM clients, through completion recording.
  * The entry is marked undone only when every restorable target succeeded.
  */
 export async function undoEntry(
@@ -208,9 +213,43 @@ export async function undoEntry(
   const key = String(page.id ?? system.entryId ?? '');
   if (inFlight.has(key)) return { ...out, status: 'busy' };
   inFlight.add(key);
+  let reservation: UndoReservation | null = null;
+  let outcome: UndoOutcome | undefined;
   try {
-    return await run(page, system, deps, out);
+    try {
+      reservation = await deps.reserve(page);
+    } catch (err) {
+      console.error('agent-gateway | could not reserve audit undo', err);
+      outcome = { ...out, status: 'failed', failed: [String(page.uuid ?? key)] };
+      return outcome;
+    }
+    if (!reservation) {
+      outcome = { ...out, status: 'busy' };
+      return outcome;
+    }
+    // Completion and targets come from a server read made while holding the reservation.
+    // Another GM may have finished before this client's original page cache caught up.
+    const fresh = reservation.page;
+    const held = reservation;
+    const guarded = { ...deps, isGM: () => deps.isGM() && held.isHeld() };
+    if (!guarded.isGM() || !fresh.system || fresh.system.undoneAt) {
+      outcome = { ...out, status: 'refused' };
+      return outcome;
+    }
+    outcome = await run(page, fresh.system, guarded, out);
+    return outcome;
   } finally {
+    // Release only after all mutations and the completion write settle. An unexpected throw
+    // leaves a reservation for human recovery instead of permitting a potentially duplicate undo.
+    if (reservation && outcome) {
+      try {
+        await reservation.release();
+      } catch (err) {
+        console.error('agent-gateway | could not release audit undo reservation', err);
+        outcome.status = 'failed';
+        outcome.failed.push(String(page.uuid ?? key));
+      }
+    }
     inFlight.delete(key);
   }
 }

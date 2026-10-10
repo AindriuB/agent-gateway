@@ -75,3 +75,10 @@ export const record = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   relayed: false,
   ...over,
 });
+
+/** Unit fixtures without a server exercise restoration separately from reservation integration. */
+export const reserveFixtureUndo = async (page: any) => ({
+  page,
+  isHeld: () => true,
+  release: async () => {},
+});

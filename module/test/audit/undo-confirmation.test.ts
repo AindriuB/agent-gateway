@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest';
 import { undoEntry, type Conflict, type UndoDeps } from '../../src/audit/undo.js';
-import { makeStore, target, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, target, writable } from './fake.js';
 
 function rig(secondMissing = false) {
   const store = makeStore();
@@ -18,6 +18,7 @@ function rig(secondMissing = false) {
     update: vi.fn(async () => {}),
   };
   const deps: Partial<UndoDeps> = {
+    reserve: reserveFixtureUndo,
     isGM: () => true,
     userId: () => 'gm',
     fromUuid: store.fromUuid,

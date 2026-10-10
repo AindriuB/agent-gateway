@@ -15,7 +15,7 @@ import {
 } from '../../src/audit/witness.js';
 import type { AuditRecord } from '../../src/audit/types.js';
 import { createDispatcher } from '../../src/ops/dispatch.js';
-import { makeStore, record, target, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, record, target, writable } from './fake.js';
 
 const CALL = 'call-0000001';
 
@@ -66,6 +66,7 @@ const entry = (w: ReturnType<typeof gmWorld>, over: object = {}, sender = 'p1') 
   );
 
 const undoDeps = (store: ReturnType<typeof makeStore>): Partial<UndoDeps> => ({
+  reserve: reserveFixtureUndo,
   isGM: () => true,
   canModify: () => true,
   canCreate: () => true,

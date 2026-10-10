@@ -5,7 +5,7 @@ import { createAuditStage } from '../../src/audit/stage.js';
 import { undoEntry } from '../../src/audit/undo.js';
 import type { AuditRecord } from '../../src/audit/types.js';
 import type { OpContext } from '../../src/ops/types.js';
-import { makeStore, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, writable } from './fake.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -71,6 +71,7 @@ describe('GM snapshot conflicts during execution', () => {
     const data = pageData(records[0]!) as any;
     const page = { id: 'page', system: data.system, update: vi.fn() };
     const outcome = await undoEntry(page, async () => true, {
+      reserve: reserveFixtureUndo,
       isGM: () => true,
       userId: () => 'gm1',
       fromUuid: store.fromUuid,

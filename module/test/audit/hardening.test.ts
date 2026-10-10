@@ -16,7 +16,7 @@ import {
   RECREATED_NOTE,
 } from '../../src/audit/witness.js';
 import { createDispatcher } from '../../src/ops/dispatch.js';
-import { makeStore, record, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, record, writable } from './fake.js';
 
 const opts = (callId: string) => ({ agentGateway: { callId } });
 const cid = (i: number) => `call-${String(i).padStart(8, '0')}`;
@@ -67,6 +67,7 @@ const stored = (r: AuditRecord) => {
   return page;
 };
 const undoDeps = (store: ReturnType<typeof makeStore>): Partial<UndoDeps> => ({
+  reserve: reserveFixtureUndo,
   isGM: () => true,
   canModify: () => true,
   canCreate: () => true,

@@ -116,3 +116,11 @@ it.each(['cancelled', 'refused', 'failed'] as const)(
     expect(warn).toHaveBeenCalledWith('AGENT_GATEWAY.Audit.undoStopped:1');
   },
 );
+
+it('explains a reservation conflict instead of presenting it as a GM permission failure', () => {
+  const warn = vi.fn();
+  vi.stubGlobal('ui', { notifications: { warn } });
+  vi.stubGlobal('game', { i18n: { localize: (key: string) => key } });
+  notifyOutcome({ status: 'busy', restored: 0, skipped: [], failed: [], conflicts: [] });
+  expect(warn).toHaveBeenCalledExactlyOnceWith('AGENT_GATEWAY.Audit.undoBusy');
+});

@@ -114,6 +114,7 @@
       "undoStopped": "Undo stopped after restoring {count} document(s). The entry stays open.",
       "undoSkipped": "{count} document(s) cannot be undone and were left as they are.",
       "undoFailed": "Undo failed for {count} document(s). The entry stays open; see the console.",
+      "undoBusy": "This entry is reserved for undo. Wait for the other GM or refresh the log. If undo was interrupted, a GM must inspect the entry and world changes before manually removing its reservation page.",
       "undoRefused": "Only a GM can undo an entry, and an entry can be undone once.",
       "conflict": {
         "title": "Changed since the agent's call",

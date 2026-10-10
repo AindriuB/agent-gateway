@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { conflictFor, undoEntry, type UndoDeps } from '../../src/audit/undo.js';
-import { makeStore, target, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, target, writable } from './fake.js';
 import type { AuditTarget } from '../../src/audit/types.js';
 
 const stored = (t: AuditTarget) => ({ ...t, before: t.before ? JSON.stringify(t.before) : '' });
@@ -18,6 +18,7 @@ function rig(over: Partial<UndoDeps> = {}) {
   const store = makeStore();
   const confirm = vi.fn(async () => true);
   const deps: Partial<UndoDeps> = {
+    reserve: reserveFixtureUndo,
     isGM: () => true,
     canModify: () => true,
     canCreate: () => true,

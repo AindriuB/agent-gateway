@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { pageData } from '../../src/audit/journal.js';
 import { undoEntry } from '../../src/audit/undo.js';
 import { AuditWitness } from '../../src/audit/witness.js';
-import { makeStore, record, target, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, record, target, writable } from './fake.js';
 
 const plain = (v: any): v is Record<string, any> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -91,6 +91,7 @@ describe('witnessed object replacement undo', () => {
         update: vi.fn(async () => {}),
       };
       const out = await undoEntry(page, async () => true, {
+        reserve: reserveFixtureUndo,
         isGM: () => true,
         userId: () => 'gm1',
         fromUuid: store.fromUuid,
@@ -144,6 +145,7 @@ it.each([
   };
   expect(
     await undoEntry(page, async () => true, {
+      reserve: reserveFixtureUndo,
       isGM: () => true,
       userId: () => 'gm1',
       fromUuid: store.fromUuid,

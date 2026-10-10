@@ -46,7 +46,9 @@ export function notifyOutcome(o: UndoOutcome): void {
     ui.notifications.error(
       i18n.format('AGENT_GATEWAY.Audit.undoFailed', { count: o.failed.length }),
     );
-  } else if (o.status === 'refused' || o.status === 'busy') {
+  } else if (o.status === 'busy') {
+    ui.notifications.warn(i18n.localize('AGENT_GATEWAY.Audit.undoBusy'));
+  } else if (o.status === 'refused') {
     ui.notifications.warn(i18n.localize('AGENT_GATEWAY.Audit.undoRefused'));
   }
 }

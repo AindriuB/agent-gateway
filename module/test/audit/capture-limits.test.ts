@@ -7,7 +7,7 @@ import { AUDIT_LIMITS as L, type AuditRecord } from '../../src/audit/types.js';
 import { undoEntry } from '../../src/audit/undo.js';
 import { AuditWitness } from '../../src/audit/witness.js';
 import type { OpContext } from '../../src/ops/types.js';
-import { makeStore, record, target, writable } from './fake.js';
+import { reserveFixtureUndo, makeStore, record, target, writable } from './fake.js';
 
 describe.each([true, false])('snapshot budget protection (GM client: %s)', (isGM) => {
   function rig() {
@@ -141,6 +141,7 @@ describe('complete witnessed changed-path capture', () => {
     const data = pageData(final) as any;
     const page = { id: 'page', system: data.system, update: vi.fn() };
     const outcome = await undoEntry(page, async () => true, {
+      reserve: reserveFixtureUndo,
       isGM: () => true,
       userId: () => 'gm1',
       fromUuid: store.fromUuid,
