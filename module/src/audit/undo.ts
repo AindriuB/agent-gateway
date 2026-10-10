@@ -158,7 +158,8 @@ async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
 /**
  * Undo one audit entry. Humans only: nothing here is a tool, and a non-GM is refused. Targets are
  * restored last to first. If any target changed since the call, nothing is touched until the GM
- * confirms. The entry is marked undone only when every restorable target succeeded.
+ * confirms. Changes during a confirmation require renewed confirmation before any restore.
+ * The entry is marked undone only when every restorable target succeeded.
  */
 export async function undoEntry(
   page: any,
@@ -194,31 +195,63 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
       t.note ||= 'no readable snapshot';
     }
   }
-  const plan: Array<{ target: AuditTarget; doc: any }> = [];
-  for (const t of targets) {
-    // A relayed record's update is restorable only for the paths this GM client observed.
-    const unobserved =
-      system.relayed === true && t.existed && t.existsAfter && (t.changedPaths ?? []).length === 0;
-    if (!t.undoable || unobserved || !undoClasses(t.uuid)) {
-      out.skipped.push(t.uuid);
-      continue;
+  type Step = { target: AuditTarget; doc: any; modifiedTime: number | null };
+  const resolvePlan = async (): Promise<Step[]> => {
+    const plan: Step[] = [];
+    for (const t of targets) {
+      // A relayed record's update is restorable only for the paths this GM client observed.
+      const unobserved =
+        system.relayed === true &&
+        t.existed &&
+        t.existsAfter &&
+        (t.changedPaths ?? []).length === 0;
+      if (!t.undoable || unobserved || !undoClasses(t.uuid)) {
+        if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
+        continue;
+      }
+      let doc: any = null;
+      try {
+        doc = await deps.fromUuid(t.uuid);
+      } catch {
+        doc = null;
+      }
+      if (doc && isAuditDocument(doc)) {
+        if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
+        continue;
+      }
+      // Foundry documents are mutable: save the version before awaiting a human response.
+      const modifiedTime = Number(doc?._stats?.modifiedTime);
+      plan.push({
+        target: t,
+        doc,
+        modifiedTime: Number.isFinite(modifiedTime) ? modifiedTime : null,
+      });
     }
-    let doc: any = null;
-    try {
-      doc = await deps.fromUuid(t.uuid);
-    } catch {
-      doc = null;
-    }
-    if (doc && isAuditDocument(doc)) {
-      out.skipped.push(t.uuid);
-      continue;
-    }
-    const c = conflictFor(t, doc);
-    if (c) out.conflicts.push(c);
-    plan.push({ target: t, doc });
-  }
-  if (out.conflicts.length && !(await deps.confirmConflicts(out.conflicts))) {
-    return { ...out, status: 'cancelled' };
+    return plan;
+  };
+  let plan = await resolvePlan();
+  out.conflicts = plan.flatMap(({ target, doc }) => conflictFor(target, doc) ?? []);
+  while (out.conflicts.length) {
+    if (!(await deps.confirmConflicts(out.conflicts))) return { ...out, status: 'cancelled' };
+    const previous = new Map(plan.map((step) => [step.target.uuid, step]));
+    plan = await resolvePlan();
+    const changed = new Set(
+      plan
+        .filter((step) => {
+          const old = previous.get(step.target.uuid);
+          return !old || old.doc !== step.doc || old.modifiedTime !== step.modifiedTime;
+        })
+        .map((step) => step.target.uuid),
+    );
+    if (!changed.size) break;
+    // Repeat the warning for every new version, even if its conflict reason is unchanged.
+    out.conflicts = plan.flatMap(({ target, doc }) => {
+      const conflict = conflictFor(target, doc);
+      return (
+        conflict ??
+        (changed.has(target.uuid) ? [{ uuid: target.uuid, reason: 'modified' as const }] : [])
+      );
+    });
   }
   for (const { target, doc } of plan) {
     try {
