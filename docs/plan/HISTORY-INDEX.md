@@ -20,7 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
-| 2026-10-10 | 20b–20f | Tool-pack PRs #43–47 published for review; 20e exact-bundle v14 passed; Hello Pack installation blocked by SSH DNS, live pack evidence pending | ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f) |
+| 2026-10-10 | 20b–20f | 20b merged, PRs #44–47 under review; exact-bundle v14 passed; Hello Pack installed, activation/relaunch and live pack evidence pending | ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f) |
 | 2026-10-10 | 12b | e2e multi-user suites: bound isolation, cross-player, no-user ambiguity, reload, restart, stale token | ## 2026-10-10 — E2E multi-user isolation, binding and resilience suites (task 12b) |
 | 2026-10-10 | 12a | e2e harness, one-time headed pairing setup, ag-test fixtures seed/clean, single-user read flows, leak check | ## 2026-10-10 — E2E harness and single-user read flows (task 12a) |
 | 2026-10-10 | 11, 11b | gateway wiring, session binding by paired identity, isolation tests, text-only errors, live evidence on v14 | ## 2026-10-10 — Gateway wiring, session binding and isolation (tasks 11, 11b) |

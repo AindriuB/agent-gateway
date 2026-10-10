@@ -20,10 +20,9 @@ in the same commit.
 ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
 
 The tool-pack foundation is implemented on local branches and integrated in the
-20f tree. This entry records implementation and verification, **not merged or
-merged completion**. Andrew subsequently approved the source uploads, live
+20f tree. This entry records implementation and verification, **not completion of every review or live acceptance check**. Andrew subsequently approved the source uploads, live
 v14 checks and Hello Pack installation. The task PRs are published for review;
-installation and live pack acceptance remain open. Preserve the task files and worktrees;
+installation is now verified, while live pack acceptance remains open. Preserve the task files and worktrees;
 do not archive them while acceptance, publication and review remain open.
 
 | Task | Verified local commit | Independent verification | Review / live evidence |
@@ -44,15 +43,15 @@ journal stamping to HTML text pages (`text.format === 1`), requires ownership
 of both page and journal, escapes appended text, awaits snapshots and forwards
 audit mutation options.
 
-Publication state: contract PR #42 (`08c8325`) is published, not merged. Local
+Publication state: contract PR #42 (`08c8325`) and runtime-rules PR #43
+(`5790043`) are now merged. Local
 20c incorporates its contract corrections and necessary cycle-breaking scope
 amendments. After Andrew explicitly approved the upload, runtime-rules PR #43
 was updated and its remote head verified as
-`57900438e3777d120903fde309cd0c490bc96795`; it is not merged. Andrew then explicitly approved the remaining publication: 20c is PR #44
+`57900438e3777d120903fde309cd0c490bc96795`; it was subsequently merged. Andrew then explicitly approved the remaining publication: 20c is PR #44
 (`ca82e63`), 20d PR #45 (`669672e`), 20e PR #46 (`438e447`) and 20f PR #47
 (verified head `dfd8a04481780afa885d3b9317cb82625d7a4105`). All are attached
-and none is merged. This recording branch is being published separately for
-review. Every implementation still lands through
+and PRs #44–47 remain open. Record PR #48 is published separately for review. Every implementation still lands through
 its own PR to `main`, reviewed by Andrew; predecessor commits identify the
 per-task review boundary.
 
@@ -63,22 +62,33 @@ SHA-256: `282e5bff8cc0b4a3adf0b39e0f97cf33f85f64b9e8ceaa1e7459de045da989e5`.
 This supersedes the earlier delivery-approval block and older deployed bundle's
 `WORLD_OFFLINE`; neither is a remaining blocker or evidence against this bundle.
 
-The genuine Foundry v14.369 browser runtime `game.modules` probe confirmed
+Before installation, the genuine Foundry v14.369 browser runtime `game.modules` probe confirmed
 `agent-gateway-hello-pack`: installed `false`, active `false`, version `null`.
 The manifest URL also returned 404. No enabled/disabled pack acceptance run is
 claimed; absence alone is not an enabled-to-disabled lifecycle test.
 
-After Andrew approved installation, delivery to both configured homelab SSH
-destinations failed hostname resolution, including an escalated attempt. No
-remote files changed. The local archive
-`/private/tmp/agent-gateway-hello-pack.tar.gz` was verified to contain the four
-expected module files; this establishes packaging only, not installation.
-Andrew has not enabled the pack or relaunched the world.
+After Andrew approved installation, the Mac delivery initially failed configured
+homelab SSH hostname resolution, including an escalated attempt. A remote chat
+subsequently installed Hello Pack at
+`/srv/data/foundry/data/Data/modules/agent-gateway-hello-pack` from commit
+`dfd8a04481780afa885d3b9317cb82625d7a4105`: all four files were byte-exact and
+the manifest returned HTTP 200 with the expected content. No core, world or
+admin settings were changed. This supersedes the installation/DNS blocker;
+it does not establish discovery or activation in Foundry's current runtime.
 
-Pending live pack work: resolve the configured SSH destination, install and
-activate Hello Pack, run
-`AGENT_GATEWAY_E2E_HELLO_PACK=1`, then have Andrew disable it and relaunch for
-`AGENT_GATEWAY_E2E_HELLO_PACK=disabled`. Foundry v13 evidence remains pending
+Conflict reconciliation incorporated updated main `e29a823` and predecessor
+merge heads 20c `2c87d9e`, 20d `414b6c2`, 20e `fd41b8e`, 20f `5f63eba`.
+Original test evidence above belongs to the original source heads. The final
+20f post-merge gate passed at `5f63eba463800919369cee9a066144b099089d1b`:
+2,335 fast and 2,227 slow tests; its runtime source is byte-identical to the
+previously reviewed `dfd8a04`. No runtime code was changed by
+the recording branch's reconciliation. Its final full `npm run verify` passed
+with 2,335 fast and 2,227 slow tests after all predecessor gates.
+
+Pending live pack work: Andrew must relaunch through setup so Foundry discovers
+the installed module, enable it and run `AGENT_GATEWAY_E2E_HELLO_PACK=1`, then
+disable it and relaunch for `AGENT_GATEWAY_E2E_HELLO_PACK=disabled`. No real
+enabled/disabled live pack pass is claimed. Foundry v13 evidence remains pending
 its instance.
 No task files were moved and no worktrees were removed.
 
