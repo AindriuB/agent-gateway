@@ -1,0 +1,56 @@
+# Testing a pack
+
+Start offline: validate every definition with `checkToolDefinition(def, 'pack')`
+from `@agent-gateway/protocol`, passing the full namespaced name and pack
+metadata. Test each handler with a frozen context and bounded arguments. A
+handler test should inspect the result's structured schema and permission
+behavior, not only its text.
+
+For a write handler, provide spies for `snapshot`, `created`, `intendCreate`
+and document mutation methods. Verify the correct calling user's permissions,
+that a snapshot completes before an update/delete, and that mutations receive
+`callOptions`. Test non-owners, missing documents and hostile text. Approval
+alone must not make a non-owner able to modify a document.
+
+Use the hello pack's tests under `module/test/packs/example/` as the integration
+reference: import the actual ESM module with stubbed Foundry globals, register
+through the real public API and dispatch through the shared pipeline. Test that
+a disabled module registers nothing, a write reaches approval, and
+`hello-dice_odds` for two six-sided dice at target seven returns `21/36`.
+
+```sh
+npx vitest run --project module module/test/packs/example
+npx eslint examples
+npm run verify
+```
+
+## Live example checks
+
+Link the standalone `examples/hello-pack` module into the Foundry test data
+modules directory, enable it alongside Agent Gateway in `test-world`, and
+relaunch the world so Foundry discovers it. The pack has plain ESM JavaScript
+and needs no build. Core changes still need `npm run build`.
+
+Follow [the e2e guide](../testing.md) for credentials, fixtures, browser setup and
+the one-time headed pairing. The human types pairing codes. Keep environment
+settings and pairing state outside the repository; never attach tokens or
+credential dumps to test evidence.
+
+```sh
+AGENT_GATEWAY_E2E_HELLO_PACK=1 npm run test:e2e
+```
+
+The live pack suite is `e2e/packs/hello-pack.e2e.test.ts`. Enabled mode checks the
+player tool list contains both tools with gateway provenance and calls the
+pure dice tool. It does not mutate a journal. Disable the pack, relaunch the
+world, then check absence:
+
+```sh
+AGENT_GATEWAY_E2E_HELLO_PACK=disabled npm run test:e2e
+```
+
+Without the variable, pack checks skip with a message naming it. Normal e2e
+prerequisites still apply. Record Foundry version, test command and pass/skip
+result; mark v13 pending while its instance is unavailable. Unit checks do not
+replace these live checks. The example pack is not published or bundled by
+this workflow.
