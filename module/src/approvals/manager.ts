@@ -259,6 +259,27 @@ export class ApprovalManager {
     );
   }
 
+  /** Approval cannot preserve privileges the requester has since lost. */
+  private async resumeApproved(
+    ctx: OpContext,
+    next: () => Promise<DispatchResult>,
+  ): Promise<DispatchResult> {
+    const user = this.env.user(ctx.user.id);
+    if (!user) {
+      return { error: { code: 'FORBIDDEN', message: 'The requesting user no longer exists' } };
+    }
+    const def = (this.opts.tools ?? TOOLS).find((d) => d.name === ctx.tool);
+    if (!def) {
+      return { error: { code: 'TOOL_NOT_FOUND', message: `Unknown tool "${ctx.tool}"` } };
+    }
+    if (def.minRole === 'gm' && !user.isGM) {
+      return { error: { code: 'FORBIDDEN', message: `Tool "${ctx.tool}" requires a GM` } };
+    }
+    ctx.user = { id: user.id, isGM: user.isGM };
+    ctx.approved = true;
+    return next();
+  }
+
   /** Run the handler for an approved call, after checking it is the very call that was approved. */
   private async executeApproved(
     r: ApprovalRecord,
@@ -269,9 +290,8 @@ export class ApprovalManager {
     if (!this.bindsTo(r, ctx)) {
       res = { error: { code: 'DENIED', message: this.env.t('AGENT_GATEWAY.Approvals.mismatch') } };
     } else {
-      ctx.approved = true;
       try {
-        res = await next();
+        res = await this.resumeApproved(ctx, next);
       } catch (err) {
         console.error('agent-gateway | approved call failed', err);
         res = { error: { code: 'INTERNAL', message: `Tool "${ctx.tool}" failed unexpectedly` } };
@@ -303,8 +323,7 @@ export class ApprovalManager {
       };
     }
     if (now0.kind === 'allow' || this.hasGrant(ctx, now0.approver)) {
-      ctx.approved = true;
-      return next();
+      return this.resumeApproved(ctx, next);
     }
 
     const open = [...this.records.values()].filter(
