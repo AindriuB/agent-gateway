@@ -3,8 +3,8 @@
 The core remains free and MIT-licensed. Each pack is a separate module, free or
 paid at its author's choice. A pack declares `agent-gateway` in
 `relationships.requires`; the core never requires, recommends by manifest or
-bundles a paid pack. The example is MIT-licensed and excluded from the core
-release bundle. Core code performs no licensing checks or DRM; a pack author
+bundles a paid pack. The example is MIT-licensed; the release packaging contract excludes it from
+the core bundle (the release builder is a later task). Core code performs no licensing checks or DRM; a pack author
 owns distribution and access control. The core does not require obfuscation.
 
 ## Primary sources checked 2026-10-10

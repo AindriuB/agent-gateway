@@ -11,7 +11,8 @@ Start with [the hello pack](../../examples/hello-pack/README.md), then read the
 pack. [Versioning](versioning.md) describes compatibility; [distribution](distribution.md)
 covers the separate publishing responsibilities.
 
-The example provides `hello-dice_odds`, a pure read tool, and
-`hello-journal_stamp`, an owned-journal write tool. It is a standalone example,
-not part of the core release bundle. Enabling a pack means trusting its author
+The example provides `hello-dice_odds`, a pure read tool with 1–20 dice, 2–100 sides and an integer target of 1–2001,
+and `hello-journal_stamp`, an owned-journal write tool for HTML text pages
+(`text.format === 1`). It is a standalone example,
+excluded from the core release packaging contract. Enabling a pack means trusting its author
 with the same browser access as any other Foundry module.

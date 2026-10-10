@@ -9,7 +9,9 @@ behavior, not only its text.
 For a write handler, provide spies for `snapshot`, `created`, `intendCreate`
 and document mutation methods. Verify the correct calling user's permissions,
 that a snapshot completes before an update/delete, and that mutations receive
-`callOptions`. Test non-owners, missing documents and hostile text. Approval
+`callOptions`. Test non-owners, missing documents, hostile text and a non-HTML text page
+(`text.format !== 1`). The hello pack refuses that page rather than appending
+HTML to a different text format. Approval
 alone must not make a non-owner able to modify a document.
 
 Use the hello pack's tests under `module/test/packs/example/` as the integration
@@ -52,5 +54,7 @@ AGENT_GATEWAY_E2E_HELLO_PACK=disabled npm run test:e2e
 Without the variable, pack checks skip with a message naming it. Normal e2e
 prerequisites still apply. Record Foundry version, test command and pass/skip
 result; mark v13 pending while its instance is unavailable. Unit checks do not
-replace these live checks. The example pack is not published or bundled by
+replace these live checks. Enabled/disabled live results require the exact built
+core and gateway versions under review, plus installing and activating this
+example in the test world; a default-mode skip is not that evidence. The example pack is not published or bundled by
 this workflow.

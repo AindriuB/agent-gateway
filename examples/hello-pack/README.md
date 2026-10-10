@@ -5,9 +5,12 @@ Install this directory as `Data/modules/agent-gateway-hello-pack`, enable Agent
 Gateway and Hello Pack in your world, and relaunch the world.
 
 `hello-dice_odds` computes the probability of a sum at least a target for up to
-20 dice with 2–100 sides. `hello-journal_stamp` appends an escaped timestamped
-line to a text page owned by the calling user; it requires normal write approval
+20 dice with 2–100 sides and an integer target from 1 to 2001. `hello-journal_stamp` appends an escaped timestamped
+line of 1–2000 characters to an HTML text page (`text.format === 1`); both the
+page and its parent journal must be owned by the calling user. Non-HTML text
+pages are refused. The tool requires normal write approval
 and records the snapshot for audit and undo. Audit journals are refused.
 
-The core release ZIP excludes this directory. See [the pack API](../../docs/packs/api.md)
+The core release packaging contract excludes this directory; the release
+builder is a later task. See [the pack API](../../docs/packs/api.md)
 and [testing guide](../../docs/packs/testing.md) before adapting it.

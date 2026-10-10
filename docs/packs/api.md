@@ -33,7 +33,7 @@ Hooks.once('agentGateway.registerPacks', (api) => {
           required: ['greeting'],
           additionalProperties: false,
         },
-        handler: (ctx) => ({ text: 'Hello.', structured: { greeting: 'Hello.' } }),
+        handler: () => ({ text: 'Hello.', structured: { greeting: 'Hello.' } }),
       },
     ],
   });
@@ -75,7 +75,8 @@ registers no tools. Registration refuses collisions instead of replacing tools.
 | `created(uuid, parent?)` | When present, await after creating a document                           |
 | `intendCreate(parent?)`  | When present, await before creating documents                           |
 
-The view is frozen and never the live operation context. Audit helpers are
+The view is deeply frozen and never the live operation context. Arguments and
+audit call options are detached JSON copies; user and agent are minimal copies. Audit helpers are
 bound forwarding functions and can be absent when audit did not install them.
 A write handler should refuse to mutate if it requires audit helpers that are
 absent. Check document permissions using `ctx.user.id`; approval does not grant
@@ -85,7 +86,10 @@ GM witness can correlate the server-set user and mutation hooks.
 ## Results and errors
 
 Return `{text: string, structured: object}`. Both representations are required;
-structured data must validate against `outputSchema`. Return plain useful text
+structured data must validate against `outputSchema`. Results are detached
+through JSON serialization before validation; serialization failures are invalid.
+Top-level output defaults are applied, and the structured byte cap is checked
+again afterward. Return plain useful text
 and escaped display content where appropriate. Invalid results become
 `INTERNAL` with a pack-identifying message and a logged reason. A thrown
 handler affects that call; other tools remain usable.
