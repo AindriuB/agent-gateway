@@ -326,12 +326,10 @@ it('reads completed targets from the server before a different GM retries a part
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   const w = world();
   const bDoc = w.store.add(writable('Actor.B', { name: 'After B' }, 10, w.store));
-  w.server
-    .get(w.initial.id)
-    .system.targets.push({
-      ...target({ uuid: bDoc.uuid }),
-      before: JSON.stringify({ name: 'Before B' }),
-    });
+  w.server.get(w.initial.id).system.targets.push({
+    ...target({ uuid: bDoc.uuid }),
+    before: JSON.stringify({ name: 'Before B' }),
+  });
   const a = w.client('gm1');
   const b = w.client('gm2');
   const original = w.doc.update;
