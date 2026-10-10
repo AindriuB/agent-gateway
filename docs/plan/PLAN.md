@@ -11,12 +11,14 @@ than no plan.
 
 ## Now
 
-### Wave 4 status
-Wave 4 is complete: tasks 09 (world read tools, PR #25), 10 (compendium and chat read tools, PR #26), 11 (wiring and isolation, PR #24) and 11b (implicit binding, PR #27) are merged. Nothing is in flight. Next is task 12 (the e2e harness), which should reuse the `ag-test-*` fixtures and the seed and clean scripts on the Mac.
+### Wave 4 and task 12 status
+Wave 4 is complete (tasks 09, 10, 11, 11b), and task 12 is complete: 12a (PR #30, harness and single-user flows) and 12b (PR #31, multi-user suites) are merged. Nothing is in flight. Next is wave 5, starting with task 13 (the policy engine).
 
 ### Testing topology and prerequisites
-- Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). The Mac test bed is now a new session. Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
-- Task 12 (e2e harness) must read Foundry test credentials from `~/.config/agent-gateway/test.env` (`FOUNDRY_URL`, `FOUNDRY_USER`, `FOUNDRY_PASSWORD`; mode 600, outside the repo). It should log in once and reuse Playwright `storageState`, because Claude agents decline to type passwords into non-localhost logins. Test user is `dev-gm` (GM role) in `test-world`.
+- Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
+- The test-world users are dev-gm (GM), player1 and Player2 (user names are case-sensitive). The test users have no password; the per-user `FOUNDRY_{GM,PLAYER,PLAYER2}_PASSWORD` variables are optional.
+- Pairing is a one-time headed `npm run test:e2e:setup` in which Andrew types each pairing code; the harness never types one. State lives in `~/.config/agent-gateway/e2e/`.
+- After setup the Mac runs `npm run test:e2e` unattended, under an exact allow rule from Andrew in its auto mode.
 - A newly linked module only appears after `test-world` is relaunched from the setup screen (admin key, Andrew only).
 - **Prerequisite still open:** homelab Foundry v13 instance, needed for the v13 test evidence every PR owes.
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
@@ -93,5 +95,12 @@ Wave 4 is complete: tasks 09 (world read tools, PR #25), 10 (compendium and chat
 - Name-collision denial of service on `--user <name>`: bind by id instead.
 - Task 36 must prove the claimed identity at pairing per spike 10b, and must add pairing revocation (11b already ignores revoked pairings).
 - v13 evidence is still pending for 09, 10 and 11.
+
+### Follow-ups from task 12
+- The summary JSON should include the run duration and the e2e-unit count.
+- The seed counts do not list Tokens.
+- The roles suite takes about 44 s because of per-role gateway restarts.
+- Lint e2e with `npx eslint e2e`; `scripts/` holds only .sh files, so `npx eslint e2e scripts` no longer applies.
+- v13 is still pending for all e2e suites.
 
 ## Someday
