@@ -17,16 +17,23 @@
     "lint": "eslint . && prettier --check \"*.{js,ts,json}\" \"{protocol,module,gateway,lang,styles,docs}/**/*.{ts,json,css}\" \"!**/dist/**\" \"!docs/plan/**\" \"!**/package-lock.json\"",
     "test": "vitest run --passWithNoTests --project protocol --project module --project gateway",
     "test:slow": "vitest run --passWithNoTests --project module-slow",
-    "verify": "npm run build && npm run lint && npm test && npm run test:slow"
+    "verify": "npm run build && npm run lint && npm test && npm run test:slow",
+    "test:e2e": "scripts/e2e.sh run",
+    "test:e2e:setup": "scripts/e2e.sh setup",
+    "test:e2e:seed": "scripts/e2e.sh seed",
+    "test:e2e:clean": "scripts/e2e.sh clean"
   },
   "allowScripts": {
     "fsevents": true
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
     "eslint": "^10.12.0",
+    "playwright-core": "^1.64.0",
     "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.4",
