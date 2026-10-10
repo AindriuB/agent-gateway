@@ -57,7 +57,17 @@ export interface EnvUser {
 }
 
 /** Everything the manager needs from Foundry, so tests can run several clients side by side. */
+export type PolicyNow =
+  { kind: 'allow' } | { kind: 'deny' } | { kind: 'ask'; approver: ApproverClass };
+
 export interface ApprovalEnv {
+  /** The policy's current decision for a call like this one, from the requester's current role. */
+  currentDecision(f: {
+    requesterId: string;
+    headless: boolean;
+    category: string;
+    approver: ApproverClass;
+  }): PolicyNow;
   localUser(): EnvUser | undefined;
   user(id: string): EnvUser | undefined;
   users(): EnvUser[];

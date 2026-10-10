@@ -56,6 +56,7 @@
       "expired": "The approval request expired before anyone answered.",
       "tooMany": "Too many approvals are already pending for this agent. Wait for them to be answered.",
       "notFound": "No approval with that id exists for this agent.",
+      "policyChanged": "The policy changed since the request was made.",
       "mismatch": "The approved call no longer matches the request, so it was not run.",
       "statusPending": "Approval {id} is still pending.",
       "statusApproved": "Approval {id} was approved. Result: {result}",

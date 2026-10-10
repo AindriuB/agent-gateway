@@ -16,7 +16,9 @@ export const APPROVAL_CONFIG = {
   MAX_INBOX_PER_SENDER: 20,
   /** Longest reason, and longest stored handler result text. */
   MAX_REASON_CHARS: 500,
-  MAX_RESULT_CHARS: 100_000,
+  MAX_RESULT_CHARS: 20_000,
+  /** Total size of the stored queue; the oldest resolved records are dropped beyond it. */
+  MAX_STORE_CHARS: 1_000_000,
 } as const;
 
 /** The module socket channel. */

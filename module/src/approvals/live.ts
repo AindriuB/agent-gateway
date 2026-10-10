@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { evaluate } from '../policy/evaluate.js';
+import { CATEGORIES, type Category } from '../policy/matrix.js';
+import { liveInputs } from '../policy/stage.js';
 import { getLinkClient } from '../link/runtime.js';
 import { APPROVAL_CHANNEL } from './config.js';
 import { ApprovalManager } from './manager.js';
@@ -18,6 +21,19 @@ const toUser = (u: any): EnvUser | undefined =>
 
 export function liveEnv(): ApprovalEnv {
   return {
+    currentDecision: (f) => {
+      const u = toUser(game.users?.get(f.requesterId));
+      if (!u || !(CATEGORIES as readonly string[]).includes(f.category)) return { kind: 'deny' };
+      const v = evaluate(liveInputs(), {
+        isGM: u.isGM,
+        headless: f.headless,
+        category: f.category as Category,
+      });
+      if (v.kind === 'disabled' || v.decision === 'deny') return { kind: 'deny' };
+      return v.decision === 'allow'
+        ? { kind: 'allow' }
+        : { kind: 'ask', approver: v.decision === 'ask_gm' ? 'gm' : 'owner' };
+    },
     localUser: () => toUser(game.user),
     user: (id) => toUser(game.users?.get(id)),
     users: () => [...(game.users?.contents ?? [])].map(toUser).filter((u): u is EnvUser => !!u),

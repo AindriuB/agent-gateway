@@ -26,6 +26,15 @@ export interface Client {
  */
 export class Hub {
   now = 1_000_000;
+  /** What the policy says now; by default the same as when the request was made. */
+  policyNow:
+    | ((f: {
+        requesterId: string;
+        headless: boolean;
+        category: string;
+        approver: 'owner' | 'gm';
+      }) => { kind: 'allow' } | { kind: 'deny' } | { kind: 'ask'; approver: 'owner' | 'gm' })
+    | undefined;
   /** The tool registry approver clients use to classify requests. */
   tools: readonly ToolDefinition[] | undefined;
   private held: Array<() => void> | undefined;
@@ -44,7 +53,13 @@ export class Hub {
 
   client(
     id: string,
-    opts: { waitMs?: number; storage?: { text: string }; random?: (n: number) => Uint8Array } = {},
+    opts: {
+      waitMs?: number;
+      storage?: { text: string };
+      random?: (n: number) => Uint8Array;
+      /** Make every save throw, as a full localStorage does. */
+      saveThrows?: boolean;
+    } = {},
   ): Client {
     const user = this.users.get(id)!;
     const hooks: Client['hooks'] = [];
@@ -56,13 +71,18 @@ export class Hub {
       active: u.online,
     });
     const env: ApprovalEnv = {
+      currentDecision: (f) =>
+        this.policyNow ? this.policyNow(f) : { kind: 'ask', approver: f.approver },
       localUser: () => view(user),
       user: (uid) => (this.users.has(uid) ? view(this.users.get(uid)!) : undefined),
       users: () => [...this.users.values()].map(view),
       emit: (data, recipients) => this.deliver(id, data, recipients),
       callHook: (name, payload) => hooks.push({ name, payload }),
       load: () => storage.text,
-      save: (t) => void (storage.text = t),
+      save: (t) => {
+        if (opts.saveThrows) throw new Error('QuotaExceededError');
+        storage.text = t;
+      },
       now: () => this.now,
       setTimer: (fn, ms) => {
         const t = { at: this.now + ms, fn, id: this.nextTimer++ };

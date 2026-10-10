@@ -138,8 +138,30 @@ export class ApprovalManager {
     } catch {
       // Unreadable storage is replaced.
     }
-    all[me] = sorted;
-    void Promise.resolve(this.env.save(JSON.stringify(all))).catch(() => undefined);
+    // Storage is a convenience and must never break the flow: keep it small (oldest resolved
+    // records go first) and treat any failure to write, synchronous or not, as non-fatal.
+    let text = '';
+    for (;;) {
+      all[me] = sorted;
+      text = JSON.stringify(all);
+      if (text.length <= CFG.MAX_STORE_CHARS) break;
+      const drop = sorted.find((r) => r.status !== 'pending');
+      if (!drop) break;
+      this.records.delete(drop.id);
+      sorted.splice(sorted.indexOf(drop), 1);
+    }
+    try {
+      void Promise.resolve(this.env.save(text)).catch((err) => this.saveFailed(err));
+    } catch (err) {
+      this.saveFailed(err);
+    }
+  }
+
+  private saveWarned = false;
+  private saveFailed(err: unknown): void {
+    if (this.saveWarned) return;
+    this.saveWarned = true;
+    console.error('agent-gateway | could not save the approval queue to client storage', err);
   }
 
   // ---- records --------------------------------------------------------------------------
@@ -210,6 +232,18 @@ export class ApprovalManager {
     return JSON.stringify([ctx.user.id, ctx.agent.id, ctx.sessionId, ctx.tool]);
   }
 
+  /** What the policy says about this call right now; the stricter approver of old and new. */
+  private currentDecision(
+    requesterId: string,
+    headless: boolean,
+    category: string,
+    approver: ApproverClass,
+  ): { kind: 'allow' } | { kind: 'deny' } | { kind: 'ask'; approver: ApproverClass } {
+    const now = this.env.currentDecision({ requesterId, headless, category, approver });
+    if (now.kind === 'ask' && approver === 'gm') return { kind: 'ask', approver: 'gm' };
+    return now;
+  }
+
   private hasGrant(ctx: OpContext, approver: ApproverClass): boolean {
     const level = this.grants.get(this.grantKey(ctx));
     return level === 'gm' || (level === 'owner' && approver === 'owner');
@@ -260,7 +294,15 @@ export class ApprovalManager {
     this.expireDue();
     const hash = callHash(ctx.tool, ctx.args);
 
-    if (this.hasGrant(ctx, approval.approver)) {
+    // A session grant is only as good as today's policy: a call the policy now denies is refused,
+    // and one it now sends to a GM needs a grant a GM gave.
+    const now0 = this.currentDecision(ctx.user.id, ctx.agent.headless, category, approval.approver);
+    if (now0.kind === 'deny') {
+      return {
+        error: { code: 'DENIED', message: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') },
+      };
+    }
+    if (now0.kind === 'allow' || this.hasGrant(ctx, now0.approver)) {
       ctx.approved = true;
       return next();
     }
@@ -347,6 +389,24 @@ export class ApprovalManager {
       return false;
     }
     if (o.decision !== 'approve' && o.decision !== 'deny') return false;
+    if (o.decision === 'approve') {
+      // The request may have waited a long time. Judge it by today's policy, not the old one.
+      const cur = this.env.currentDecision({
+        requesterId: r.requesterId,
+        headless: r.headless,
+        category: r.category,
+        approver: r.approver,
+      });
+      if (cur.kind === 'deny') {
+        o = { decision: 'deny', reason: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') };
+      } else if (cur.kind === 'ask' && cur.approver === 'gm' && !who.isGM) {
+        // It now needs a GM and only the owner approved: do not run it, ask the GMs instead.
+        r.approver = 'gm';
+        this.persist();
+        this.sendRequest(r, this.recipients(r));
+        return false;
+      }
+    }
     const waiter = this.waiters.get(r.id);
     // Only a call that is waiting in this page session can be run; nothing is run from storage.
     if (o.decision === 'approve' && !waiter) return false;
