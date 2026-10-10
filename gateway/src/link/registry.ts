@@ -38,6 +38,8 @@ export class LinkConnection {
     readonly worldId: string,
     readonly userId: string,
     private readonly transport: LinkTransport,
+    /** What the module reported in `hello`; display and tool-list hints only, never authority. */
+    readonly info: { userName: string; isGM: boolean } = { userName: '', isGM: false },
   ) {}
 
   call(

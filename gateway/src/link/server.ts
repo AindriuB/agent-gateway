@@ -200,10 +200,17 @@ export class LinkServer {
       agentId = row.id;
     }
     const connectionId = randomUUID();
-    const conn = new LinkConnection(connectionId, agentId, hello.world.id, hello.user.id, {
-      send: (d) => ws.send(d),
-      close: () => ws.close(1000, 'replaced'),
-    });
+    const conn = new LinkConnection(
+      connectionId,
+      agentId,
+      hello.world.id,
+      hello.user.id,
+      {
+        send: (d) => ws.send(d),
+        close: () => ws.close(1000, 'replaced'),
+      },
+      { userName: hello.user.name, isGM: hello.user.isGM },
+    );
     send({
       type: 'welcome',
       gatewayVersion: this.opts.gatewayVersion,

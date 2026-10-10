@@ -89,6 +89,8 @@ export class LinkClient {
   private resumeMode: 'code' | 'token' | null = null;
   private codeRejected = false;
   private listeners = new Set<(s: LinkState) => void>();
+  /** The agent id the gateway assigned in `welcome`; null until connected. */
+  agentId: string | null = null;
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
   onCall: CallHandler | null = null;
@@ -304,6 +306,7 @@ export class LinkClient {
         this.clearCode();
         this.codeRejected = false;
         this.attempt = 0;
+        this.agentId = msg.agentId;
         const id = this.deps.getIdentity();
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
         break;

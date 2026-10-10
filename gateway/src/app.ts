@@ -1,8 +1,20 @@
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
+import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
-import { createMcpServer } from './mcp/index.js';
+import { createSessionServer } from './mcp/session.js';
+import type { UserSelector } from './routing/index.js';
+import { openStore, type Store } from './store/index.js';
+
+export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
+
+export function defaultDbPath(): string {
+  return join(homedir(), '.foundry-agent-gateway', 'gateway.db');
+}
 
 export interface ModuleConnection {
   readonly worldId: string;
@@ -14,7 +26,7 @@ export interface ModuleConnections {
   any(): ModuleConnection | undefined;
 }
 
-/** Empty implementation; replaced when the link server lands. */
+/** Kept for the pre-routing server in mcp/server.ts; the app itself routes through the link registry. */
 export class EmptyModuleConnections implements ModuleConnections {
   get(): undefined {
     return undefined;
@@ -31,23 +43,57 @@ export interface App {
 
 export interface AppDeps {
   version: string;
-  connections?: ModuleConnections;
   logger?: Logger;
+  /** Which connected Foundry user the MCP session binds to; omitted means "the only one". */
+  selector?: UserSelector;
+  /** Exact `Origin` values the link accepts; defaults to a local Foundry on port 30000. */
+  allowedOrigins?: readonly string[];
+  dbPath?: string;
+  /** Where the pairing code line goes; defaults to stderr (stdout carries MCP). */
+  writeStatus?: (line: string) => void;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
   const logger = deps.logger ?? createLogger(config.logLevel);
-  const connections = deps.connections ?? new EmptyModuleConnections();
+  const writeStatus = deps.writeStatus ?? ((l: string) => void process.stderr.write(`${l}\n`));
   let server: Server | undefined;
+  let link: LinkServer | undefined;
+  let store: Store | undefined;
   return {
     async start() {
-      server = createMcpServer({ version: deps.version, role: config.role, connections });
+      const dbPath = deps.dbPath ?? defaultDbPath();
+      if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+      store = openStore(dbPath);
+      const registry = new LinkRegistry();
+      const codes = new PairingCodes();
+      link = new LinkServer({
+        port: config.linkPort,
+        store,
+        codes,
+        registry,
+        allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
+        gatewayVersion: deps.version,
+      });
+      const port = await link.listen();
+      writeStatus(
+        `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`,
+      );
+      writeStatus(`Link URL: ws://localhost:${port}`);
+      server = createSessionServer({
+        version: deps.version,
+        registry,
+        ...(deps.selector ? { selector: deps.selector } : {}),
+      });
       await server.connect(new StdioServerTransport());
-      logger.info(`MCP stdio server started (role ${config.role})`);
+      logger.info(`MCP stdio server started`);
     },
     async stop() {
       await server?.close();
       server = undefined;
+      await link?.close();
+      link = undefined;
+      store?.close();
+      store = undefined;
     },
   };
 }
