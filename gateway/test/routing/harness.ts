@@ -5,7 +5,7 @@ import { defineTool, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import { expect } from 'vitest';
 import { z } from 'zod';
 import { createSessionServer } from '../../src/mcp/session.js';
-import type { UserSelector } from '../../src/routing/index.js';
+import type { ToolsetStore, UserSelector } from '../../src/routing/index.js';
 import { TestClient, ORIGIN, type Harness } from '../link/helpers.js';
 
 export const fixtureTool = defineTool({
@@ -115,7 +115,11 @@ export async function openSession(
   selector: UserSelector = {},
   tools: readonly ToolDefinition[] = [fixtureTool, gmFixtureTool],
   callTimeoutMs = 5000,
-  extra: { log?: (line: string) => void; listChangedIntervalMs?: number } = {},
+  extra: {
+    log?: (line: string) => void;
+    listChangedIntervalMs?: number;
+    toolsets?: ToolsetStore;
+  } = {},
 ): Promise<McpSession> {
   const server = createSessionServer({
     version: '0.0.0',
