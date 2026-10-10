@@ -454,6 +454,13 @@ export class ApprovalManager {
     return true;
   }
 
+  /** Every record this client made, newest last (a copy). */
+  ownRecords(): ApprovalRecord[] {
+    this.ensureLoaded();
+    this.expireDue();
+    return [...this.records.values()].map((r) => structuredClone(r));
+  }
+
   /** Requests waiting for this user's answer: their own, and those relayed by others. */
   listPending(): Array<ApprovalRequestPayload & { requesterId: string; local: boolean }> {
     this.ensureLoaded();
