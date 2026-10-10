@@ -16,7 +16,7 @@
     "build": "npm run build -w protocol && npm run build -w module && npm run build -w gateway",
     "lint": "eslint . && prettier --check \"*.{js,ts,json}\" \"{protocol,module,gateway,lang,styles,docs}/**/*.{ts,json,css}\" \"!**/dist/**\" \"!docs/plan/**\" \"!**/package-lock.json\"",
     "test": "vitest run --passWithNoTests --project protocol --project module --project gateway",
-    "test:slow": "vitest run --passWithNoTests --project module-slow",
+    "test:slow": "vitest run --passWithNoTests --project module-slow --project protocol-slow",
     "verify": "npm run build && npm run lint && npm test && npm run test:slow",
     "test:e2e": "scripts/e2e.sh run",
     "test:e2e:setup": "scripts/e2e.sh setup",
