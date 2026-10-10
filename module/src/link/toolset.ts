@@ -1,3 +1,4 @@
+import { LINK_AGENT_HEADLESS } from './bridge.js';
 import type { LinkClient } from './client.js';
 import { evaluate, type PolicyInputs } from '../policy/evaluate.js';
 import {
@@ -72,9 +73,10 @@ export class ToolsetAnnouncer {
 export function policyDenies(
   inputs: () => PolicyInputs,
   isGM: () => boolean,
+  headless: boolean = LINK_AGENT_HEADLESS,
 ): (category: ToolCategory) => boolean {
   return (category) => {
-    const v = evaluate(inputs(), { isGM: isGM(), headless: false, category });
+    const v = evaluate(inputs(), { isGM: isGM(), headless, category });
     return v.kind === 'disabled' || v.decision === 'deny';
   };
 }

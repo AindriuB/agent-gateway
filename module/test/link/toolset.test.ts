@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { defineTool, TOOLS, toolsForRole, parseLinkMessage } from '@agent-gateway/protocol';
-import { installBridge } from '../../src/link/bridge.js';
+import { LINK_AGENT_HEADLESS, installBridge } from '../../src/link/bridge.js';
 import { LinkClient } from '../../src/link/client.js';
 import {
   ToolsetAnnouncer,
@@ -306,5 +306,37 @@ describe('installToolsetAnnouncer on a real client', () => {
     sock.recv(welcome);
     await flush();
     expect(sock.sent.filter((m) => m.type === 'toolset')).toHaveLength(2);
+  });
+});
+
+describe('headless', () => {
+  it('a headless agent with headlessAgentsEnabled off gets an empty set', () => {
+    const base: PolicyInputs = {
+      world: {
+        playerAgents: { read: 'allow', write: 'allow', destructive: 'allow', code: 'ask_owner' },
+        gmAgents: { read: 'allow', write: 'allow', destructive: 'allow', code: 'ask_owner' },
+      },
+      owner: {
+        playerAgents: { read: 'allow', write: 'allow', destructive: 'allow', code: 'ask_owner' },
+        gmAgents: { read: 'allow', write: 'allow', destructive: 'allow', code: 'ask_owner' },
+      },
+      playerAgentsEnabled: true,
+      headlessAgentsEnabled: false,
+    };
+    const set = (headless: boolean) =>
+      computeToolset(
+        true,
+        policyDenies(
+          () => base,
+          () => true,
+          headless,
+        ),
+      );
+    expect(set(true)).toEqual([]);
+    expect(set(false).length).toBeGreaterThan(0);
+  });
+
+  it('the listing and the bridge use the same headless value', () => {
+    expect(LINK_AGENT_HEADLESS).toBe(false);
   });
 });

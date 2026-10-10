@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ToolsetStore } from '../../src/routing/index.js';
+import { ToolsetStore, toolsets as sharedToolsets } from '../../src/routing/index.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import {
   expectErrorCode,
@@ -22,13 +22,16 @@ afterEach(async () => {
   h = undefined;
 });
 
+const FIXTURES = ['fixture_tool', 'fixture_gm_tool'];
+sharedToolsets.know(FIXTURES);
+
 const names = async (s: McpSession) => (await s.client.listTools()).tools.map((t) => t.name);
 
 async function start(isGM: boolean, selector: { user?: string } = {}) {
   h = await startServer();
   const m = await pairModule(h, 'uA', { userName: 'alice', isGM });
   modules.push(m);
-  const toolsets = new ToolsetStore();
+  const toolsets = new ToolsetStore(FIXTURES);
   const s = await openSession(h, selector, undefined, 5000, {
     toolsets,
     listChangedIntervalMs: 20,
@@ -117,7 +120,7 @@ describe('ToolsetStore', () => {
     const m = await pairModule(h, 'uA', { userName: 'alice' });
     modules.push(m);
     const conn = h.registry.list()[0]!;
-    const store = new ToolsetStore();
+    const store = new ToolsetStore(['a', 'b']);
     let n = 0;
     store.on('changed', () => n++);
     store.set(conn, ['b', 'a']);
@@ -173,5 +176,18 @@ describe('toolset frames over the real link', () => {
     modules.push(m);
     m.tc.send({ type: 'toolset', tools: 'x' });
     await until(() => m.tc.closed);
+  });
+});
+
+describe('ToolsetStore filtering', () => {
+  it('stores only known tool names, however many unknown ones arrive', async () => {
+    h = await startServer();
+    const m = await pairModule(h, 'uA', { userName: 'alice' });
+    modules.push(m);
+    const conn = h.registry.list()[0]!;
+    const store = new ToolsetStore(['a_tool', 'b_tool']);
+    const junk = Array.from({ length: 10_000 }, (_, i) => `junk_${i}`);
+    store.set(conn, [...junk, 'b_tool', ...junk, 'a_tool']);
+    expect(store.get(conn)).toEqual(['a_tool', 'b_tool']);
   });
 });
