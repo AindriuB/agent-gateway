@@ -39,6 +39,8 @@ export function installFoundry(
   const registeredMenus = new Map<string, any>();
   const values = new Map<string, unknown>();
   const hooks = new Map<string, Array<() => void>>();
+  // Tool tests act as player agents, which are off in a fresh world; policy tests set this explicitly.
+  values.set('agent-gateway.playerAgentsEnabled', true);
   const collection = () => ({ get: () => undefined, contents: [] as unknown[], size: 0 });
 
   g.game = {

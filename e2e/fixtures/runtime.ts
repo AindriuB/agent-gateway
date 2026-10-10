@@ -1,11 +1,11 @@
 /**
  * Page-side code for seed and clean, kept as plain JavaScript source. It is sent to the browser
  * as an expression, so no transpiler helper can leak into it; a unit test runs it against a
- * fake `game`. The argument is `{ mode: 'seed' | 'clean', plan, flagScope, flagKey }` and the
- * result is `{ before, after, totals, uuids }` with per-type flagged and unflagged counts.
+ * fake `game`. The argument is `{ mode: 'seed' | 'clean', plan, flagScope, flagKey, policySetting, restorePlayerAgents? }` and the
+ * result is `{ before, after, totals, uuids, policy }` with per-type flagged and unflagged counts.
  */
 export const FIXTURE_RUNTIME = String.raw`async (arg) => {
-  const { mode, plan, flagScope, flagKey } = arg;
+  const { mode, plan, flagScope, flagKey, policySetting, restorePlayerAgents } = arg;
   if (!game.user.isGM) throw new Error('fixtures must run as a GM user');
   const TYPES = ['Folder', 'JournalEntry', 'ChatMessage', 'Token', 'Drawing', 'Note', 'Wall'];
   const isFlagged = (d) => d.getFlag(flagScope, flagKey) === true;
@@ -33,6 +33,16 @@ export const FIXTURE_RUNTIME = String.raw`async (arg) => {
     return out;
   };
   const before = count();
+  const policy = {};
+  if (mode === 'seed') {
+    // Player agents are off in a fresh world. Read the setting first so a missing module setting
+    // fails the seed with a clear message, then record what was there for clean to restore.
+    try {
+      policy.before = game.settings.get(policySetting.scope, policySetting.key) === true;
+    } catch (e) {
+      throw new Error('the world setting ' + policySetting.scope + '.' + policySetting.key + ' is not registered: rebuild and reload the module (' + e.message + ')');
+    }
+  }
   if (mode === 'seed' && !scene) {
     throw new Error('no active scene: activate a scene in the world first; the seed does not create one');
   }
@@ -95,6 +105,12 @@ export const FIXTURE_RUNTIME = String.raw`async (arg) => {
       }
     }
     uuids.activeScene = scene.uuid;
+    await game.settings.set(policySetting.scope, policySetting.key, true);
+    policy.after = game.settings.get(policySetting.scope, policySetting.key) === true;
   }
-  return { before, after: count(), totals, uuids };
+  if (mode === 'clean' && typeof restorePlayerAgents === 'boolean') {
+    await game.settings.set(policySetting.scope, policySetting.key, restorePlayerAgents);
+    policy.after = game.settings.get(policySetting.scope, policySetting.key) === true;
+  }
+  return { before, after: count(), totals, uuids, policy };
 }`;

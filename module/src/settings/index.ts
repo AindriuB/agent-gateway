@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPairingMenu } from '../apps/pairing/index.js';
+import { registerPolicySettings } from '../policy/store.js';
 declare const game: any;
 
 const NS = 'agent-gateway';
@@ -48,6 +49,7 @@ function registerPairingCredential(): void {
 export const settingRegistrars: Array<() => void> = [registerFoundation];
 
 settingRegistrars.push(registerPairingCredential, registerPairingMenu);
+settingRegistrars.push(registerPolicySettings);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {

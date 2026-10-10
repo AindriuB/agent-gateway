@@ -1,3 +1,4 @@
+import { policyStage } from '../policy/stage.js';
 import type { DispatchResult, OpContext } from './types.js';
 
 /**
@@ -13,3 +14,5 @@ export interface Stage {
 
 /** Later tasks only insert entries here. */
 export const STAGES: Stage[] = [];
+
+STAGES.push(policyStage);

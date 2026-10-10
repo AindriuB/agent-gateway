@@ -4,6 +4,15 @@
  * `flags['agent-gateway'].fixture === true`.
  */
 export const FIXTURE_FLAG_SCOPE = 'agent-gateway';
+/**
+ * The world setting the seed turns on so the player suites are not DENIED (player agents are off
+ * in a fresh world). The seed records the value it found; clean puts it back.
+ */
+export const PLAYER_AGENTS_SETTING = {
+  scope: 'agent-gateway',
+  key: 'playerAgentsEnabled',
+} as const;
+
 export const FIXTURE_FLAG_KEY = 'fixture';
 export const FIXTURE_PREFIX = 'ag-test-';
 /** The player character that player1 speaks as. */

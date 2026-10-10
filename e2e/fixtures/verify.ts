@@ -8,10 +8,16 @@ export interface FixtureResult {
   totals: Record<string, number>;
   /** UUIDs of the documents a player cannot find by searching. */
   uuids: Record<string, string>;
+  /** The playerAgentsEnabled setting around the run: `before` is read by seed; `after` is set when the run changed it. */
+  policy?: { before?: boolean; after?: boolean };
 }
 
 /** Problems found in a seed or clean result; empty means the run did what it promised. */
-export function verifyFixtureResult(mode: 'seed' | 'clean', r: FixtureResult): string[] {
+export function verifyFixtureResult(
+  mode: 'seed' | 'clean',
+  r: FixtureResult,
+  restore?: boolean,
+): string[] {
   const problems: string[] = [];
   const want = expectedFlaggedCounts();
   for (const [type, after] of Object.entries(r.after)) {
@@ -27,6 +33,12 @@ export function verifyFixtureResult(mode: 'seed' | 'clean', r: FixtureResult): s
         `${type}: ${after.flagged} flagged documents after ${mode}, expected ${flagged}`,
       );
     }
+  }
+  if (mode === 'seed' && r.policy?.after !== true) {
+    problems.push('the seed did not leave playerAgentsEnabled on');
+  }
+  if (mode === 'clean' && restore !== undefined && r.policy?.after !== restore) {
+    problems.push(`clean did not restore playerAgentsEnabled to ${restore}`);
   }
   if (mode === 'seed' && typeof r.totals.blindRollTotal !== 'number') {
     problems.push('the blind roll total was not recorded');
