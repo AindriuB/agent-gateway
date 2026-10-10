@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import {
   checkToolDefinition,
+  snapshotToolsetValue,
+  ToolsetMessage,
   TOOL_LIMITS,
   TOOL_NAME_PATTERN,
   type AnnouncedTool,
@@ -11,6 +13,7 @@ import { safeText } from './sanitize.js';
 /** Full definitions, isolated by authenticated link connection. Core authority stays in the session. */
 export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
   private readonly sets = new WeakMap<LinkConnection, readonly AnnouncedTool[]>();
+  private readonly signatures = new WeakMap<LinkConnection, string>();
 
   constructor(private readonly log: (line: string) => void = console.warn) {
     super();
@@ -21,9 +24,29 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
   }
 
   set(conn: LinkConnection, tools: readonly AnnouncedTool[]): void {
+    // Snapshot the complete input before reading fields, running validators or serializing.
+    const snapshot = snapshotToolsetValue(tools);
+    if (!snapshot.ok) {
+      this.log('ignored toolset: invalid bounded JSON representation');
+      return;
+    }
+    const uncapped = ToolsetMessage.extend({ tools: ToolsetMessage.shape.tools.element.array() });
+    const parsed = uncapped.safeParse({ type: 'toolset', tools: snapshot.value });
+    if (!parsed.success) {
+      this.log('ignored toolset: invalid bounded JSON representation');
+      return;
+    }
+    tools = parsed.data.tools;
+    let encoded: string;
+    try {
+      encoded = JSON.stringify({ type: 'toolset', tools });
+    } catch {
+      this.log('ignored toolset: serialization failed');
+      return;
+    }
     if (
       tools.length > TOOL_LIMITS.announcementTools ||
-      Buffer.byteLength(JSON.stringify({ type: 'toolset', tools })) > TOOL_LIMITS.announcementBytes
+      Buffer.byteLength(encoded) > TOOL_LIMITS.announcementBytes
     ) {
       this.log('ignored toolset: announcement count or byte cap exceeded');
       return;
@@ -39,7 +62,7 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
         );
         continue;
       }
-      keep.set(tool.name, structuredClone(tool));
+      keep.set(tool.name, tool);
     }
     const sorted = [...keep.values()].sort((a, b) => a.name.localeCompare(b.name));
     let packs = 0;
@@ -48,8 +71,16 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
     );
     if (packs > TOOL_LIMITS.sessionPackTools)
       this.log(`dropped ${packs - TOOL_LIMITS.sessionPackTools} pack tools: session cap exceeded`);
-    if (JSON.stringify(this.sets.get(conn)) === JSON.stringify(next)) return;
+    let signature: string;
+    try {
+      signature = JSON.stringify(next);
+    } catch {
+      this.log('ignored toolset: serialization failed');
+      return;
+    }
+    if (this.signatures.get(conn) === signature) return;
     this.sets.set(conn, next);
+    this.signatures.set(conn, signature);
     this.emit('changed', conn);
   }
 }
