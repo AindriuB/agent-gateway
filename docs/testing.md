@@ -67,7 +67,7 @@ The suites under `e2e/multi/` prove the guarantees of tasks 11 and 11b with two 
 - `resilience`: reloading player1's tab gives `WORLD_OFFLINE` on the next call, then a call succeeds within `AGENT_GATEWAY_E2E_RELOAD_S` seconds (default 30; expect about 5 to 15 s). Stopping the gateway by its PID and starting a new one on the same port and DB recovers within 60 s (the module's reconnect backoff caps at 60 s with jitter; expect under 30 s) with no code entered and the same number of active pairings.
 - `stale-token`: against a throwaway state directory (`AGENT_GATEWAY_E2E_STATE_DIR`, created under the system temp directory and removed afterwards) holding a fabricated pairing no browser has a token for, opening the user's session fails within 45 s with `run npm run test:e2e:setup`. The real state directory is only read (the player profile is copied).
 
-Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_PLAYER2_USER` has no active pairing in the DB (pair it with `npm run test:e2e:setup -- --player2`). Measured frame counts and recovery times are printed as `[multi] ...` lines and kept in `e2e-multi-results.jsonl` in the state directory.
+Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_PLAYER2_USER` has no active pairing in the DB (pair it with `npm run test:e2e:setup -- --player2`). Measured frame counts and recovery times are printed as `[multi] ...` lines and listed in the printed summary and `e2e-summary.json` (`multi`).
 
 ## The v13 gap
 
