@@ -43,8 +43,12 @@ export interface BlindRoll {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** True when the JSON haystack holds an object for message `id` whose `rollTotal` is `total`. */
-function structuredTotal(haystack: string, id: string, total: number): boolean {
+/** True when the JSON haystack holds an object for message `id` that satisfies `pred`. */
+function inMessage(
+  haystack: string,
+  id: string,
+  pred: (o: Record<string, unknown>) => boolean,
+): boolean {
   let root: unknown;
   try {
     root = JSON.parse(haystack);
@@ -57,7 +61,7 @@ function structuredTotal(haystack: string, id: string, total: number): boolean {
     if (Array.isArray(v)) stack.push(...v);
     else if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>;
-      if (o.id === id && o.rollTotal === total) return true;
+      if (o.id === id && pred(o)) return true;
       stack.push(...Object.values(o));
     } else if (typeof v === 'string' && v.trimStart().startsWith('{')) {
       // Raw MCP results carry JSON text inside string fields.
@@ -86,26 +90,33 @@ export function leakMatchers(blind: BlindRoll = {}): LeakMatcher[] {
     const needle = s.toLowerCase();
     return { label: s, test: (h: string) => h.toLowerCase().includes(needle) };
   });
-  const f = escapeRe(FIXTURE.chat.blindFormula);
-  const formula = new RegExp(`"rollFormula"\\s*:\\s*"${f}"`, 'i');
-  const rendered = new RegExp(`\\[roll ${f} = `, 'i');
-  out.push({ label: `rollFormula ${FIXTURE.chat.blindFormula}`, test: (h) => formula.test(h) });
-  out.push({ label: `[roll ${FIXTURE.chat.blindFormula} = ...]`, test: (h) => rendered.test(h) });
-  if (blind.total !== undefined && blind.messageId) {
-    // The total only counts inside the seeded message: another roll with the same total is fine.
+  // Every blind-roll matcher is scoped to the seeded blind message: another message with the
+  // same formula or the same total is ordinary world chat, not a leak. Without the message id
+  // there are no blind-roll matchers; the run requires it (see PlayerCaller).
+  const id = blind.messageId;
+  if (!id) return out;
+  const formula = FIXTURE.chat.blindFormula;
+  const f = escapeRe(formula);
+  const inRendered = (roll: string) =>
+    new RegExp(`\\[roll ${roll}\\] \\([^)]*, ${escapeRe(id)}\\)`, 'i');
+  const renderedFormula = inRendered(`${f} = [^\\]]*`);
+  out.push({
+    label: `rollFormula ${formula} (blind message)`,
+    test: (h) => inMessage(h, id, (o) => o.rollFormula === formula),
+  });
+  out.push({
+    label: `[roll ${formula} = ...] (blind message)`,
+    test: (h) => renderedFormula.test(h),
+  });
+  if (blind.total !== undefined) {
     const total = blind.total;
-    const id = blind.messageId;
-    const rendered = new RegExp(`\\[roll [^\\]]* = ${total}\\] \\([^)]*, ${escapeRe(id)}\\)`);
+    const renderedTotal = inRendered(`[^\\]]* = ${total}`);
     out.push({
       label: `blind roll total ${total}`,
-      test: (h) => rendered.test(h) || structuredTotal(h, id, total),
+      test: (h) => renderedTotal.test(h) || inMessage(h, id, (o) => o.rollTotal === total),
     });
   }
-  if (blind.messageId) {
-    const needle = `"${blind.messageId}"`;
-    out.push({ label: `blind message id ${blind.messageId}`, test: (h) => h.includes(needle) });
-    const text = `, ${blind.messageId})`;
-    out.push({ label: `blind message id (rendered)`, test: (h) => h.includes(text) });
-  }
+  out.push({ label: `blind message id ${id}`, test: (h) => h.includes(`"${id}"`) });
+  out.push({ label: `blind message id (rendered)`, test: (h) => h.includes(`, ${id})`) });
   return out;
 }

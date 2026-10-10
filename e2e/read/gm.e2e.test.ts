@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chatProblems, COMPENDIUM, searchProblems, type ChatMsg } from '../lib/expect.js';
-import { loadContext, readAllPages, requireUuids } from '../lib/context.js';
+import { blindMessageId, loadContext, readAllPages, requireUuids } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 import { FIXTURE } from '../fixtures/spec.js';
 
@@ -69,7 +69,7 @@ describe('GM reads', () => {
       before = r.structured?.nextBefore as string | undefined;
       if (!before) break;
     }
-    expect(chatProblems('gm', msgs)).toEqual([]);
+    expect(chatProblems('gm', msgs, blindMessageId(ctx))).toEqual([]);
   });
 
   it('compendium: the LIMITED pack is searchable and the observable packs return results', async () => {

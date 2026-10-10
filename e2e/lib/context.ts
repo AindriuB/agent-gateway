@@ -31,10 +31,21 @@ export function loadContext(): Context {
   return { config, paths, fixtures: loadFixtureState(paths.fixtureState) };
 }
 
+/** The seeded blind message's id, for chatProblems. */
+export const blindMessageId = (ctx: Context): string =>
+  messageIdFromUuid(requireUuids(ctx).blindRoll) ?? '';
+
 /** The fixture UUIDs the seed wrote; fails loudly when the seed has not run. */
 export function requireUuids(ctx: Context): Record<string, string> {
   const uuids = ctx.fixtures.uuids;
-  if (!uuids || !uuids.hidden || !uuids.limited || !uuids.public || !uuids.activeScene) {
+  if (
+    !uuids ||
+    !uuids.hidden ||
+    !uuids.limited ||
+    !uuids.public ||
+    !uuids.activeScene ||
+    !uuids.blindRoll
+  ) {
     throw new Error(`fixture UUIDs missing from ${ctx.paths.fixtureState}; ${SEED_HINT}`);
   }
   return uuids;
@@ -59,12 +70,10 @@ export class PlayerCaller {
     private readonly paths: E2ePaths,
     fixtures: FixtureState = {},
   ) {
-    this.leak = new LeakChecker(
-      leakMatchers({
-        total: fixtures.blindRollTotal,
-        messageId: messageIdFromUuid(fixtures.uuids?.blindRoll),
-      }),
-    );
+    const messageId = messageIdFromUuid(fixtures.uuids?.blindRoll);
+    // The blind-roll matchers are tied to this message; without it they could not run.
+    if (!messageId) throw new Error(`blind roll message id missing; ${SEED_HINT}`);
+    this.leak = new LeakChecker(leakMatchers({ total: fixtures.blindRollTotal, messageId }));
   }
 
   async call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {

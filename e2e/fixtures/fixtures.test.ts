@@ -80,7 +80,7 @@ describe('fixture spec', () => {
   it('lists the hidden strings, including the formula, and matches the blind total only when labelled', () => {
     expect(HIDDEN_STRINGS).not.toContain('7d6');
     expect(HIDDEN_STRINGS).toContain('ag-test-hidden');
-    expect(leakMatchers({ total: 12, messageId: 'abc' })).toHaveLength(leakMatchers().length + 3);
+    expect(leakMatchers({ total: 12, messageId: 'abc' })).toHaveLength(leakMatchers().length + 5);
   });
 });
 

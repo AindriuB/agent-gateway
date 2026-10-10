@@ -14,6 +14,7 @@ import {
 
 const { text, names } = FIXTURE;
 const m = (content: string, extra: Partial<ChatMsg> = {}): ChatMsg => ({ content, ...extra });
+const BLIND = 'aB7D6xyz12345678';
 const playerChat = [
   m(text.publicMessage),
   m(`${text.npcMessage}`),
@@ -26,7 +27,7 @@ const gmChat = [
   m(text.playerWhisper),
   m(`${text.ownMessage} ${text.ownSecret}`),
   m(text.gmWhisper),
-  m('', { rollFormula: '7d6', rollTotal: 20 }),
+  m('', { id: BLIND, rollFormula: '7d6', rollTotal: 20 }),
 ];
 
 describe('searchProblems', () => {
@@ -73,29 +74,41 @@ describe('playerPublicEntryProblems', () => {
 });
 
 describe('chatProblems', () => {
-  it('player view passes', () => expect(chatProblems('player', playerChat)).toEqual([]));
+  it('an ordinary 7d6 roll in another message is not the blind roll', () => {
+    const other = m('Public fireball', {
+      id: 'publicMsg0000001',
+      rollFormula: '7d6',
+      rollTotal: 24,
+    });
+    expect(chatProblems('player', [...playerChat, other], BLIND)).toEqual([]);
+    // For the GM, a 7d6 roll in another message does not stand in for the blind roll.
+    const gmNoBlind = gmChat.filter((x) => x.id !== BLIND);
+    expect(chatProblems('gm', [...gmNoBlind, other], BLIND)).toContain('missing the blind roll');
+  });
+  it('player view passes', () => expect(chatProblems('player', playerChat, BLIND)).toEqual([]));
   it('player must not see the GM whisper, the NPC secret or the blind roll', () => {
-    expect(chatProblems('player', [...playerChat, m(text.gmWhisper)])).toContain(
+    expect(chatProblems('player', [...playerChat, m(text.gmWhisper)], BLIND)).toContain(
       'GM whisper visible',
     );
-    expect(chatProblems('player', [...playerChat, m(`${text.npcSecret}`)])).toContain(
+    expect(chatProblems('player', [...playerChat, m(`${text.npcSecret}`)], BLIND)).toContain(
       'NPC secret visible',
     );
-    expect(chatProblems('player', [...playerChat, m('', { rollFormula: '7d6' })])).toContain(
-      'blind roll visible',
-    );
+    expect(
+      chatProblems('player', [...playerChat, m('', { id: BLIND, rollFormula: '7d6' })], BLIND),
+    ).toContain('blind roll visible');
   });
   it('player must keep the own-character secret', () => {
     expect(
       chatProblems(
         'player',
         playerChat.map((x) => m(x.content.replace(text.ownSecret, ''))),
+        BLIND,
       ),
     ).toContain('own-character secret was stripped');
   });
   it('gm view passes and needs everything', () => {
-    expect(chatProblems('gm', gmChat)).toEqual([]);
-    expect(chatProblems('gm', playerChat).length).toBeGreaterThanOrEqual(3);
+    expect(chatProblems('gm', gmChat, BLIND)).toEqual([]);
+    expect(chatProblems('gm', playerChat, BLIND).length).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -133,7 +146,7 @@ ${text.markdownVisible}
     );
   });
   it('treats the blind message marker as a blind-roll leak for a player', () => {
-    expect(chatProblems('player', [...playerChat, m(text.blindMessage)])).toContain(
+    expect(chatProblems('player', [...playerChat, m(text.blindMessage)], BLIND)).toContain(
       'blind roll visible',
     );
   });

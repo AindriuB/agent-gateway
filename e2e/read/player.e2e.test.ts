@@ -9,6 +9,7 @@ import {
   type ChatMsg,
 } from '../lib/expect.js';
 import {
+  blindMessageId,
   limitedPackUuid,
   loadContext,
   PlayerCaller,
@@ -92,7 +93,7 @@ describe('player chat', () => {
       before = r.structured?.nextBefore as string | undefined;
       if (!before) break;
     }
-    expect(chatProblems('player', msgs)).toEqual([]);
+    expect(chatProblems('player', msgs, blindMessageId(ctx))).toEqual([]);
   });
 });
 

@@ -10,8 +10,8 @@ describe('LeakChecker', () => {
     const c = new LeakChecker(leakMatchers(blind));
     c.check('chat_read', {}, { content: [{ type: 'text', text: 'hello ag-test-public' }] });
     c.check('world_info', {}, { structuredContent: { ts: 1700000000023 } });
-    expect(c.summary()).toEqual({ results: 2, strings: base() + 3, hits: 0 });
-    expect(c.line()).toBe(`leak check: 2 results x ${base() + 3} strings, 0 hits`);
+    expect(c.summary()).toEqual({ results: 2, strings: base() + 5, hits: 0 });
+    expect(c.line()).toBe(`leak check: 2 results x ${base() + 5} strings, 0 hits`);
   });
 
   it.each(HIDDEN_STRINGS)('catches %s', (s) => {
@@ -23,10 +23,16 @@ describe('LeakChecker', () => {
   });
 
   it('names the tool, arguments and string', () => {
-    const c = new LeakChecker(leakMatchers());
+    const c = new LeakChecker(leakMatchers(blind));
     expect(() =>
-      c.check('chat_read', { limit: 5 }, { structuredContent: { rollFormula: '7d6' } }),
-    ).toThrow(/tool chat_read with arguments {"limit":5} returned hidden string "rollFormula 7d6"/);
+      c.check(
+        'chat_read',
+        { limit: 5 },
+        { structuredContent: { messages: [{ id: blind.messageId, rollFormula: '7d6' }] } },
+      ),
+    ).toThrow(
+      /tool chat_read with arguments {"limit":5} returned hidden string "rollFormula 7d6 \(blind message\)"/,
+    );
   });
 
   it('ties the blind roll to its message, not to a bare 7d6 or a bare number', () => {
@@ -43,8 +49,14 @@ describe('LeakChecker', () => {
   });
 
   it.each([
-    ['structured formula', { structuredContent: { rollFormula: '7d6' } }],
-    ['rendered roll', { content: [{ type: 'text', text: 'x [roll 7d6 = 4] y' }] }],
+    [
+      'structured formula',
+      { structuredContent: { messages: [{ id: 'aB7D6xyz12345678', rollFormula: '7d6' }] } },
+    ],
+    [
+      'rendered roll',
+      { content: [{ type: 'text', text: '[roll 7d6 = 4] (2026-01-01, aB7D6xyz12345678)' }] },
+    ],
     [
       'total',
       { content: [{ type: 'text', text: '[roll 7d6 = 23] (2026-01-01, aB7D6xyz12345678)' }] },
@@ -59,6 +71,42 @@ describe('LeakChecker', () => {
   ])('catches the blind roll via %s', (_n, result) => {
     const c = new LeakChecker(leakMatchers(blind));
     expect(() => c.check('chat_read', {}, result)).toThrow(LeakError);
+  });
+
+  it('does not flag an ordinary 7d6 roll in another message', () => {
+    const c = new LeakChecker(leakMatchers(blind));
+    c.check(
+      'chat_read',
+      {},
+      {
+        structuredContent: {
+          messages: [{ id: 'publicMsg0000001', rollFormula: '7d6', rollTotal: 23 }],
+        },
+      },
+    );
+    c.check(
+      'chat_read',
+      {},
+      {
+        content: [
+          {
+            type: 'text',
+            text: '**dev-gm** [roll 7d6 = 23] (2026-01-01T00:00:00Z, publicMsg0000001)',
+          },
+        ],
+      },
+    );
+    expect(c.summary().hits).toBe(0);
+  });
+
+  it('has no blind-roll matchers without the message id', () => {
+    // (The content marker "ag-test blind roll" is a hidden string of that message, and stays.)
+    expect(leakMatchers({ total: 23 }).map((x) => x.label)).toEqual(
+      leakMatchers().map((x) => x.label),
+    );
+    expect(leakMatchers().some((x) => /7d6|blind message|blind roll total/.test(x.label))).toBe(
+      false,
+    );
   });
 
   describe('the blind roll total matcher', () => {

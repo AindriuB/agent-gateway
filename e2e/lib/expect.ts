@@ -12,6 +12,7 @@ export interface ToolText {
 }
 
 export interface ChatMsg {
+  id?: string | undefined;
   content: string;
   rollFormula?: string | undefined;
   rollTotal?: number | undefined;
@@ -65,7 +66,8 @@ export function playerPublicEntryProblems(content: string): string[] {
 
 const has = (msgs: readonly ChatMsg[], s: string) => msgs.some((m) => m.content.includes(s));
 
-export function chatProblems(role: Role, msgs: readonly ChatMsg[]): string[] {
+/** `blindId` is the seeded blind message's id: only that message counts as the blind roll. */
+export function chatProblems(role: Role, msgs: readonly ChatMsg[], blindId: string): string[] {
   const { text, chat } = FIXTURE;
   const problems: string[] = [];
   const need = (s: string, what: string) => {
@@ -75,17 +77,19 @@ export function chatProblems(role: Role, msgs: readonly ChatMsg[]): string[] {
   need(text.npcMessage, 'the NPC message');
   need(text.playerWhisper, "player1's own whisper");
   need(text.ownMessage, 'the own-character message');
-  const blind = msgs.some((m) => m.rollFormula === chat.blindFormula);
+  const blindMsg = msgs.find((m) => m.id === blindId);
   if (role === 'player') {
     if (has(msgs, text.npcSecret)) problems.push('NPC secret visible');
     if (!has(msgs, text.ownSecret)) problems.push('own-character secret was stripped');
     if (has(msgs, text.gmWhisper)) problems.push('GM whisper visible');
-    if (blind || has(msgs, text.blindMessage)) problems.push('blind roll visible');
+    if (blindMsg || has(msgs, text.blindMessage)) problems.push('blind roll visible');
   } else {
     need(text.gmWhisper, 'the GM whisper');
     if (!has(msgs, text.npcSecret)) problems.push('missing the NPC secret');
     if (!has(msgs, text.ownSecret)) problems.push('missing the own-character secret');
-    if (!blind) problems.push('missing the blind roll');
+    if (!blindMsg) problems.push('missing the blind roll');
+    else if (blindMsg.rollFormula !== chat.blindFormula)
+      problems.push('blind roll has the wrong formula');
   }
   return problems;
 }
