@@ -38,7 +38,6 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 /** Strip control characters and cap the length of text that came from a person. */
 export function cleanText(v: unknown, max: number): string {
   if (typeof v !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
   return v
     .replace(/[\u0000-\u001f\u007f]+/g, ' ')
     .trim()
