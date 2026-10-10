@@ -16,6 +16,7 @@ Wave 4 and task 12 are complete. Tasks 13, 14, 16, 19 and 20 are merged, includi
 
 - Publication: Andrew explicitly approved publishing the remaining task20 PRs. Contract PR #42 and implementation PR #43 (20b) are merged. PRs #44 (20c), #45 (20d), #46 (20e), #47 (20f) and record PR #48 remain published for review. Verified heads are recorded in HISTORY.
 - Live evidence: Andrew approved the v14 checks. 20c passed 21 read tests with zero leaks; 20e passed 21 read/role tests against its exact bundle on v14.369, with zero leaks. Hello Pack was subsequently installed remotely from `dfd8a04`: four byte-exact files and manifest HTTP 200 verified. This supersedes the Mac SSH DNS blocker and earlier runtime absence; Foundry discovery and enabled/disabled checks still require Andrew's setup relaunch and activation/deactivation. See HISTORY for the bundle hash.
+- Security review: the PR #45 fix strictly validates returned error-code strings and isolates malformed array codes; propagated through PR #47 into the record branch. See HISTORY for the new evidence without replacing earlier verified counts.
 - Keep task files, branches and worktrees for review. Finish the pending acceptance checks, await Andrew's reviews of the published PRs, then record approved merges. Tasks 15 and 18 remain open.
 
 ### Testing topology and prerequisites

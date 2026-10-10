@@ -92,6 +92,17 @@ enabled/disabled live pack pass is claimed. Foundry v13 evidence remains pending
 its instance.
 No task files were moved and no worktrees were removed.
 
+Subsequent security review fix (2026-10-10): PR #45 commit `09b6444`
+requires an actual string for a pack's returned error code. Malformed array
+codes `['FORBIDDEN']` and `['INVALID_ARGS']` now return `INTERNAL` for that call;
+following core and pack calls still succeed. The fix passed 44 focused tests,
+full verification (2,297 fast + 2,227 slow) and independent review. These are
+new post-review counts, not replacements for the earlier source-head evidence.
+PR #47 propagated the fix at `7a390f46451de3fd2677552c13dce857015136f7`,
+and PR #48 incorporated that predecessor through a clean merge with no direct
+runtime edits. The subsequent integrated gates passed at PR #47 and the
+record branch: 2,337 fast + 2,227 slow tests each, after the security fix.
+
 Author docs distinguish project publishing requirements from primary-source
 facts checked 2026-10-10: the Publisher Handbook names a fee without a public
 amount or cadence; the AI policy has an older-premium-agreement transition and
