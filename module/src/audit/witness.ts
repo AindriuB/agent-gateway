@@ -115,6 +115,11 @@ export class AuditWitness {
     this.calls.clear();
   }
 
+  /** Release witness state only after its assembled record has been persisted. */
+  complete(entryId: string, sender: string): void {
+    this.calls.delete(this.key(sender, entryId));
+  }
+
   /** Number of open calls (for tests and diagnostics). */
   get open(): number {
     return this.calls.size;
@@ -283,7 +288,7 @@ export class AuditWitness {
     if (!call) {
       return { ...record, targets: claimed.map((t) => viewOnly(t, NOT_WITNESSED_NOTE)) };
     }
-    this.calls.delete(k);
+    // Keep this capture for retries until persistence succeeds (or the normal TTL expires).
     if (this.expired(call)) {
       return { ...record, targets: claimed.map((t) => viewOnly(t, EXPIRED_NOTE)) };
     }

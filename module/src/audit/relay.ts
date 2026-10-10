@@ -40,6 +40,7 @@ const INTENT_RATE_MAX = 600;
 export class AuditRelay {
   private readonly buffer = new Map<string, AuditRecord>();
   private readonly seen = new Set<string>();
+  private readonly writing = new Set<string>();
   private readonly sent = new Map<string, number[]>();
   private timer: unknown = null;
   private readonly waiting = new Map<string, (ok: boolean) => void>();
@@ -179,6 +180,8 @@ export class AuditRelay {
       this.deps.emit({ kind: 'audit.ack', id: peek }, [senderId]);
       return;
     }
+    // A resend cannot start another write or be acknowledged before the first succeeds.
+    if (typeof peek === 'string' && this.writing.has(peek)) return;
     if (!this.allow(senderId, 'entry')) {
       console.warn(`agent-gateway | audit relay rate limit: dropped a record from ${senderId}`);
       return;
@@ -191,15 +194,23 @@ export class AuditRelay {
       relayed: !this.deps.isUserGM(senderId),
     });
     if (!record) return;
-    try {
-      await this.deps.write(record, senderId);
-    } catch (err) {
-      console.error('agent-gateway | audit write failed', err);
+    // Sanitisation can normalise the ID (for example, trim whitespace).
+    if (this.seen.has(record.entryId)) {
+      this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
       return;
     }
-    this.seen.add(record.entryId);
-    if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value as string);
-    this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
+    if (this.writing.has(record.entryId)) return;
+    this.writing.add(record.entryId);
+    try {
+      await this.deps.write(record, senderId);
+      this.seen.add(record.entryId);
+      if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value as string);
+      this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
+    } catch (err) {
+      console.error('agent-gateway | audit write failed', err);
+    } finally {
+      this.writing.delete(record.entryId);
+    }
   }
 
   private allow(senderId: string, kind: 'entry' | 'intent'): boolean {

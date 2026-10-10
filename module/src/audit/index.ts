@@ -70,6 +70,7 @@ function readyAudit(): void {
     write: async (record, senderId) => {
       const final = record.relayed ? await witness.assemble(record, senderId) : record;
       await writeAuditEntry(final);
+      if (record.relayed) witness.complete(record.entryId, senderId);
     },
     onIntent: (msg, senderId) => witness.onIntent(msg, senderId),
     setTimer: (fn, ms) => setTimeout(fn, ms),

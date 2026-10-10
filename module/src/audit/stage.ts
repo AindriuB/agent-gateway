@@ -5,6 +5,7 @@ import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
 import { assertNotAudit } from './guard.js';
 import { requestAuditIntent, submitAudit } from './sink.js';
+import { WITNESSED_NAMES } from './witness.js';
 import { boundedJson, jsonSize, newEntryId, safeText } from './record.js';
 import {
   AUDIT_LIMITS as L,
@@ -52,6 +53,8 @@ export interface AuditStageDeps {
   isGM(): boolean;
   /** Player client: tell the active GM what the call will touch and wait for it to be copied. */
   requestIntent(callId: string, what: { uuid?: string; creates?: boolean }): Promise<boolean>;
+  /** Watch document hooks for edits outside this GM call; return a function that removes them. */
+  watchChanges(changed: (uuid: string, options: unknown, userId: unknown) => void): () => void;
   now(): number;
   newId(): string;
 }
@@ -62,6 +65,24 @@ const defaultDeps: AuditStageDeps = {
   submit: submitAudit,
   isGM: () => (globalThis as { game?: { user?: { isGM?: boolean } } }).game?.user?.isGM === true,
   requestIntent: (callId, what) => requestAuditIntent(callId, what),
+  watchChanges: (changed) => {
+    const hooks = (globalThis as any).Hooks;
+    if (typeof hooks?.on !== 'function' || typeof hooks?.off !== 'function') return () => {};
+    const ids: Array<[string, unknown]> = [];
+    for (const name of WITNESSED_NAMES) {
+      for (const kind of ['create', 'update', 'delete']) {
+        const hook = `${kind}${name}`;
+        const id = hooks.on(hook, (doc: any, ...args: unknown[]) => {
+          const [options, userId] = kind === 'update' ? args.slice(1) : args;
+          changed(String(doc?.uuid ?? ''), options, userId);
+        });
+        ids.push([hook, id]);
+      }
+    }
+    return () => {
+      for (const [hook, id] of ids) hooks.off(hook, id);
+    };
+  },
   now: () => Date.now(),
   newId: newEntryId,
 };
@@ -70,11 +91,25 @@ const defaultDeps: AuditStageDeps = {
 class Snapshots {
   private readonly pending = new Map<string, Promise<AuditTarget | null>>();
   private chars = 0;
+  private readonly stale = new Set<string>();
   dropped = 0;
   /** Set on a player's client: declarations go to the GM, which captures the data itself. */
   witnessed: ((what: { uuid?: string; creates?: boolean }) => Promise<boolean>) | null = null;
   private createsDeclared = false;
   constructor(private readonly fromUuid: AuditStageDeps['fromUuid']) {}
+
+  /** A full snapshot cannot safely restore a document edited outside this call. */
+  intervene(
+    uuid: string,
+    options: unknown,
+    userId: unknown,
+    requester: string,
+    callId: string,
+  ): void {
+    const id = (options as { agentGateway?: { callId?: unknown } } | undefined)?.agentGateway
+      ?.callId;
+    if (this.pending.has(uuid) && (userId !== requester || id !== callId)) this.stale.add(uuid);
+  }
 
   /** Refuse a parent that is, or sits inside, the audit log. A uuid is looked up first. */
   private async guardParent(parent: unknown): Promise<void> {
@@ -167,6 +202,10 @@ class Snapshots {
         ...t,
         existsAfter: !!doc,
         afterModifiedTime: doc && Number.isFinite(mod) ? mod : null,
+        undoable: t.undoable && !this.stale.has(t.uuid),
+        note: this.stale.has(t.uuid)
+          ? 'changed outside this call after its snapshot; the snapshot is stale'
+          : t.note,
       });
     }
     return out;
@@ -217,7 +256,13 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
       if (category === 'read') return next();
       const snaps = new Snapshots(deps.fromUuid);
       const callId = deps.newId();
-      if (!deps.isGM()) snaps.witnessed = (what) => deps.requestIntent(callId, what);
+      const gm = deps.isGM();
+      if (!gm) snaps.witnessed = (what) => deps.requestIntent(callId, what);
+      const stopWatching = gm
+        ? deps.watchChanges((uuid, options, userId) =>
+            snaps.intervene(uuid, options, userId, ctx.user.id, callId),
+          )
+        : () => {};
       ctx.callId = callId;
       ctx.callOptions = { agentGateway: { callId } };
       ctx.snapshot = (uuid) => snaps.snapshot(uuid);
@@ -232,7 +277,11 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
         thrown = true;
         throw err;
       } finally {
-        await record(ctx, category, snaps, summarise(res, thrown), deps, callId);
+        try {
+          await record(ctx, category, snaps, summarise(res, thrown), deps, callId);
+        } finally {
+          stopWatching();
+        }
       }
     },
   };
