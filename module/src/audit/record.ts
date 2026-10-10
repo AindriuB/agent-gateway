@@ -1,7 +1,11 @@
-import { AUDIT_LIMITS as L, type AuditCategory, type AuditRecord, type AuditTarget } from './types.js';
+import {
+  AUDIT_LIMITS as L,
+  type AuditCategory,
+  type AuditRecord,
+  type AuditTarget,
+} from './types.js';
 
 /** Control, bidi-override and zero-width characters: they reorder or hide text when shown. */
-// eslint-disable-next-line no-control-regex
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g;
 
 /** Untrusted text as one bounded line. HTML escaping is the template's job; this removes what escaping cannot. */
@@ -60,7 +64,10 @@ export function boundedJson(value: unknown): { text: string; truncated: boolean 
     const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     const keys = Object.keys(v);
     for (const k of keys.slice(0, L.argsBreadth)) {
-      out[k.length > 100 ? `${k.slice(0, 100)}...` : k] = walk((v as Record<string, unknown>)[k], depth + 1);
+      out[k.length > 100 ? `${k.slice(0, 100)}...` : k] = walk(
+        (v as Record<string, unknown>)[k],
+        depth + 1,
+      );
     }
     if (keys.length > L.argsBreadth) {
       truncated = true;
@@ -74,7 +81,8 @@ export function boundedJson(value: unknown): { text: string; truncated: boolean 
   } catch {
     return { text: '"[unserialisable]"', truncated: true };
   }
-  if (text.length > L.argsChars) return { text: `${text.slice(0, L.argsChars)}...`, truncated: true };
+  if (text.length > L.argsChars)
+    return { text: `${text.slice(0, L.argsChars)}...`, truncated: true };
   return { text, truncated };
 }
 
@@ -145,7 +153,9 @@ export function sanitiseRecord(raw: unknown, force: RecordForce): AuditRecord | 
   if (!/^[A-Za-z0-9_-]{8,40}$/.test(entryId)) return null;
   const tool = safeText(raw.tool, L.label);
   if (!tool) return null;
-  const category = (CATEGORIES.includes(String(raw.category)) ? raw.category : 'write') as AuditCategory;
+  const category = (
+    CATEGORIES.includes(String(raw.category)) ? raw.category : 'write'
+  ) as AuditCategory;
   const rawArgs = typeof raw.args === 'string' ? raw.args : '';
   const argsCut = rawArgs.length > L.argsChars;
   const budget = { chars: L.beforeTotalChars };

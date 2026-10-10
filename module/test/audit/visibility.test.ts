@@ -20,7 +20,7 @@ const call = (tool: string, args: unknown, user: any): Promise<DispatchResult> =
 const json = (r: DispatchResult) => JSON.stringify(r);
 
 /** The audit journal as the module creates it: ownership default NONE, so nobody but GMs observes it. */
-function world(observers: string[] = []) {
+function world(observers: string[] = [], flagged = true) {
   const page = fakeDoc({
     id: 'pg1',
     name: `2026-10-10 fixture_write ${MARK}`,
@@ -36,6 +36,7 @@ function world(observers: string[] = []) {
     observers,
     embedded: { pages: [page] },
   });
+  if (flagged) journal.flags = { 'agent-gateway': { auditJournal: true } };
   stub = setupWorld({ docs: { journal: [journal] } });
   return { journal, page };
 }
@@ -74,8 +75,20 @@ describe('the audit journal is GM-only through our own read tools', () => {
     expect(json(g)).toContain(MARK);
   });
 
-  it('control: if the default ownership were raised, the tools would show it (hence ownership NONE matters)', async () => {
+  it('stays hidden from players even if the default ownership is raised by mistake', async () => {
     world(['p1']);
+    for (const q of [{ type: 'JournalEntry', query: 'audit' }]) {
+      expect(json(await call('document_search', q, playerUser))).not.toContain(MARK);
+    }
+    for (const uuid of ['JournalEntry.aj1', 'JournalEntry.aj1.JournalEntryPage.pg1']) {
+      const r = await call('document_get', { uuid }, playerUser);
+      expect(r).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+      expect(json(r)).not.toContain(MARK);
+    }
+  });
+
+  it('control: an unflagged journal with raised ownership IS readable (the hiding is not vacuous)', async () => {
+    world(['p1'], false);
     const r = await call('document_search', { type: 'JournalEntry', query: 'audit' }, playerUser);
     expect(json(r)).toContain('Agent Gateway Audit');
   });

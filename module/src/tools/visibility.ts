@@ -66,6 +66,9 @@ const ROOT_RULES: Record<string, (c: { user: any; doc: any }) => boolean> = {
   Scene: ({ user, doc }) =>
     doc.active === true || doc.navigation === true || user.viewedScene === doc.id,
   Playlist: ({ user, doc }) => can(doc, user, 'OWNER') || doc.playing === true,
+  // The agent audit journal (task 19) is GM-only whatever its ownership says: a GM who raises the
+  // default ownership by mistake does not hand players the log of every agent call and snapshot.
+  JournalEntry: ({ doc }) => doc.flags?.['agent-gateway']?.auditJournal !== true,
 };
 
 export function rootVisible(doc: any, user: any): boolean {
