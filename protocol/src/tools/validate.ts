@@ -10,6 +10,17 @@ export type ArgsValidation =
 
 /** Validates the conservative subset. Defaults apply only to missing root properties. */
 export function validateArgs(schema: JsonSchemaObject, value: unknown): ArgsValidation {
+  try {
+    return validate(schema, value);
+  } catch {
+    return {
+      ok: false,
+      issues: [{ path: '', message: 'Schema or value cannot be validated as JSON' }],
+    };
+  }
+}
+
+function validate(schema: JsonSchemaObject, value: unknown): ArgsValidation {
   const problems = checkToolDefinition(
     {
       name: 'schema_validation',
@@ -33,7 +44,7 @@ export function validateArgs(schema: JsonSchemaObject, value: unknown): ArgsVali
     const fields = Object.entries(properties).map(
       ([name, child]) => [name, compile(child as JsonSchemaObject)] as const,
     );
-    const required = new Set((node.required ?? []) as string[]);
+    const required = new Set(Array.isArray(node.required) ? (node.required as string[]) : []);
     const allowed = new Set(Object.keys(properties));
     const items = isSchemaObject(node.items) ? compile(node.items) : undefined;
     const enumeration = Array.isArray(node.enum) ? new Set(node.enum) : undefined;

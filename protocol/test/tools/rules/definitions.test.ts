@@ -99,6 +99,50 @@ describe('hostile schemas', () => {
       'traversal limit',
     );
   });
+  it.each(['string', 'number', 'boolean', 'null', 'array'])(
+    'checks required shape on %s nodes',
+    (type) => {
+      expect(
+        check({
+          ...objectSchema(),
+          properties: {
+            x: {
+              type,
+              description: 'X',
+              required: 42,
+              ...(type === 'array' ? { items: { type: 'string' } } : {}),
+            },
+          },
+        }),
+      ).toContain('required');
+    },
+  );
+  it('checks additionalProperties shape on irrelevant nodes', () => {
+    expect(
+      check({
+        ...objectSchema(),
+        properties: { x: { type: 'string', description: 'X', additionalProperties: true } },
+      }),
+    ).toContain('additionalProperties');
+  });
+  it.each([
+    () => 1,
+    undefined,
+    Symbol('value'),
+    NaN,
+    Infinity,
+    new Date(),
+    new Map(),
+    { nested: () => 1 },
+    [undefined],
+  ])('refuses nonJSON default %j', (value) => {
+    expect(
+      check({
+        ...objectSchema(),
+        properties: { x: { type: 'string', description: 'X', default: value } },
+      }),
+    ).toContain('default');
+  });
   it('refuses malformed required', () =>
     expect(check({ ...objectSchema(), required: ['missing'] })).toContain('required'));
   it('refuses missing array items', () =>

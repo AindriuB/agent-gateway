@@ -24,18 +24,25 @@ it('validates 10000 depth-3 objects with near-linear scaling', () => {
       },
     },
   };
-  const measure = (n: number) => {
-    const value = { rows: Array.from({ length: n }, () => ({ inner: { value: 1 } })) };
-    return Math.min(
-      ...Array.from({ length: 5 }, () => {
-        const start = performance.now();
-        const result = validateArgs(schema, value);
-        const elapsed = performance.now() - start;
-        expect(result.ok).toBe(true);
-        return elapsed;
-      }),
-    );
+  const small = { rows: Array.from({ length: 10000 }, () => ({ inner: { value: 1 } })) };
+  const large = { rows: Array.from({ length: 40000 }, () => ({ inner: { value: 1 } })) };
+  const measure = (value: typeof small) => {
+    const start = performance.now();
+    const result = validateArgs(schema, value);
+    const elapsed = performance.now() - start;
+    expect(result.ok).toBe(true);
+    return elapsed;
   };
-  measure(1000);
-  expect(measure(40000) / measure(10000)).toBeLessThan(6);
+  // Warm both workloads before sampling so JIT compilation does not bias one size.
+  for (let i = 0; i < 3; i++) {
+    measure(small);
+    measure(large);
+  }
+  const smallTimes: number[] = [];
+  const largeTimes: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    smallTimes.push(measure(small));
+    largeTimes.push(measure(large));
+  }
+  expect(Math.min(...largeTimes) / Math.min(...smallTimes)).toBeLessThan(6);
 });
