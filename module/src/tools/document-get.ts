@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fromUuidCompat } from '../compat/index.js';
+import { folderAllowed } from '../policy/folders.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
 import {
   domToDocument,
@@ -168,6 +169,9 @@ export function clearDocumentCache(): void {
 function readable(doc: any, user: any): VisibleNode | undefined {
   let root = doc;
   while (root.parent) root = root.parent;
+  // Outside the GM's folder allowlist reads as missing, same as a hidden document (never FORBIDDEN,
+  // which would confirm it exists). Checked on the root so embedded uuids agree with search.
+  if (!folderAllowed(root, user.isGM === true)) return undefined;
   if (
     user.isGM !== true &&
     (!(

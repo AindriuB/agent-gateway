@@ -2,6 +2,7 @@
 import { foundryGeneration } from '../compat/index.js';
 import type { OpHandler } from '../ops/types.js';
 import { inlineText } from '../serialise/index.js';
+import { folderAllowed } from '../policy/folders.js';
 import { presentedName } from './visibility.js';
 
 declare const game: any;
@@ -27,7 +28,9 @@ export const worldInfoHandler: OpHandler = (ctx) => {
     userName: String(user?.name ?? ''),
     userRole: roleName(user?.role),
     // Players see the navigation name, as in Foundry's scene navigation.
-    activeScene: scene ? presentedName(scene, user) : '',
+    // A scene outside the agent's folder allowlist is omitted, as if there were no active scene.
+    activeScene:
+      scene && folderAllowed(scene, user?.isGM === true) ? presentedName(scene, user) : '',
     combatActive,
   };
   const text =

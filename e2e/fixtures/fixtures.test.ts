@@ -6,6 +6,7 @@ import {
   expectedFlaggedCounts,
   FIXTURE_FLAG_KEY,
   FIXTURE_FLAG_SCOPE,
+  PLAYER_AGENTS_SETTING,
   FIXTURE_PREFIX,
   OWN_ACTOR_ID,
   type SeedStep,
@@ -85,7 +86,7 @@ describe('fixture spec', () => {
 });
 
 // A small in-memory Foundry, enough for the runtime's seed and clean.
-function fakeWorld(opts: { activeScene?: boolean } = {}) {
+function fakeWorld(opts: { activeScene?: boolean; settingRegistered?: boolean } = {}) {
   let n = 0;
   const mk = (data: Record<string, unknown>) => {
     const id = `id${++n}`;
@@ -165,12 +166,24 @@ function fakeWorld(opts: { activeScene?: boolean } = {}) {
   world.journal?.contents.push(mk({ name: 'Real Journal' }));
   world.messages?.contents.push(mk({ content: 'real chat' }));
   sceneCols.tokens?.contents.push(mk({ name: 'Real Token' }));
+  const registered = new Set<string>(
+    opts.settingRegistered === false ? [] : ['agent-gateway.playerAgentsEnabled'],
+  );
   const users = [
     { id: 'gm1', name: 'dev-gm', isGM: true },
     { id: 'p1', name: 'player1', isGM: false },
   ];
+  const settings = new Map<string, unknown>();
   const game = {
     user: { isGM: true },
+    settings: {
+      get: (ns: string, key: string) => {
+        const k = `${ns}.${key}`;
+        if (!settings.has(k) && !registered.has(k)) throw new Error(`not registered: ${k}`);
+        return settings.has(k) ? settings.get(k) : false;
+      },
+      set: async (ns: string, key: string, v: unknown) => void settings.set(`${ns}.${key}`, v),
+    },
     scenes: { active: opts.activeScene === false ? null : scene, contents: [scene, other] },
     folders: world.folders,
     journal: world.journal,
@@ -187,19 +200,27 @@ function fakeWorld(opts: { activeScene?: boolean } = {}) {
       return { formula: this.formula, total: this.total };
     }
   }
-  return { game, getDocumentClass, Roll, world, scene };
+  return { game, getDocumentClass, Roll, world, scene, settings };
 }
 
 async function run(
   w: ReturnType<typeof fakeWorld>,
   mode: 'seed' | 'clean',
+  restorePlayerAgents?: boolean,
 ): Promise<FixtureResult> {
   const fn = new Function('game', 'getDocumentClass', 'Roll', `return (${FIXTURE_RUNTIME});`)(
     w.game,
     w.getDocumentClass,
     w.Roll,
   ) as (a: unknown) => Promise<FixtureResult>;
-  return fn({ mode, plan, flagScope: FIXTURE_FLAG_SCOPE, flagKey: FIXTURE_FLAG_KEY });
+  return fn({
+    mode,
+    plan,
+    flagScope: FIXTURE_FLAG_SCOPE,
+    flagKey: FIXTURE_FLAG_KEY,
+    policySetting: PLAYER_AGENTS_SETTING,
+    restorePlayerAgents,
+  });
 }
 
 describe('fixture runtime', () => {
@@ -251,6 +272,59 @@ describe('fixture runtime', () => {
     const w = fakeWorld();
     w.game.user.isGM = false;
     await expect(run(w, 'seed')).rejects.toThrow(/GM/);
+  });
+});
+
+describe('fixture runtime: player agents setting', () => {
+  const KEY = 'agent-gateway.playerAgentsEnabled';
+
+  it('seed turns player agents on and reports the previous value', async () => {
+    const w = fakeWorld();
+    const r = await run(w, 'seed');
+    expect(r.policy).toEqual({ before: false, after: true });
+    expect(w.settings.get(KEY)).toBe(true);
+    expect(verifyFixtureResult('seed', r)).toEqual([]);
+  });
+
+  it('clean restores the recorded previous value, either way', async () => {
+    for (const previous of [false, true]) {
+      const w = fakeWorld();
+      await run(w, 'seed');
+      const r = await run(w, 'clean', previous);
+      expect(w.settings.get(KEY)).toBe(previous);
+      expect(verifyFixtureResult('clean', r, previous)).toEqual([]);
+    }
+  });
+
+  it('clean with nothing recorded leaves the setting alone', async () => {
+    const w = fakeWorld();
+    w.settings.set(KEY, true);
+    const r = await run(w, 'clean');
+    expect(w.settings.get(KEY)).toBe(true);
+    expect(r.policy).toEqual({});
+  });
+
+  it('a seed that finds the setting on reports true, so a clean can put it back on', async () => {
+    const w = fakeWorld();
+    w.settings.set(KEY, true);
+    expect((await run(w, 'seed')).policy).toEqual({ before: true, after: true });
+  });
+
+  it('seed fails clearly when the module setting is not registered', async () => {
+    const w = fakeWorld({ settingRegistered: false });
+    await expect(run(w, 'seed')).rejects.toThrow(/not registered: rebuild/);
+  });
+
+  it('verification catches a seed that left it off and a clean that did not restore', async () => {
+    const w = fakeWorld();
+    const seeded = await run(w, 'seed');
+    expect(
+      verifyFixtureResult('seed', { ...seeded, policy: { before: false, after: false } }),
+    ).toContain('the seed did not leave playerAgentsEnabled on');
+    const cleaned = await run(w, 'clean', false);
+    expect(verifyFixtureResult('clean', { ...cleaned, policy: { after: true } }, false)).toContain(
+      'clean did not restore playerAgentsEnabled to false',
+    );
   });
 });
 

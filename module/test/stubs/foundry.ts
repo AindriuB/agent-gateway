@@ -39,6 +39,16 @@ export function installFoundry(
   const registeredMenus = new Map<string, any>();
   const values = new Map<string, unknown>();
   const hooks = new Map<string, Array<() => void>>();
+  // Tool tests act as player agents, which are off in a fresh world; policy tests set this explicitly.
+  values.set('agent-gateway.playerAgentsEnabled', true);
+  // The registered default world policy (spec section 3), as an unset real world would hold it.
+  values.set(
+    'agent-gateway.worldPolicy',
+    JSON.stringify({
+      playerAgents: { read: 'allow', write: 'ask_owner', destructive: 'ask_gm', code: 'ask_gm' },
+      gmAgents: { read: 'allow', write: 'ask_owner', destructive: 'ask_owner', code: 'ask_owner' },
+    }),
+  );
   const collection = () => ({ get: () => undefined, contents: [] as unknown[], size: 0 });
 
   g.game = {

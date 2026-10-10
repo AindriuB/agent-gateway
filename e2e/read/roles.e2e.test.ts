@@ -44,6 +44,14 @@ describe('roles', () => {
     }
   });
 
+  it('the world policy reports player agents enabled during the run (the seed turned them on)', async () => {
+    // Read in the player's own client, which is where the module enforces the policy.
+    const enabled = await inSession(ctx.config.playerUser, (s) =>
+      s.browser.page.evaluate("game.settings.get('agent-gateway', 'playerAgentsEnabled')"),
+    );
+    expect(enabled).toBe(true);
+  });
+
   it("tools/list: the player's tools are a subset of the GM's and include no GM-only tool", async () => {
     const gm = await inSession(ctx.config.gmUser, (s) => s.gateway.listTools());
     const player = await inSession(ctx.config.playerUser, async (s) => {

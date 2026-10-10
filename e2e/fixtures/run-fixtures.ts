@@ -3,8 +3,22 @@ import { asJoinPage, joinWorld, openUserBrowser } from '../lib/browser.js';
 import { e2ePaths, loadE2eConfig, printWarnings } from '../lib/config.js';
 import { ensureStateDirs } from '../lib/state.js';
 import { FIXTURE_RUNTIME } from './runtime.js';
-import { buildSeedPlan, FIXTURE_FLAG_KEY, FIXTURE_FLAG_SCOPE } from './spec.js';
+import {
+  buildSeedPlan,
+  FIXTURE_FLAG_KEY,
+  FIXTURE_FLAG_SCOPE,
+  PLAYER_AGENTS_SETTING,
+} from './spec.js';
 import { formatCounts, verifyFixtureResult, type FixtureResult } from './verify.js';
+
+function readState(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 /** Run the seed or the clean as the GM in a persistent-profile browser. Writes to the world. */
 export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
@@ -17,8 +31,16 @@ export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
   const browser = await openUserBrowser(config, paths, config.gmUser, { headed: config.headed });
   try {
     await joinWorld(asJoinPage(browser.page), config, config.gmUser);
+    const state = readState(paths.fixtureState);
+    // The first seed's finding wins: a re-seed sees the value the last seed set.
+    const restore =
+      typeof state.previousPlayerAgentsEnabled === 'boolean'
+        ? state.previousPlayerAgentsEnabled
+        : undefined;
     const arg = {
       mode,
+      policySetting: PLAYER_AGENTS_SETTING,
+      restorePlayerAgents: mode === 'clean' ? restore : undefined,
       plan: buildSeedPlan({ gmUser: config.gmUser, playerUser: config.playerUser }),
       flagScope: FIXTURE_FLAG_SCOPE,
       flagKey: FIXTURE_FLAG_KEY,
@@ -31,11 +53,16 @@ export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
     if (mode === 'seed') {
       writeFileSync(
         paths.fixtureState,
-        `${JSON.stringify({ ...result.totals, uuids: result.uuids })}\n`,
+        `${JSON.stringify({ ...result.totals, uuids: result.uuids, previousPlayerAgentsEnabled: restore ?? result.policy?.before })}\n`,
         { mode: 0o600 },
       );
+    } else if (restore !== undefined) {
+      // Restored: forget it, so a second clean does not overwrite a later change by the GM.
+      const rest = { ...state };
+      delete rest.previousPlayerAgentsEnabled;
+      writeFileSync(paths.fixtureState, `${JSON.stringify(rest)}\n`, { mode: 0o600 });
     }
-    const problems = verifyFixtureResult(mode, result);
+    const problems = verifyFixtureResult(mode, result, mode === 'clean' ? restore : undefined);
     if (problems.length) throw new Error(`${mode} check failed:\n  ${problems.join('\n  ')}`);
     process.stdout.write(`${mode} ok\n`);
   } finally {

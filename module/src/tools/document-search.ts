@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { OpHandler } from '../ops/types.js';
+import { folderAllowed } from '../policy/folders.js';
 import { inlineText } from '../serialise/index.js';
 import { folderVisible, presentedName, rootVisible } from './visibility.js';
 
@@ -32,6 +33,8 @@ export const documentSearchHandler: OpHandler = (ctx) => {
   const matches = docs
     .filter((d) => {
       if (!user || !d.testUserPermission(user, 'OBSERVER') || !rootVisible(d, user)) return false;
+      // Outside the GM's folder allowlist: omitted, exactly like a document the user cannot see.
+      if (!folderAllowed(d, user.isGM === true)) return false;
       if (query && !presentedName(d, user).toLowerCase().includes(query)) return false;
       if (folder && folderVisible(d, user)) {
         const f = d.folder;

@@ -16,7 +16,34 @@
       "includeOtherModuleData": {
         "name": "Include other modules' data",
         "hint": "Allow agents to read data that other modules store on documents."
+      },
+      "playerAgentsEnabled": {
+        "name": "Enable player agents",
+        "hint": "Allow AI agents acting as non-GM users to use tools. Off until a GM turns it on."
+      },
+      "headlessAgentsEnabled": {
+        "name": "Enable headless agents",
+        "hint": "Allow headless AI agents (running without a person at the browser) to use tools. Off until a GM turns it on."
+      },
+      "worldPolicy": {
+        "name": "World policy",
+        "hint": "The GM's ceiling per agent class and tool category. Owners can only tighten it."
+      },
+      "folderAllowlist": {
+        "name": "Folder allowlist",
+        "hint": "Folders agents may read, per agent class. Empty means no restriction."
+      },
+      "ownerPolicy": {
+        "name": "Owner policy",
+        "hint": "Your own policy for your agents. It can only be stricter than the world policy."
       }
+    },
+    "Policy": {
+      "playerAgentsDisabled": "Player agents are turned off in this world. A GM must turn on \"{setting}\" in the Agent Gateway settings.",
+      "headlessAgentsDisabled": "Headless agents are turned off in this world. A GM must turn on \"{setting}\" in the Agent Gateway settings.",
+      "denied": "The policy denies {category} tools for this agent.",
+      "approvalRequired": "approval required: the {approver} must approve this {category} action, and approval is not available yet.",
+      "unknownCategory": "The policy cannot classify the tool \"{tool}\", so it is denied."
     },
     "Link": {
       "state": {
