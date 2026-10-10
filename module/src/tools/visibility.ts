@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const foundry: any;
-declare const CONST: any;
 
 /** What the requesting user may see of one document and, recursively, its embedded documents. */
 export interface VisibleNode {
