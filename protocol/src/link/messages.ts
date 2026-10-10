@@ -67,6 +67,16 @@ export const ErrorMessage = z.strictObject({
 export const PingMessage = z.strictObject({ type: z.literal('ping') });
 export const PongMessage = z.strictObject({ type: z.literal('pong') });
 
+/**
+ * Module to gateway: the tool names this user may use right now (role, minus categories denied
+ * by policy). Sent after `welcome` and whenever it changes. The gateway shows no tool outside it;
+ * the module still re-checks every call, so it is a list to show, never a grant.
+ */
+export const ToolsetMessage = z.strictObject({
+  type: z.literal('toolset'),
+  tools: z.array(z.string()),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -77,6 +87,7 @@ export const LinkMessage = z.discriminatedUnion('type', [
   ErrorMessage,
   PingMessage,
   PongMessage,
+  ToolsetMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

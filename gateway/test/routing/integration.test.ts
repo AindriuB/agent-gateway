@@ -93,7 +93,7 @@ describe('gateway end to end with a fake module', () => {
     const player = await start(false);
     expect((await player.s.client.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
     const res = await player.s.client.callTool({ name: 'fixture_gm_tool', arguments: {} });
-    expectErrorCode(res, 'UNKNOWN_TOOL');
+    expectErrorCode(res, 'FORBIDDEN');
     expect(player.m.tc.messages).toEqual([]);
   });
 
