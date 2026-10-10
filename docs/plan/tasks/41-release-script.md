@@ -1,7 +1,7 @@
 # 41 — Add the local release script for module, npm package and .mcpb
 
 **Repo:** .
-**Depends on:** 12, 39, 40
+**Depends on:** 12a, 12b, 39, 40
 **Owns:**
 - scripts/release.mjs
 - scripts/bump-version.mjs
