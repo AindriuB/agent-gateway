@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pageData } from '../../src/audit/journal.js';
@@ -69,7 +70,7 @@ describe('GM snapshot conflicts during execution', () => {
       note: expect.stringContaining('stale'),
     });
     const data = pageData(records[0]!) as any;
-    const page = { id: 'page', system: data.system, update: vi.fn() };
+    const page = { id: 'page', system: data.system, update: vi.fn(updatePage) };
     const outcome = await undoEntry(page, async () => true, {
       reserve: reserveFixtureUndo,
       isGM: () => true,

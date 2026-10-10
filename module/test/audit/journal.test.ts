@@ -51,7 +51,8 @@ function world(isGM: boolean, existing: any[] = [], storedId = '') {
       const j: any = fakeJournal(`j${journals.length + 1}`, { ...d, _stats: { createdBy: 'gm1' } });
       j.createEmbeddedDocuments = async (_n: string, data: any[]) => {
         created.push(...data);
-        j.pages.contents.push(...data.map((x) => ({ system: x.system })));
+        j.pages.contents.push(...data.map((x) => ({ type: x.type, system: x.system })));
+        return data;
       };
       journals.push(j);
       return j;

@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest';
 import { undoEntry, type Conflict, type UndoDeps } from '../../src/audit/undo.js';
@@ -15,7 +16,7 @@ function rig(secondMissing = false) {
         target({ uuid: 'Actor.B', existsAfter: !secondMissing }),
       ].map((t) => ({ ...t, before: JSON.stringify(t.before) })),
     },
-    update: vi.fn(async () => {}),
+    update: vi.fn(updatePage),
   };
   const deps: Partial<UndoDeps> = {
     reserve: reserveFixtureUndo,
@@ -99,12 +100,12 @@ describe('undo confirmation revalidation', () => {
     const updateB = replacement.update.bind(replacement);
     replacement.update = async (data: any, opts: any) => {
       order.push('B');
-      await updateB(data, opts);
+      return updateB(data, opts);
     };
     const updateA = a.update.bind(a);
     a.update = async (data: any, opts: any) => {
       order.push('A');
-      await updateA(data, opts);
+      return updateA(data, opts);
     };
     const confirm = vi
       .fn(async () => true)
@@ -117,7 +118,7 @@ describe('undo confirmation revalidation', () => {
     expect(order).toEqual(['B', 'A']);
     expect(b!.calls.update).toEqual([]);
     expect(replacement.data.name).toBe('Old');
-    expect(page.update).toHaveBeenCalledOnce();
+    expect(page.update).toHaveBeenCalledTimes(3);
   });
 
   it('rechecks audit protection on the current target after confirmation', async () => {

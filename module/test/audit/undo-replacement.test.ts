@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest';
 import { pageData } from '../../src/audit/journal.js';
@@ -61,6 +62,7 @@ describe('witnessed object replacement undo', () => {
       doc.update = async (data: any, opts: any) => {
         doc.calls.update.push({ data, opts });
         applyUpdate(doc.data, data, opts);
+        return doc;
       };
       const witness = new AuditWitness({
         fromUuid: store.fromUuid,
@@ -88,7 +90,7 @@ describe('witnessed object replacement undo', () => {
       const page = {
         id: 'replacement-page',
         system: pageData(assembled).system,
-        update: vi.fn(async () => {}),
+        update: vi.fn(updatePage),
       };
       const out = await undoEntry(page, async () => true, {
         reserve: reserveFixtureUndo,
@@ -101,7 +103,7 @@ describe('witnessed object replacement undo', () => {
       expect(out).toMatchObject({ status: 'done', restored: 1 });
       expect(doc.data).toEqual(initial);
       expect(doc.calls.update).toHaveLength(1);
-      expect(page.update).toHaveBeenCalledOnce();
+      expect(page.update).toHaveBeenCalledTimes(2);
     },
   );
 });
@@ -125,6 +127,7 @@ it.each([
   const doc = store.add(writable('Actor.A', copy(initial), 1, store));
   doc.update = async (data: any, options: any) => {
     applyUpdate(doc.data, data, options);
+    return doc;
   };
   const witness = new AuditWitness({
     fromUuid: store.fromUuid,
@@ -141,7 +144,7 @@ it.each([
   const page = {
     id: 'replaced-root',
     system: pageData(final).system,
-    update: vi.fn(async () => {}),
+    update: vi.fn(updatePage),
   };
   expect(
     await undoEntry(page, async () => true, {

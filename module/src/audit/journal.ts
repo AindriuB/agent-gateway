@@ -108,6 +108,7 @@ export function pageData(record: AuditRecord): Record<string, unknown> {
       // from its own capture (AuditWitness.assemble) or are view-only (sanitiseTarget).
       before: t.before ? JSON.stringify(t.before) : '',
     })),
+    undoCompleted: [],
     undoneAt: null,
     undoneBy: '',
   };
@@ -127,6 +128,18 @@ export async function writeAuditEntry(record: AuditRecord): Promise<boolean> {
     pages.some((p) => p?.system?.userId === record.userId && p?.system?.entryId === record.entryId)
   )
     return false;
-  await journal.createEmbeddedDocuments('JournalEntryPage', [pageData(record)]);
+  const pagesCreated = await journal.createEmbeddedDocuments('JournalEntryPage', [
+    pageData(record),
+  ]);
+  if (
+    !pagesCreated?.some(
+      (p: any) =>
+        p.type === AUDIT_TYPE &&
+        p.system?.entryId === record.entryId &&
+        p.system?.userId === record.userId,
+    )
+  ) {
+    throw new Error('Foundry did not persist the audit entry');
+  }
   return true;
 }

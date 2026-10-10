@@ -50,6 +50,7 @@ function world() {
         for (const [k, v] of Object.entries(change)) current.system[k.slice('system.'.length)] = v;
         // Deliberately do not broadcast into the other client's stale cache.
         Object.assign(page.system, current.system);
+        return page;
       }),
     };
     pages.set(page.id, page);
@@ -110,6 +111,7 @@ describe('server undo reservations', () => {
       const mutate = vi.fn(async () => {
         opened();
         await wait;
+        return w.doc;
       });
       if (action === 'update') w.doc.update = mutate;
       else {
@@ -240,7 +242,7 @@ describe('reservation finalization and authoritative reads', () => {
     a.page.update = vi.fn(async (change) => {
       opened();
       await wait;
-      await update(change);
+      return update(change);
     });
     const first = undoA(a.page, async () => true, a.undoDeps);
     await ready;
@@ -312,10 +314,48 @@ it('persists completion through the trusted original page, not a parentless serv
     status: 'done',
     restored: 1,
   });
-  expect(a.page.update).toHaveBeenCalledExactlyOnceWith({
+  expect(a.page.update).toHaveBeenCalledWith({
     'system.undoneAt': 777,
     'system.undoneBy': 'gm1',
   });
   expect(w.server.get(a.page.id).system.undoneAt).toBe(777);
   expect(w.server.has(reservationId(a.page.uuid))).toBe(false);
+});
+
+it('reads completed targets from the server before a different GM retries a partial undo', async () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const w = world();
+  const bDoc = w.store.add(writable('Actor.B', { name: 'After B' }, 10, w.store));
+  w.server
+    .get(w.initial.id)
+    .system.targets.push({
+      ...target({ uuid: bDoc.uuid }),
+      before: JSON.stringify({ name: 'Before B' }),
+    });
+  const a = w.client('gm1');
+  const b = w.client('gm2');
+  const original = w.doc.update;
+  w.doc.update = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('validation'))
+    .mockImplementation(original);
+  const [undoA, undoB] = await separateClients();
+  try {
+    expect(await undoA(a.page, async () => true, a.undoDeps)).toMatchObject({
+      status: 'failed',
+      restored: 1,
+    });
+    expect(w.server.get(w.initial.id).system.undoCompleted).toEqual([bDoc.uuid]);
+    expect(b.page.system.undoCompleted).toBeUndefined();
+    bDoc.data.name = 'Human edit';
+    bDoc._stats.modifiedTime = 20;
+    expect(await undoB(b.page, async () => true, b.undoDeps)).toMatchObject({
+      status: 'done',
+      restored: 1,
+    });
+    expect(bDoc.calls.update).toHaveLength(1);
+    expect(bDoc.data.name).toBe('Human edit');
+  } finally {
+    error.mockRestore();
+  }
 });

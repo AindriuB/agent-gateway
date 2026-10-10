@@ -40,6 +40,7 @@ export function createAuditModel(): any {
         result: new f.StringField({ required: true, blank: true, initial: '' }),
         status: new f.StringField({ required: true, initial: 'ok', choices: ['ok', 'error'] }),
         relayed: new f.BooleanField({ initial: false }),
+        undoCompleted: new f.ArrayField(new f.StringField(), { initial: [] }),
         undoneAt: new f.NumberField({ required: true, nullable: true, initial: null }),
         undoneBy: new f.StringField({ required: true, blank: true, initial: '' }),
       };

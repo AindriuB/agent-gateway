@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from 'vitest';
 import { AuditProtectedError } from '../../src/audit/guard.js';
@@ -139,7 +140,7 @@ describe('complete witnessed changed-path capture', () => {
       expect(captured.changedPaths).toHaveLength(L.changedPaths);
     }
     const data = pageData(final) as any;
-    const page = { id: 'page', system: data.system, update: vi.fn() };
+    const page = { id: 'page', system: data.system, update: vi.fn(updatePage) };
     const outcome = await undoEntry(page, async () => true, {
       reserve: reserveFixtureUndo,
       isGM: () => true,

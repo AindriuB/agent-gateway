@@ -54,6 +54,8 @@ export type StoredTarget = Omit<AuditTarget, 'before'> & { before: string };
 /** What is stored in the page's `system` data: the record plus its undo state. */
 export interface AuditSystemData extends Omit<AuditRecord, 'targets'> {
   targets: StoredTarget[];
+  /** Targets already restored, persisted after each mutation so retries never repeat them. */
+  undoCompleted: string[];
   undoneAt: number | null;
   undoneBy: string;
 }

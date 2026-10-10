@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { defineTool } from '@agent-gateway/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -80,7 +81,10 @@ const stored = (r: AuditRecord) => {
     id: 'pg',
     system: d.system,
     updates: [] as any[],
-    update: async (u: any) => void page.updates.push(u),
+    update: async (u: any) => {
+      page.updates.push(u);
+      return updatePage.call(page, u);
+    },
   };
   return page;
 };
@@ -211,7 +215,7 @@ describe('the GM witnesses a player agent change', () => {
     expect(rec.targets.every((t) => t.note === NOT_WITNESSED_NOTE)).toBe(true);
     const created: unknown[] = [];
     (globalThis as any).getDocumentClass = () => ({
-      create: async (x: unknown) => void created.push(x),
+      create: async (x: unknown) => created.push(x),
     });
     const out = await undoEntry(
       stored(rec),
@@ -330,7 +334,7 @@ describe('the GM witnesses a player agent change', () => {
     });
     const created: any[] = [];
     (globalThis as any).getDocumentClass = () => ({
-      create: async (x: any, o: any) => void created.push({ x, o }),
+      create: async (x: any, o: any) => created.push({ x, o }),
     });
     const out = await undoEntry(
       stored(w.written[0]!),

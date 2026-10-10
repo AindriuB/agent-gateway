@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { conflictFor, undoEntry, type UndoDeps } from '../../src/audit/undo.js';
@@ -9,7 +10,10 @@ const makePage = (targets: AuditTarget[], extra: object = {}) => {
   const page: any = {
     updates: [] as any[],
     system: { targets: targets.map(stored), undoneAt: null, undoneBy: '', ...extra },
-    update: async (d: any) => void page.updates.push(d),
+    update: async (d: any) => {
+      page.updates.push(d);
+      return updatePage.call(page, d);
+    },
   };
   return page;
 };
@@ -68,7 +72,10 @@ describe('undoEntry', () => {
     expect(doc.calls.update).toEqual([
       { data: { name: 'Old', system: { hp: 9 } }, opts: { diff: false, recursive: false } },
     ]);
-    expect(page.updates).toEqual([{ 'system.undoneAt': 777, 'system.undoneBy': 'gm1' }]);
+    expect(page.updates).toEqual([
+      { 'system.undoCompleted': ['Actor.a1'] },
+      { 'system.undoneAt': 777, 'system.undoneBy': 'gm1' },
+    ]);
   });
 
   it('deletes a document the call created', async () => {
@@ -85,11 +92,11 @@ describe('undoEntry', () => {
     const { store, confirm, deps } = rig();
     const created: any[] = [];
     (globalThis as any).getDocumentClass = (name: string) => ({
-      create: async (d: any, o: any) => void created.push({ name, d, o }),
+      create: async (d: any, o: any) => created.push({ name, d, o }),
     });
     const parent = store.add(writable('Actor.a1', {}, 5, store));
     parent.createEmbeddedDocuments = async (n: string, d: any[], o: any) =>
-      void created.push({ n, d, o });
+      created.push({ n, d, o });
     const page = makePage([
       target({
         uuid: 'Actor.gone',
@@ -166,7 +173,10 @@ describe('undoEntry', () => {
     const order: string[] = [];
     for (const id of ['A', 'B']) {
       const d = store.add(writable(`Actor.${id}`, {}, 10, store));
-      d.update = async () => void order.push(id);
+      d.update = async () => {
+        order.push(id);
+        return d;
+      };
     }
     await undoEntry(
       makePage([target({ uuid: 'Actor.A' }), target({ uuid: 'Actor.B' })]),
@@ -180,7 +190,7 @@ describe('undoEntry', () => {
     const { store, confirm, deps } = rig();
     const created: unknown[] = [];
     (globalThis as any).getDocumentClass = () => ({
-      create: async (d: unknown) => void created.push(d),
+      create: async (d: unknown) => created.push(d),
     });
     const user = store.add(writable('User.u1', {}, 10, store));
     const macro = store.add(writable('Macro.m1', {}, 10, store));
@@ -247,6 +257,7 @@ describe('undoEntry', () => {
     doc.update = async () => {
       doc.calls.update.push({ data: 1, opts: 1 });
       await new Promise<void>((r) => (release = r));
+      return doc;
     };
     const page = makePage([target()]);
     page.id = 'pg1';

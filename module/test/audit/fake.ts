@@ -29,10 +29,12 @@ export function writable(
     async update(d: any, opts: any) {
       calls.update.push({ data: d, opts });
       Object.assign(doc.data, d);
+      return doc;
     },
     async delete() {
       calls.deleted += 1;
       store?.docs.delete(uuid);
+      return doc;
     },
   };
   return doc;
@@ -82,3 +84,11 @@ export const reserveFixtureUndo = async (page: any) => ({
   isHeld: () => true,
   release: async () => {},
 });
+
+/** Foundry returns the updated document and applies dotted system fields. */
+export async function updatePage(this: any, change: any) {
+  for (const [key, value] of Object.entries(change)) {
+    if (key.startsWith('system.')) this.system[key.slice(7)] = value;
+  }
+  return this;
+}

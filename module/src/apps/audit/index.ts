@@ -115,7 +115,19 @@ export function createAuditApp(): any {
       const id = target?.dataset?.pageId;
       const page = findAuditJournal()?.pages?.get?.(id);
       if (!page) return;
-      notifyOutcome(await undoEntry(page, confirmConflicts));
+      try {
+        notifyOutcome(await undoEntry(page, confirmConflicts));
+      } catch (err) {
+        console.error('agent-gateway | undo stopped with its reservation retained', err);
+        notifyOutcome({
+          status: 'failed',
+          restored: 0,
+          failed: [page.uuid],
+          skipped: [],
+          conflicts: [],
+        });
+        ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Audit.undoBusy'));
+      }
     }
   }
   return AuditApp;

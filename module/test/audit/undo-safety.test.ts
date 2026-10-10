@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { undoEntry, type UndoDeps } from '../../src/audit/undo.js';
@@ -15,7 +16,7 @@ function rig() {
         before: JSON.stringify({ name: 'Before' }),
       })),
     },
-    update: vi.fn(async () => {}),
+    update: vi.fn(updatePage),
   };
   const deps: Partial<UndoDeps> = {
     reserve: reserveFixtureUndo,
@@ -70,7 +71,9 @@ describe('undo mutations separated by awaits', () => {
       expect(a.calls.update).toEqual([]);
       expect(store.docs.get(a.uuid)?.calls.update ?? []).toEqual([]);
       expect(b.calls.update).toHaveLength(1);
-      expect(page.update).not.toHaveBeenCalled();
+      expect(page.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ 'system.undoneAt': expect.anything() }),
+      );
     },
   );
 
@@ -96,9 +99,11 @@ describe('undo mutations separated by awaits', () => {
     await pause.ready;
     gm = false;
     pause.release();
-    expect(await pending).toMatchObject({ status: 'refused', restored: 1 });
+    await expect(pending).rejects.toThrow('undo authority lost');
     expect(a.calls.update).toEqual([]);
-    expect(page.update).not.toHaveBeenCalled();
+    expect(page.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ 'system.undoneAt': expect.anything() }),
+    );
   });
 
   it('stops if the acting GM is demoted while confirming conflicts', async () => {
@@ -116,7 +121,9 @@ describe('undo mutations separated by awaits', () => {
     expect(out).toMatchObject({ status: 'refused', restored: 0 });
     expect(a.calls.update).toEqual([]);
     expect(b.calls.update).toEqual([]);
-    expect(page.update).not.toHaveBeenCalled();
+    expect(page.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ 'system.undoneAt': expect.anything() }),
+    );
   });
 });
 
@@ -133,7 +140,9 @@ describe('undo resolution and embedded creation', () => {
       restored: 0,
       failed: [a.uuid],
     });
-    expect(page.update).not.toHaveBeenCalled();
+    expect(page.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ 'system.undoneAt': expect.anything() }),
+    );
     expect(a.calls.deleted).toBe(0);
     expect(await undoEntry(page, async () => true, deps)).toMatchObject({
       status: 'done',
@@ -167,7 +176,9 @@ describe('undo resolution and embedded creation', () => {
       });
       expect(out).toMatchObject({ status: 'failed', restored: 0 });
       expect(parent.createEmbeddedDocuments).not.toHaveBeenCalled();
-      expect(page.update).not.toHaveBeenCalled();
+      expect(page.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ 'system.undoneAt': expect.anything() }),
+      );
     },
   );
 });

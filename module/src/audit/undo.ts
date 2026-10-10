@@ -167,13 +167,19 @@ export function restoreData(before: Record<string, unknown>, doc: any): Record<s
   return out;
 }
 
+function requireMutation(result: unknown): void {
+  if (!result || (Array.isArray(result) && result.length === 0)) {
+    throw new Error('Foundry refused the document mutation');
+  }
+}
+
 async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
   const parts = target.uuid.split('.');
   const before = target.before!;
   if (parts.length <= 2) {
     if (!deps.canCreate(parts[0]!)) throw new Error('not permitted to create this document');
     const cls = getDocumentClass(parts[0]!);
-    await cls.create(before, { keepId: true });
+    requireMutation(await cls.create(before, { keepId: true }));
     return;
   }
   const docName = parts[parts.length - 2]!;
@@ -187,7 +193,7 @@ async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
     ([name]) => name === docName,
   )?.[0];
   if (!collection) throw new Error(`cannot recreate a ${docName} here`);
-  await parent.createEmbeddedDocuments(docName, [before], { keepId: true });
+  requireMutation(await parent.createEmbeddedDocuments(docName, [before], { keepId: true }));
 }
 
 /**
@@ -255,7 +261,9 @@ export async function undoEntry(
 }
 
 async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Promise<UndoOutcome> {
+  const completed = new Set<string>(system.undoCompleted ?? []);
   const targets: AuditTarget[] = ([...(system.targets ?? [])] as StoredTarget[])
+    .filter((t) => !completed.has(t.uuid))
     .map((t) => ({ ...t, before: decodeBefore(t) }))
     .reverse();
   // A target that should restore but has no readable snapshot cannot be restored.
@@ -365,30 +373,43 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
       if (!target.existed) {
         if (doc) {
           if (!deps.canModify(doc, 'delete')) throw new Error('not permitted to delete');
-          await doc.delete();
+          requireMutation(await doc.delete());
         }
       } else if (doc) {
         if (!deps.canModify(doc, 'update')) throw new Error('not permitted to update');
         if (target.changedPaths.length) {
           // Observed by this GM client: restore just those paths from the GM's own snapshot.
-          await doc.update(minimalRestore(target.before!, target.changedPaths, doc.toObject()), {
-            diff: false,
-          });
+          requireMutation(
+            await doc.update(minimalRestore(target.before!, target.changedPaths, doc.toObject()), {
+              diff: false,
+            }),
+          );
         } else {
-          await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false });
+          requireMutation(
+            await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false }),
+          );
         }
       } else {
         await recreate(target, deps);
       }
-      out.restored += 1;
     } catch (err) {
       console.error(`agent-gateway | undo failed for ${target.uuid}`, err);
       out.failed.push(target.uuid);
+      plan.shift();
+      continue;
     }
+    out.restored += 1;
+    completed.add(target.uuid);
+    if (!deps.isGM()) throw new Error('undo authority lost before progress could be saved');
+    // Persist progress while holding the reservation. An uncertain/vetoed write must
+    // escape run(), retaining the reservation so another client cannot repeat this mutation.
+    requireMutation(await page.update({ 'system.undoCompleted': [...completed] }));
     plan.shift();
   }
   if (out.failed.length) return { ...out, status: 'failed' };
   if (!deps.isGM() || system.undoneAt) return { ...out, status: 'refused' };
-  await page.update({ 'system.undoneAt': deps.now(), 'system.undoneBy': deps.userId() });
+  requireMutation(
+    await page.update({ 'system.undoneAt': deps.now(), 'system.undoneBy': deps.userId() }),
+  );
   return out;
 }

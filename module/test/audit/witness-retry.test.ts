@@ -31,6 +31,7 @@ it('the live relay retains witnessed undo data through a journal failure and ret
     .mockRejectedValueOnce(new Error('temporary journal failure'))
     .mockImplementation(async (_type, data) => {
       pages.push(...data);
+      return data;
     });
   const journal = {
     id: 'audit',

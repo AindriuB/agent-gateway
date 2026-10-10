@@ -1,3 +1,4 @@
+import { updatePage } from './fake.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { defineTool } from '@agent-gateway/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -63,7 +64,7 @@ const entry = (id: string, targets: object[]): AuditRecord => ({
 });
 const stored = (r: AuditRecord) => {
   const d = pageData(r) as any;
-  const page: any = { id: 'pg', system: d.system, update: async () => {} };
+  const page: any = { id: 'pg', system: d.system, update: updatePage };
   return page;
 };
 const undoDeps = (store: ReturnType<typeof makeStore>): Partial<UndoDeps> => ({

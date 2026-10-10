@@ -70,8 +70,8 @@ export function entryView(page: any): EntryView {
       return {
         uuid: safeText(t.uuid, 300),
         kind: kindOf(t),
-        undoable: t.undoable === true,
-        note: safeText(t.note, 120),
+        undoable: t.undoable === true && !(s.undoCompleted ?? []).includes(t.uuid),
+        note: (s.undoCompleted ?? []).includes(t.uuid) ? 'already undone' : safeText(t.note, 120),
         before: before
           ? safeBlock(JSON.stringify(serialiseDocument(before), null, 2), BEFORE_CHARS)
           : '',
