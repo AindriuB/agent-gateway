@@ -98,13 +98,14 @@ function checkedResult(id: string, schema: JsonSchemaObject, value: unknown): Di
       const error = result.error as Record<string, unknown> | null;
       if (
         !error ||
-        !['INVALID_ARGS', 'FORBIDDEN'].includes(String(error.code)) ||
+        typeof error.code !== 'string' ||
+        (error.code !== 'INVALID_ARGS' && error.code !== 'FORBIDDEN') ||
         typeof error.message !== 'string' ||
         error.message.length > 500
       )
         return invalid('invalid error');
       return {
-        error: { code: error.code as 'INVALID_ARGS' | 'FORBIDDEN', message: error.message },
+        error: { code: error.code, message: error.message },
       };
     }
     if (

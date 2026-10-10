@@ -325,6 +325,8 @@ describe('pack execution isolation', () => {
     'large-structured',
     'error',
     'long-error',
+    'array-forbidden-code',
+    'array-invalid-args-code',
     'cycle',
   ])('contains invalid result %s to one call', async (problem) => {
     const { api, registry, dispatch } = rig();
@@ -338,6 +340,10 @@ describe('pack execution isolation', () => {
       if (problem === 'large-structured')
         return { text: 'ok', structured: { extra: 'x'.repeat(65 * 1024) } };
       if (problem === 'error') return { error: { code: 'DENIED', message: 'no' } };
+      if (problem === 'array-forbidden-code')
+        return { error: { code: ['FORBIDDEN'], message: 'Malformed code' } };
+      if (problem === 'array-invalid-args-code')
+        return { error: { code: ['INVALID_ARGS'], message: 'Malformed code' } };
       if (problem === 'long-error')
         return { error: { code: 'FORBIDDEN', message: 'x'.repeat(501) } };
       const cycle: Record<string, unknown> = {};
