@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createDispatcher } from '../../src/ops/dispatch.js';
 import { STAGES } from '../../src/ops/stages.js';
-import type { OpAgent, OpContext } from '../../src/ops/types.js';
+import type { OpAgent } from '../../src/ops/types.js';
 import { createPolicyStage } from '../../src/policy/stage.js';
 import { registerPolicySettings } from '../../src/policy/store.js';
 import { DEFAULT_LIMITS } from '../../src/ratelimit/config.js';
@@ -31,7 +31,7 @@ const tool = (category: ToolCategory) =>
     output: z.strictObject({}),
   });
 const tools = (['read', 'write', 'destructive', 'code'] as const).map(tool);
-const handler = vi.fn(async (_ctx: OpContext) => ({ text: 'ran', structured: {} }));
+const handler = vi.fn(async () => ({ text: 'ran', structured: {} }));
 const handlers = Object.fromEntries(tools.map((t) => [t.name, handler]));
 
 const agent: OpAgent = { id: 'a', ownerUserId: 'u', headless: false };

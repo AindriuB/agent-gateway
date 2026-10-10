@@ -7,7 +7,9 @@ import {
   buildSeedPlan,
   FIXTURE_FLAG_KEY,
   FIXTURE_FLAG_SCOPE,
+  E2E_RATE_LIMITS,
   PLAYER_AGENTS_SETTING,
+  RATE_LIMITS_SETTING,
 } from './spec.js';
 import { formatCounts, verifyFixtureResult, type FixtureResult } from './verify.js';
 
@@ -37,10 +39,15 @@ export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
       typeof state.previousPlayerAgentsEnabled === 'boolean'
         ? state.previousPlayerAgentsEnabled
         : undefined;
+    const restoreLimits =
+      typeof state.previousRateLimits === 'string' ? state.previousRateLimits : undefined;
     const arg = {
       mode,
       policySetting: PLAYER_AGENTS_SETTING,
       restorePlayerAgents: mode === 'clean' ? restore : undefined,
+      rateLimitSetting: RATE_LIMITS_SETTING,
+      e2eRateLimits: E2E_RATE_LIMITS,
+      restoreRateLimits: mode === 'clean' ? restoreLimits : undefined,
       plan: buildSeedPlan({ gmUser: config.gmUser, playerUser: config.playerUser }),
       flagScope: FIXTURE_FLAG_SCOPE,
       flagKey: FIXTURE_FLAG_KEY,
@@ -53,16 +60,22 @@ export async function runFixtures(mode: 'seed' | 'clean'): Promise<void> {
     if (mode === 'seed') {
       writeFileSync(
         paths.fixtureState,
-        `${JSON.stringify({ ...result.totals, uuids: result.uuids, previousPlayerAgentsEnabled: restore ?? result.policy?.before })}\n`,
+        `${JSON.stringify({ ...result.totals, uuids: result.uuids, previousPlayerAgentsEnabled: restore ?? result.policy?.before, previousRateLimits: restoreLimits ?? result.rateLimits?.before })}\n`,
         { mode: 0o600 },
       );
-    } else if (restore !== undefined) {
+    } else if (restore !== undefined || restoreLimits !== undefined) {
       // Restored: forget it, so a second clean does not overwrite a later change by the GM.
       const rest = { ...state };
       delete rest.previousPlayerAgentsEnabled;
+      delete rest.previousRateLimits;
       writeFileSync(paths.fixtureState, `${JSON.stringify(rest)}\n`, { mode: 0o600 });
     }
-    const problems = verifyFixtureResult(mode, result, mode === 'clean' ? restore : undefined);
+    const problems = verifyFixtureResult(
+      mode,
+      result,
+      mode === 'clean' ? restore : undefined,
+      mode === 'clean' ? restoreLimits : undefined,
+    );
     if (problems.length) throw new Error(`${mode} check failed:\n  ${problems.join('\n  ')}`);
     process.stdout.write(`${mode} ok\n`);
   } finally {
