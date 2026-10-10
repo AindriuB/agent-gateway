@@ -6,7 +6,7 @@ structure from the filesystem, so keeping it honest saves every session a
 search.
 
 Keep it to the parts that are stable. Anything that changes weekly belongs in a
-repo's own `CLAUDE.md`, not here.
+repo's own `PROJECT.md` (the agent guide that `CLAUDE.md` and `AGENTS.md` point to), not here.
 
 ## Components
 
