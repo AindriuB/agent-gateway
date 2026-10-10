@@ -1,16 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { entryView } from '../../src/apps/audit/view.js';
-import { confirmConflicts } from '../../src/apps/audit/index.js';
+import { confirmConflicts, notifyOutcome } from '../../src/apps/audit/index.js';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
 
 const findTemplate = (): string =>
   fileURLToPath(new URL('../../../templates/audit/audit.hbs', import.meta.url));
 
 let stub: FoundryStub;
-afterEach(() => stub?.uninstall());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  stub?.uninstall();
+});
 
 const EVIL = '<img src=x onerror=alert(1)>';
 
@@ -92,3 +95,24 @@ describe('audit app rendering', () => {
     expect(content).toContain('&#60;img');
   });
 });
+
+it.each(['cancelled', 'refused', 'failed'] as const)(
+  'reports the completed portion when undo stops with %s',
+  (status) => {
+    stub = installFoundry(14);
+    const warn = vi.fn();
+    vi.stubGlobal('ui', { notifications: { warn, error: vi.fn() } });
+    (globalThis as any).game.i18n = {
+      format: (key: string, args: any) => `${key}:${args.count}`,
+      localize: (key: string) => key,
+    };
+    notifyOutcome({
+      status,
+      restored: 1,
+      skipped: [],
+      failed: status === 'failed' ? ['Actor.A'] : [],
+      conflicts: [],
+    });
+    expect(warn).toHaveBeenCalledWith('AGENT_GATEWAY.Audit.undoStopped:1');
+  },
+);

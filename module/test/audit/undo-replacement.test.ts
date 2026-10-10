@@ -20,11 +20,12 @@ function expandUpdate(update: Record<string, any>) {
   return expanded;
 }
 
-/** Model Foundry updates: expand dotted paths, recursively merge objects, apply -= deletions. */
+/** Model Foundry updates: expand dotted paths, recursively merge, apply -=/== operations. */
 function applyUpdate(data: Record<string, any>, update: Record<string, any>, options: any) {
   const merge = (into: Record<string, any>, change: Record<string, any>) => {
     for (const [key, value] of Object.entries(change)) {
       if (key.startsWith('-=')) delete into[key.slice(2)];
+      else if (key.startsWith('==')) into[key.slice(2)] = copy(value);
       else if (plain(value)) {
         const child = options.recursive !== false && plain(into[key]) ? into[key] : {};
         merge(child, value);
@@ -102,4 +103,53 @@ describe('witnessed object replacement undo', () => {
       expect(page.update).toHaveBeenCalledOnce();
     },
   );
+});
+
+it.each([
+  {
+    name: 'non-recursive root',
+    change: { flags: { mod: { new: 2 } } },
+    options: { recursive: false },
+    paths: ['flags'],
+  },
+  {
+    name: 'flattened ancestor replacement',
+    change: { 'flags.==mod.new': 2 },
+    options: {},
+    paths: ['flags.mod'],
+  },
+])('undo restores the entire $name with realistic merging', async ({ change, options, paths }) => {
+  const store = makeStore();
+  const initial = { name: 'Keep', flags: { mod: { old: 1 }, other: { keep: 2 } } };
+  const doc = store.add(writable('Actor.A', copy(initial), 1, store));
+  doc.update = async (data: any, options: any) => {
+    applyUpdate(doc.data, data, options);
+  };
+  const witness = new AuditWitness({
+    fromUuid: store.fromUuid,
+    now: () => 1,
+    grace: async () => {},
+  });
+  const callId = 'replace-root-001';
+  await witness.onIntent({ callId, uuid: doc.uuid }, 'p1');
+  applyUpdate(doc.data, change, options);
+  doc._stats.modifiedTime = 2;
+  witness.onUpdate(doc, change, { agentGateway: { callId }, ...options }, 'p1');
+  const final = await witness.assemble(record({ entryId: callId, relayed: true }), 'p1');
+  expect(final.targets[0]?.changedPaths).toEqual(paths);
+  const page = {
+    id: 'replaced-root',
+    system: pageData(final).system,
+    update: vi.fn(async () => {}),
+  };
+  expect(
+    await undoEntry(page, async () => true, {
+      isGM: () => true,
+      userId: () => 'gm1',
+      fromUuid: store.fromUuid,
+      canModify: () => true,
+      now: () => 7,
+    }),
+  ).toMatchObject({ status: 'done' });
+  expect(doc.data).toEqual(initial);
 });

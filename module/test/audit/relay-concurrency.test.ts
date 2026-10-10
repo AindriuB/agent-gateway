@@ -4,7 +4,7 @@ import { record } from './fake.js';
 
 afterEach(() => vi.restoreAllMocks());
 
-function rig() {
+function rig(overrides: Partial<RelayDeps> = {}) {
   const emit = vi.fn();
   const write = vi.fn<RelayDeps['write']>();
   const relay = new AuditRelay({
@@ -18,6 +18,7 @@ function rig() {
     setTimer: () => 0,
     clearTimer: () => {},
     now: () => 1000,
+    ...overrides,
   });
   return { relay, emit, write };
 }
@@ -141,5 +142,57 @@ describe.each([false, true])('sender-scoped entry IDs (normalised ID: %s)', (nor
     expect(earlyAcks).toBe(0);
     expect(emit).toHaveBeenCalledWith({ kind: 'audit.ack', id: attacker.record.entryId }, ['p1']);
     expect(emit).toHaveBeenCalledWith({ kind: 'audit.ack', id: attacker.record.entryId }, ['p2']);
+  });
+});
+
+describe('active GM persistence retries', () => {
+  it('retains a failed local write and retries it without relaying to itself', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const timers: Array<() => void> = [];
+    const { relay, emit, write } = rig({
+      setTimer: (fn) => {
+        timers.push(fn);
+        return timers.length;
+      },
+    });
+    write.mockRejectedValueOnce(new Error('temporary journal failure')).mockResolvedValueOnce();
+    await relay.submit(record({ userId: 'gm1' }));
+    expect(relay.pending).toBe(1);
+    expect(timers).toHaveLength(1);
+    timers[0]!();
+    await vi.waitFor(() => expect(relay.pending).toBe(0));
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('does not duplicate a local write when flush runs while it is pending', async () => {
+    const { relay, write } = rig();
+    let finish!: () => void;
+    write.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = relay.submit(record({ userId: 'gm1' }));
+    relay.flush();
+    expect(write).toHaveBeenCalledTimes(1);
+    finish();
+    await pending;
+    expect(relay.pending).toBe(0);
+  });
+
+  it('writes its own buffered records after becoming the active GM', async () => {
+    let active: string | null = null;
+    const { relay, emit, write } = rig({ activeGMId: () => active });
+    await relay.submit(record({ userId: 'gm1' }));
+    active = 'gm1';
+    relay.onPresenceChange();
+    await vi.waitFor(() => expect(relay.pending).toBe(0));
+    expect(write).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ userId: 'gm1' }),
+      'gm1',
+    );
+    expect(emit).not.toHaveBeenCalled();
   });
 });

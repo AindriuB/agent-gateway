@@ -5,7 +5,8 @@ import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
 import { assertNotAudit } from './guard.js';
 import { requestAuditIntent, submitAudit } from './sink.js';
-import { WITNESSED_NAMES } from './witness.js';
+import { RECREATED_NOTE, WITNESSED_NAMES } from './witness.js';
+import { undoClasses } from './undo-classes.js';
 import { boundedJson, jsonSize, newEntryId, safeText } from './record.js';
 import {
   AUDIT_LIMITS as L,
@@ -54,7 +55,9 @@ export interface AuditStageDeps {
   /** Player client: tell the active GM what the call will touch and wait for it to be copied. */
   requestIntent(callId: string, what: { uuid?: string; creates?: boolean }): Promise<boolean>;
   /** Watch document hooks for edits outside this GM call; return a function that removes them. */
-  watchChanges(changed: (uuid: string, options: unknown, userId: unknown) => void): () => void;
+  watchChanges(
+    changed: (uuid: string, options: unknown, userId: unknown, kind?: string) => void,
+  ): () => void;
   now(): number;
   newId(): string;
 }
@@ -74,7 +77,7 @@ const defaultDeps: AuditStageDeps = {
         const hook = `${kind}${name}`;
         const id = hooks.on(hook, (doc: any, ...args: unknown[]) => {
           const [options, userId] = kind === 'update' ? args.slice(1) : args;
-          changed(String(doc?.uuid ?? ''), options, userId);
+          changed(String(doc?.uuid ?? ''), options, userId, kind);
         });
         ids.push([hook, id]);
       }
@@ -92,6 +95,7 @@ class Snapshots {
   private readonly pending = new Map<string, Promise<AuditTarget | null>>();
   private chars = 0;
   private readonly stale = new Set<string>();
+  private readonly recreated = new Set<string>();
   dropped = 0;
   /** Set on a player's client: declarations go to the GM, which captures the data itself. */
   witnessed: ((what: { uuid?: string; creates?: boolean }) => Promise<boolean>) | null = null;
@@ -105,10 +109,13 @@ class Snapshots {
     userId: unknown,
     requester: string,
     callId: string,
+    kind?: string,
   ): void {
     const id = (options as { agentGateway?: { callId?: unknown } } | undefined)?.agentGateway
       ?.callId;
-    if (this.pending.has(uuid) && (userId !== requester || id !== callId)) this.stale.add(uuid);
+    if (!this.pending.has(uuid)) return;
+    if (userId !== requester || id !== callId) this.stale.add(uuid);
+    else if (kind === 'create') this.recreated.add(uuid);
   }
 
   /** Refuse a parent that is, or sits inside, the audit log. A uuid is looked up first. */
@@ -125,11 +132,7 @@ class Snapshots {
   }
 
   private async lookup(uuid: string): Promise<any> {
-    try {
-      return await this.fromUuid(uuid);
-    } catch {
-      return null;
-    }
+    return this.fromUuid(uuid);
   }
 
   async snapshot(uuid: string): Promise<void> {
@@ -164,6 +167,7 @@ class Snapshots {
     await this.guardParent(parent);
     const made = await this.lookup(uuid);
     if (made) assertNotAudit(made);
+    if (this.pending.has(uuid)) this.recreated.add(uuid);
     if (this.witnessed) return this.add(uuid, async () => viewOnlyTarget(uuid));
     return this.add(uuid, async () => blank(uuid, false));
   }
@@ -175,10 +179,11 @@ class Snapshots {
       return;
     }
     const p = make().then((t) => {
-      // Compendium documents are not restored by undo.
-      if (uuid.startsWith('Compendium.')) {
+      if (!undoClasses(uuid)) {
         t.undoable = false;
-        t.note ||= 'compendium documents are not undone';
+        t.note ||= uuid.startsWith('Compendium.')
+          ? 'compendium documents are not undone'
+          : 'this document class is not undone';
       }
       return t;
     });
@@ -196,16 +201,25 @@ class Snapshots {
         out.push(t);
         continue;
       }
-      const doc = await this.lookup(t.uuid);
+      let doc: any;
+      try {
+        doc = await this.lookup(t.uuid);
+      } catch {
+        out.push({ ...t, undoable: false, note: 'final document lookup failed' });
+        continue;
+      }
       const mod = Number(doc?._stats?.modifiedTime);
+      const recreated = t.existed && this.recreated.has(t.uuid);
       out.push({
         ...t,
         existsAfter: !!doc,
         afterModifiedTime: doc && Number.isFinite(mod) ? mod : null,
-        undoable: t.undoable && !this.stale.has(t.uuid),
-        note: this.stale.has(t.uuid)
-          ? 'changed outside this call after its snapshot; the snapshot is stale'
-          : t.note,
+        undoable: t.undoable && !this.stale.has(t.uuid) && !recreated,
+        note: recreated
+          ? RECREATED_NOTE
+          : this.stale.has(t.uuid)
+            ? 'changed outside this call after its snapshot; the snapshot is stale'
+            : t.note,
       });
     }
     return out;
@@ -259,8 +273,8 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
       const gm = deps.isGM();
       if (!gm) snaps.witnessed = (what) => deps.requestIntent(callId, what);
       const stopWatching = gm
-        ? deps.watchChanges((uuid, options, userId) =>
-            snaps.intervene(uuid, options, userId, ctx.user.id, callId),
+        ? deps.watchChanges((uuid, options, userId, kind) =>
+            snaps.intervene(uuid, options, userId, ctx.user.id, callId, kind),
           )
         : () => {};
       ctx.callId = callId;

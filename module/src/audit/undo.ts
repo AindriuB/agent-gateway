@@ -175,6 +175,9 @@ async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
   const docName = parts[parts.length - 2]!;
   const parent = await deps.fromUuid(parts.slice(0, -2).join('.'));
   if (!parent) throw new Error('the parent document no longer exists');
+  if (!deps.isGM()) throw new Error('only a GM may undo');
+  if (isAuditDocument(parent)) throw new Error('the audit log cannot be changed by undo');
+  if (!deps.canCreate(docName)) throw new Error('not permitted to create this document');
   if (!deps.canModify(parent, 'update')) throw new Error('not permitted to change the parent');
   const collection = Object.entries(parent.constructor?.metadata?.embedded ?? {}).find(
     ([name]) => name === docName,
@@ -224,64 +227,101 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
     }
   }
   type Step = { target: AuditTarget; doc: any; modifiedTime: number | null };
-  const resolvePlan = async (): Promise<Step[]> => {
+  let resolutionFailed = false;
+  const resolveStep = async (t: AuditTarget): Promise<Step | null> => {
+    // A relayed record's update is restorable only for the paths this GM client observed.
+    const unobserved =
+      system.relayed === true && t.existed && t.existsAfter && (t.changedPaths ?? []).length === 0;
+    if (!t.undoable || unobserved || !undoClasses(t.uuid)) {
+      if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
+      return null;
+    }
+    let doc: any;
+    try {
+      doc = await deps.fromUuid(t.uuid);
+    } catch (err) {
+      // A failed read proves nothing about existence: never recreate or skip deletion on that basis.
+      console.error(`agent-gateway | undo lookup failed for ${t.uuid}`, err);
+      if (!out.failed.includes(t.uuid)) out.failed.push(t.uuid);
+      resolutionFailed = true;
+      return null;
+    }
+    if (doc && isAuditDocument(doc)) {
+      if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
+      return null;
+    }
+    // Foundry documents are mutable: save the version before awaiting a human or another mutation.
+    const modifiedTime = Number(doc?._stats?.modifiedTime);
+    return { target: t, doc, modifiedTime: Number.isFinite(modifiedTime) ? modifiedTime : null };
+  };
+  const resolvePlan = async (remaining: AuditTarget[]): Promise<Step[]> => {
     const plan: Step[] = [];
-    for (const t of targets) {
-      // A relayed record's update is restorable only for the paths this GM client observed.
-      const unobserved =
-        system.relayed === true &&
-        t.existed &&
-        t.existsAfter &&
-        (t.changedPaths ?? []).length === 0;
-      if (!t.undoable || unobserved || !undoClasses(t.uuid)) {
-        if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
-        continue;
-      }
-      let doc: any = null;
-      try {
-        doc = await deps.fromUuid(t.uuid);
-      } catch {
-        doc = null;
-      }
-      if (doc && isAuditDocument(doc)) {
-        if (!out.skipped.includes(t.uuid)) out.skipped.push(t.uuid);
-        continue;
-      }
-      // Foundry documents are mutable: save the version before awaiting a human response.
-      const modifiedTime = Number(doc?._stats?.modifiedTime);
-      plan.push({
-        target: t,
-        doc,
-        modifiedTime: Number.isFinite(modifiedTime) ? modifiedTime : null,
-      });
+    for (const target of remaining) {
+      const step = await resolveStep(target);
+      if (step) plan.push(step);
     }
     return plan;
   };
-  let plan = await resolvePlan();
-  out.conflicts = plan.flatMap(({ target, doc }) => conflictFor(target, doc) ?? []);
-  while (out.conflicts.length) {
-    if (!(await deps.confirmConflicts(out.conflicts))) return { ...out, status: 'cancelled' };
-    const previous = new Map(plan.map((step) => [step.target.uuid, step]));
-    plan = await resolvePlan();
-    const changed = new Set(
-      plan
-        .filter((step) => {
-          const old = previous.get(step.target.uuid);
-          return !old || old.doc !== step.doc || old.modifiedTime !== step.modifiedTime;
-        })
-        .map((step) => step.target.uuid),
+  const differs = (old: Step | undefined, step: Step): boolean =>
+    !old || old.doc !== step.doc || old.modifiedTime !== step.modifiedTime;
+  const conflictsFor = (plan: Step[], changed = new Set<string>()): Conflict[] =>
+    plan.flatMap(
+      ({ target, doc }) =>
+        conflictFor(target, doc) ??
+        (changed.has(target.uuid) ? [{ uuid: target.uuid, reason: 'modified' as const }] : []),
     );
-    if (!changed.size) break;
-    // Repeat the warning for every new version, even if its conflict reason is unchanged.
-    out.conflicts = plan.flatMap(({ target, doc }) => {
-      const conflict = conflictFor(target, doc);
-      return (
-        conflict ??
-        (changed.has(target.uuid) ? [{ uuid: target.uuid, reason: 'modified' as const }] : [])
+  const confirmPlan = async (plan: Step[], conflicts: Conflict[]): Promise<Step[] | null> => {
+    while (conflicts.length) {
+      out.conflicts = conflicts;
+      if (!(await deps.confirmConflicts(conflicts))) {
+        out.status = 'cancelled';
+        return null;
+      }
+      if (!deps.isGM() || system.undoneAt) {
+        out.status = 'refused';
+        return null;
+      }
+      const previous = new Map(plan.map((step) => [step.target.uuid, step]));
+      plan = await resolvePlan(plan.map((step) => step.target));
+      if (resolutionFailed) {
+        out.status = 'failed';
+        return null;
+      }
+      const changed = new Set(
+        plan
+          .filter((step) => differs(previous.get(step.target.uuid), step))
+          .map((step) => step.target.uuid),
       );
-    });
-  }
-  for (const { target, doc } of plan) {
+      if (!changed.size) break;
+      // Confirmation covers these document versions, never changes made while the dialog was open.
+      conflicts = conflictsFor(plan, changed);
+    }
+    return plan;
+  };
+  let plan = await resolvePlan(targets);
+  if (resolutionFailed) return { ...out, status: 'failed' };
+  const confirmed = await confirmPlan(plan, conflictsFor(plan));
+  if (!confirmed) return out;
+  plan = confirmed;
+  while (plan.length) {
+    const expected = plan[0]!;
+    // Every earlier mutation yields to other clients. Resolve this target immediately before
+    // its mutation, using the exact version approved above (or initially found conflict-free).
+    const step = await resolveStep(expected.target);
+    if (resolutionFailed) return { ...out, status: 'failed' };
+    if (!step) {
+      plan.shift();
+      continue;
+    }
+    if (differs(expected, step)) {
+      plan[0] = step;
+      const renewed = await confirmPlan(plan, conflictsFor(plan, new Set([step.target.uuid])));
+      if (!renewed) return out;
+      plan = renewed;
+      continue;
+    }
+    if (!deps.isGM() || system.undoneAt) return { ...out, status: 'refused' };
+    const { target, doc } = step;
     try {
       if (!target.existed) {
         if (doc) {
@@ -306,8 +346,10 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
       console.error(`agent-gateway | undo failed for ${target.uuid}`, err);
       out.failed.push(target.uuid);
     }
+    plan.shift();
   }
   if (out.failed.length) return { ...out, status: 'failed' };
+  if (!deps.isGM() || system.undoneAt) return { ...out, status: 'refused' };
   await page.update({ 'system.undoneAt': deps.now(), 'system.undoneBy': deps.userId() });
   return out;
 }

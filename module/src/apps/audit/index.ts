@@ -32,6 +32,9 @@ export async function confirmConflicts(conflicts: Conflict[]): Promise<boolean> 
 
 export function notifyOutcome(o: UndoOutcome): void {
   const i18n = game.i18n;
+  if (o.status !== 'done' && o.restored > 0) {
+    ui.notifications.warn(i18n.format('AGENT_GATEWAY.Audit.undoStopped', { count: o.restored }));
+  }
   if (o.status === 'done') {
     ui.notifications.info(i18n.format('AGENT_GATEWAY.Audit.undoDone', { count: o.restored }));
     if (o.skipped.length) {

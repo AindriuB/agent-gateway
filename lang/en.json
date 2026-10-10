@@ -111,6 +111,7 @@
       "undo": "Undo",
       "undone": "Undone",
       "undoDone": "Restored {count} document(s).",
+      "undoStopped": "Undo stopped after restoring {count} document(s). The entry stays open.",
       "undoSkipped": "{count} document(s) cannot be undone and were left as they are.",
       "undoFailed": "Undo failed for {count} document(s). The entry stays open; see the console.",
       "undoRefused": "Only a GM can undo an entry, and an entry can be undone once.",

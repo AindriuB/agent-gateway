@@ -71,13 +71,14 @@ function* changeEntries(node: Record<string, unknown>): Generator<[string, unkno
 }
 
 /** Flatten a hook diff completely, or throw if a path or the distinct-path count cannot fit. */
-export function changedKeyPaths(change: unknown): string[] {
+export function changedKeyPaths(change: unknown, recursive = true): string[] {
   if (!change || typeof change !== 'object' || Array.isArray(change)) return [];
   const out = new Set<string>();
   const stack = [
     { entries: changeEntries(change as Record<string, unknown>), path: '', visited: false },
   ];
   const add = (path: string) => {
+    if (path.length > L.changedPath) throw new Error(PATH_LIMIT_NOTE);
     out.add(path);
     if (out.size > L.changedPaths) throw new Error(PATH_LIMIT_NOTE);
   };
@@ -91,9 +92,18 @@ export function changedKeyPaths(change: unknown): string[] {
     }
     frame.visited = true;
     const [k, value] = next.value;
-    if (!frame.path && (k === '_id' || k === '_stats')) continue;
-    const key = k.replace(/^(-=|==)/, '');
-    if (!key || BAD_SEGMENT.has(key)) continue;
+    const rawParts = k.split('.');
+    const operator = rawParts.findIndex((segment) => /^(?:-=|==)/.test(segment));
+    const parts = rawParts.map((segment) => segment.replace(/^(-=|==)/, ''));
+    if (parts.some((segment) => !segment || BAD_SEGMENT.has(segment))) continue;
+    if (!frame.path && (parts[0] === '_id' || parts[0] === '_stats')) continue;
+    // A replacement/deletion changes its entire ancestor, including omitted sibling keys.
+    const key = parts.slice(0, operator < 0 ? parts.length : operator + 1).join('.');
+    // Non-recursive updates replace entire root objects after dotted paths are expanded.
+    if (!recursive) {
+      add(parts[0]!);
+      continue;
+    }
     const path = frame.path ? `${frame.path}.${key}` : key;
     if (path.length > L.changedPath) throw new Error(PATH_LIMIT_NOTE);
     if (k === key && value && typeof value === 'object' && !Array.isArray(value)) {
@@ -211,7 +221,7 @@ export class AuditWitness {
     try {
       doc = await this.deps.fromUuid(uuid);
     } catch {
-      doc = null;
+      return false;
     }
     if (doc) {
       try {
@@ -281,7 +291,7 @@ export class AuditWitness {
     let paths: string[] = [];
     let complete = true;
     try {
-      paths = changedKeyPaths(change);
+      paths = changedKeyPaths(change, options?.recursive !== false);
     } catch {
       // A partial diff cannot support undo; retain the observation only to refuse it explicitly.
       complete = false;
@@ -391,7 +401,11 @@ export class AuditWitness {
     for (const t of claimed) {
       if (!done.has(t.uuid)) targets.push(viewOnly(t, NOT_OBSERVED_NOTE));
     }
-    return { ...record, targets: targets.slice(0, L.targets) };
+    return {
+      ...record,
+      targets: targets.slice(0, L.targets),
+      targetsDropped: Math.max(record.targetsDropped, targets.length - L.targets),
+    };
   }
 }
 

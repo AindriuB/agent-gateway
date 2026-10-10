@@ -48,7 +48,7 @@ export class AuditRelay {
 
   constructor(private readonly deps: RelayDeps) {}
 
-  /** Records waiting for a GM (player clients). */
+  /** Records waiting for persistence or a GM acknowledgement. */
   get pending(): number {
     return this.buffer.size;
   }
@@ -56,15 +56,15 @@ export class AuditRelay {
   async submit(record: AuditRecord): Promise<void> {
     // Only the designated active GM writes. Any other client, a second GM included, buffers the
     // record and relays it, so two clients never create or write the journal.
-    if (this.deps.isGM() && this.deps.activeGMId() === this.deps.selfId()) {
-      await this.deps.write(record, this.deps.selfId());
-      return;
-    }
     this.buffer.set(record.entryId, record);
     while (this.buffer.size > L.buffer) {
       const oldest = this.buffer.keys().next().value as string;
       this.buffer.delete(oldest);
       console.warn('agent-gateway | audit buffer full; dropped the oldest unsent record');
+    }
+    if (this.deps.isGM() && this.deps.activeGMId() === this.deps.selfId()) {
+      await this.writeLocal(record);
+      return;
     }
     this.flush();
   }
@@ -79,13 +79,35 @@ export class AuditRelay {
     const gm = this.deps.activeGMId();
     if (gm) {
       for (const record of this.buffer.values()) {
-        this.deps.emit({ kind: 'audit.entry', record }, [gm]);
+        if (gm === this.deps.selfId() && this.deps.isGM()) void this.writeLocal(record);
+        else this.deps.emit({ kind: 'audit.entry', record }, [gm]);
       }
     }
+    this.scheduleRetry();
+  }
+
+  private scheduleRetry(): void {
+    if (this.timer !== null || this.buffer.size === 0) return;
     this.timer = this.deps.setTimer(() => {
       this.timer = null;
       this.flush();
     }, RESEND_MS);
+  }
+
+  /** A GM's own record is retained on failure just like an unacknowledged relayed entry. */
+  private async writeLocal(record: AuditRecord): Promise<void> {
+    const key = JSON.stringify([this.deps.selfId(), record.entryId]);
+    if (this.writing.has(key)) return;
+    this.writing.add(key);
+    try {
+      await this.deps.write(record, this.deps.selfId());
+      if (this.buffer.get(record.entryId) === record) this.buffer.delete(record.entryId);
+    } catch (err) {
+      console.error('agent-gateway | audit write failed', err);
+    } finally {
+      this.writing.delete(key);
+      this.scheduleRetry();
+    }
   }
 
   /**
