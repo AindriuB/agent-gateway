@@ -21,8 +21,9 @@ in the same commit.
 
 The tool-pack foundation is implemented on local branches and integrated in the
 20f tree. This entry records implementation and verification, **not merged or
-published completion**. Andrew subsequently approved the 20b source upload
-and live v14 checks; approval does not extend to publishing the other branches. Preserve the task files and worktrees;
+merged completion**. Andrew subsequently approved the source uploads, live
+v14 checks and Hello Pack installation. The task PRs are published for review;
+installation and live pack acceptance remain open. Preserve the task files and worktrees;
 do not archive them while acceptance, publication and review remain open.
 
 | Task | Verified local commit | Independent verification | Review / live evidence |
@@ -47,8 +48,11 @@ Publication state: contract PR #42 (`08c8325`) is published, not merged. Local
 20c incorporates its contract corrections and necessary cycle-breaking scope
 amendments. After Andrew explicitly approved the upload, runtime-rules PR #43
 was updated and its remote head verified as
-`57900438e3777d120903fde309cd0c490bc96795`; it is not merged. The remaining implementation branches and
-this recording branch remain local. Every implementation still lands through
+`57900438e3777d120903fde309cd0c490bc96795`; it is not merged. Andrew then explicitly approved the remaining publication: 20c is PR #44
+(`ca82e63`), 20d PR #45 (`669672e`), 20e PR #46 (`438e447`) and 20f PR #47
+(verified head `dfd8a04481780afa885d3b9317cb82625d7a4105`). All are attached
+and none is merged. This recording branch is being published separately for
+review. Every implementation still lands through
 its own PR to `main`, reviewed by Andrew; predecessor commits identify the
 per-task review boundary.
 
@@ -64,7 +68,15 @@ The genuine Foundry v14.369 browser runtime `game.modules` probe confirmed
 The manifest URL also returned 404. No enabled/disabled pack acceptance run is
 claimed; absence alone is not an enabled-to-disabled lifecycle test.
 
-Pending live pack work: install and activate Hello Pack, run
+After Andrew approved installation, delivery to both configured homelab SSH
+destinations failed hostname resolution, including an escalated attempt. No
+remote files changed. The local archive
+`/private/tmp/agent-gateway-hello-pack.tar.gz` was verified to contain the four
+expected module files; this establishes packaging only, not installation.
+Andrew has not enabled the pack or relaunched the world.
+
+Pending live pack work: resolve the configured SSH destination, install and
+activate Hello Pack, run
 `AGENT_GATEWAY_E2E_HELLO_PACK=1`, then have Andrew disable it and relaunch for
 `AGENT_GATEWAY_E2E_HELLO_PACK=disabled`. Foundry v13 evidence remains pending
 its instance.
