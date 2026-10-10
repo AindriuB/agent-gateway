@@ -40,6 +40,50 @@ export function isPlainText(value: unknown): value is string {
   );
 }
 
+/** Check values that JSON.stringify would otherwise silently drop or transform. */
+function isJsonValue(value: unknown): boolean {
+  const stack: { value: unknown; exit?: boolean }[] = [{ value }];
+  const ancestors = new Set<object>();
+  let remaining = TOOL_LIMITS.schemaBytes;
+  while (stack.length) {
+    if (--remaining < 0) return false;
+    const entry = stack.pop()!;
+    const current = entry.value;
+    if (entry.exit) {
+      ancestors.delete(current as object);
+      continue;
+    }
+    if (current === null || typeof current === 'string' || typeof current === 'boolean') continue;
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current)) return false;
+      continue;
+    }
+    if (typeof current !== 'object') return false;
+    const array = Array.isArray(current);
+    if (
+      !array &&
+      Object.getPrototypeOf(current) !== Object.prototype &&
+      Object.getPrototypeOf(current) !== null
+    )
+      return false;
+    if (ancestors.has(current)) return false;
+    ancestors.add(current);
+    stack.push({ value: current, exit: true });
+    const descriptors = Object.getOwnPropertyDescriptors(current);
+    const keys = Reflect.ownKeys(descriptors);
+    if (array && keys.length !== current.length + 1) return false;
+    for (const key of keys) {
+      if (array && key === 'length') continue;
+      if (typeof key !== 'string') return false;
+      const descriptor = descriptors[key]!;
+      if (!('value' in descriptor) || !descriptor.enumerable) return false;
+      if (array && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= current.length)) return false;
+      stack.push({ value: descriptor.value });
+    }
+  }
+  return true;
+}
+
 interface Refs {
   root: JsonSchemaObject;
   chain: readonly string[];
@@ -105,14 +149,19 @@ export function walk(
         problems.push(`${path}/properties/${key}: missing description`);
       walk(value, next, `${path}/properties/${key}`, problems, refs, ancestors, budget);
     }
-    if (
-      'required' in node &&
-      (!Array.isArray(node.required) ||
-        node.required.some((k) => typeof k !== 'string' || !Object.hasOwn(props, k)) ||
-        new Set(node.required).size !== node.required.length)
-    )
-      problems.push(`${path}: invalid required`);
   }
+  const props = isSchemaObject(node.properties) ? node.properties : {};
+  if (
+    'required' in node &&
+    (!Array.isArray(node.required) ||
+      Array.from(node.required).some(
+        (k) => typeof k !== 'string' || (node.type === 'object' && !Object.hasOwn(props, k)),
+      ) ||
+      new Set(node.required).size !== node.required.length)
+  )
+    problems.push(`${path}: invalid required`);
+  if ('additionalProperties' in node && node.additionalProperties !== false)
+    problems.push(`${path}: additionalProperties must be false`);
   if (node.type === 'array' && !isSchemaObject(node.items))
     problems.push(`${path}: array requires items`);
   if (
@@ -120,13 +169,15 @@ export function walk(
     (!Array.isArray(node.enum) ||
       node.enum.length === 0 ||
       node.enum.length > TOOL_LIMITS.enumValues ||
-      node.enum.some(
+      Array.from(node.enum).some(
         (v) =>
           !(typeof v === 'number' && Number.isFinite(v)) &&
           !(isPlainText(v) && v.length <= TOOL_LIMITS.enumStringLength),
       ))
   )
     problems.push(`${path}: invalid enum`);
+  if ('default' in node && !isJsonValue(node.default))
+    problems.push(`${path}: default must be a JSON value`);
   if (typeof node.default === 'string' && !isPlainText(node.default))
     problems.push(`${path}: invalid default plain text`);
   for (const key of [

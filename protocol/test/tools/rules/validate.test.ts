@@ -45,6 +45,40 @@ describe('validateArgs', () => {
     expect(validateArgs(schema, input).ok).toBe(true);
     expect(Object.hasOwn(input, 'defaulted')).toBe(false);
   });
+  it('returns issues for malformed required on a primitive', () => {
+    const malformed = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { x: { type: 'string', description: 'X', required: 42 } },
+    };
+    expect(validateArgs(malformed, { x: 'hello' })).toMatchObject({
+      ok: false,
+      issues: [{ message: expect.stringContaining('required') }],
+    });
+  });
+  it('returns issues for a function default', () => {
+    const malformed = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { x: { type: 'string', description: 'X', default: () => 1 } },
+    };
+    expect(validateArgs(malformed, {})).toMatchObject({
+      ok: false,
+      issues: [{ message: expect.stringContaining('default') }],
+    });
+  });
+  it('returns issues instead of throwing on an unreadable input', () => {
+    const input = Object.defineProperty({}, 'count', {
+      enumerable: true,
+      get: () => {
+        throw new Error('Unreadable');
+      },
+    });
+    expect(validateArgs(schema, input)).toMatchObject({
+      ok: false,
+      issues: [{ message: expect.stringContaining('JSON') }],
+    });
+  });
   it('does not apply nested defaults', () => {
     const nested = {
       type: 'object',

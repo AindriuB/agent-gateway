@@ -37,9 +37,9 @@ vendor budget. Dots and colons are excluded because they are outside OpenAI's
 allowed set; hyphens and underscores are accepted by all four surfaces.
 
 The 36-character cap reserves room for a client namespace. Under the project's
-Claude Code naming assumption, `mcp__foundry-agent-gateway__` takes 27 characters.
-The available budget is therefore 64 − 27 = 37; the contract rounds down to 36,
-so the combined identifier is at most 63 characters. This is a project budget
+Claude Code naming assumption, `mcp__foundry-agent-gateway__` takes 28 characters.
+The available budget is therefore 64 − 28 = 36, matching the contract cap,
+so the combined identifier is at most 64 characters. This is a project budget
 assumption, not a guarantee about every client's prefixing behavior. A different
 server name or client transformation must be checked against its own limit.
 
