@@ -133,6 +133,26 @@ describe('session isolation', () => {
     await expectSilent(b);
   });
 
+  it('a replaced old socket cannot settle a call on the new connection for the same user', async () => {
+    const { h, a, sa } = await setup();
+    // Keep the old socket from reading the server's close frame, so it can still write.
+    a.tc.ws.pause();
+    const a2 = await reconnectModule(h, a);
+    modules.push(a2);
+    let settled = false;
+    const pending = callFixture(sa).finally(() => (settled = true));
+    const frame = (await a2.tc.next('call')) as CallFrame;
+
+    a.tc.send({ type: 'result', id: frame.id, ok: true, text: 'stale', structured: { b: 'OLD' } });
+    a.tc.send({ type: 'error', id: frame.id, code: 'DENIED', message: 'stale' });
+    await tick(150);
+    expect(settled).toBe(false);
+
+    a2.tc.send({ type: 'result', id: frame.id, ok: true, text: 'new', structured: { b: 'NEW' } });
+    expect((await pending).structuredContent).toEqual({ b: 'NEW' });
+    a.tc.ws.resume();
+  });
+
   it('an implicit single-connection binding is recorded as that pair, not "whatever is connected"', async () => {
     h = await startServer();
     const a = await pairModule(h, 'uA', { userName: 'alice' });

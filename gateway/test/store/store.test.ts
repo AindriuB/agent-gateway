@@ -21,6 +21,7 @@ describe('store', () => {
       tokenHash: 'h',
       worldId: 'w',
       userId: 'u',
+      userName: '',
       createdAt: 42,
       revokedAt: null,
     });
@@ -29,6 +30,15 @@ describe('store', () => {
     expect(s.revokePairing('a1')).toBe(true);
     expect(s.findPairingByHash('h')?.revokedAt).toBe(42);
     expect(s.revokePairing('a1')).toBe(false);
+  });
+
+  it('records the user name at pairing and lists only active pairings', () => {
+    const s = openStore(':memory:');
+    s.createPairing({ id: 'a1', tokenHash: 'h1', worldId: 'w', userId: 'u1', userName: 'alice' });
+    s.createPairing({ id: 'a2', tokenHash: 'h2', worldId: 'w', userId: 'u2', userName: 'bob' });
+    s.revokePairing('a2');
+    expect(s.findPairingByHash('h1')?.userName).toBe('alice');
+    expect(s.listActivePairings().map((p) => p.id)).toEqual(['a1']);
   });
 
   it('migrates a file store once and reopens it', () => {

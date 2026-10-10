@@ -83,6 +83,13 @@ export function createApp(config: Config, deps: AppDeps): App {
         version: deps.version,
         registry,
         ...(deps.selector ? { selector: deps.selector } : {}),
+        knownIdentities: () =>
+          store?.listActivePairings().map((p) => ({
+            worldId: p.worldId,
+            userId: p.userId,
+            userName: p.userName,
+          })) ?? [],
+        log: writeStatus,
       });
       await server.connect(new StdioServerTransport());
       logger.info(`MCP stdio server started`);

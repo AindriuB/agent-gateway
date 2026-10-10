@@ -4,7 +4,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import type { ErrorCode } from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
-import { SessionBinding, describePairs, type UserSelector } from '../routing/index.js';
+import {
+  SessionBinding,
+  describePairs,
+  type Identity,
+  type UserSelector,
+} from '../routing/index.js';
 
 export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 
@@ -15,6 +20,12 @@ export interface SessionServerOptions {
   /** Defaults to the protocol registry; injectable for tests. */
   tools?: readonly ToolDefinition[];
   callTimeoutMs?: number;
+  /** Paired identities (connected or not) that a `--user` name is checked against. */
+  knownIdentities?: () => readonly Identity[];
+  /** Status lines for the operator (stderr). */
+  log?: (line: string) => void;
+  /** Minimum gap between `list_changed` notifications. */
+  listChangedIntervalMs?: number;
 }
 
 const failure = (code: ErrorCode | 'UNKNOWN_TOOL', text: string) => ({
@@ -33,7 +44,11 @@ const offline = () =>
 export function createSessionServer(opts: SessionServerOptions): Server {
   const all = opts.tools ?? TOOLS;
   const sessionId = randomUUID();
-  const binding = new SessionBinding(opts.registry, opts.selector);
+  const binding = new SessionBinding(opts.registry, opts.selector, opts.knownIdentities, (conn) =>
+    opts.log?.(
+      `Bound MCP session to ${conn.info.userName || conn.userId} in ${conn.worldId}; start with --user to choose.`,
+    ),
+  );
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
   const server = new Server(
     { name: 'foundry-agent-gateway', version: opts.version },
@@ -48,8 +63,20 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return r.kind === 'bound' ? r.conn : undefined;
   };
 
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: visibleFor(currentConn()).map((t) => {
+  const signature = (conn: LinkConnection | undefined): string =>
+    visibleFor(conn)
+      .map((t) => t.name)
+      .join(',');
+  // What the client was last told (by a listing or a notification).
+  let lastSig = signature(undefined);
+
+  server.setRequestHandler(ListToolsRequestSchema, () => {
+    const conn = currentConn();
+    lastSig = signature(conn);
+    return listing(conn);
+  });
+  const listing = (conn: LinkConnection | undefined) => ({
+    tools: visibleFor(conn).map((t) => {
       const { inputSchema, outputSchema } = toJsonSchema(t);
       return {
         name: t.name,
@@ -58,7 +85,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         outputSchema: outputSchema as { type: 'object' },
       };
     }),
-  }));
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = all.find((t) => t.name === req.params.name);
@@ -106,22 +133,40 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     }
   });
 
-  // Tell the client when its bound connection comes or goes (its tool list may change).
-  const changed = (c: LinkConnection): void => {
+  // Tell the client when its visible tool list changed. Reconnect storms are coalesced: at most
+  // one notification per interval, and none when the list is the same as the client last saw.
+  const interval = opts.listChangedIntervalMs ?? 250;
+  let lastSent = Number.NEGATIVE_INFINITY;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = (): void => {
+    timer = undefined;
+    const r = binding.resolve(false);
+    const sig = signature(r.kind === 'bound' ? r.conn : undefined);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    lastSent = Date.now();
+    void server.sendToolListChanged().catch(() => {});
+  };
+  const changed = (allowBind: boolean) => (c: LinkConnection) => {
     const pair = binding.pair;
     if (pair) {
       if (c.worldId !== pair.worldId || c.userId !== pair.userId) return;
-    } else if (binding.resolve().kind !== 'bound') {
+    } else if (!allowBind || binding.resolve(true).kind !== 'bound') {
       return;
     }
-    void server.sendToolListChanged().catch(() => {});
+    if (timer) return;
+    timer = setTimeout(flush, Math.max(0, lastSent + interval - Date.now()));
+    timer.unref();
   };
-  opts.registry.on('connected', changed);
-  opts.registry.on('disconnected', changed);
+  const onConnected = changed(true);
+  const onDisconnected = changed(false);
+  opts.registry.on('connected', onConnected);
+  opts.registry.on('disconnected', onDisconnected);
   const previousOnClose = server.onclose;
   server.onclose = () => {
-    opts.registry.off('connected', changed);
-    opts.registry.off('disconnected', changed);
+    opts.registry.off('connected', onConnected);
+    opts.registry.off('disconnected', onDisconnected);
+    if (timer) clearTimeout(timer);
     previousOnClose?.();
   };
 

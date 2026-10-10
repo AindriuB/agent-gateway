@@ -55,6 +55,8 @@ const helloFrame = (
 
 export interface ModuleOpts {
   userName?: string;
+  /** Name sent in a reconnect's hello (a claim; the gateway must not trust it). */
+  claimName?: string;
   worldId?: string;
   isGM?: boolean;
 }
@@ -93,7 +95,7 @@ export async function reconnectModule(
 ): Promise<FakeModule> {
   const tc = await TestClient.connect(h.port, ORIGIN);
   tc.send(
-    helloFrame(m.userId, m.userName, m.worldId, opts.isGM ?? false, {
+    helloFrame(m.userId, opts.claimName ?? m.userName, m.worldId, opts.isGM ?? false, {
       kind: 'pairingToken',
       token: m.token,
     }),
@@ -113,6 +115,7 @@ export async function openSession(
   selector: UserSelector = {},
   tools: readonly ToolDefinition[] = [fixtureTool, gmFixtureTool],
   callTimeoutMs = 5000,
+  extra: { log?: (line: string) => void; listChangedIntervalMs?: number } = {},
 ): Promise<McpSession> {
   const server = createSessionServer({
     version: '0.0.0',
@@ -120,6 +123,11 @@ export async function openSession(
     selector,
     tools,
     callTimeoutMs,
+    knownIdentities: () =>
+      h.store
+        .listActivePairings()
+        .map((p) => ({ worldId: p.worldId, userId: p.userId, userName: p.userName })),
+    ...extra,
   });
   const client = new Client({ name: 't', version: '0' });
   const listChanged = { count: 0 };

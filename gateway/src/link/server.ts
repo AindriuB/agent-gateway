@@ -177,6 +177,7 @@ export class LinkServer {
     };
     let agentId: string;
     let issuedToken: string | undefined;
+    let recordedName: string;
     if (hello.auth.kind === 'pairingCode') {
       if (!codes.consume(hello.auth.code)) return invalid();
       issuedToken = randomBytes(32).toString('base64url');
@@ -186,7 +187,9 @@ export class LinkServer {
         tokenHash: hashToken(issuedToken),
         worldId: hello.world.id,
         userId: hello.user.id,
+        userName: hello.user.name,
       });
+      recordedName = hello.user.name;
     } else {
       const row = store.findPairingByHash(hashToken(hello.auth.token));
       if (
@@ -198,6 +201,8 @@ export class LinkServer {
         return invalid();
       }
       agentId = row.id;
+      // The name given at pairing is the one that counts; a reconnect's hello name is only a claim.
+      recordedName = row.userName;
     }
     const connectionId = randomUUID();
     const conn = new LinkConnection(
@@ -209,7 +214,7 @@ export class LinkServer {
         send: (d) => ws.send(d),
         close: () => ws.close(1000, 'replaced'),
       },
-      { userName: hello.user.name, isGM: hello.user.isGM },
+      { userName: recordedName, isGM: hello.user.isGM },
     );
     send({
       type: 'welcome',
