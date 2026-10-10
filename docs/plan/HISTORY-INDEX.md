@@ -20,6 +20,9 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-10 | 11, 11b | gateway wiring, session binding by paired identity, isolation tests, text-only errors, live evidence on v14 | ## 2026-10-10 — Gateway wiring, session binding and isolation (tasks 11, 11b) |
+| 2026-10-10 | 10 | compendium_search, compendium_get, chat_read with chat visibility rules and Adventure GM-only | ## 2026-10-10 — Compendium and chat read tools (task 10) |
+| 2026-10-10 | 09 | world_info, document_search, document_get with allowlist visibility and secret stripping | ## 2026-10-10 — World document read tools and the visibility allowlists (task 09) |
 | 2026-10-10 | 10b | spike: Foundry module sockets attest the sender (server-appended user id); recommendation for task 36 | ## 2026-10-10 — Spike 10b: Foundry socket identity (task 10b) |
 | 2026-10-09 | 08 | module operation registry (handlers, staged dispatcher, error mapping), document serialiser, paging, DOMParser HTML-to-markdown with link safety | ## 2026-10-09 — Module operation registry and document-to-markdown conversion (task 08) |
 | 2026-10-09 | 07 | module LinkClient (hello, token, backoff, pairing errors) and ApplicationV2 pairing app from settings menu | ## 2026-10-09 — Module LinkClient and pairing app (task 07) |
