@@ -22,6 +22,8 @@ export interface Summary {
   foundryVersion: string;
   suites: Record<string, SuiteCounts>;
   toolCounts: { gm?: number; player?: number };
+  /** Measurements the multi-user suites record: frame counts, recovery times. */
+  multi: Array<{ suite: string; label: string; value: number | string }>;
   leakCheck: { results: number; strings: number; hits: number; line: string };
 }
 
@@ -44,11 +46,13 @@ export function buildSummary(input: {
   const toolCounts: Summary['toolCounts'] = {};
   let version = 'unknown';
   const leak = { results: 0, strings: 0, hits: 0 };
+  const multi: Summary['multi'] = [];
   for (const r of input.records) {
     if (r.kind === 'tools') toolCounts[r.role] = r.names.length;
     else if (r.kind === 'foundry') version = r.version;
     else if (r.kind === 'facts') continue;
-    else {
+    else if (r.kind === 'multi') multi.push({ suite: r.suite, label: r.label, value: r.value });
+    else if (r.kind === 'leak') {
       leak.results += r.results;
       leak.strings = Math.max(leak.strings, r.strings);
       leak.hits += r.hits;
@@ -60,6 +64,7 @@ export function buildSummary(input: {
     foundryVersion: version,
     suites,
     toolCounts,
+    multi,
     leakCheck: {
       ...leak,
       line: `leak check: ${leak.results} results x ${leak.strings} strings, ${leak.hits} hits`,
@@ -78,6 +83,7 @@ export function formatSummary(s: Summary): string {
   }
   lines.push(`  tools: gm ${s.toolCounts.gm ?? '?'}, player ${s.toolCounts.player ?? '?'}`);
   lines.push(`  ${s.leakCheck.line}`);
+  for (const m of s.multi ?? []) lines.push(`  ${m.suite}: ${m.label}: ${m.value}`);
   return lines.join('\n');
 }
 

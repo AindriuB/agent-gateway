@@ -13,7 +13,13 @@ export default defineConfig({
           ...shared,
           name: 'e2e-unit',
           root: import.meta.dirname,
-          include: ['lib/**/*.test.ts', 'fixtures/**/*.test.ts', 'setup/**/*.test.ts'],
+          include: [
+            'lib/**/*.test.ts',
+            'fixtures/**/*.test.ts',
+            'setup/**/*.test.ts',
+            'multi/**/*.test.ts',
+          ],
+          exclude: ['**/*.e2e.test.ts', '**/node_modules/**'],
         },
       },
       {
@@ -21,7 +27,7 @@ export default defineConfig({
           ...shared,
           name: 'e2e-live',
           root: import.meta.dirname,
-          include: ['read/**/*.e2e.test.ts'],
+          include: ['read/**/*.e2e.test.ts', 'multi/**/*.e2e.test.ts'],
           testTimeout: 120_000,
           hookTimeout: 240_000,
         },

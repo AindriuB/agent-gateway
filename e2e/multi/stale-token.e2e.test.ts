@@ -8,7 +8,7 @@ import { loadContext } from '../lib/context.js';
 import { openUserSession } from '../lib/session.js';
 import { ensureStateDirs, preflightState, SETUP_HINT, tightenDb } from '../lib/state.js';
 import { CONNECT_BUDGET_MS } from '../lib/wait.js';
-import { MultiGateway } from './gateway.js';
+import { GatewayProcess } from '../lib/gateway.js';
 import { recordResult, seconds } from './results.js';
 
 const ctx = loadContext();
@@ -28,7 +28,7 @@ describe('stale token fails fast', () => {
     ensureStateDirs(scratch, [user]);
     // Let a gateway create the schema in the scratch DB, then replace its pairings with one
     // fabricated row whose token no browser holds.
-    const gw = new MultiGateway(config, scratch, user);
+    const gw = new GatewayProcess(config, scratch, user);
     await gw.start();
     await gw.stop();
     tightenDb(scratch);

@@ -30,3 +30,14 @@ describe('parsePairingCode', () => {
     expect(parsePairingCode('nothing yet')).toBeUndefined();
   });
 });
+
+describe('gatewayArgs without a user', () => {
+  it('omits --user but keeps --world', () => {
+    const config = loadE2eConfig({ env: {} });
+    const paths = e2ePaths('/home/u');
+    const args = gatewayArgs(config, paths, undefined);
+    expect(args).not.toContain('--user');
+    expect(args).toContain('--world');
+    expect(gatewayArgs(config, paths, 'player1').slice(-2)).toEqual(['--user', 'player1']);
+  });
+});

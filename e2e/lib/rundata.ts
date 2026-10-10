@@ -5,7 +5,8 @@ export type RunRecord =
   | { kind: 'tools'; role: 'gm' | 'player'; names: string[] }
   | { kind: 'leak'; results: number; strings: number; hits: number }
   | { kind: 'facts'; limitedPackUuid?: string }
-  | { kind: 'foundry'; version: string; generation?: number };
+  | { kind: 'foundry'; version: string; generation?: number }
+  | { kind: 'multi'; suite: string; label: string; value: number | string };
 
 export function resetRunData(path: string): void {
   rmSync(path, { force: true });

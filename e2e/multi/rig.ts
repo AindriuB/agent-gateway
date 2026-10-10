@@ -1,7 +1,7 @@
 import { asJoinPage, joinWorld, openUserBrowser, type UserBrowser } from '../lib/browser.js';
 import type { Context } from '../lib/context.js';
 import { FrameCounter, waitFor } from './frames.js';
-import { MultiGateway } from './gateway.js';
+import { GatewayProcess } from '../lib/gateway.js';
 
 /** How long a module may take to reconnect after a gateway swap (its backoff caps at 60 s). */
 export const RECONNECT_MS = 100_000;
@@ -17,7 +17,7 @@ export interface OpenUser {
  * one browser per listed user (two at most). Browsers stay open while the gateway is swapped.
  */
 export class Rig {
-  gateway: MultiGateway | undefined;
+  gateway: GatewayProcess | undefined;
   readonly users = new Map<string, OpenUser>();
 
   constructor(readonly ctx: Context) {}
@@ -44,7 +44,7 @@ export class Rig {
   }
 
   async startGateway(boundTo: string | undefined): Promise<void> {
-    const gw = new MultiGateway(this.ctx.config, this.ctx.paths, boundTo);
+    const gw = new GatewayProcess(this.ctx.config, this.ctx.paths, boundTo);
     await gw.start();
     this.gateway = gw;
   }

@@ -3,7 +3,7 @@ import { FIXTURE } from '../fixtures/spec.js';
 import { requireUuids, type Context } from '../lib/context.js';
 import type { CallResult } from '../lib/gateway.js';
 import { LeakChecker } from '../lib/leak.js';
-import type { MultiGateway } from './gateway.js';
+import type { GatewayProcess } from '../lib/gateway.js';
 
 export const ISOLATION_TOOLS = ['world_info', 'document_search', 'document_get', 'chat_read'];
 
@@ -19,7 +19,7 @@ export function leakCheckerFor(ctx: Context): LeakChecker {
  * chat_read: exactly four calls, one frame each on the bound user's link.
  */
 export async function readFourTools(
-  gw: MultiGateway,
+  gw: GatewayProcess,
   scan?: LeakChecker,
 ): Promise<Record<string, CallResult>> {
   const call = async (name: string, args: Record<string, unknown>): Promise<CallResult> => {

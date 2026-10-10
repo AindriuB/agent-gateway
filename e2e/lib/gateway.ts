@@ -9,8 +9,13 @@ export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..
 export const GATEWAY_CLI = join(REPO_ROOT, 'gateway', 'dist', 'bin', 'cli.js');
 
 /** The arguments after `node` for a harness-spawned gateway. */
-export function gatewayArgs(config: E2eConfig, paths: E2ePaths, user: string): string[] {
-  return [
+/** `--user` is omitted when `user` is undefined (the ambiguity suite). */
+export function gatewayArgs(
+  config: E2eConfig,
+  paths: E2ePaths,
+  user: string | undefined,
+): string[] {
+  const args = [
     GATEWAY_CLI,
     '--link-port',
     String(config.linkPort),
@@ -20,9 +25,9 @@ export function gatewayArgs(config: E2eConfig, paths: E2ePaths, user: string): s
     config.foundryOrigin,
     '--world',
     config.world,
-    '--user',
-    user,
   ];
+  if (user !== undefined) args.push('--user', user);
+  return args;
 }
 
 const CODE_RE = /Pairing code:\s*(\S+)/;
@@ -48,7 +53,7 @@ export class GatewayProcess {
   constructor(
     private readonly config: E2eConfig,
     private readonly paths: E2ePaths,
-    readonly user: string,
+    readonly user: string | undefined,
   ) {}
 
   get stderr(): string {
@@ -167,7 +172,7 @@ export async function waitConnected(
     if (!r.isError && r.structured) return r.structured;
     last = r.text;
     if (Date.now() + intervalMs > deadline) {
-      throw new NotConnectedError(gw.user, timeoutMs, last);
+      throw new NotConnectedError(gw.user ?? '(unbound)', timeoutMs, last);
     }
     await new Promise((res) => setTimeout(res, intervalMs));
   }
