@@ -12,6 +12,11 @@ file for the exact heading it names. Every entry added here gets its index row
 in the same commit.
 
 <!--
+## YYYY-MM-DD — <what landed>
+<Two or three sentences: what it does now that it did not before.>
+**Cost:** <what was hard, what was tried and abandoned, what not to retry.>
+-->
+
 ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
 
 The tool-pack foundation is implemented on local branches and integrated in the
@@ -61,11 +66,6 @@ does not establish the claimed AI Tools category or blanket other-module
 context wording. The project still requires rights and opt-in for such context.
 The release builder is not implemented, so example ZIP exclusion remains the
 release packaging contract, not verified release-artifact evidence.
-
-## YYYY-MM-DD — <what landed>
-<Two or three sentences: what it does now that it did not before.>
-**Cost:** <what was hard, what was tried and abandoned, what not to retry.>
--->
 
 ## 2026-10-10 — E2E multi-user isolation, binding and resilience suites (task 12b)
 The suites in `e2e/multi` prove live what the unit tests only simulated. Bound isolation counts call frames per page through Playwright websocket events (4/0 both ways between dev-gm and player1). Cross-player: Player2 never sees player1's whisper or secret (1/0). A no-`--user` session with several paired users answers INVALID_ARGS on all 6 tools, naming the users, with 0/0 frames, which proves the 11b fix live. A tab reload recovers in 3.3 s and a gateway restart in 1.3 s with the pairing ids unchanged. A stale token, run against a scratch `AGENT_GATEWAY_E2E_STATE_DIR` holding a copied profile, gets PAIRING_INVALID (10.2 s). Approved extensions to 12a files: the vitest include, a `multi` summary record kind (unknown kinds no longer corrupt the leak line), an optional `--user` in GatewayProcess, the state-dir override (empty is an error) and `otherPlayerChatProblems`. Final run (PR #31): 32/32 in 173 s, and the real pairing rows were identical before and after.
