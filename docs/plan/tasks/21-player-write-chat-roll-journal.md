@@ -1,7 +1,7 @@
 # 21 — Add player write tools chat_post, roll_formula and journal_write
 
 **Repo:** .
-**Depends on:** 17, 19
+**Depends on:** 17, 19, 20d, 20e
 **Owns:**
 - protocol/src/tools/chat-post.ts
 - protocol/src/tools/roll-formula.ts
@@ -26,6 +26,7 @@ Agent chat messages always carry a visible, non-configurable AI marker.
 - docs/plan/specs/2026-10-09-agent-gateway.md:140-141 — AI marker on agent chat, not configurable
 - docs/plan/specs/2026-10-09-agent-gateway.md:143-150 — tool list
 - module/src/audit/** `ctx.snapshot` (19); approvals (16, 17)
+- These are core tools: add them to `protocol/src/tools/index.ts` `TOOLS` and `module/src/tools/index.ts` `HANDLERS` as before; `module/src/ops/core-tools.ts` (20c) registers them through the same registry path as pack tools, and `checkToolDefinition(…, 'core')` (20b) must pass for each (the 20b test sweeps `TOOLS`)
 
 ## Acceptance
 - [ ] `module/src/tools/_write.ts` exports `defineWriteHandler({targets(args), run(ctx)})` which snapshots targets via `ctx.snapshot` before `run`; documented in a file header comment
@@ -37,3 +38,4 @@ Agent chat messages always carry a visible, non-configurable AI marker.
 
 ## Out of scope
 - Token and combat tools (22); GM tools (23-26)
+- Exposing `defineWriteHandler` to packs through the pack API (a later pack API minor)
