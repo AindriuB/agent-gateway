@@ -11,6 +11,7 @@ import {
 } from '../../src/audit/journal.js';
 import { createAuditModel } from '../../src/audit/model.js';
 import { installAudit, getAuditRelay } from '../../src/audit/index.js';
+import { AuditRelay } from '../../src/audit/relay.js';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
 import { record, target } from './fake.js';
 
@@ -180,12 +181,126 @@ describe('audit journal', () => {
     expect(created.map((p) => p.system.userId)).toEqual(['p2', 'p1', 'gm1']);
   });
 
+  it('persists one page across GM tabs with stale caches and acknowledges both relays', async () => {
+    const server = new Map<string, any>();
+    const requests: any[] = [];
+    let release!: () => void;
+    const bothRequested = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const create = vi.fn(async (_name: string, data: any[], options: any) => {
+      const sequence = requests.push({ data, options });
+      if (requests.length === 2) release();
+      await bothRequested;
+      const id = options?.keepId ? data[0]._id : `random${sequence}`;
+      if (server.has(id)) throw new Error('duplicate embedded document id');
+      const page = { ...data[0], id };
+      server.set(id, page);
+      return [page];
+    });
+    // Independent caches deliberately never receive the server's creation broadcasts.
+    const tabs = [0, 1].map(() => fakeJournal('audit', { createEmbeddedDocuments: create }));
+    world(true, tabs, 'audit');
+    const g = globalThis as any;
+    g.game.journal.get = vi
+      .fn()
+      .mockReturnValueOnce(tabs[0])
+      .mockReturnValueOnce(tabs[1])
+      .mockReturnValue(tabs[0]);
+    g.getDocumentClass = () => ({ database: { get: async () => [...server.values()] } });
+    const emits = [vi.fn(), vi.fn()];
+    const relays = emits.map(
+      (emit) =>
+        new AuditRelay({
+          selfId: () => 'gm1',
+          isGM: () => true,
+          activeGMId: () => 'gm1',
+          isUserGM: (id) => id === 'gm1',
+          emit,
+          write: async (r) => {
+            await writeAuditEntry(r);
+          },
+          onIntent: async () => true,
+          setTimer: () => 0,
+          clearTimer: () => {},
+          now: () => 1000,
+        }),
+    );
+    const msg = { kind: 'audit.entry', record: record() };
+    await Promise.all(relays.map((relay) => relay.onMessage(msg, 'p1')));
+    expect(requests).toHaveLength(2);
+    expect(server.size).toBe(1);
+    for (const emit of emits)
+      expect(emit).toHaveBeenCalledWith({ kind: 'audit.ack', id: msg.record.entryId }, ['p1']);
+    const page = [...server.values()][0];
+    expect(page.id).toMatch(/^[A-Za-z0-9]{16}$/);
+    page.system.undoneAt = 777;
+    expect(await writeAuditEntry(record())).toBe(false);
+    expect(server.size).toBe(1);
+    expect([...server.values()][0].system.undoneAt).toBe(777);
+    // The same entry id from a different authenticated sender is a separate entry.
+    expect(await writeAuditEntry(record({ userId: 'p2' }))).toBe(true);
+    expect(server.size).toBe(2);
+    expect(await writeAuditEntry(record({ entryId: 'entry-other001' }))).toBe(true);
+    expect(server.size).toBe(3);
+  });
+
   it('stores a snapshot with hostile keys as inert text', () => {
     const d = pageData(
       record({ targets: [target({ before: { '-=flags': 1, 'a.b': 2 } })] }),
     ) as any;
     expect(typeof d.system.targets[0].before).toBe('string');
   });
+
+  it.each(['missing', 'sender', 'entry', 'type', 'id', 'read failure'])(
+    'does not treat a failed creation as persisted when the server read has %s',
+    async (failure) => {
+      const error = new Error('creation failed');
+      let attempted: any;
+      const journal = fakeJournal('audit', {
+        createEmbeddedDocuments: async (_name: string, data: any[]) => {
+          attempted = data[0];
+          throw error;
+        },
+      });
+      world(true, [journal], 'audit');
+      (globalThis as any).getDocumentClass = () => ({
+        database: {
+          get: async () => {
+            if (failure === 'read failure') throw new Error('read unavailable');
+            if (failure === 'missing') return [];
+            const page = structuredClone(attempted);
+            if (failure === 'sender') page.system.userId = 'p2';
+            if (failure === 'entry') page.system.entryId = 'another-entry';
+            if (failure === 'type') page.type = 'text';
+            if (failure === 'id') page._id = 'another-page';
+            return [page];
+          },
+        },
+      });
+      await expect(writeAuditEntry(record())).rejects.toBe(error);
+    },
+  );
+
+  it.each(['empty', 'rejected'])(
+    'confirms persistence after a lost creation response (%s)',
+    async (response) => {
+      let persisted: any;
+      const journal = fakeJournal('audit', {
+        createEmbeddedDocuments: async (_name: string, data: any[]) => {
+          persisted = { ...data[0], system: { ...data[0].system, undoneAt: 777 } };
+          if (response === 'rejected') throw new Error('lost response');
+          return [];
+        },
+      });
+      world(true, [journal], 'audit');
+      (globalThis as any).getDocumentClass = () => ({
+        database: { get: async () => [{ ...persisted, _id: 'other-page' }, persisted] },
+      });
+      expect(await writeAuditEntry(record())).toBe(false);
+      expect(persisted.system.undoneAt).toBe(777);
+    },
+  );
 
   it('stores the targets it is given: a sanitised relayed record is view-only, a witnessed one keeps its GM-captured snapshot', () => {
     const viewOnly = pageData(

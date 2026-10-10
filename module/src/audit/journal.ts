@@ -119,7 +119,20 @@ export function pageData(record: AuditRecord): Record<string, unknown> {
   };
 }
 
-/** Write one record as a page, deduplicated by the trusted user id and entry id together. */
+/** A server-enforced page id scoped to the authenticated sender and entry id. */
+function entryPageId(record: AuditRecord): string {
+  const key = JSON.stringify([AUDIT_NS, 'entry', record.userId, record.entryId]);
+  let hash = 0xcbf29ce484222325n;
+  for (const c of key) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(c.codePointAt(0)!)) * 0x100000001b3n);
+  }
+  // Foundry ids contain 16 alphanumeric characters. A collision refuses persistence rather
+  // than overwriting or acknowledging another entry: every read also checks the full key.
+  // Like undo reservation ids, this also works on Foundry deployments served over plain HTTP.
+  return hash.toString(16).padStart(16, '0');
+}
+
+/** Write once across GM tabs: Foundry rejects duplicate retained embedded-document ids. */
 export async function writeAuditEntry(record: AuditRecord): Promise<boolean> {
   const journal = await ensureAuditJournal();
   if (!journal) throw new Error('no audit journal and this client cannot create one');
@@ -128,18 +141,31 @@ export async function writeAuditEntry(record: AuditRecord): Promise<boolean> {
     pages.some((p) => p?.system?.userId === record.userId && p?.system?.entryId === record.entryId)
   )
     return false;
-  const pagesCreated = await journal.createEmbeddedDocuments('JournalEntryPage', [
-    pageData(record),
-  ]);
-  if (
-    !pagesCreated?.some(
-      (p: any) =>
-        p.type === AUDIT_TYPE &&
-        p.system?.entryId === record.entryId &&
-        p.system?.userId === record.userId,
-    )
-  ) {
-    throw new Error('Foundry did not persist the audit entry');
+  const id = entryPageId(record);
+  const matches = (p: any): boolean =>
+    (p?.id ?? p?._id) === id &&
+    p.type === AUDIT_TYPE &&
+    p.system?.entryId === record.entryId &&
+    p.system?.userId === record.userId;
+  try {
+    const pagesCreated = await journal.createEmbeddedDocuments(
+      'JournalEntryPage',
+      [{ ...pageData(record), _id: id }],
+      { keepId: true },
+    );
+    if (!pagesCreated?.some(matches)) throw new Error('Foundry did not persist the audit entry');
+    return true;
+  } catch (err) {
+    // Another tab may have won, or the server persisted our write before the response failed.
+    // Client caches can still be stale. A fresh server read must confirm the exact entry before
+    // acknowledging it; never retry with a generated id or overwrite its undo completion state.
+    try {
+      const cls = getDocumentClass('JournalEntryPage');
+      const persisted = await cls.database.get(cls, { parent: journal, query: { _id: id } });
+      if (persisted.some(matches)) return false;
+    } catch {
+      // An unavailable read cannot establish persistence. Keep the relay unacknowledged.
+    }
+    throw err;
   }
-  return true;
 }
