@@ -94,6 +94,28 @@ export function chatProblems(role: Role, msgs: readonly ChatMsg[], blindId: stri
   return problems;
 }
 
+/**
+ * What a player sees of chat when another player's whisper and own-character message exist: the
+ * public and NPC messages (NPC secret stripped); player1's whisper to the GM absent; player1's
+ * own-character message visible with its secret stripped (this viewer does not own the actor);
+ * the GM whisper and the blind roll absent.
+ */
+export function otherPlayerChatProblems(msgs: readonly ChatMsg[], blindId: string): string[] {
+  const { text } = FIXTURE;
+  const problems: string[] = [];
+  if (!has(msgs, text.publicMessage)) problems.push('missing the public message');
+  if (!has(msgs, text.npcMessage)) problems.push('missing the NPC message');
+  if (!has(msgs, text.ownMessage))
+    problems.push("missing the other player's own-character message");
+  if (has(msgs, text.npcSecret)) problems.push('NPC secret visible');
+  if (has(msgs, text.ownSecret)) problems.push("other player's own-character secret visible");
+  if (has(msgs, text.playerWhisper)) problems.push("other player's whisper to the GM visible");
+  if (has(msgs, text.gmWhisper)) problems.push('GM whisper visible');
+  if (msgs.some((m) => m.id === blindId) || has(msgs, text.blindMessage))
+    problems.push('blind roll visible');
+  return problems;
+}
+
 export const COMPENDIUM = {
   limitedPack: 'pf2e.abomination-vaults-bestiary',
   observablePacks: ['pf2e.actionspf2e', 'pf2e.journals'],

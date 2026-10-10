@@ -36,9 +36,15 @@ export interface E2ePaths {
 export const DEV_LINK_PORT = 7420;
 export const DEFAULT_E2E_PORT = 7429;
 
-export function e2ePaths(home: string = homedir()): E2ePaths {
+export function e2ePaths(
+  home: string = homedir(),
+  env: Record<string, string | undefined> = process.env,
+): E2ePaths {
   const base = join(home, '.config', 'agent-gateway');
-  const stateDir = join(base, 'e2e');
+  // A run may use a throwaway state directory (the stale-token suite does).
+  const override = env.AGENT_GATEWAY_E2E_STATE_DIR;
+  if (override === '') throw new ConfigError('AGENT_GATEWAY_E2E_STATE_DIR is set but empty');
+  const stateDir = override !== undefined ? override : join(base, 'e2e');
   return {
     stateDir,
     profilesDir: join(stateDir, 'profiles'),

@@ -114,6 +114,21 @@ describe('paths', () => {
     expect(p.testEnv).toBe('/home/u/.config/agent-gateway/test.env');
   });
 
+  it('AGENT_GATEWAY_E2E_STATE_DIR moves the state directory and nothing else', () => {
+    const p = e2ePaths('/home/u', { AGENT_GATEWAY_E2E_STATE_DIR: '/tmp/scratch' });
+    expect(p.stateDir).toBe('/tmp/scratch');
+    expect(p.db).toBe('/tmp/scratch/gateway.db');
+    expect(p.profilesDir).toBe('/tmp/scratch/profiles');
+    expect(p.testEnv).toBe('/home/u/.config/agent-gateway/test.env');
+    expect(e2ePaths('/home/u', {}).stateDir).toBe('/home/u/.config/agent-gateway/e2e');
+  });
+
+  it('refuses an empty AGENT_GATEWAY_E2E_STATE_DIR instead of using the real directory', () => {
+    expect(() => e2ePaths('/home/u', { AGENT_GATEWAY_E2E_STATE_DIR: '' })).toThrow(
+      'AGENT_GATEWAY_E2E_STATE_DIR is set but empty',
+    );
+  });
+
   it('keeps a hostile user name inside profiles/', () => {
     const p = e2ePaths('/home/u');
     expect(profileDir(p, '../../x')).toBe(`${p.profilesDir}/.._.._x`);

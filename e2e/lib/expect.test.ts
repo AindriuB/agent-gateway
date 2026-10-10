@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FIXTURE } from '../fixtures/spec.js';
 import {
   chatProblems,
+  otherPlayerChatProblems,
   notFoundProblems,
   overlapProblems,
   proseLines,
@@ -109,6 +110,39 @@ describe('chatProblems', () => {
   it('gm view passes and needs everything', () => {
     expect(chatProblems('gm', gmChat, BLIND)).toEqual([]);
     expect(chatProblems('gm', playerChat, BLIND).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('otherPlayerChatProblems', () => {
+  const view = [m(text.publicMessage), m(text.npcMessage), m(text.ownMessage)];
+  it('passes for what a non-owning player sees', () => {
+    expect(otherPlayerChatProblems(view, BLIND)).toEqual([]);
+  });
+  it("fails on player1's whisper, the own secret, the NPC secret, the GM whisper or the blind roll", () => {
+    expect(otherPlayerChatProblems([...view, m(text.playerWhisper)], BLIND)).toContain(
+      "other player's whisper to the GM visible",
+    );
+    expect(otherPlayerChatProblems([...view, m(text.ownSecret)], BLIND)).toContain(
+      "other player's own-character secret visible",
+    );
+    expect(otherPlayerChatProblems([...view, m(text.npcSecret)], BLIND)).toContain(
+      'NPC secret visible',
+    );
+    expect(otherPlayerChatProblems([...view, m(text.gmWhisper)], BLIND)).toContain(
+      'GM whisper visible',
+    );
+    expect(otherPlayerChatProblems([...view, m('', { id: BLIND })], BLIND)).toContain(
+      'blind roll visible',
+    );
+  });
+  it('fails when a visible message is missing', () => {
+    expect(otherPlayerChatProblems(view.slice(0, 1), BLIND)).toEqual([
+      'missing the NPC message',
+      "missing the other player's own-character message",
+    ]);
+  });
+  it('player1 view is not valid for the other player', () => {
+    expect(otherPlayerChatProblems(playerChat, BLIND).length).toBeGreaterThan(0);
   });
 });
 

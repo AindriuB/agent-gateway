@@ -41,6 +41,21 @@ describe('buildSummary', () => {
     expect(s.leakCheck.line).toBe('leak check: 10 results x 20 strings, 0 hits');
     expect(formatSummary(s)).toContain('tools: gm 3, player 2');
   });
+  it('lists multi records and never counts them or unknown kinds as leaks', () => {
+    const withMulti = buildSummary({
+      foundryUrl: 'https://f',
+      foundryTarget: 'v14',
+      vitest: { testResults: [] },
+      records: [
+        { kind: 'leak', results: 2, strings: 5, hits: 0 },
+        { kind: 'multi', suite: 'isolation', label: 'frames', value: '4 / 0' },
+        { kind: 'mystery' } as never,
+      ],
+    });
+    expect(withMulti.leakCheck).toMatchObject({ results: 2, strings: 5, hits: 0 });
+    expect(withMulti.multi).toEqual([{ suite: 'isolation', label: 'frames', value: '4 / 0' }]);
+    expect(formatSummary(withMulti)).toContain('isolation: frames: 4 / 0');
+  });
   it('writes 0600 JSON', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ag-e2e-sum-'));
     try {
