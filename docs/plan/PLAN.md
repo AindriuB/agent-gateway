@@ -11,8 +11,12 @@ than no plan.
 
 ## Now
 
-### Tool-pack foundation in flight
-Wave 4 and task 12 are complete. Tasks 13, 14, 16, 19 and 20 are merged, including audit and undo (PR #41). Task 20b is in progress; the remaining tool-pack sequence is 20c, then 20d and 20e, then 20f. Andrew has authorized completing that sequence. Tasks 15 and 18 remain open.
+### Tool-pack foundation implemented locally; review and live evidence pending
+Wave 4 and task 12 are complete. Tasks 13, 14, 16, 19 and 20 are merged, including audit and undo (PR #41). Tasks **20b–20f are implemented and independently tested on local branches**, with passing code reviews; they are **not merged**, and remaining acceptance work is open. The integrated 20f branch contains the implementations and author docs. See the [history entry](HISTORY.md) for exact commits and evidence.
+
+- Publication: PR #42 contains the task-contract corrections (`08c8325`). PR #43 exists for 20b but its published head remains `b0386c5`; the verified local head is `5790043`. Uploading the remaining source commits and opening dependent PRs awaits Andrew's answer to the source-upload approval request. No merge is authorized by a missing answer.
+- Live evidence: 20c passed 21 v14 read tests with zero leaks. Exact-bundle 20e checks and 20f enabled/disabled runs remain pending browser delivery/automation approval, installation and activation of the example, and world relaunch. An attempt against the older deployed bundle returned `WORLD_OFFLINE`; that is not evidence against the new bundle.
+- Keep task files, branches and worktrees for review. Finish the pending acceptance checks, publish one task per PR to `main` after approval, then record Andrew's reviews and merges. Tasks 15 and 18 remain open.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
