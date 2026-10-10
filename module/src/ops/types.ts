@@ -29,7 +29,7 @@ export interface OpResult {
   structured: Record<string, unknown>;
 }
 
-export type OpHandler = (ctx: OpContext) => Promise<OpResult> | OpResult;
+export type OpHandler = (ctx: OpContext) => Promise<DispatchResult> | DispatchResult;
 
 export type OpErrorCode =
   'TOOL_NOT_FOUND' | 'FORBIDDEN' | 'INVALID_ARGS' | 'RATE_LIMITED' | 'DENIED' | 'INTERNAL';

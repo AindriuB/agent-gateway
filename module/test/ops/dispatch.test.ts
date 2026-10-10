@@ -132,4 +132,10 @@ describe('stages', () => {
     expect(await d(call('read_thing'), gm)).toMatchObject({ error: { code: 'DENIED' } });
     expect(order).toEqual(['policy']);
   });
+
+  it('a handler-returned OpError reaches the caller unchanged', async () => {
+    const error = { error: { code: 'FORBIDDEN' as const, message: 'nope' } };
+    const d2 = createDispatcher({ tools, handlers: { read_thing: () => error }, stages: [] });
+    expect(await d2(call('read_thing'), player)).toBe(error);
+  });
 });
