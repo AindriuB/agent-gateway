@@ -79,7 +79,6 @@ export function installFoundry(
   g.CONST = { USER_ROLES: { NONE: 0, PLAYER: 1, TRUSTED: 2, ASSISTANT: 3, GAMEMASTER: 4 } };
   g.foundry = {
     applications: { api: { ApplicationV2, HandlebarsApplicationMixin } },
-    data: { fields: { StringField: class {}, HTMLField: class {} } },
     documents: generation === 14 && opts.sceneLevels !== false ? { BaseLevel: class {} } : {},
   };
   g.fromUuid = async (uuid: string) => ({ uuid });

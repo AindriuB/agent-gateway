@@ -44,7 +44,7 @@ const looksLikeHtml = (s: string) => /<\/?[a-z][^>]*>/i.test(s);
  * DOM so nothing is spliced into other markup. Secret sections are dropped from HTML fields unless
  * the user owns the document that holds the field.
  */
-function toMdDocument(
+export function toMdDocument(
   data: Record<string, unknown>,
   contexts: Map<object, DocContext>,
 ): MdDocument {

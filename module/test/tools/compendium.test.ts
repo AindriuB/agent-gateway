@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dispatch } from '../../src/ops/dispatch.js';
 import { isOpError, type OpCall } from '../../src/ops/types.js';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
+import { codeField, fakeDoc, gmUser, htmlField, ownerUser, playerUser } from '../stubs/world.js';
 
 let stub: FoundryStub;
 afterEach(() => stub?.uninstall());
@@ -42,7 +43,11 @@ function setup(packs: any[], docs: Record<string, any> = {}) {
     type: Boolean,
     default: false,
   });
-  g.game.users = { get: (id: string) => (id === 'u1' ? { id: 'u1' } : undefined) };
+  const users = [{ id: 'u1' }, gmUser, playerUser, ownerUser];
+  g.game.users = { get: (id: string) => users.find((u) => u.id === id) };
+  g.foundry.data = {
+    fields: { HTMLField: htmlField.constructor, JavaScriptField: codeField.constructor },
+  };
   g.game.packs = {
     contents: packs,
     get: (id: string) => packs.find((p) => p.collection === id),
@@ -132,57 +137,60 @@ describe('compendium_search', () => {
 
 describe('compendium_get', () => {
   const uuid = 'Compendium.w.journals.JournalEntry.j1';
-  // Field types come from the data model: a schema lists which paths exist and which are HTMLField.
-  const fieldsOf = () => (globalThis as any).foundry.data.fields;
-  const schemaOf = (spec: Record<string, 'html' | 'string'>) => ({
-    getField: (path: string) => {
-      const kind = spec[path];
-      if (!kind) return null;
-      const f = fieldsOf();
-      return new (kind === 'html' ? f.HTMLField : f.StringField)();
-    },
-  });
-  const collectionOf = (items: Array<{ _id: string; schema: unknown }>) => ({
-    get: (id: string) => items.find((x) => x._id === id),
-  });
-  const entry = (html: string, extra: Record<string, unknown> = {}) => ({
-    documentName: 'JournalEntry',
-    name: 'Lore',
-    schema: schemaOf({ 'system.description.value': 'html' }),
-    pages: collectionOf([{ _id: 'p1', schema: schemaOf({ 'text.content': 'html' }) }]),
-    toObject: () => ({
-      name: 'Lore',
-      pages: [{ _id: 'p1', text: { content: html } }],
-      flags: { core: { a: 1 }, evil: { secret: 'x' }, 'agent-gateway': { ok: 1 } },
+  const WATCHERS = ['p1', 'p2', 'gm1'];
+  const pageSchema = { name: {}, text: { fields: { content: htmlField } } };
+  const mkPage = (content: string, extra: Record<string, unknown> = {}) =>
+    fakeDoc({
+      id: 'pg',
+      name: 'Page',
+      documentName: 'JournalEntryPage',
+      observers: WATCHERS,
+      schema: pageSchema,
+      data: { text: { content } },
       ...extra,
-    }),
-  });
-  const get = (args: unknown, user = player) => dispatch(call('compendium_get', args), user);
+    });
+  const journal = (content: string, extra: Record<string, unknown> = {}, page = mkPage(content)) =>
+    fakeDoc({
+      id: 'j1',
+      name: 'Lore',
+      uuid,
+      documentName: 'JournalEntry',
+      observers: WATCHERS,
+      embedded: { pages: [page] },
+      ...extra,
+    });
+  const run = (d: any, user: any = playerUser, args: Record<string, unknown> = {}) => {
+    setup([makePack('w.journals', 'JournalEntry', [], WATCHERS)], { [d.uuid]: d });
+    return dispatch(call('compendium_get', { uuid: d.uuid, ...args }), user) as Promise<any>;
+  };
+  const get = (args: unknown, user: any = playerUser) =>
+    dispatch(call('compendium_get', args), user) as Promise<any>;
+  const md = (r: any): string => {
+    if ('error' in r) throw new Error(JSON.stringify(r.error));
+    return r.structured.markdown;
+  };
 
   it('returns markdown for an observable entry', async () => {
-    setup([makePack('w.journals', 'JournalEntry', [])], {
-      [uuid]: entry('<p>Hello <b>world</b></p><script>alert(1)</script>'),
-    });
-    const r = (await get({ uuid })) as any;
+    const r = await run(journal('<p>Hello <b>world</b></p><script>alert(1)</script>'));
     expect(r.structured).toMatchObject({
       uuid,
       name: 'Lore',
       type: 'JournalEntry',
       pack: 'w.journals',
     });
-    expect(r.structured.markdown).toContain('Hello **world**');
-    expect(r.structured.markdown).not.toContain('alert');
+    expect(md(r)).toContain('Hello **world**');
+    expect(md(r)).not.toContain('alert');
     expect(r.structured.nextCursor).toBeUndefined();
   });
 
   it('pages with a cursor and reassembles the whole entry', async () => {
     const words = Array.from({ length: 4000 }, (_, i) => `w${i}`).join(' ');
-    setup([makePack('w.journals', 'JournalEntry', [])], { [uuid]: entry(`<p>${words}</p>`) });
+    const d = journal(`<p>${words}</p>`);
     let cursor: string | undefined;
     const seen: string[] = [];
     for (let i = 0; i < 50; i++) {
-      const r = (await get({ uuid, cursor })) as any;
-      seen.push(r.structured.markdown);
+      const r = await run(d, playerUser, cursor ? { cursor } : {});
+      seen.push(md(r));
       cursor = r.structured.nextCursor;
       if (!cursor) break;
     }
@@ -191,9 +199,8 @@ describe('compendium_get', () => {
     for (const i of [0, 1999, 3999]) expect(joined).toContain(`w${i}`);
   });
 
-  it('rejects a forged cursor without throwing', async () => {
-    setup([makePack('w.journals', 'JournalEntry', [])], { [uuid]: entry('<p>x</p>') });
-    const r = (await get({ uuid, cursor: 'p1.deadbeef.1.1.1' })) as any;
+  it('rejects a forged cursor with INVALID_ARGS', async () => {
+    const r = await run(journal('<p>x</p>'), playerUser, { cursor: 'p1.deadbeef.1.1.1' });
     expect(r).toMatchObject({
       error: { code: 'INVALID_ARGS', message: expect.stringMatching(/cursor/i) },
     });
@@ -201,7 +208,7 @@ describe('compendium_get', () => {
 
   it('rejects non-compendium uuids', async () => {
     setup([], {});
-    const r = (await get({ uuid: 'Actor.abc' })) as any;
+    const r = await get({ uuid: 'Actor.abc' });
     expect(r).toMatchObject({
       error: { code: 'INVALID_ARGS', message: expect.stringMatching(/Compendium/) },
     });
@@ -209,140 +216,176 @@ describe('compendium_get', () => {
   });
 
   it('does not load entries from packs the user cannot observe', async () => {
-    setup([makePack('w.journals', 'JournalEntry', [], [])], { [uuid]: entry('<p>x</p>') });
-    const r = (await get({ uuid })) as any;
+    setup([makePack('w.journals', 'JournalEntry', [], [])], { [uuid]: journal('<p>x</p>') });
+    const r = await get({ uuid });
     expect(r).toEqual({ error: { code: 'INVALID_ARGS', message: 'Compendium entry not found.' } });
     expect((globalThis as any).fromUuid).not.toHaveBeenCalled();
     expect(JSON.stringify(r)).not.toContain('Lore');
   });
 
   it('answers a missing pack exactly like a hidden one', async () => {
-    setup([], { [uuid]: entry('<p>x</p>') });
+    setup([], { [uuid]: journal('<p>x</p>') });
     expect(await get({ uuid })).toEqual({
       error: { code: 'INVALID_ARGS', message: 'Compendium entry not found.' },
     });
   });
 
   it('does not expose other modules data in the entry', async () => {
-    setup([makePack('w.journals', 'JournalEntry', [])], {
-      [uuid]: entry('<p>x</p>', { system: { description: { value: '<p>sys</p>' } } }),
+    const d = journal('<p>x</p>', {
+      data: { flags: { core: { a: 1 }, evil: { secret: 'LEAKED' } } },
     });
-    const r = (await get({ uuid })) as any;
-    expect(JSON.stringify(r)).not.toContain('secret');
-    expect(r.structured.markdown).toContain('sys');
+    expect(JSON.stringify(await run(d))).not.toContain('LEAKED');
   });
 
   it('escapes a hostile name and neutralises markup in content', async () => {
-    const e = entry('<p>[click](javascript:alert(1)) <img src=x onerror=alert(1)></p>');
-    e.toObject = () => ({
+    const d = journal('<p>[a](b) <img src=x onerror=alert(1)></p>', {
       name: '# <b>boom</b>',
-      pages: [{ _id: 'p1', text: { content: '<p>[a](b)</p>' } }],
+      data: { name: '# <b>boom</b>' },
     });
-    setup([makePack('w.journals', 'JournalEntry', [])], { [uuid]: e });
-    const r = (await get({ uuid })) as any;
+    const r = await run(d);
     expect(r.text).not.toMatch(/<b>|<img/);
-    expect(r.structured.markdown).toContain('\\[a\\]');
+    expect(md(r)).toContain('\\[a\\]');
   });
 
-  describe('rich text by field type', () => {
-    const doc = (
-      documentName: string,
-      spec: Record<string, 'html' | 'string'>,
-      data: any,
-      extra = {},
-    ) => ({
-      documentName,
-      name: data.name,
-      schema: schemaOf(spec),
-      toObject: () => data,
-      ...extra,
+  describe('names are inert in text results (shared inlineText)', () => {
+    it('search: a heading-looking and an autolink-looking name', async () => {
+      setup([
+        makePack('w.i', 'Item', [
+          { _id: 'a', name: '# Pwned' },
+          { _id: 'b', name: 'www.x.com' },
+        ]),
+      ]);
+      const r = (await search({ query: 'w' })) as any;
+      expect(r.text).toContain('\\# Pwned');
+      expect(r.text).not.toContain('- # Pwned');
+      expect(r.text).toContain('www\\.x.com');
+      expect(r.text).not.toContain('www.x.com');
     });
-    const run = async (d: any) => {
-      const u = `Compendium.w.p.${d.documentName}.x1`;
-      setup([makePack('w.p', d.documentName, [])], { [u]: d });
-      return (await get({ uuid: u })) as any;
-    };
+    it('get: the header line cannot be a heading or a link', async () => {
+      for (const [name, bad] of [
+        ['# Pwned', /^# /m],
+        ['www.x.com', /www\.x\.com/],
+      ] as const) {
+        const r = await run(journal('<p>x</p>', { name, data: { name } }));
+        expect(r.text.split('\n')[0]).not.toMatch(bad);
+      }
+    });
+  });
 
-    it('RollTable result text: HTMLField is converted, a plain string field is escaped, not parsed', async () => {
-      const table = (kind: 'html' | 'string') =>
-        doc(
-          'RollTable',
-          { description: 'html' },
-          {
-            name: 'Loot',
-            description: '<p>Table <i>intro</i></p>',
-            results: [{ _id: 'r1', description: '<b>Gold</b> coins' }],
+  describe('secrets and owner-only fields', () => {
+    const body =
+      '<p>PUBLIC</p><section class="secret"><p>SECRETONE</p></section><p class="secret revealed">REVEALED</p>';
+    it('strips unrevealed secrets for a player observer, keeps them for the GM and the page owner', async () => {
+      const d = () => journal(body);
+      const player = md(await run(d()));
+      expect(player).toContain('PUBLIC');
+      expect(player).toContain('REVEALED');
+      expect(player).not.toContain('SECRETONE');
+      expect(md(await run(d(), gmUser))).toContain('SECRETONE');
+      const owned = journal(body, {}, mkPage(body, { owners: ['p2'] }));
+      const o = md(await run(owned, ownerUser));
+      expect(o).toContain('SECRETONE');
+      expect(o).toContain('REVEALED');
+    });
+
+    it('strips secrets from markup in any string, schema or not', async () => {
+      const item = fakeDoc({
+        id: 'i1',
+        name: 'Blade',
+        uuid: 'Compendium.w.journals.Item.i1',
+        documentName: 'Item',
+        observers: WATCHERS,
+        data: { system: { note: '<p>OPEN</p><section class="secret">HIDDENTEXT</section>' } },
+      });
+      expect(md(await run(item))).not.toContain('HIDDENTEXT');
+      expect(md(await run(item))).toContain('OPEN');
+      expect(md(await run(item, gmUser))).toContain('HIDDENTEXT');
+    });
+
+    it('drops text.markdown for a player and keeps it for the GM', async () => {
+      const page = mkPage('<p>RENDERED</p>', {
+        data: {
+          text: {
+            content: '<p>RENDERED</p>',
+            markdown: 'MDSOURCE <section class="secret">MDSECRET</section>',
           },
-          { results: collectionOf([{ _id: 'r1', schema: schemaOf({ description: kind }) }]) },
-        );
-      const html = await run(table('html'));
-      expect(html.structured.markdown).toContain('Table *intro*');
-      expect(html.structured.markdown).toContain('**Gold** coins');
-      const plain = await run(table('string'));
-      expect(plain.structured.markdown).toContain('&lt;b>Gold&lt;/b> coins');
-      expect(plain.structured.markdown).not.toContain('**Gold**');
-    });
-
-    it('RollTable v12 `text` result field is read when the model has it', async () => {
-      const t = doc(
-        'RollTable',
-        {},
-        { name: 'Old', results: [{ _id: 'r1', text: 'A <i>rat</i>' }] },
-        {
-          results: collectionOf([{ _id: 'r1', schema: schemaOf({ text: 'string' }) }]),
         },
-      );
-      expect((await run(t)).structured.markdown).toContain('A &lt;i>rat&lt;/i>');
+      });
+      const d = () => journal('', {}, page);
+      const player = md(await run(d()));
+      expect(player).toContain('RENDERED');
+      expect(player).not.toMatch(/MDSOURCE|MDSECRET/);
+      expect(md(await run(d(), gmUser))).toContain('MDSECRET');
     });
+  });
 
-    it('Macro command is a fenced code block, never interpreted', async () => {
-      const cmd = 'const x = "<b>hi</b>";\n```\n# not a heading\nawait ui.notifications.info(x);';
-      const r = await run(
-        doc('Macro', { command: 'string' }, { name: 'Zap', type: 'script', command: cmd }),
-      );
-      const md: string = r.structured.markdown;
-      expect(md).toContain('<b>hi</b>');
-      expect(md).toMatch(/^(`{3,}|~{3,})/m);
-      // The embedded fence cannot close the block: the fence in use is longer than any run in the command.
-      const open = /^(`{3,})/m.exec(md)![1]!;
+  describe('top-level field rules for non-GMs', () => {
+    const stats = {
+      modifiedTime: 5,
+      createdTime: 1,
+      createdBy: 'CREATEDBY',
+      compendiumSource: 'COMPSRC',
+    };
+    const macro = () =>
+      fakeDoc({
+        id: 'm1',
+        name: 'Zap',
+        uuid: 'Compendium.w.journals.Macro.m1',
+        documentName: 'Macro',
+        observers: WATCHERS,
+        data: {
+          ownership: { default: 0, p1: 2, gm1: 3 },
+          _stats: stats,
+          flags: { core: { sourceId: 'SOURCEID', keepme: 'KEPT' } },
+        },
+      });
+    it('ownership becomes {yours}, _stats is trimmed, sourceId is dropped', async () => {
+      const player = md(await run(macro()));
+      expect(player).toMatch(/ownership\.yours\*\*: 2/);
+      expect(player).not.toMatch(/ownership\.(default|p1|gm1)/);
+      expect(player).not.toMatch(/CREATEDBY|COMPSRC|SOURCEID/);
+      expect(player).toContain('KEPT');
+      const gm = md(await run(macro(), gmUser));
+      expect(gm).toMatch(/ownership\.gm1/);
+      expect(gm).toContain('CREATEDBY');
+      expect(gm).toContain('SOURCEID');
+    });
+  });
+
+  describe('typed text from the data model', () => {
+    it('RollTable results: HTMLField converted, code field fenced', async () => {
+      const result = fakeDoc({
+        id: 'r1',
+        name: 'R',
+        documentName: 'TableResult',
+        observers: WATCHERS,
+        schema: { description: htmlField },
+        data: { description: '<b>Gold</b> coins' },
+      });
+      const table = fakeDoc({
+        id: 't1',
+        name: 'Loot',
+        uuid: 'Compendium.w.journals.RollTable.t1',
+        documentName: 'RollTable',
+        observers: WATCHERS,
+        embedded: { results: [result] },
+      });
+      expect(md(await run(table))).toContain('**Gold** coins');
+    });
+    it('Macro command is a fenced code block', async () => {
+      const m = fakeDoc({
+        id: 'm2',
+        name: 'Zap',
+        uuid: 'Compendium.w.journals.Macro.m2',
+        documentName: 'Macro',
+        observers: WATCHERS,
+        schema: { command: codeField },
+        data: { command: 'const x = "<b>hi</b>";\n```\n# not a heading' },
+      });
+      const out = md(await run(m));
+      const open = /^(`{3,})/m.exec(out)![1]!;
       expect(open.length).toBeGreaterThan(3);
-      expect(md.split(open).length).toBe(3);
-    });
-
-    it('Macro command is ignored when the model has no such string field', async () => {
-      const r = await run(doc('Macro', {}, { name: 'Zap', command: 'secretcode()' }));
-      expect(r.structured.markdown).not.toContain('secretcode');
-    });
-
-    it('Scene notes text is included as plain text, with HTMLField description as HTML', async () => {
-      const scene = doc(
-        'Scene',
-        { description: 'html' },
-        {
-          name: 'Cave',
-          description: '<p>A <b>dark</b> cave</p>',
-          notes: [
-            { _id: 'n1', text: 'Trap <b>here</b>' },
-            { _id: 'n2', text: '' },
-          ],
-        },
-        {
-          notes: collectionOf([
-            { _id: 'n1', schema: schemaOf({ text: 'string' }) },
-            { _id: 'n2', schema: schemaOf({ text: 'string' }) },
-          ]),
-        },
-      );
-      const md: string = (await run(scene)).structured.markdown;
-      expect(md).toContain('A **dark** cave');
-      expect(md).toContain('Trap &lt;b>here&lt;/b>');
-    });
-
-    it('a field absent from the data model is ignored whatever its content', async () => {
-      const r = await run(
-        doc('Item', {}, { name: 'Odd', description: '<p>phantom</p>', system: {} }),
-      );
-      expect(r.structured.markdown).not.toContain('phantom');
+      expect(out).toContain('<b>hi</b>');
     });
   });
 });

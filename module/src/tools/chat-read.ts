@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { chatRead } from '@agent-gateway/protocol';
 import type { OpHandler } from '../ops/types.js';
-import { htmlToDocument, page } from '../serialise/index.js';
-import { inlineText } from './compendium-search.js';
+import { htmlToDocument, inlineText, page } from '../serialise/index.js';
 
 declare const game: any;
 

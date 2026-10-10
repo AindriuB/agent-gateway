@@ -1,19 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { compendiumSearch } from '@agent-gateway/protocol';
 import type { OpHandler } from '../ops/types.js';
-import { escapeMd, stripMarkers } from '../serialise/index.js';
+import { inlineText } from '../serialise/index.js';
 
 declare const game: any;
 
 const NAME_CAP = 200;
-
-/** Untrusted one-line text, escaped so it cannot become markdown structure in a result. */
-export function inlineText(value: unknown, cap = NAME_CAP): string {
-  const text = stripMarkers(String(value ?? ''))
-    .replace(/\s+/g, ' ')
-    .trim();
-  return escapeMd(text.length > cap ? `${text.slice(0, cap)}...` : text);
-}
 
 /** True when the user may observe the pack. Unknown users and packs without the API are denied. */
 export function canObservePack(pack: any, userId: string): boolean {
