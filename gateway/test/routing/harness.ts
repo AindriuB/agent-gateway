@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -45,7 +46,7 @@ const helloFrame = (
   auth: unknown,
 ) => ({
   type: 'hello',
-  protocolVersion: '1.0.0',
+  protocolVersion: PROTOCOL_VERSION,
   moduleVersion: '0.0.0',
   foundryVersion: '14.0',
   world: { id: worldId, title: 'W', system: 'pf2e', systemVersion: '1' },

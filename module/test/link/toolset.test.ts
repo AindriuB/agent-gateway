@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
+  PROTOCOL_VERSION,
   defineTool,
   TOOLS,
   toolsForRole,
@@ -300,7 +301,7 @@ describe('installToolsetAnnouncer on a real client', () => {
   const welcome = {
     type: 'welcome',
     gatewayVersion: '0',
-    protocolVersion: '1.0.0',
+    protocolVersion: PROTOCOL_VERSION,
     connectionId: 'c',
     agentId: 'a',
   };
