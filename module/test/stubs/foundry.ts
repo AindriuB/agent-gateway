@@ -62,6 +62,7 @@ export function installFoundry(
   const collection = () => ({ get: () => undefined, contents: [] as unknown[], size: 0 });
 
   g.game = {
+    modules: new Map([['agent-gateway', { active: true }]]),
     release: { generation },
     settings: {
       register: (ns: string, key: string, cfg: SettingConfig) =>
@@ -93,6 +94,8 @@ export function installFoundry(
     messages: collection(),
   };
   g.Hooks = {
+    callAll: (name: string, ...args: unknown[]) =>
+      (hooks.get(name) ?? []).forEach((fn) => (fn as (...args: unknown[]) => void)(...args)),
     once: (name: string, fn: () => void) => hooks.set(name, [...(hooks.get(name) ?? []), fn]),
     on: (name: string, fn: () => void) => hooks.set(name, [...(hooks.get(name) ?? []), fn]),
   };
