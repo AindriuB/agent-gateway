@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown, inlineText, stripSecrets } from '../../src/serialise/index.js';
+import {
+  escapeMd,
+  htmlToMarkdown,
+  inlineText,
+  stripMarkers,
+  stripSecrets,
+} from '../../src/serialise/index.js';
 import { HOSTILE_NAMES, expectInertSpan } from '../stubs/inert.js';
 
 describe('inlineText', () => {
@@ -12,6 +18,41 @@ describe('inlineText', () => {
   });
   it('collapses newlines and whitespace', () => {
     expect(inlineText('  a \n\n b\t c ')).toBe('a b c');
+  });
+  it('accepts any value', () => {
+    expect(inlineText(undefined)).toBe('');
+    expect(inlineText(null)).toBe('');
+    expect(inlineText(42)).toBe('42');
+    expect(inlineText({ toString: () => 'obj' })).toBe('obj');
+    expect(inlineText(Object.create(null))).toBe('');
+    expect(inlineText(Symbol('s'))).toBe('Symbol(s)');
+  });
+  it('caps long text at 200 characters with an ellipsis', () => {
+    const out = inlineText('a'.repeat(500));
+    expect(out).toBe(`${'a'.repeat(200)}...`);
+    expect(inlineText('b'.repeat(600), 500)).toBe(`${'b'.repeat(500)}...`);
+  });
+  it('is a superset of the compendium helper: same output once the extra escapes are removed', () => {
+    const reference = (value: unknown, cap = 200) => {
+      const text = stripMarkers(String(value ?? ''))
+        .replace(/\s+/g, ' ')
+        .trim();
+      return escapeMd(text.length > cap ? `${text.slice(0, cap)}...` : text);
+    };
+    for (const sample of [
+      'Goblin',
+      "Bob's *Tavern* [2]",
+      'a\n\nb  c',
+      'x'.repeat(300),
+      'A_B <i> & `c` | d',
+      'www.x.org',
+      'me@x.org',
+      'http://x.org',
+      42,
+    ]) {
+      const mine = inlineText(sample).replace(/\\([:.@])/g, '$1');
+      expect(mine).toBe(reference(sample));
+    }
   });
   it('keeps ordinary names readable', () => {
     expect(inlineText("Bob's Tavern (2nd floor)")).toBe("Bob's Tavern (2nd floor)");

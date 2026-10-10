@@ -11,6 +11,9 @@ export const HOSTILE_NAMES = [
   'http://evil.example/x',
   '![img](http://x/y.png)',
   '<script>alert(1)</script>',
+  'www.example.com',
+  'a@b.com',
+  'WWW.Evil.io/path and x@y.org',
 ];
 
 /** What a reader makes of a span of text: one paragraph, no HTML, no links, no images. */

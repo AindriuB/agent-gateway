@@ -13,6 +13,8 @@ import {
 } from '../serialise/index.js';
 import {
   applyTree,
+  findNode,
+  pathMatches,
   treeStamp,
   visibleTree,
   type DocContext,
@@ -76,14 +78,25 @@ function toMdDocument(
       }
     } else if (typeof value === 'string') {
       if (value === '') continue;
-      const isHtml = ctx?.html ? ctx.html.has(here) : looksLikeHtml(value);
+      const schemaHtml = ctx?.html ? pathMatches(ctx.html, here) : false;
       const isCode =
-        ctx !== undefined && (ctx.code.has(here) || (ctx.isMacro && here === 'command'));
-      if (isHtml) {
-        dom.body.append(el('h3', path));
-        const box = el('div');
+        ctx !== undefined && (pathMatches(ctx.code, here) || (ctx.isMacro && here === 'command'));
+      const markup = looksLikeHtml(value);
+      // The schema only decides how a field is shown. Secrets go from every string that holds
+      // markup, wherever it sits, unless the reader owns the document: the schema may be missing
+      // (template.json systems), wrong, or not cover a mapping or a flag.
+      const needsStrip = !ctx?.owner && markup && !isCode;
+      const asHtml = schemaHtml || (ctx?.html == null && markup && !isCode);
+      let text = value;
+      let box: HTMLElement | undefined;
+      if (asHtml || needsStrip) {
+        box = el('div');
         box.innerHTML = value;
-        if (!ctx?.owner) stripSecrets(box);
+        if (needsStrip) stripSecrets(box);
+        if (!asHtml) text = box.innerHTML;
+      }
+      if (asHtml && box) {
+        dom.body.append(el('h3', path));
         dom.body.append(box);
       } else if (isCode) {
         dom.body.append(el('p', path));
@@ -93,7 +106,7 @@ function toMdDocument(
       } else {
         const p = el('p');
         p.append(el('strong', path), dom.createTextNode(': '));
-        value.split(/\r\n?|\n/).forEach((line, i) => {
+        text.split(/\r\n?|\n/).forEach((line, i) => {
           if (i > 0) p.append(el('br'));
           p.append(dom.createTextNode(line));
         });
@@ -128,7 +141,7 @@ function cacheGet(key: string): MdDocument | undefined {
 }
 
 function cachePut(key: string, md: MdDocument): void {
-  const size = sizeOf(md);
+  const size = sizeOf(md) + key.length;
   if (size > CACHE_MAX_SIZE) return;
   cache.set(key, { md, size });
   let total = 0;
@@ -145,24 +158,20 @@ export function clearDocumentCache(): void {
   cache.clear();
 }
 
-/** Every document from `doc` up to its world document must be visible to `user`. */
-function readableBy(doc: any, user: any): boolean {
-  if (user.isGM === true) return true;
-  const chain: any[] = [];
-  for (let d = doc; d; d = d.parent) chain.push(d);
-  const root = chain[chain.length - 1];
-  if (typeof root.testUserPermission !== 'function' || !root.testUserPermission(user, 'OBSERVER'))
-    return false;
-  // Rebuild the tree top-down and require each step to survive the embedded-visibility rules.
-  let node: VisibleNode = visibleTree(root, user);
-  for (let i = chain.length - 2; i >= 0; i--) {
-    const next: VisibleNode | undefined = Object.values(node.children)
-      .flat()
-      .find((k) => k.doc === chain[i]);
-    if (!next) return false;
-    node = next;
-  }
-  return true;
+/**
+ * The visible-document tree for the world document at the top of `doc`'s ancestry, and the node for
+ * `doc` within it; undefined unless the user may observe the root and every step down to `doc`
+ * survives the embedded-visibility rules.
+ */
+function readable(doc: any, user: any): VisibleNode | undefined {
+  let root = doc;
+  while (root.parent) root = root.parent;
+  if (
+    user.isGM !== true &&
+    !(typeof root.testUserPermission === 'function' && root.testUserPermission(user, 'OBSERVER'))
+  )
+    return undefined;
+  return findNode(visibleTree(root, user), doc);
 }
 
 export const documentGetHandler: OpHandler = async (ctx) => {
@@ -181,20 +190,18 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   }
   const user = game.users.get(ctx.user.id);
   // A document the user cannot observe looks exactly like a missing one, so uuids cannot be probed.
-  if (!doc || !user || doc.pack || !readableBy(doc, user)) return notFound(uuid);
+  const tree = !doc || !user || doc.pack ? undefined : readable(doc, user);
+  if (!tree) return notFound(uuid);
 
-  const tree = visibleTree(doc, user);
-  const stamp = treeStamp(tree);
   const optIn = includeOtherModuleDataSetting();
-  const key =
-    stamp === null ? null : [doc.uuid ?? uuid, user.id, user.role, optIn, stamp].join('|');
-  let md = key === null ? undefined : cacheGet(key);
+  const key = [doc.uuid ?? uuid, user.id, user.role, optIn, treeStamp(tree)].join('|');
+  let md = cacheGet(key);
   if (!md) {
     const data = serialiseDocument(doc) as Record<string, any>;
     const contexts = new Map<object, DocContext>();
     applyTree(tree, data, contexts);
     md = toMdDocument(data, contexts);
-    if (key !== null) cachePut(key, md);
+    cachePut(key, md);
   }
   let result;
   try {

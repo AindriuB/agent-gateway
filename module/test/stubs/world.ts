@@ -16,62 +16,97 @@ export interface FakeDocInit {
   name: string;
   documentName: string;
   uuid?: string;
+  type?: string;
   folder?: { id: string; name: string };
   /** user ids who may observe (owners always may) */
   observers?: string[];
   /** user ids who own */
   owners?: string[];
-  /** embedded documents have an ownership field only when this is true (top-level docs always do) */
-  ownership?: boolean;
+  /** user ids who have LIMITED access only */
+  limited?: string[];
   hidden?: boolean;
+  disposition?: number;
   data?: Record<string, unknown>;
   /** Schema fields (SchemaField-like `{ fields }`, `{ element }`, HTMLField, JavaScriptField, plain objects) */
   schema?: Record<string, unknown>;
-  /** Embedded documents by collection name. */
+  /** Embedded collections by collection name. */
   embedded?: Record<string, any[]>;
-  modifiedTime?: number;
+  /** Singular embedded documents (a token's `delta`) by name. */
+  singular?: Record<string, any>;
+  /** `null` leaves `_stats.modifiedTime` undefined. */
+  modifiedTime?: number | null;
   entry?: any;
+  page?: any;
+  actor?: any;
+  /** Share a class object (and its metadata) between documents of one type. */
+  ctor?: any;
+  /** Counts reads of `schema`. */
+  schemaReads?: { count: number };
 }
 
 export function fakeDoc(init: FakeDocInit): any {
   const owners = init.owners ?? [];
   const observers = init.observers ?? [];
+  const limited = init.limited ?? [];
   const toObjectCalls = { count: 0 };
+  const permCalls = { count: 0 };
   const embedded = init.embedded ?? {};
+  const singular = init.singular ?? {};
+  const meta = Object.fromEntries(
+    [...Object.keys(embedded), ...Object.keys(singular)].map((c) => [`E_${c}`, c]),
+  );
+  const time = init.modifiedTime === undefined ? 1 : init.modifiedTime;
   const doc: any = {
     id: init.id,
     uuid: init.uuid ?? `${init.documentName}.${init.id}`,
     name: init.name,
     documentName: init.documentName,
+    type: init.type,
     folder: init.folder,
     hidden: init.hidden,
+    disposition: init.disposition,
     entry: init.entry,
+    page: init.page,
+    actor: init.actor,
     data: init.data ?? {},
-    modifiedTime: init.modifiedTime ?? 1,
-    _stats: { modifiedTime: init.modifiedTime ?? 1 },
-    _source: init.ownership === false ? {} : { ownership: {} },
-    schema: init.schema ? { fields: init.schema } : undefined,
-    constructor: {
-      metadata: {
-        embedded: Object.fromEntries(Object.keys(embedded).map((c) => [`E_${c}`, c])),
-      },
-    },
+    _stats: time === null ? {} : { modifiedTime: time },
+    constructor: init.ctor ?? { metadata: { embedded: meta } },
     toObjectCalls,
-    testUserPermission: (user: { id: string; isGM?: boolean }, level: string) =>
-      user.isGM === true ||
-      owners.includes(user.id) ||
-      (level === 'OBSERVER' && observers.includes(user.id)),
+    permCalls,
+    testUserPermission: (user: { id: string; isGM?: boolean }, level: string) => {
+      permCalls.count += 1;
+      if (user.isGM === true || owners.includes(user.id)) return true;
+      if (level === 'OWNER') return false;
+      if (level === 'LIMITED') return observers.includes(user.id) || limited.includes(user.id);
+      return observers.includes(user.id);
+    },
     toObject() {
       toObjectCalls.count += 1;
       const out: Record<string, unknown> = { _id: init.id, name: init.name, ...this.data };
       for (const [coll, kids] of Object.entries(embedded))
         out[coll] = kids.map((k) => k.toObject());
+      for (const [name, one] of Object.entries(singular)) out[name] = one.toObject();
       return out;
     },
   };
+  Object.defineProperty(doc, '_source', {
+    get() {
+      return { _id: init.id, name: init.name, ...doc.data };
+    },
+  });
+  Object.defineProperty(doc, 'schema', {
+    get() {
+      if (init.schemaReads) init.schemaReads.count += 1;
+      return init.schema ? { fields: init.schema } : undefined;
+    },
+  });
   for (const [coll, kids] of Object.entries(embedded)) {
     doc[coll] = kids;
     for (const k of kids) k.parent = doc;
+  }
+  for (const [name, one] of Object.entries(singular)) {
+    doc[name] = one;
+    one.parent = doc;
   }
   return doc;
 }
@@ -95,13 +130,14 @@ export function setupWorld(w: WorldSetup = {}): FoundryStub {
   const byUuid = new Map<string, any>();
   const index = (d: any) => {
     byUuid.set(d.uuid, d);
-    for (const key of Object.keys(d.constructor.metadata.embedded).map(
-      (k) => d.constructor.metadata.embedded[k],
-    ))
-      for (const kid of d[key]) {
+    for (const key of Object.values<string>(d.constructor.metadata?.embedded ?? {})) {
+      const value = d[key];
+      if (!value) continue;
+      for (const kid of Array.isArray(value) ? value : [value]) {
         kid.uuid = `${d.uuid}.${kid.documentName}.${kid.id}`;
         index(kid);
       }
+    }
   };
   for (const list of Object.values(docs)) for (const d of list) index(d);
   Object.assign(g.game, {
