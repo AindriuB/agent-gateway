@@ -212,6 +212,14 @@ describe('audit stage', () => {
     expect(records[4]!.argsTruncated).toBe(false);
   });
 
+  it('caps the total size of args even when every part is within its own limit', async () => {
+    const { records, dispatch } = rig();
+    const blob = Array.from({ length: 30 }, () => Array(20).fill('s'.repeat(400)));
+    await dispatch(call('fixture_code', { blob }), player);
+    expect(records[0]!.args.length).toBe(AUDIT_LIMITS.argsChars + 3);
+    expect(records[0]!.argsTruncated).toBe(true);
+  });
+
   it('does not keep an oversized snapshot and marks the target not undoable', async () => {
     const { store, records, dispatch } = rig();
     store.add(writable('Actor.big', { blob: 'z'.repeat(AUDIT_LIMITS.beforeChars + 10) }, 3));
