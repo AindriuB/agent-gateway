@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { APPROVAL_WAIT_MS } from '@agent-gateway/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { APPROVAL_CONFIG } from '../../src/approvals/config.js';
 import { agentOf, pendingId, pipeline, settle, world } from './rig.js';
 
@@ -28,6 +28,57 @@ describe('the approval stage', () => {
     expect(handler).not.toHaveBeenCalled();
     expect(p1.storage.text).toBe('');
   });
+
+  it.each([
+    ['owner', 'approve'],
+    ['owner', 'deny'],
+    ['gm', 'approve'],
+    ['gm', 'deny'],
+  ] as const)(
+    'a synchronous %s hook can %s and settle the caller immediately',
+    async (approver, decision) => {
+      const { hub, p1, gm, call, handler } = setup(approver);
+      const client = approver === 'owner' ? p1 : gm;
+      const push = client.hooks.push.bind(client.hooks);
+      let accepted: boolean | undefined;
+      let id = '';
+      const hook = vi.spyOn(client.hooks, 'push').mockImplementation((...events) => {
+        const count = push(...events);
+        for (const event of events) {
+          if (event.name !== 'agentGateway.approvalRequested') continue;
+          id = event.payload.id;
+          accepted = client.manager.resolveApproval(id, { decision, reason: 'synchronous answer' });
+        }
+        return count;
+      });
+      try {
+        let settled = false;
+        const done = call('write_thing', { id: 'sync' }).then((result) => {
+          settled = true;
+          return result;
+        });
+        await settle();
+        expect(accepted).toBe(true);
+        expect(settled).toBe(true); // No clock advance: the answer must beat the pending timeout.
+        if (decision === 'deny') {
+          expect(await done).toMatchObject({
+            error: { code: 'DENIED', message: expect.stringContaining('synchronous answer') },
+          });
+        } else {
+          expect(await done).toEqual({ text: 'ran write_thing {"id":"sync"}', structured: {} });
+        }
+        expect((await call('approval_status', { id })) as any).toMatchObject({
+          structured: { id, status: decision === 'deny' ? 'denied' : 'approved' },
+        });
+        await hub.advance(APPROVAL_CONFIG.APPROVAL_WAIT_MS);
+        expect(handler).toHaveBeenCalledTimes(decision === 'deny' ? 0 : 1);
+        expect(p1.manager.listPending()).toEqual([]);
+        expect(gm.manager.listPending()).toEqual([]);
+      } finally {
+        hook.mockRestore();
+      }
+    },
+  );
 
   it('owner approves within the wait: the handler runs and its result comes back directly', async () => {
     const { p1, call, handler } = setup();

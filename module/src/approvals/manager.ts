@@ -336,12 +336,6 @@ export class ApprovalManager {
     this.records.set(record.id, record);
     this.scheduleExpiry(record);
     this.persist();
-    this.env.callHook(HOOK_REQUESTED, {
-      ...this.toPayload(record),
-      requesterId: ctx.user.id,
-      local: true,
-    });
-    this.sendRequest(record, this.recipients(record));
 
     return new Promise<DispatchResult>((resolve) => {
       let done = false;
@@ -360,6 +354,13 @@ export class ApprovalManager {
         },
       };
       this.waiters.set(record.id, waiter);
+      // Hooks and socket replies can resolve synchronously: the caller must already be waiting.
+      this.env.callHook(HOOK_REQUESTED, {
+        ...this.toPayload(record),
+        requesterId: ctx.user.id,
+        local: true,
+      });
+      if (record.status === 'pending') this.sendRequest(record, this.recipients(record));
     });
   }
 
