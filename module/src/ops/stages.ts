@@ -1,4 +1,5 @@
 import { policyStage } from '../policy/stage.js';
+import { rateLimitStage } from '../ratelimit/stage.js';
 import type { DispatchResult, OpContext } from './types.js';
 
 /**
@@ -16,3 +17,4 @@ export interface Stage {
 export const STAGES: Stage[] = [];
 
 STAGES.push(policyStage);
+STAGES.push(rateLimitStage); // order 25: after policy (20), before approval
