@@ -13,18 +13,28 @@ function fakePage(url = 'https://foundry.local/join', options = ['dev-gm', 'play
   const calls: Array<[string, ...unknown[]]> = [];
   const page: JoinPage = {
     optionLabels: async () => options,
-    goto: async (u) => void calls.push(['goto', u]),
+    goto: async (u, o) => void calls.push(['goto', u, o?.timeout]),
     selectOption: async (s, o) => void calls.push(['select', s, o.label]),
     fill: async (s, v) => void calls.push(['fill', s, v]),
     click: async (s) => void calls.push(['click', s]),
-    waitForSelector: async (s) => void calls.push(['wait', s]),
-    waitForFunction: async () => void calls.push(['ready']),
+    waitForSelector: async (s, o) => void calls.push(['wait', s, o?.timeout]),
+    waitForFunction: async (_f, _a, o) => void calls.push(['ready', o?.timeout]),
     url: () => url,
   };
   return { page, calls };
 }
 
 describe('joinWorld', () => {
+  it('caps every wait by the time it is given', async () => {
+    const { page, calls } = fakePage();
+    await joinWorld(page, loadE2eConfig({ env: {} }), 'player1', 7_000);
+    const timeouts = calls
+      .filter((c) => c[0] === 'goto' || c[0] === 'wait' || c[0] === 'ready')
+      .map((c) => c[c.length - 1] as number);
+    expect(timeouts).toHaveLength(3);
+    for (const t of timeouts) expect(t).toBeLessThanOrEqual(7_000);
+  });
+
   it('selects the user, joins, and does not fill a password when none is set', async () => {
     const { page, calls } = fakePage();
     await joinWorld(page, loadE2eConfig({ env: {} }), 'player1');

@@ -39,7 +39,7 @@ export function launchOptions(
 
 /** The minimal Page surface joinWorld uses; lets tests drive it with a fake. */
 export interface JoinPage {
-  goto(url: string): Promise<unknown>;
+  goto(url: string, opts?: { timeout?: number }): Promise<unknown>;
   /** Visible labels of the `<option>`s under a select. */
   optionLabels(selector: string): Promise<string[]>;
   selectOption(selector: string, option: { label: string }): Promise<unknown>;
@@ -53,7 +53,7 @@ export interface JoinPage {
 /** Wrap a Playwright page as the JoinPage joinWorld uses. */
 export function asJoinPage(page: Page): JoinPage {
   return {
-    goto: (url) => page.goto(url),
+    goto: (url, opts) => page.goto(url, opts),
     // A locator call, not a string page function: Playwright evaluates a string as an expression,
     // so a string `els => ...` is never called with the elements.
     optionLabels: (selector) => page.locator(selector + ' option').allTextContents(),
@@ -84,11 +84,19 @@ export function matchUserName(wanted: string, available: readonly string[]): str
  * Join the world as `user`. The password field is filled only when one is configured. If the
  * browser already holds a session, Foundry redirects away from /join and the form is skipped.
  */
-export async function joinWorld(page: JoinPage, config: E2eConfig, user: string): Promise<void> {
-  await page.goto(`${config.foundryUrl}/join`);
+/** `timeoutMs` caps every wait in the join (navigation, join form, game ready). */
+export async function joinWorld(
+  page: JoinPage,
+  config: E2eConfig,
+  user: string,
+  timeoutMs = 120_000,
+): Promise<void> {
+  const started = Date.now();
+  const left = (cap: number) => Math.max(1, Math.min(cap, timeoutMs - (Date.now() - started)));
+  await page.goto(`${config.foundryUrl}/join`, { timeout: left(60_000) });
   if (page.url().includes('/join')) {
     try {
-      await page.waitForSelector(SELECTORS.joinUser, { timeout: 15_000 });
+      await page.waitForSelector(SELECTORS.joinUser, { timeout: left(15_000) });
     } catch {
       throw new Error(
         `no join form at ${config.foundryUrl}/join; is world ${config.world} launched?`,
@@ -106,7 +114,7 @@ export async function joinWorld(page: JoinPage, config: E2eConfig, user: string)
     if (password) await page.fill(SELECTORS.joinPassword, password);
     await page.click(SELECTORS.joinButton);
   }
-  await page.waitForFunction(READY, undefined, { timeout: 120_000 });
+  await page.waitForFunction(READY, undefined, { timeout: left(120_000) });
 }
 
 /** JS source: a fixed banner and a title that keep the user name and the code visible. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECT_BUDGET_MS,
   ConnectBudgetError,
-  connectWaitMs,
+  Deadline,
   PairTimeoutError,
   waitForPairing,
   windowPrompt,
@@ -35,33 +35,41 @@ describe('waitForPairing', () => {
   });
 });
 
-describe('connectWaitMs', () => {
-  it('keeps two stale-token waits inside 45 s', () => {
-    const start = 1_000_000;
-    const deadline = start + CONNECT_BUDGET_MS;
-    const max = 20_000;
-    // GM joins after 8 s, the wait is the per-user maximum.
-    expect(connectWaitMs(deadline, start + 8000, max)).toBe(20_000);
-    // Player's wait starts after GM took 8 + 20 s: only the remainder is left.
-    expect(connectWaitMs(deadline, start + 30_000, max)).toBe(13_000);
-    // Capped by what is left, never extended past the deadline.
-    expect(connectWaitMs(deadline, start + 42_000, max)).toBe(1000);
-    expect(connectWaitMs(deadline, start + 43_000, max)).toBe(0);
-    expect(connectWaitMs(deadline, start + 50_000, max)).toBe(0);
-    // A wait that starts at any point ends by the deadline.
-    for (let t = 0; t <= 50_000; t += 500) {
-      expect(start + t + connectWaitMs(deadline, start + t, max)).toBeLessThanOrEqual(
-        Math.max(deadline, start + t),
-      );
-    }
-    expect(CONNECT_BUDGET_MS).toBeLessThan(45_000);
+describe('Deadline', () => {
+  it('passes the time left to the step and returns its result', async () => {
+    const d = new Deadline(1_000 + 5_000, () => 1_000);
+    await expect(d.run('dev-gm', 'joining', async (ms) => ms)).resolves.toBe(5_000);
+  });
+
+  it('fails at the deadline even when the step never settles', async () => {
+    const d = new Deadline(Date.now() + 50);
+    const t0 = Date.now();
+    await expect(
+      d.run('player1', 'joining the world', () => new Promise<never>(() => {})),
+    ).rejects.toThrow(/player1: the 43s connection budget ran out while joining the world/);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it('fails at once when the budget is already spent', async () => {
+    const d = new Deadline(1_000, () => 2_000);
+    let ran = false;
+    await expect(
+      d.run('player1', 'launching the browser', async () => {
+        ran = true;
+      }),
+    ).rejects.toThrow(ConnectBudgetError);
+    expect(ran).toBe(false);
+  });
+
+  it('keeps the shared budget under the 45 s bound with room for cleanup', () => {
+    expect(CONNECT_BUDGET_MS + 2_000).toBeLessThanOrEqual(45_000);
   });
 });
 
 describe('ConnectBudgetError', () => {
   it('names the user and points at setup', () => {
     expect(new ConnectBudgetError('player1').message).toMatch(
-      /^player1: the 43s connection budget ran out.*run npm run test:e2e:setup$/,
+      /^player1: the 43s connection budget ran out while waiting for the module to connect.*run npm run test:e2e:setup$/,
     );
   });
 });
