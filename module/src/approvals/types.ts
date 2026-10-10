@@ -1,5 +1,3 @@
-import type { DispatchResult, OpCall, OpUser } from '../ops/types.js';
-
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
 export type ApproverClass = 'owner' | 'gm';
 export type ApprovalScope = 'once' | 'session';
@@ -28,8 +26,6 @@ export interface ApprovalRecord {
   scope?: ApprovalScope;
   /** Set after approval: what the handler returned. */
   result?: { text: string; failed: boolean };
-  /** Approved after a reload: the next matching call runs without asking again, once. */
-  rerun?: boolean;
 }
 
 /** What an approver client is told about a request. */
@@ -74,8 +70,6 @@ export interface ApprovalEnv {
   now(): number;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
-  /** Run a stored call through the live pipeline again (after a reload). */
-  rerun(call: OpCall, user: OpUser): Promise<DispatchResult>;
   random(bytes: number): Uint8Array;
   t(key: string, data?: Record<string, string>): string;
 }

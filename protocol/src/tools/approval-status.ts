@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { defineTool } from './define.js';
 
+/**
+ * How long a call that needs approval waits for an answer before it returns pending_approval.
+ * It must stay well under the gateway's link-call timeout (30 s), or the agent is told the call
+ * timed out instead of being given the approval id.
+ */
+export const APPROVAL_WAIT_MS = 25_000;
+
 export const approvalStatus = defineTool({
   name: 'approval_status',
   minRole: 'player',

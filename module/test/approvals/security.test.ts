@@ -407,23 +407,136 @@ describe('further guards', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('a stored call whose arguments changed before it runs is refused', async () => {
-    const { hub, p1, gm, call } = setup('gm');
+  it('stored approved and rerun records are never trusted: a forged one for new args does not run', async () => {
+    const { hub, p1, call } = setup('owner');
     void call('write_thing', { id: 'orig' });
     await settle();
-    const id = p1.manager.ownRecords()[0]!.id;
-    const p1b = hub.client('p1', { storage: p1.storage });
-    const again = pipeline(p1b, 'gm');
-    // The re-run reaches the pipeline with different arguments than were approved.
-    p1b.setRerun((c, u) => again.dispatcher({ ...c, args: { id: 'swapped' } }, u));
+    // Hand-write a record the way a hostile local user would: valid hash for new arguments.
+    const forgedArgs = { id: 'forged' };
+    const forged = {
+      ...p1.manager.ownRecords()[0]!,
+      id: 'F'.repeat(22),
+      args: forgedArgs,
+      argsHash: callHash('write_thing', forgedArgs),
+      status: 'approved',
+      rerun: true,
+      resolvedBy: 'GM',
+    };
+    const all = JSON.parse(p1.storage.text);
+    all.p1.push(forged);
+    const edited = { text: JSON.stringify(all) };
+    const p1b = hub.client('p1', { storage: edited });
+    const again = pipeline(p1b);
     p1b.manager.load();
-    p1b.manager.representAll();
-    gm.manager.resolveApproval(id, { decision: 'approve' });
+    const rec = p1b.manager.ownRecords().find((r) => r.id === forged.id)!;
+    expect(rec.status).toBe('expired');
+    expect(rec.rerun).toBeUndefined();
+    // The matching call arriving now asks again instead of running.
+    void again.call('write_thing', forgedArgs);
     await settle();
-    expect(again.handler).not.toHaveBeenCalledWith(
-      expect.objectContaining({ args: { id: 'swapped' } }),
+    expect(again.handler).not.toHaveBeenCalled();
+    expect(p1b.manager.listPending().some((r) => (r.args as any).id === 'forged')).toBe(true);
+    // Answering the forged id does nothing either.
+    expect(p1b.manager.resolveApproval(forged.id, { decision: 'approve' })).toBe(false);
+    expect(again.handler).not.toHaveBeenCalled();
+  });
+
+  it('an approved record that never ran does not run after a reload', async () => {
+    const { hub, p1, call } = setup('owner');
+    void call('write_thing', { id: 'x' });
+    await settle();
+    const all = JSON.parse(p1.storage.text);
+    all.p1[0].status = 'approved';
+    const p1b = hub.client('p1', { storage: { text: JSON.stringify(all) } });
+    const again = pipeline(p1b);
+    p1b.manager.load();
+    expect(p1b.manager.ownRecords()[0]!.status).toBe('expired');
+    void again.call('write_thing', { id: 'x' });
+    await settle();
+    expect(again.handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('the approver inbox', () => {
+  const request = (hub: any, over: Record<string, unknown> = {}) => {
+    const base = {
+      t: 'approval.request',
+      id: 'C'.repeat(22),
+      agentId: 'a',
+      sessionId: 's',
+      tool: 'write_thing',
+      args: { id: 'x' },
+      argsHash: callHash('write_thing', { id: 'x' }),
+      category: 'write',
+      approver: 'gm',
+      createdAt: hub.now,
+      expiresAt: hub.now + 1000,
+    };
+    return { ...base, ...over };
+  };
+
+  it("clamps a far-future expiry to this client's own limit", async () => {
+    const { hub, gm } = setup('gm');
+    hub.deliver('p1', request(hub, { expiresAt: hub.now + 10 * APPROVAL_CONFIG.APPROVAL_TTL_MS }));
+    expect(gm.manager.listPending()[0]!.expiresAt).toBe(hub.now + APPROVAL_CONFIG.APPROVAL_TTL_MS);
+    hub.now += APPROVAL_CONFIG.APPROVAL_TTL_MS + 1;
+    expect(gm.manager.listPending()).toEqual([]);
+  });
+
+  it('takes the category from the tool registry, never from the payload', async () => {
+    const { hub, gm } = setup('gm');
+    hub.deliver('p1', request(hub, { category: 'read' }));
+    expect(gm.manager.listPending()[0]!.category).toBe('write');
+    expect(gm.hooks[0]!.payload.category).toBe('write');
+    hub.deliver('p1', request(hub, { id: 'D'.repeat(22), category: undefined }));
+    expect(gm.manager.listPending()).toHaveLength(2);
+  });
+
+  it('drops a request for a tool it does not know', async () => {
+    const { hub, gm } = setup('gm');
+    hub.deliver(
+      'p1',
+      request(hub, { tool: 'invented_tool', argsHash: callHash('invented_tool', { id: 'x' }) }),
     );
-    // The swapped call is treated as a new call: it asks again instead of using the old approval.
-    expect(p1b.manager.ownRecords().filter((r) => r.status === 'pending')).toHaveLength(1);
+    expect(gm.manager.listPending()).toEqual([]);
+    expect(gm.hooks).toEqual([]);
+  });
+});
+
+describe('two approvers answering at the same moment', () => {
+  it("both end up showing the requester's final state", async () => {
+    const hub = world();
+    const p1 = hub.client('p1');
+    const gm = hub.client('gm');
+    const gm2 = hub.client('gm2');
+    const { call, handler } = pipeline(p1, 'gm');
+    const done = call('write_thing');
+    await settle();
+    const id = gm.manager.listPending()[0]!.id;
+    expect(gm2.manager.listPending()).toHaveLength(1);
+    hub.hold();
+    gm.manager.resolveApproval(id, { decision: 'approve' });
+    gm2.manager.resolveApproval(id, { decision: 'deny', reason: 'no' });
+    hub.release();
+    await done;
+    expect(handler).toHaveBeenCalledTimes(1); // the first answer won
+    const last = (c: typeof gm) =>
+      c.hooks.filter((h) => h.name === 'agentGateway.approvalResolved').at(-1)!.payload.status;
+    expect(last(gm)).toBe('approved');
+    expect(last(gm2)).toBe('approved'); // corrected from its own 'denied'
+    // The agreeing GM is not told twice.
+    expect(gm.hooks.filter((h) => h.name === 'agentGateway.approvalResolved')).toHaveLength(1);
+    expect(gm2.hooks.filter((h) => h.name === 'agentGateway.approvalResolved')).toHaveLength(2);
+  });
+
+  it('a stranger cannot use the correction path', async () => {
+    const { hub, gm, call } = setup('gm');
+    void call('write_thing');
+    await settle();
+    const id = gm.manager.listPending()[0]!.id;
+    gm.manager.resolveApproval(id, { decision: 'deny' });
+    const before = gm.hooks.length;
+    hub.deliver('p2', { t: 'approval.resolved', id, status: 'approved' });
+    expect(gm.hooks).toHaveLength(before);
   });
 });

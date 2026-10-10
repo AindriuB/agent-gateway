@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { APPROVAL_WAIT_MS } from '@agent-gateway/protocol';
 import { describe, expect, it } from 'vitest';
 import { APPROVAL_CONFIG } from '../../src/approvals/config.js';
 import { agentOf, pendingId, pipeline, settle, world } from './rig.js';
 
-const setup = (approver: 'owner' | 'gm' = 'owner', waitMs = 30_000) => {
+const setup = (
+  approver: 'owner' | 'gm' = 'owner',
+  waitMs: number = APPROVAL_CONFIG.APPROVAL_WAIT_MS,
+) => {
   const hub = world();
   const p1 = hub.client('p1', { waitMs });
   const gm = hub.client('gm', { waitMs });
@@ -12,8 +16,9 @@ const setup = (approver: 'owner' | 'gm' = 'owner', waitMs = 30_000) => {
 };
 
 describe('the approval stage', () => {
-  it('has a 30 s wait in the shared config object', () => {
-    expect(APPROVAL_CONFIG.APPROVAL_WAIT_MS).toBe(30_000);
+  it('has a 25 s wait in the shared config object, taken from the protocol constant', () => {
+    expect(APPROVAL_CONFIG.APPROVAL_WAIT_MS).toBe(25_000);
+    expect(APPROVAL_CONFIG.APPROVAL_WAIT_MS).toBe(APPROVAL_WAIT_MS);
   });
 
   it('does nothing for a call with no ctx.approval', async () => {
@@ -77,7 +82,7 @@ describe('the approval stage', () => {
     const { hub, gm, call, handler } = setup();
     let settled = false;
     const done = call('write_thing', { id: 'late' }).then((r) => ((settled = true), r));
-    await hub.advance(29_999);
+    await hub.advance(APPROVAL_CONFIG.APPROVAL_WAIT_MS - 1);
     expect(settled).toBe(false);
     await hub.advance(1);
     const r: any = await done;
@@ -104,7 +109,7 @@ describe('the approval stage', () => {
     const p = pipeline(p1);
     p.handler.mockRejectedValueOnce(new Error('boom'));
     const done = p.call('write_thing');
-    await hub.advance(30_000);
+    await hub.advance(APPROVAL_CONFIG.APPROVAL_WAIT_MS);
     const id = pendingId(await done);
     gm.manager.resolveApproval(id, { decision: 'approve' });
     await settle();
@@ -144,30 +149,28 @@ describe('the approval stage', () => {
     expect(hub.clients.get('p2')!.manager.listPending()).toEqual([]);
   });
 
-  it('survives a reload: the pending request is still there and approving it runs the call once', async () => {
+  it('after a reload the unfinished request is expired, not run: the agent must ask again', async () => {
     const { hub, p1, gm, call } = setup();
     void call('write_thing', { id: 'reload' });
     await settle();
     const id = p1.manager.listPending()[0]!.id;
+    expect(gm.manager.listPending()).toHaveLength(1);
     // Reload: a fresh manager over the same browser storage; the in-flight call is gone.
     const p1b = hub.client('p1', { storage: p1.storage });
     const again = pipeline(p1b);
-    p1b.setRerun((c, u) => again.dispatcher(c, u));
     p1b.manager.load();
-    p1b.manager.representAll();
-    expect(gm.manager.listPending().map((r) => r.id)).toEqual([id]);
-    gm.manager.resolveApproval(id, { decision: 'approve' });
+    // The GM's copy is withdrawn and cannot be approved into a call that no longer exists.
+    expect(gm.manager.listPending()).toEqual([]);
+    expect(gm.manager.resolveApproval(id, { decision: 'approve' })).toBe(false);
+    expect(p1b.manager.resolveApproval(id, { decision: 'approve' })).toBe(false);
     await settle();
-    expect(again.handler).toHaveBeenCalledTimes(1);
+    expect(again.handler).not.toHaveBeenCalled();
     const s: any = await again.call('approval_status', { id });
-    expect(s.structured).toMatchObject({
-      status: 'approved',
-      result: expect.stringContaining('reload'),
-    });
-    // The approval was spent: the same call asks again.
+    expect(s.structured).toEqual({ id, status: 'expired' });
+    // A fresh call asks afresh.
     void again.call('write_thing', { id: 'reload' });
     await settle();
-    expect(again.handler).toHaveBeenCalledTimes(1);
+    expect(p1b.manager.listPending()).toHaveLength(1);
   });
 
   it('fires approvalRequested and approvalResolved on the requester', async () => {

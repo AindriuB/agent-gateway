@@ -34,6 +34,7 @@ export const agentOf = (ownerUserId: string, id = `agent-${ownerUserId}`): OpAge
 
 export function world() {
   const hub = new Hub();
+  hub.tools = tools;
   hub.addUser('p1', false);
   hub.addUser('p2', false);
   hub.addUser('gm', true);

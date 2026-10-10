@@ -1,4 +1,5 @@
-import { isOpError, type DispatchResult, type OpCall, type OpContext } from '../ops/types.js';
+import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
+import { TOOLS, type ToolDefinition } from '@agent-gateway/protocol';
 import { callHash } from './canonical.js';
 import { APPROVAL_CONFIG as CFG } from './config.js';
 import type {
@@ -54,12 +55,14 @@ export class ApprovalManager {
   private records = new Map<string, ApprovalRecord>();
   private waiters = new Map<string, Waiter>();
   private inbox = new Map<string, InboxEntry>();
+  /** Requests this client answered, kept so the requester's final word can still reach the UI. */
+  private answered = new Map<string, { requesterId: string; until: number; announced: string }>();
   private grants = new Map<string, ApproverClass>();
   private loadedFor: string | undefined;
 
   constructor(
     private env: ApprovalEnv,
-    private opts: { waitMs?: number } = {},
+    private opts: { waitMs?: number; tools?: readonly ToolDefinition[] } = {},
   ) {}
 
   // ---- storage --------------------------------------------------------------------------
@@ -68,7 +71,17 @@ export class ApprovalManager {
     return this.env.localUser()?.id;
   }
 
-  /** Read this user's records from client storage; drops any whose arguments no longer match their hash. */
+  /**
+   * Read this user's records from client storage.
+   *
+   * Storage is only a history that approval_status can read, never something to run: the stored
+   * text can be edited by anyone with the browser, so an `approved` or `pending` record found here
+   * is not trusted. A call runs only from an approval given in the same page session, to a call
+   * still waiting in memory. After a reload every unfinished record is expired (the agent calls
+   * again and asks again), and an approved record that never ran does not run. This does not
+   * defend against a hostile local user, who can already act as themselves; Foundry's server
+   * permission checks are the limit there.
+   */
   load(): void {
     const me = this.localId();
     this.loadedFor = me;
@@ -82,13 +95,24 @@ export class ApprovalManager {
       list = undefined;
     }
     if (!Array.isArray(list)) return;
+    const lapsed: ApprovalRecord[] = [];
     for (const r of list as ApprovalRecord[]) {
       if (!isObj(r) || !isStr(r.id, 64) || !ID_PATTERN.test(r.id)) continue;
       if (r.requesterId !== me || r.argsHash !== callHash(String(r.tool), r.args)) continue;
+      delete (r as { rerun?: unknown }).rerun;
+      if (r.status === 'pending' || (r.status === 'approved' && !r.result)) {
+        r.status = 'expired';
+        r.resolvedAt = this.env.now();
+        lapsed.push(r);
+      } else if (!['approved', 'denied', 'expired'].includes(r.status)) {
+        continue;
+      }
       this.records.set(r.id, r);
-      if (r.status === 'pending') this.scheduleExpiry(r);
     }
-    this.expireDue();
+    if (lapsed.length) {
+      this.persist();
+      for (const r of lapsed) this.announceResolved(r);
+    }
   }
 
   private persist(): void {
@@ -146,6 +170,7 @@ export class ApprovalManager {
       }
     }
     for (const [id, e] of this.inbox) if (now >= e.expiresAt) this.inbox.delete(id);
+    for (const [id, a] of this.answered) if (now >= a.until) this.answered.delete(id);
     if (changed) this.persist();
   }
 
@@ -235,15 +260,6 @@ export class ApprovalManager {
     this.expireDue();
     const hash = callHash(ctx.tool, ctx.args);
 
-    // A call approved before a reload runs once when the agent's pipeline reaches it again.
-    const rerun = [...this.records.values()].find(
-      (r) => r.rerun === true && r.status === 'approved' && this.bindsTo(r, ctx),
-    );
-    if (rerun) {
-      rerun.rerun = false;
-      return this.executeApproved(rerun, ctx, next);
-    }
-
     if (this.hasGrant(ctx, approval.approver)) {
       ctx.approved = true;
       return next();
@@ -332,6 +348,8 @@ export class ApprovalManager {
     }
     if (o.decision !== 'approve' && o.decision !== 'deny') return false;
     const waiter = this.waiters.get(r.id);
+    // Only a call that is waiting in this page session can be run; nothing is run from storage.
+    if (o.decision === 'approve' && !waiter) return false;
     r.resolvedBy = who.name;
     r.resolvedAt = this.env.now();
     if (o.decision === 'deny') {
@@ -358,42 +376,11 @@ export class ApprovalManager {
         );
       }
       this.waiters.delete(r.id);
-      if (waiter) {
-        void this.executeApproved(r, waiter.ctx, waiter.next).then((res) => waiter.finish(res));
-      } else {
-        this.rerunStored(r);
-      }
+      void this.executeApproved(r, waiter!.ctx, waiter!.next).then((res) => waiter!.finish(res));
     }
     this.persist();
     this.announceResolved(r);
     return true;
-  }
-
-  /** No live call is waiting (the page reloaded), so run the stored call again, once. */
-  private rerunStored(r: ApprovalRecord): void {
-    r.rerun = true;
-    const me = this.env.localUser();
-    if (!me) return;
-    const call: OpCall = {
-      tool: r.tool,
-      args: r.args,
-      agent: { id: r.agentId, ownerUserId: r.agentOwnerId, headless: r.headless },
-      sessionId: r.sessionId,
-    };
-    void this.env
-      .rerun(call, { id: me.id, isGM: me.isGM })
-      .then((res) => {
-        if (r.result) return;
-        // The pipeline ended the call before the approval stage (policy changed, for example).
-        r.rerun = false;
-        r.result = storedResult(res);
-        this.persist();
-      })
-      .catch(() => {
-        r.rerun = false;
-        r.result = { text: 'INTERNAL: the stored call failed to run', failed: true };
-        this.persist();
-      });
   }
 
   private announceResolved(r: ApprovalRecord): void {
@@ -426,6 +413,14 @@ export class ApprovalManager {
     this.expireDue();
     if (!this.inbox.has(id)) return false;
     this.inbox.delete(id);
+    this.answered.set(id, {
+      requesterId: entry.requesterId,
+      until: entry.expiresAt,
+      announced: o.decision === 'approve' ? 'approved' : 'denied',
+    });
+    while (this.answered.size > CFG.MAX_INBOX * 2) {
+      this.answered.delete(this.answered.keys().next().value!);
+    }
     this.env.emit(
       {
         t: 'approval.resolve',
@@ -610,7 +605,6 @@ export class ApprovalManager {
       !isStr(data.sessionId, 200) ||
       !isStr(data.tool, 100) ||
       !isStr(data.argsHash, 64) ||
-      !isStr(data.category, 20) ||
       (data.approver !== 'owner' && data.approver !== 'gm') ||
       !isNum(data.createdAt) ||
       !isNum(data.expiresAt)
@@ -619,7 +613,13 @@ export class ApprovalManager {
     }
     // The hash shown to the approver and echoed back must be the hash of the arguments shown.
     if (data.argsHash !== callHash(data.tool, data.args)) return;
-    if (this.env.now() >= data.expiresAt) return;
+    // The category is the registry's, never the sender's, and an unknown tool is not shown at all.
+    const def = (this.opts.tools ?? TOOLS).find((d) => d.name === data.tool);
+    if (!def) return;
+    // The sender cannot keep a request alive longer than this client's own limit.
+    const now = this.env.now();
+    const expiresAt = Math.min(data.expiresAt, now + CFG.APPROVAL_TTL_MS);
+    if (now >= expiresAt) return;
     const existing = this.inbox.get(data.id);
     if (existing) return; // Duplicate re-send, or a clash with another sender's id: first wins.
     if (this.inbox.size >= CFG.MAX_INBOX) return;
@@ -635,13 +635,13 @@ export class ApprovalManager {
       tool: data.tool,
       args: data.args,
       argsHash: data.argsHash,
-      category: data.category,
+      category: def.category,
       approver: data.approver,
       createdAt: data.createdAt,
-      expiresAt: data.expiresAt,
+      expiresAt,
       requesterId: senderId,
       requesterName: sender.name,
-      receivedAt: this.env.now(),
+      receivedAt: now,
     };
     this.inbox.set(entry.id, entry);
     this.env.callHook(HOOK_REQUESTED, {
@@ -663,13 +663,22 @@ export class ApprovalManager {
 
   private onResolved(data: Record<string, unknown>, senderId: string): void {
     if (!isStr(data.id, 64)) return;
+    const status = isStr(data.status, 20) ? data.status : 'expired';
     const e = this.inbox.get(data.id);
-    // Only the user who made the request can close it.
-    if (!e || e.requesterId !== senderId) return;
-    this.inbox.delete(data.id);
+    const a = this.answered.get(data.id);
+    // Only the user who made the request can close it, or correct what this client announced.
+    if (e && e.requesterId === senderId) {
+      this.inbox.delete(data.id);
+    } else if (a && a.requesterId === senderId) {
+      this.answered.delete(data.id);
+      // Two approvers answered at once and the other one won: say what really happened.
+      if (a.announced === status) return;
+    } else {
+      return;
+    }
     this.env.callHook(HOOK_RESOLVED, {
       id: data.id,
-      status: isStr(data.status, 20) ? data.status : 'expired',
+      status,
       reason: '',
       resolvedBy: '',
       scope: 'once',

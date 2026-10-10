@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { randomBytes } from 'node:crypto';
-import type { OpCall, OpUser } from '../../src/ops/types.js';
+import type { ToolDefinition } from '@agent-gateway/protocol';
 import { ApprovalManager } from '../../src/approvals/manager.js';
 import type { ApprovalEnv, EnvUser } from '../../src/approvals/types.js';
 
@@ -18,8 +18,6 @@ export interface Client {
   hooks: Array<{ name: string; payload: any }>;
   /** What this browser's storage holds. */
   storage: { text: string };
-  rerun: (call: OpCall, user: OpUser) => Promise<any>;
-  setRerun(fn: (call: OpCall, user: OpUser) => Promise<any>): void;
 }
 
 /**
@@ -28,6 +26,9 @@ export interface Client {
  */
 export class Hub {
   now = 1_000_000;
+  /** The tool registry approver clients use to classify requests. */
+  tools: readonly ToolDefinition[] | undefined;
+  private held: Array<() => void> | undefined;
   users = new Map<string, HubUser>();
   clients = new Map<string, Client>();
   private timers: Array<{ at: number; fn: () => void; id: number }> = [];
@@ -48,7 +49,6 @@ export class Hub {
     const user = this.users.get(id)!;
     const hooks: Client['hooks'] = [];
     const storage = opts.storage ?? { text: '' };
-    let rerun: Client['rerun'] = async () => ({ error: { code: 'INTERNAL', message: 'no rerun' } });
     const view = (u: HubUser): EnvUser => ({
       id: u.id,
       name: u.name,
@@ -70,18 +70,15 @@ export class Hub {
         return t.id;
       },
       clearTimer: (h) => void (this.timers = this.timers.filter((t) => t.id !== h)),
-      rerun: (call, u) => rerun(call, u),
       random: opts.random ?? ((n) => new Uint8Array(randomBytes(n))),
       t: (key, data = {}) => `${key}${Object.keys(data).length ? ' ' + JSON.stringify(data) : ''}`,
     };
-    const manager = new ApprovalManager(env, { waitMs: opts.waitMs ?? 30_000 });
+    const manager = new ApprovalManager(env, { waitMs: opts.waitMs, tools: this.tools });
     const c: Client = {
       user,
       manager,
       hooks,
       storage,
-      rerun: (call, u) => rerun(call, u),
-      setRerun: (fn) => void (rerun = fn),
     };
     this.clients.set(id, c);
     return c;
@@ -94,8 +91,22 @@ export class Hub {
     for (const [uid, c] of this.clients) {
       if (uid === sender || !this.users.get(uid)!.online) continue;
       if (recipients && !recipients.includes(uid)) continue;
-      c.manager.handleSocket(JSON.parse(JSON.stringify(data)), sender);
+      const go = () => c.manager.handleSocket(JSON.parse(JSON.stringify(data)), sender);
+      if (this.held) this.held.push(go);
+      else go();
     }
+  }
+
+  /** Queue deliveries instead of making them, so two users can act at the same moment. */
+  hold(): void {
+    this.held = [];
+  }
+
+  /** Deliver everything held, in order, including what that delivery sends in turn. */
+  release(): void {
+    const queue = this.held ?? [];
+    this.held = undefined;
+    for (const go of queue) go();
   }
 
   /** A user comes online: the `userConnected` hook fires on every other client. */

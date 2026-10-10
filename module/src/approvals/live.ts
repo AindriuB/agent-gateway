@@ -37,7 +37,6 @@ export function liveEnv(): ApprovalEnv {
     now: () => Date.now(),
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-    rerun: async (call, user) => (await import('../ops/dispatch.js')).dispatch(call, user),
     random: (n) => globalThis.crypto.getRandomValues(new Uint8Array(n)),
     t: (key, data = {}) =>
       typeof game?.i18n?.format === 'function' ? String(game.i18n.format(key, data)) : key,

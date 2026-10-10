@@ -1,6 +1,8 @@
+import { APPROVAL_WAIT_MS } from '@agent-gateway/protocol';
+
 export const APPROVAL_CONFIG = {
   /** How long a call waits for an answer before it returns pending_approval. */
-  APPROVAL_WAIT_MS: 30_000,
+  APPROVAL_WAIT_MS,
   /** A request nobody answers within this long expires and can no longer be approved. */
   APPROVAL_TTL_MS: 60 * 60_000,
   /** Resolved and expired records stay readable through approval_status this long. */
