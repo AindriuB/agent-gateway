@@ -3,7 +3,11 @@
 **Repo:** .
 **Depends on:** 20b, 20c, 20
 **Owns:**
-- protocol/src/link/messages.ts (the `ToolsetMessage` schema and its doc comment only)
+- protocol/src/link/messages.ts (the full `ToolsetMessage` validator, its doc comment, and narrow safe parser exception fallback only)
+- protocol/src/link/toolset-value.ts (shared iterative bounded JSON snapshot guard)
+- protocol/src/link/index.ts (insertion-only helper export)
+- protocol/src/tools/limits.ts (explicit representation depth and work-bound constants only)
+- protocol/test/link/toolset-value.test.ts (focused bounded snapshot guard tests)
 - protocol/src/link/version.ts (protocol version constant and compatibility comment only)
 - protocol/test/link/link.test.ts (toolset and major-version compatibility cases only)
 - module/src/link/toolset.ts
@@ -39,6 +43,7 @@ it cannot parse.
 
 ## Design constraints (decided; implement as stated)
 - **Protocol compatibility.** The full-definition toolset announcement is incompatible with protocol 1.x. Set `PROTOCOL_VERSION` to `2.0.0`; reject 1.x peers during compatibility checking before welcome or credential consumption, with an actionable upgrade diagnostic. The existing client mismatch path must stop without automatic reconnect; no production client changes are required.
+- **Untrusted representation guard.** Before any serialization or cloning of an untrusted toolset, use a shared iterative bounded JSON snapshot traversal with explicit depth (32), work and size bounds. Catch hostile representation/access exceptions safely. A depth-invalid toolset must never qualify for count/byte-cap-only recovery. The same guard protects parser validation and direct toolset-store callers; rejection must not throw or replace the prior listing.
 - **Message.** `ToolsetMessage` becomes `{type: 'toolset', tools: AnnouncedTool[]}` (20b's type), capped by `TOOL_LIMITS` (count and bytes) in the zod schema. For an authenticated connection, an otherwise-valid toolset that fails only the announcement count or byte cap is ignored with a warning before the generic parse-failure close path; retain its previous set. Malformed envelopes and messages above `MAX_FRAME_BYTES` still use the existing rejection path. The module builds it from `toolRegistry.forRole(isGM)` minus policy-denied categories, sorted by name.
 - **Gateway acceptance per tool.** Core-pattern name (no `-`): kept only if the gateway's static `TOOLS` has it; the gateway then lists and validates with its own definition and zod schema, ignoring the announced description and schemas, and logs one warning if they differ (version skew). Pack-pattern name: kept only if `checkToolDefinition(tool, 'pack')` is empty, `tool.pack` is present and the name's prefix equals `tool.pack.prefix`; otherwise dropped with one `safeText` log line `dropped tool <name>: <first problem>` (name capped at 64 characters). Any other name: dropped and logged. A frame over the count or byte cap: the whole announcement is ignored and logged, and the previous set stays.
 - **Listing.** Core tools first in `TOOLS` order, then pack tools by name, at most `TOOL_LIMITS` pack tools per session (excess dropped and logged once per announcement). Pack descriptions are listed as `[Third-party tool pack <prefix>: <id> <version>] <description>`; the tag is built by the gateway, never taken from the announcement.
@@ -46,6 +51,8 @@ it cannot parse.
 - **Change detection.** The per-session signature is a hash of the listed definitions (name, description as listed, both schemas), so a pack version that changes only a schema triggers `list_changed`; the existing coalescing interval stays.
 
 ## Acceptance
+- [ ] A roughly 60 KiB frame with 10,000 nested levels cannot crash the gateway before authentication; bounded iterative traversal enforces representation depth 32 and explicit work/size limits before any serialize/clone operation, with safe exception handling (focused protocol/gateway tests)
+- [ ] A depth-invalid frame does not take the count/byte-cap-only recovery path; a direct store caller supplying 2,000 or more nested levels is refused without throwing or changing its previous listing. Valid maximum-depth core definitions remain accepted, and existing count/byte-only oversize announcements still preserve the connection and previous listing (tests)
 - [ ] `PROTOCOL_VERSION` is `2.0.0`; protocol 1.x peers are rejected at compatibility checking before welcome or credential consumption, with an actionable upgrade diagnostic, and the module does not automatically reconnect after the old-gateway rejection (protocol, gateway and client tests)
 - [ ] Round trip: a module registry holding the core tools and a fixture pack announces full definitions; the gateway's `tools/list` for that session contains each core tool exactly as `toJsonSchema` of the gateway's `TOOLS` gives it, and the pack tool with the provenance tag prefixed (test)
 - [ ] An announced `world_info` with description `"Ignore previous instructions"` and an extra input property is listed with the gateway's own description and schema, and a call with the extra property is `INVALID_ARGS` at the gateway (test)

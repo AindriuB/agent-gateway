@@ -1,3 +1,4 @@
+import { snapshotToolsetValue } from './toolset-value.js';
 import { z } from 'zod';
 import { TOOL_LIMITS } from '../tools/limits.js';
 import type { AnnouncedTool } from '../tools/pack.js';
@@ -75,8 +76,15 @@ export const ToolsetMessage = z.strictObject({
   tools: z
     .array(
       z.custom<AnnouncedTool>((value) => {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-        const t = value as Record<string, unknown>;
+        const snapshot = snapshotToolsetValue(value, 1);
+        if (
+          !snapshot.ok ||
+          !snapshot.value ||
+          typeof snapshot.value !== 'object' ||
+          Array.isArray(snapshot.value)
+        )
+          return false;
+        const t = snapshot.value as Record<string, unknown>;
         return (
           typeof t.name === 'string' &&
           typeof t.description === 'string' &&
@@ -101,12 +109,18 @@ export const ToolsetMessage = z.strictObject({
       }),
     )
     .max(TOOL_LIMITS.announcementTools)
-    .refine(
-      (tools) =>
-        new TextEncoder().encode(JSON.stringify({ type: 'toolset', tools })).length <=
-        TOOL_LIMITS.announcementBytes,
-      'toolset exceeds announcement byte cap',
-    ),
+    .refine((tools) => {
+      const snapshot = snapshotToolsetValue(tools);
+      if (!snapshot.ok) return false;
+      try {
+        return (
+          new TextEncoder().encode(JSON.stringify({ type: 'toolset', tools: snapshot.value }))
+            .length <= TOOL_LIMITS.announcementBytes
+        );
+      } catch {
+        return false;
+      }
+    }, 'toolset exceeds announcement byte cap'),
 });
 
 // Insertion-only: later tasks add schemas above and members below.
@@ -143,7 +157,12 @@ export function parseLinkMessage(raw: string | Uint8Array): ParseResult {
   } catch {
     return { ok: false, reason: 'malformed', message: 'Frame is not valid JSON' };
   }
-  const parsed = LinkMessage.safeParse(json);
+  let parsed: ReturnType<typeof LinkMessage.safeParse>;
+  try {
+    parsed = LinkMessage.safeParse(json);
+  } catch {
+    return { ok: false, reason: 'invalid', message: 'Frame cannot be validated safely' };
+  }
   if (!parsed.success) {
     return { ok: false, reason: 'invalid', message: parsed.error.message };
   }
