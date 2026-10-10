@@ -1,33 +1,40 @@
 import { LINK_AGENT_HEADLESS } from './bridge.js';
 import type { LinkClient } from './client.js';
 import { evaluate, type PolicyInputs } from '../policy/evaluate.js';
-import {
-  toolsForRole as registryToolsForRole,
-  type ToolCategory,
-  type ToolDefinition,
-} from '@agent-gateway/protocol';
+import { type AnnouncedTool, type ToolCategory } from '@agent-gateway/protocol';
+import { toolRegistry, type ToolInfo } from '../ops/registry.js';
 
 export interface ToolsetDeps {
   /** From `game.user`, read at announce time. */
   isGM(): boolean;
   /** True when policy resolves this category to `deny` for this agent. Default: nothing denied. */
   isCategoryDenied?(category: ToolCategory): boolean;
-  /** Role-to-tools lookup; defaults to the protocol registry. Injectable for tests. */
-  toolsForRole?(isGM: boolean): readonly ToolDefinition[];
+  /** Role-to-tools lookup; defaults to the unified tool registry. Injectable for tests. */
+  toolsForRole?(isGM: boolean): readonly ToolInfo[];
   /** Put a `toolset` frame on the link, if it is up. */
-  send(msg: { type: 'toolset'; tools: string[] }): void;
+  send(msg: { type: 'toolset'; tools: AnnouncedTool[] }): void;
 }
 
 /** Role tools minus tools whose category policy denies. Sorted, so equal sets compare equal. */
 export function computeToolset(
   isGM: boolean,
   isCategoryDenied: (category: ToolCategory) => boolean = () => false,
-  toolsForRole: (isGM: boolean) => readonly ToolDefinition[] = registryToolsForRole,
-): string[] {
+  toolsForRole: (isGM: boolean) => readonly ToolInfo[] = (gm) => toolRegistry.forRole(gm),
+): AnnouncedTool[] {
   return toolsForRole(isGM)
     .filter((t) => !isCategoryDenied(t.category))
-    .map((t) => t.name)
-    .sort();
+    .map(({ name, category, minRole, description, inputSchema, outputSchema, origin }) => ({
+      name,
+      category,
+      minRole,
+      description,
+      inputSchema,
+      outputSchema,
+      ...(origin !== 'core'
+        ? { pack: { id: origin.packId, version: origin.version, prefix: origin.prefix } }
+        : {}),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -39,14 +46,14 @@ export class ToolsetAnnouncer {
 
   constructor(private readonly deps: ToolsetDeps) {}
 
-  private compute(): string[] {
+  private compute(): AnnouncedTool[] {
     return computeToolset(this.deps.isGM(), this.deps.isCategoryDenied, this.deps.toolsForRole);
   }
 
   /** The link has just been welcomed: send unconditionally, the gateway has no set for it yet. */
   connected(): void {
     const tools = this.compute();
-    this.last = tools.join(',');
+    this.last = JSON.stringify(tools);
     this.deps.send({ type: 'toolset', tools });
   }
 
@@ -54,7 +61,7 @@ export class ToolsetAnnouncer {
   refresh(): void {
     if (this.last === undefined) return;
     const tools = this.compute();
-    const sig = tools.join(',');
+    const sig = JSON.stringify(tools);
     if (sig === this.last) return;
     this.last = sig;
     this.deps.send({ type: 'toolset', tools });

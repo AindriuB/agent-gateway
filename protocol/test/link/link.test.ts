@@ -1,3 +1,4 @@
+import { TOOLS, toJsonSchema } from '../../src/tools/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   ErrorCode,
@@ -43,7 +44,18 @@ const samples: LinkMessage[] = [
   { type: 'error', id: '1', code: 'WORLD_OFFLINE', message: 'off' },
   { type: 'ping' },
   { type: 'pong' },
-  { type: 'toolset', tools: ['world_info'] },
+  {
+    type: 'toolset',
+    tools: [
+      {
+        name: TOOLS[0]!.name,
+        description: TOOLS[0]!.description,
+        category: TOOLS[0]!.category,
+        minRole: TOOLS[0]!.minRole,
+        ...toJsonSchema(TOOLS[0]!),
+      },
+    ],
+  },
 ];
 
 describe('parseLinkMessage', () => {
@@ -107,8 +119,9 @@ describe('error codes', () => {
 
 describe('checkCompat', () => {
   it('accepts identical and minor/patch differences', () => {
-    expect(checkCompat('1.0.0', '1.0.0')).toEqual({ ok: true });
-    expect(checkCompat('1.2.0', '1.5.3')).toEqual({ ok: true });
+    expect(PROTOCOL_VERSION).toBe('2.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '2.0.0')).toEqual({ ok: true });
+    expect(checkCompat(PROTOCOL_VERSION, '2.5.3')).toEqual({ ok: true });
   });
 
   it('refuses a major mismatch naming both versions and the side to upgrade', () => {
@@ -124,7 +137,52 @@ describe('checkCompat', () => {
     if (!r2.ok) expect(r2.message).toMatch(/upgrade the remote side/i);
   });
 
+  it.each(['1.0.0', '1.99.7'])(
+    'refuses legacy name-only protocol %s in either direction',
+    (legacy) => {
+      expect(checkCompat(PROTOCOL_VERSION, legacy)).toMatchObject({
+        ok: false,
+        code: 'PROTOCOL_MAJOR_MISMATCH',
+      });
+      expect(checkCompat(legacy, PROTOCOL_VERSION)).toMatchObject({
+        ok: false,
+        code: 'PROTOCOL_MAJOR_MISMATCH',
+      });
+    },
+  );
+
   it('refuses unparseable versions', () => {
     expect(checkCompat('1.0.0', 'abc').ok).toBe(false);
+  });
+});
+
+// Announcement caps are separate from the general link frame ceiling.
+describe('full toolset limits', () => {
+  const tool = {
+    name: TOOLS[0]!.name,
+    description: TOOLS[0]!.description,
+    category: TOOLS[0]!.category,
+    minRole: TOOLS[0]!.minRole,
+    ...toJsonSchema(TOOLS[0]!),
+  };
+  it('rejects count and UTF-8 byte overflows', () => {
+    expect(
+      parseLinkMessage(
+        JSON.stringify({ type: 'toolset', tools: Array.from({ length: 65 }, () => tool) }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      parseLinkMessage(
+        JSON.stringify({
+          type: 'toolset',
+          tools: [{ ...tool, description: 'é'.repeat(140 * 1024) }],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+  it('rejects obsolete name-only announcements', () => {
+    expect(parseLinkMessage(JSON.stringify({ type: 'toolset', tools: ['world_info'] })).ok).toBe(
+      false,
+    );
   });
 });

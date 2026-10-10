@@ -4,6 +4,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import {
   MAX_FRAME_BYTES,
+  ToolsetMessage,
   PROTOCOL_VERSION,
   checkCompat,
   parseLinkMessage,
@@ -111,6 +112,23 @@ export class LinkServer {
       const raw = Array.isArray(data) ? Buffer.concat(data) : data;
       const parsed = parseLinkMessage(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw);
       if (!parsed.ok) {
+        // Only cap failures on authenticated, structurally valid toolsets are recoverable.
+        if (conn && parsed.reason === 'invalid') {
+          try {
+            const candidate: unknown = JSON.parse(
+              new TextDecoder().decode(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw),
+            );
+            const uncapped = ToolsetMessage.extend({
+              tools: ToolsetMessage.shape.tools.element.array(),
+            });
+            if (uncapped.safeParse(candidate).success) {
+              console.warn('ignored toolset: announcement count or byte cap exceeded');
+              return;
+            }
+          } catch {
+            /* Generic parse rejection below. */
+          }
+        }
         if (conn) ws.close(1008, parsed.reason);
         else reject('INVALID_ARGS', parsed.message);
         return;

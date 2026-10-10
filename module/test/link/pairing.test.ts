@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { afterEach, expect, it, vi } from 'vitest';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
 
@@ -196,7 +197,7 @@ it('a credential written by the link survives a reload (string-only storage)', a
     data: JSON.stringify({
       type: 'welcome',
       gatewayVersion: '0.1.0',
-      protocolVersion: '1.0.0',
+      protocolVersion: PROTOCOL_VERSION,
       connectionId: 'c1',
       agentId: 'a1',
       pairingToken: 'tok',
