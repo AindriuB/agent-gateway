@@ -20,6 +20,16 @@ through the real public API and dispatch through the shared pipeline. Test that
 a disabled module registers nothing, a write reaches approval, and
 `hello-dice_odds` for two six-sided dice at target seven returns `21/36`.
 
+For journal concurrency, resolve aliases to a canonical UUID before choosing a
+per-page queue. Read the page again and check permissions inside the queued
+turn, then await its snapshot and update before releasing the turn. The hello
+pack limits outstanding calls across its browser instance to 64, counting
+identity resolution; overflow returns `FORBIDDEN`. Its tests cover same-page
+alias serialization, different-page parallelism, overflow, failure release and
+idle queue cleanup. This browser-local coordination does not make edits from
+other browsers or manual updates atomic; do not report it as world-wide
+protection.
+
 ```sh
 npx vitest run --project module module/test/packs/example
 npx eslint examples
