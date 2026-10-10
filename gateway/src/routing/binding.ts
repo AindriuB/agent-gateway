@@ -49,7 +49,7 @@ export class SessionBinding {
     /** Paired identities beyond the connected ones, so a name is checked against all of them. */
     private readonly knownIdentities: () => readonly Identity[] = () => [],
     /** Called when the session binds without a user selector. */
-    private readonly onImplicitBind?: (conn: LinkConnection) => void,
+    private readonly onImplicitBind?: (who: Identity) => void,
   ) {}
 
   get pair(): BoundPair | undefined {
@@ -73,11 +73,14 @@ export class SessionBinding {
         };
       }
       const only = matched[0];
-      const conn = only ? this.registry.get(only.worldId, only.userId) : undefined;
+      const implicit = this.selector.user === undefined;
+      // An explicit selector binds once its target connects. Without one, the single paired
+      // identity is the binding whether or not it is connected yet: never decided by timing.
+      const ready = only && (implicit || this.registry.get(only.worldId, only.userId));
       // A session that has seen several candidates never settles on the survivor.
-      if (!allowBind || !conn || this.sawAmbiguity) return { kind: 'unbound' };
-      this.bound = { worldId: conn.worldId, userId: conn.userId };
-      if (this.selector.user === undefined) this.onImplicitBind?.(conn);
+      if (!allowBind || !only || !ready || this.sawAmbiguity) return { kind: 'unbound' };
+      this.bound = { worldId: only.worldId, userId: only.userId };
+      if (implicit) this.onImplicitBind?.(only);
     }
     const pair = this.bound;
     return { kind: 'bound', pair, conn: this.registry.get(pair.worldId, pair.userId) };
@@ -86,9 +89,9 @@ export class SessionBinding {
   private matching(): Identity[] {
     const { world, user } = this.selector;
     const connected = this.registry.list().map(identityOf);
-    let pool: Identity[] = connected;
-    if (user !== undefined) {
-      // Names are checked against every paired identity, connected or not.
+    // Every paired identity counts, connected or not, so binding never depends on who connects first.
+    let pool: Identity[];
+    {
       const byKey = new Map<string, Identity>();
       for (const i of this.knownIdentities()) byKey.set(idOf(i), i);
       for (const i of connected) byKey.set(idOf(i), i);
