@@ -26,7 +26,13 @@ interface Snap {
 }
 
 type Observed =
-  | { kind: 'update'; uuid: string; paths: string[]; modifiedTime: number | null }
+  | {
+      kind: 'update';
+      uuid: string;
+      paths: string[];
+      complete: boolean;
+      modifiedTime: number | null;
+    }
   | { kind: 'delete'; uuid: string }
   | { kind: 'create'; uuid: string; modifiedTime: number | null };
 
@@ -57,26 +63,48 @@ export interface WitnessDeps {
 export const EXPIRED_NOTE = 'the witness record expired';
 export const CAPPED_NOTE = 'witness memory limit reached';
 export const RECREATED_NOTE = 'deleted and recreated in one call';
+export const PATH_LIMIT_NOTE = 'changed key paths exceed the capture limit';
 
-/** Flatten a hook `change` diff to the key paths it set. `-=k` and `==k` forms name the key `k`. */
+/** Enumerate own entries without materialising an unbounded list of leaves or sibling nodes. */
+function* changeEntries(node: Record<string, unknown>): Generator<[string, unknown]> {
+  for (const key in node) if (Object.hasOwn(node, key)) yield [key, node[key]];
+}
+
+/** Flatten a hook diff completely, or throw if a path or the distinct-path count cannot fit. */
 export function changedKeyPaths(change: unknown): string[] {
-  const out: string[] = [];
-  const stack: Array<[unknown, string[]]> = [[change, []]];
-  while (stack.length && out.length < L.changedPaths) {
-    const [node, path] = stack.pop()!;
-    if (node && typeof node === 'object' && !Array.isArray(node)) {
-      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-        if (path.length === 0 && (k === '_id' || k === '_stats')) continue;
-        const key = k.replace(/^(-=|==)/, '');
-        if (!key || BAD_SEGMENT.has(key)) continue;
-        const marker = k !== key;
-        if (!marker && v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length) {
-          stack.push([v, [...path, key]]);
-        } else out.push([...path, key].join('.'));
-      }
-    } else if (path.length) out.push(path.join('.'));
+  if (!change || typeof change !== 'object' || Array.isArray(change)) return [];
+  const out = new Set<string>();
+  const stack = [
+    { entries: changeEntries(change as Record<string, unknown>), path: '', visited: false },
+  ];
+  const add = (path: string) => {
+    out.add(path);
+    if (out.size > L.changedPaths) throw new Error(PATH_LIMIT_NOTE);
+  };
+  while (stack.length) {
+    const frame = stack[stack.length - 1]!;
+    const next = frame.entries.next();
+    if (next.done) {
+      stack.pop();
+      if (!frame.visited && frame.path) add(frame.path);
+      continue;
+    }
+    frame.visited = true;
+    const [k, value] = next.value;
+    if (!frame.path && (k === '_id' || k === '_stats')) continue;
+    const key = k.replace(/^(-=|==)/, '');
+    if (!key || BAD_SEGMENT.has(key)) continue;
+    const path = frame.path ? `${frame.path}.${key}` : key;
+    if (path.length > L.changedPath) throw new Error(PATH_LIMIT_NOTE);
+    if (k === key && value && typeof value === 'object' && !Array.isArray(value)) {
+      stack.push({
+        entries: changeEntries(value as Record<string, unknown>),
+        path,
+        visited: false,
+      });
+    } else add(path);
   }
-  return [...new Set(out.map((p) => p.slice(0, L.changedPath)))].slice(0, L.changedPaths);
+  return [...out];
 }
 
 /**
@@ -250,9 +278,22 @@ export class AuditWitness {
     const call = this.live(userId, options);
     const snap = call?.snaps.get(uuid);
     if (!call || !snap?.existed) return;
-    const paths = changedKeyPaths(change);
+    let paths: string[] = [];
+    let complete = true;
+    try {
+      paths = changedKeyPaths(change);
+    } catch {
+      // A partial diff cannot support undo; retain the observation only to refuse it explicitly.
+      complete = false;
+    }
     const mt = Number(doc?._stats?.modifiedTime);
-    this.push(call, { kind: 'update', uuid, paths, modifiedTime: Number.isFinite(mt) ? mt : null });
+    this.push(call, {
+      kind: 'update',
+      uuid,
+      paths,
+      complete,
+      modifiedTime: Number.isFinite(mt) ? mt : null,
+    });
   }
 
   /** `deleteX(document, options, userId)` */
@@ -322,13 +363,12 @@ export class AuditWitness {
       } else if (snap?.existed && snap.before) {
         const stale = call.stale.get(uuid);
         const deleted = obs.some((o) => o.kind === 'delete');
-        const paths = [...new Set(obs.flatMap((o) => (o.kind === 'update' ? o.paths : [])))].slice(
-          0,
-          L.changedPaths,
-        );
+        const paths = [...new Set(obs.flatMap((o) => (o.kind === 'update' ? o.paths : [])))];
+        const incomplete =
+          paths.length > L.changedPaths || obs.some((o) => o.kind === 'update' && !o.complete);
         const last = [...obs].reverse().find((o) => o.kind === 'update');
         const updates = !deleted && paths.length > 0;
-        const ok = (deleted || updates) && stale === undefined;
+        const ok = (deleted || updates) && stale === undefined && !incomplete;
         targets.push({
           uuid,
           existed: true,
@@ -336,9 +376,10 @@ export class AuditWitness {
           existsAfter: !deleted,
           afterModifiedTime: last && last.kind === 'update' ? last.modifiedTime : null,
           undoable: ok,
-          changedPaths: deleted ? [] : paths,
-          note:
-            stale !== undefined
+          changedPaths: deleted || incomplete ? [] : paths,
+          note: incomplete
+            ? PATH_LIMIT_NOTE
+            : stale !== undefined
               ? `changed by ${safeText(stale, 40)} after the call began; its snapshot is stale`
               : ok
                 ? ''

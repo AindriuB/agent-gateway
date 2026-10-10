@@ -132,17 +132,17 @@ class Snapshots {
     }
   }
 
-  snapshot(uuid: string): Promise<void> {
+  async snapshot(uuid: string): Promise<void> {
+    if (typeof uuid !== 'string' || uuid === '') return;
+    const doc = await this.lookup(uuid);
+    // Protection is independent of whether there is room to retain another snapshot.
+    if (doc) assertNotAudit(doc);
     return this.add(uuid, async () => {
-      const doc = await this.lookup(uuid);
       if (this.witnessed) {
         // A player's snapshot is never used: the GM client copies the document from its own data.
-        if (doc) assertNotAudit(doc);
         await this.witnessed({ uuid });
         return viewOnlyTarget(uuid);
       }
-      // The write-side guard: a handler cannot snapshot (so cannot change) the audit log.
-      if (doc) assertNotAudit(doc);
       if (!doc) return blank(uuid, false);
       let before: Record<string, unknown> | null = null;
       let note = '';
