@@ -25,6 +25,12 @@ export const DEFAULT_OWNER_MATRIX: PolicyMatrix = {
   gmAgents: { read: 'allow', write: 'allow', destructive: 'allow', code: 'ask_owner' },
 };
 
+/** What a world policy that cannot be read says: everything denied (fail strict). */
+export const DENY_ALL_MATRIX: PolicyMatrix = {
+  playerAgents: { read: 'deny', write: 'deny', destructive: 'deny', code: 'deny' },
+  gmAgents: { read: 'deny', write: 'deny', destructive: 'deny', code: 'deny' },
+};
+
 export class PolicyError extends Error {}
 
 const clone = (m: PolicyMatrix): PolicyMatrix => ({

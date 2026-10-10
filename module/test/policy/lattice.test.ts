@@ -9,6 +9,7 @@ import {
   type PolicyMatrix,
 } from '../../src/policy/matrix.js';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 describe('decision lattice', () => {
   it('orders allow < ask_owner < ask_gm < deny', () => {
     expect(DECISIONS.map(strictness)).toEqual([0, 1, 2, 3]);
@@ -60,6 +61,39 @@ describe('decision lattice', () => {
               `${world}/${owner}/${cls}/${category}`,
             ).toBeGreaterThanOrEqual(strictness(floor));
           }
+        }
+      }
+    }
+  });
+
+  it('reads exactly the (class, category) cell of both matrices, with a distinct value per cell', () => {
+    // 8 cells per matrix; rotate three decisions through them, with the owner offset, so no two
+    // neighbouring cells agree and a wrong class or category changes the answer.
+    const cells = AGENT_CLASSES.flatMap((c) => CATEGORIES.map((k) => [c, k] as const));
+    const build = (seed: number): PolicyMatrix => {
+      const m: any = { playerAgents: {}, gmAgents: {} };
+      cells.forEach(([c, k], i) => {
+        m[c][k] = DECISIONS[(i * 3 + seed * 5 + (i >> 1)) % 4];
+      });
+      return m;
+    };
+    for (let ws = 0; ws < 8; ws++) {
+      for (let os = 0; os < 8; os++) {
+        const world = build(ws);
+        const owner = build(os + 3);
+        for (const [cls, category] of cells) {
+          const v = evaluate(
+            { world, owner, playerAgentsEnabled: true, headlessAgentsEnabled: true },
+            { isGM: cls === 'gmAgents', headless: false, category },
+          );
+          let want = combine(world[cls][category], owner[cls][category]);
+          if (category === 'code' && want === 'allow') want = 'ask_owner';
+          expect(v, `${ws}/${os}/${cls}/${category}`).toEqual({
+            kind: 'decision',
+            decision: want,
+            agentClass: cls,
+            category,
+          });
         }
       }
     }

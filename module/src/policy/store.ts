@@ -2,6 +2,7 @@
 import {
   DEFAULT_OWNER_MATRIX,
   DEFAULT_WORLD_MATRIX,
+  DENY_ALL_MATRIX,
   loadMatrix,
   validateMatrix,
   type AgentClass,
@@ -35,9 +36,12 @@ const read = (key: string): unknown => {
   }
 };
 
-/** The world ceiling; missing, unreadable or invalid cells take the defaults. */
+/**
+ * The world ceiling. An unset setting holds the registered default matrix; anything unparseable,
+ * not an object, or missing or invalid in a cell is deny (fail strict), never a default.
+ */
 export const loadWorldPolicy = (): PolicyMatrix =>
-  loadMatrix(read(WORLD_POLICY_KEY), DEFAULT_WORLD_MATRIX);
+  loadMatrix(read(WORLD_POLICY_KEY), DENY_ALL_MATRIX);
 
 /** This client's owner policy; missing, unreadable or invalid cells apply no extra restriction. */
 export const loadOwnerPolicy = (): PolicyMatrix =>

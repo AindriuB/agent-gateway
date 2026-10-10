@@ -75,6 +75,63 @@ describe('defaults', () => {
   });
 });
 
+describe('world policy fails strict', () => {
+  const allDeny = (m: any) =>
+    ['playerAgents', 'gmAgents'].every((c) =>
+      ['read', 'write', 'destructive', 'code'].every((k) => m[c][k] === 'deny'),
+    );
+
+  it.each(['{not json', '"a string"', '[1]', 'null', '42'])(
+    'unparseable or non-object %s is all deny',
+    async (raw) => {
+      fresh();
+      await setSetting('worldPolicy', raw);
+      expect(allDeny(loadWorldPolicy())).toBe(true);
+    },
+  );
+
+  it('a missing or invalid cell is deny, not the default', async () => {
+    fresh();
+    await setSetting('worldPolicy', JSON.stringify({ playerAgents: { read: 'deny' } }));
+    const m = loadWorldPolicy();
+    expect(m.playerAgents).toEqual({
+      read: 'deny',
+      write: 'deny',
+      destructive: 'deny',
+      code: 'deny',
+    });
+    expect(m.gmAgents.read).toBe('deny');
+    await setSetting(
+      'worldPolicy',
+      JSON.stringify({
+        ...DEFAULT_WORLD_MATRIX,
+        playerAgents: { ...DEFAULT_WORLD_MATRIX.playerAgents, write: 'bogus' },
+      }),
+    );
+    expect(loadWorldPolicy().playerAgents.write).toBe('deny');
+    expect(loadWorldPolicy().playerAgents.read).toBe('allow');
+  });
+
+  it('a code allow is still coerced to ask_owner, not deny', async () => {
+    fresh();
+    await setSetting('worldPolicy', JSON.stringify(withCode('allow')));
+    expect(loadWorldPolicy().gmAgents.code).toBe('ask_owner');
+  });
+
+  it('a fresh world holds the spec defaults', () => {
+    fresh();
+    expect(loadWorldPolicy()).toEqual(DEFAULT_WORLD_MATRIX);
+  });
+
+  it('an unreadable setting is all deny', () => {
+    fresh();
+    (globalThis as any).game.settings.get = () => {
+      throw new Error('boom');
+    };
+    expect(allDeny(loadWorldPolicy())).toBe(true);
+  });
+});
+
 describe('code can never be allow', () => {
   it('validate (save) rejects allow in either class', () => {
     const bad = withCode('allow');
