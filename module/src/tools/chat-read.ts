@@ -18,16 +18,18 @@ const authorIdOf = (msg: any): string | undefined => {
 
 /**
  * Whether `userId` may see the message at all, evaluated for that user rather than `game.user`.
- * Modelled on Foundry's `ChatMessage#visible` (a whisper is for its author and recipients) and
- * `ChatMessage#isContentVisible` (client/documents/chat-message.mjs; a blind roll's content is hidden
- * from its own author). Deliberately stricter than Foundry: a blind roll is dropped entirely for a
- * non-GM, even if they are the author or a whisper recipient, so no content, formula or total of it
- * can reach an agent. A GM sees blind rolls, as in Foundry.
+ * Verified against Foundry v14 client/documents/chat-message.mjs L59-108: `isContentVisible` hides a
+ * blind message's content from its author unless GM (L69-72) and from non-recipients of a whisper
+ * (L74-75); `visible` limits a non-roll whisper to its author and recipients (L99-104).
+ * Deliberately stricter on blind rolls: a non-GM never gets one (not as author, not as recipient), so no
+ * content, formula or total can reach an agent. A GM gets a blind roll only if they are its author or
+ * a whisper recipient, or it has no recipients. A GM who is not in `whisper` does not.
  */
 function visibleTo(msg: any, userId: string, isGM: boolean): boolean {
-  if (msg.blind) return isGM;
   const whisper: unknown[] = Array.isArray(msg.whisper) ? msg.whisper : [];
-  if (whisper.length > 0) return authorIdOf(msg) === userId || whisper.includes(userId);
+  const isAuthor = authorIdOf(msg) === userId;
+  if (msg.blind) return isGM && (isAuthor || whisper.length === 0 || whisper.includes(userId));
+  if (whisper.length > 0) return isAuthor || whisper.includes(userId);
   return true;
 }
 

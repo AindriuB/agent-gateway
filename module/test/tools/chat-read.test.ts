@@ -195,6 +195,15 @@ describe('chat_read', () => {
       expect(leaks(r)).toBe(false);
     });
 
+    it('a blind roll whispered to GM1 only is visible to GM1 and not to GM2', async () => {
+      setup([blind(['gm1'])]);
+      const one = await read({}, { id: 'gm1', isGM: true });
+      expect(one.structured.messages[0]).toMatchObject({ content: 'blind-secret', rollTotal: 24 });
+      const two = await read({}, { id: 'gm2', isGM: true });
+      expect(two.structured.messages).toEqual([]);
+      expect(leaks(two)).toBe(false);
+    });
+
     it.each([
       ['whispered to the GM', ['gm']],
       ['not whispered', []],
