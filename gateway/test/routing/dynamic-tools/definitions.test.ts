@@ -253,3 +253,32 @@ describe('dynamic definitions', () => {
     expect(s.listChanged.count).toBe(2);
   });
 });
+
+describe('direct store representation safety', () => {
+  it('preserves the previous listing on deep objects, cycles, accessors and throwing proxies', async () => {
+    const { s, store, conn, logs, m } = await setup();
+    store.set(conn, [pack()]);
+    const before = (await s.client.listTools()).tools;
+    const deep = JSON.parse('{"x":'.repeat(2000) + '{}' + '}'.repeat(2000));
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const getter = () => {
+      throw new Error('must not invoke');
+    };
+    const accessor = Object.defineProperty({}, 'value', { get: getter, enumerable: true });
+    const proxy = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('proxy');
+        },
+      },
+    );
+    for (const inputSchema of [deep, cycle, accessor, proxy]) {
+      expect(() => store.set(conn, [{ ...core(), inputSchema }])).not.toThrow();
+      expect((await s.client.listTools()).tools).toEqual(before);
+    }
+    expect(logs.filter((l) => l.includes('invalid bounded JSON representation'))).toHaveLength(4);
+    expect(m.tc.closed).toBe(false);
+  });
+});

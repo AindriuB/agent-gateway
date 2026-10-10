@@ -1,0 +1,28 @@
+{
+  "id": "agent-gateway-hello-pack",
+  "title": "Agent Gateway Hello Pack",
+  "description": "Free example tools for Agent Gateway pack authors.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Agent Gateway contributors"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "relationships": {
+    "requires": [
+      {
+        "id": "agent-gateway",
+        "type": "module",
+        "compatibility": {
+          "minimum": "0.1.0"
+        }
+      }
+    ]
+  },
+  "esmodules": ["scripts/main.js"],
+  "license": "LICENSE"
+}
