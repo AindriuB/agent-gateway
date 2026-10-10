@@ -51,7 +51,10 @@ was updated and its remote head verified as
 `57900438e3777d120903fde309cd0c490bc96795`; it was subsequently merged. Andrew then explicitly approved the remaining publication: 20c is PR #44
 (`ca82e63`), 20d PR #45 (`669672e`), 20e PR #46 (`438e447`) and 20f PR #47
 (verified head `dfd8a04481780afa885d3b9317cb82625d7a4105`). All are attached
-and PRs #44–47 remain open. Record PR #48 is published separately for review. Every implementation still lands through
+and PRs #44–46 subsequently merged: 20c at `2c87d9e`, 20d at
+`09b6444` (including the strict-code fix), and 20e at `871bf5` (protocol 2).
+PR #47 and record PR #48 remain open. The P1 guard described below was
+developed after the PR #46 merged head and is not yet landed through that PR. Every implementation still lands through
 its own PR to `main`, reviewed by Andrew; predecessor commits identify the
 per-task review boundary.
 
@@ -121,6 +124,31 @@ This is the current live compatibility evidence; the earlier protocol-1 result
 remains historical. Subsequent integrated verification at PR #47 head
 `8679c7280f588b558565f3c3934f24bf0b85ce11` and this recording branch each
 passed 2,343 fast + 2,227 slow tests after the exact protocol-2 live gate.
+
+Subsequent P1 untrusted-toolset review fix (2026-10-10): PR #46 commit
+`d7cb64b`, published in open follow-up PR #49 to the already merged PR #46,
+guards toolset representations with an iterative JSON snapshot,
+bounded at depth 32 with explicit work and size caps, before recursive schema
+parsing, stringify or cloning. Invalid depth is not eligible for count/byte-only
+recovery. A deeply nested pre-authentication frame is safely rejected and a
+following healthy connection can call a core tool; direct hostile store input
+is refused without throwing or replacing its prior listing. Independent
+verification passed 32 focused tests, review PASS and full task20e verification
+of 2,295 fast + 2,227 slow tests. Earlier counts above remain historical.
+
+Subsequent Hello Pack concurrency fix (2026-10-10): commit `791994a` queues a
+canonical page UUID's fresh read, permission check, snapshot and update within
+one browser instance. The instance caps all outstanding stamps at 64, including
+identity lookups; overflow returns `FORBIDDEN`. Failures release turns and idle
+entries, while different pages can run in parallel. This does not make other
+browsers' or manual edits atomic. Sixteen example tests and 60 focused combined
+checks passed with independent review PASS. Documentation commit `c97d298`
+records these limits. Combined PR #47 predecessor
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4` carries both fixes, retaining strict
+error-code validation and protocol 2. This record branch merges that source
+without direct runtime edits. On 2026-10-11, PR #47 and this recording branch
+passed the combined gate with 2,355 fast + 2,227 slow tests. Subsequent
+reconciliation with concurrently updated main is recorded separately.
 
 Author docs distinguish project publishing requirements from primary-source
 facts checked 2026-10-10: the Publisher Handbook names a fee without a public
