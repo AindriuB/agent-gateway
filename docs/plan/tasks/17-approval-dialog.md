@@ -19,7 +19,7 @@ session, and deny with a reason. Grouped requests can be approved together.
 - docs/plan/specs/2026-10-09-agent-gateway.md:79-80 — AppV2 diff dialog; code always shows full source
 - docs/plan/specs/2026-10-09-agent-gateway.md:136-139 — dialog actions and batch approval
 - module/src/ops/registry.ts (20c) — `toolRegistry.info(name).origin` tells a core tool from a pack tool
-- module/src/approvals/** — hook and `resolveApproval` (16)
+- module/src/approvals/** — hook and internal `getApprovalManager()` / `resolveApproval` (16); import the manager directly, never read approval methods from the public module API (20d reserves it for packs)
 
 ## Acceptance
 - [ ] Opens on `agentGateway.approvalRequested` for eligible approvers; shows agent label, owner, tool, category and requester

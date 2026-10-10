@@ -11,8 +11,8 @@ than no plan.
 
 ## Now
 
-### Wave 4 and task 12 status
-Wave 4 is complete (tasks 09, 10, 11, 11b), and task 12 is complete: 12a (PR #30, harness and single-user flows) and 12b (PR #31, multi-user suites) are merged. Nothing is in flight. Next is wave 5, starting with task 13 (the policy engine).
+### Tool-pack foundation in flight
+Wave 4 and task 12 are complete. Tasks 13, 14, 16, 19 and 20 are merged, including audit and undo (PR #41). Task 20b is in progress; the remaining tool-pack sequence is 20c, then 20d and 20e, then 20f. Andrew has authorized completing that sequence. Tasks 15 and 18 remain open.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.

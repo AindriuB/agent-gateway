@@ -6,6 +6,7 @@
 - module/src/packs/**
 - module/test/packs/api/**
 - module/src/main.ts (insertions only: install the api in `init`, fire the hook in `setup`, seal at the start of `ready`)
+- module/src/approvals/live.ts (remove the legacy `module.api` replacement only)
 - module/test/stubs/** (insertions only: `game.modules`, `Hooks.callAll`)
 - lang/en.json (insertions under `AGENT_GATEWAY.Packs.*` only)
 
@@ -25,6 +26,7 @@ but its own calls. This is the API third-party and premium packs build on.
 
 ## Design constraints (decided; implement as stated)
 - **Surface.** `game.modules.get('agent-gateway').api` is a frozen object with exactly: `packApiVersion` (`'1.0'`), `registerPack(spec)`, `isSealed()`. No other key, no prototype methods beyond `Object.prototype`. Installed in the core's `init`.
+- **Approval integration.** Remove `startApprovals`' legacy replacement of `module.api` with `resolveApproval` and `listApprovals`. Approval UI uses the internal `getApprovalManager()` import; the frozen public API stays exactly the three pack keys even after the approval ready hook runs.
 - **Lifecycle.** The core calls `Hooks.callAll('agentGateway.registerPacks', api)` in its `setup`. Direct `registerPack` calls are accepted from the core's `init` until the start of its `ready` handler, which seals the registry before the link starts. Later calls throw `PackError` with code `SEALED` and a localized message telling the author to use the hook.
 - **Spec.** `{id, version, apiVersion, prefix, tools: [{name, description, category, minRole, inputSchema, outputSchema, handler}]}`. The API reads each field once from a JSON round-trip copy of everything except handlers (so getters, Proxies and later mutation cannot change what was checked), deep-freezes the copy, then runs `checkToolDefinition(…, 'pack')` on every tool. `name` is the local name; the registered name is `<prefix>-<name>`.
 - **Refusals** (each throws `PackError` with a code, registers nothing, and logs one `console.error` line): `API_VERSION` (major differs from the core's, or unparseable); `INACTIVE` (`game.modules.get(id)?.active !== true`, or `id === 'agent-gateway'`); `PREFIX_TAKEN` (another pack already uses the prefix, or a reserved prefix); `DUPLICATE` (a pack id registered twice); `INVALID_TOOL` (any rules problem, missing or unknown category, non-function handler, more tools than `TOOL_LIMITS.maxToolsPerPack` (32)). Registration of one pack is atomic.
@@ -39,6 +41,7 @@ but its own calls. This is the API third-party and premium packs build on.
 - [ ] No bypass: a pack tool dispatched with spy stages at orders 10-50 runs all of them before its handler; when the policy stage returns `DENIED` or the approval stage withholds approval, the pack handler is never called (spy count 0); nothing reachable from `api` or from the handler's context object is the dispatcher, a stage, `STAGES`, another tool's handler or the registry (test walks both objects, including prototypes, to depth 3)
 - [ ] The handler's context is frozen: setting `ctx.approved = true` or `ctx.tool = 'script_run'` inside a pack handler throws in strict mode and changes nothing the audit stage records (test with a stub audit stage)
 - [ ] Error isolation: a pack handler that throws, one that returns a string, one that returns `{text: 1}`, one whose `structured` breaks its output schema, and one that returns 65 KiB of text each give `INTERNAL` for that call, while a following call to a core tool and to a second pack's tool succeed (test)
+- [ ] Running the approval ready hook preserves the same frozen API object and its exact three keys (test)
 - [ ] Lifecycle: `registerPack` inside the `agentGateway.registerPacks` hook succeeds; after the `ready` seal it throws `SEALED`; with `apiVersion: '2.0'` it throws `API_VERSION`; `'1.7'` is accepted (test with stubbed hooks)
 - [ ] Disabled pack: with the stubbed `game.modules.get(id).active === false`, or the id unknown, `registerPack` throws `INACTIVE` and `toolRegistry.list()` has none of its tools (test)
 - [ ] A pack tool with `minRole: 'gm'` called by a player returns `FORBIDDEN` before any stage runs (test)
