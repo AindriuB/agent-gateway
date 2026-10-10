@@ -9,7 +9,10 @@ export interface E2eConfig {
   gmUser: string;
   playerUser: string;
   player2User: string;
-  password: string | undefined;
+  /** Per-user passwords; each applies to its own user only. */
+  passwords: { gm: string | undefined; player: string | undefined; player2: string | undefined };
+  /** One-line notices for the operator (for example an ignored legacy variable). */
+  warnings: string[];
   linkPort: number;
   v13Url: string | undefined;
   /** How long setup waits for a human to type a pairing code. */
@@ -85,6 +88,19 @@ export function loadE2eConfig(deps: LoadDeps = {}): E2eConfig {
     const fromFile = file[key];
     return fromFile !== undefined && fromFile !== '' ? fromFile : undefined;
   };
+  // A defined environment value wins even when empty (empty means "no password").
+  const password = (key: string): string | undefined => {
+    const fromEnv = env[key];
+    if (fromEnv !== undefined) return fromEnv === '' ? undefined : fromEnv;
+    const fromFile = file[key];
+    return fromFile !== undefined && fromFile !== '' ? fromFile : undefined;
+  };
+  const warnings: string[] = [];
+  if (env.FOUNDRY_PASSWORD !== undefined || file.FOUNDRY_PASSWORD !== undefined) {
+    warnings.push(
+      'FOUNDRY_PASSWORD is ignored; use FOUNDRY_GM_PASSWORD, FOUNDRY_PLAYER_PASSWORD and FOUNDRY_PLAYER2_PASSWORD',
+    );
+  }
   const foundryUrl = (get('FOUNDRY_URL') ?? 'https://foundry.local').replace(/\/+$/, '');
   let foundryOrigin: string;
   try {
@@ -116,13 +132,31 @@ export function loadE2eConfig(deps: LoadDeps = {}): E2eConfig {
     gmUser: get('FOUNDRY_GM_USER') ?? 'dev-gm',
     playerUser: get('FOUNDRY_PLAYER_USER') ?? 'player1',
     player2User: get('FOUNDRY_PLAYER2_USER') ?? 'player2',
-    password: get('FOUNDRY_PASSWORD'),
+    passwords: {
+      gm: password('FOUNDRY_GM_PASSWORD'),
+      player: password('FOUNDRY_PLAYER_PASSWORD'),
+      player2: password('FOUNDRY_PLAYER2_PASSWORD'),
+    },
+    warnings,
     linkPort,
     v13Url: get('AGENT_GATEWAY_E2E_V13_URL')?.replace(/\/+$/, ''),
     pairTimeoutMs: seconds('AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S', 300),
-    connectTimeoutMs: seconds('AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S', 30),
+    connectTimeoutMs: seconds('AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S', 20),
     headed: get('AGENT_GATEWAY_E2E_HEADED') === '1',
   };
+}
+
+/** The password configured for `user`, matched by name (case-insensitively); undefined if none. */
+export function passwordFor(config: E2eConfig, user: string): string | undefined {
+  const is = (name: string) => name.toLowerCase() === user.toLowerCase();
+  if (is(config.gmUser)) return config.passwords.gm;
+  if (is(config.playerUser)) return config.passwords.player;
+  if (is(config.player2User)) return config.passwords.player2;
+  return undefined;
+}
+
+export function printWarnings(config: E2eConfig): void {
+  for (const w of config.warnings) process.stderr.write(`warning: ${w}\n`);
 }
 
 /** The same configuration pointed at another Foundry instance (v13). */

@@ -12,11 +12,13 @@ import {
   ConfigError,
   e2ePaths,
   loadE2eConfig,
+  printWarnings,
   type E2eConfig,
   type E2ePaths,
 } from './lib/config.js';
 import { GATEWAY_CLI, NotConnectedError, REPO_ROOT } from './lib/gateway.js';
 import { readRunData, recordRunData, resetRunData } from './lib/rundata.js';
+import { CONNECT_BUDGET_MS } from './lib/wait.js';
 import { openUserSession } from './lib/session.js';
 import { preflightMessage, preflightState, SEED_HINT, SETUP_HINT } from './lib/state.js';
 import {
@@ -32,9 +34,13 @@ import { FIXTURE } from './fixtures/spec.js';
 
 class PreflightError extends Error {}
 
-async function livePreflight(config: E2eConfig, paths: E2ePaths): Promise<string> {
+async function livePreflight(
+  config: E2eConfig,
+  paths: E2ePaths,
+  connectDeadlineAt: number,
+): Promise<string> {
   let version = 'unknown';
-  const gm = await openUserSession(config, paths, config.gmUser);
+  const gm = await openUserSession(config, paths, config.gmUser, { connectDeadlineAt });
   try {
     version = gm.foundryVersion;
     const found = await gm.gateway.call('document_search', {
@@ -51,11 +57,16 @@ async function livePreflight(config: E2eConfig, paths: E2ePaths): Promise<string
       limit: 1,
     });
     const first = (pack.structured?.results as Array<{ uuid: string }> | undefined)?.[0]?.uuid;
-    recordRunData(paths.runData, { kind: 'facts', ...(first ? { limitedPackUuid: first } : {}) });
+    if (!first) {
+      throw new PreflightError(
+        `the GM found no entry in ${COMPENDIUM.limitedPack}; is the pf2e pack installed?`,
+      );
+    }
+    recordRunData(paths.runData, { kind: 'facts', limitedPackUuid: first });
   } finally {
     await gm.close();
   }
-  const player = await openUserSession(config, paths, config.playerUser);
+  const player = await openUserSession(config, paths, config.playerUser, { connectDeadlineAt });
   await player.close();
   return version;
 }
@@ -92,11 +103,13 @@ function runVitest(
 }
 
 async function main(): Promise<number> {
+  const startedAt = Date.now();
   const args = parseRunArgs(process.argv.slice(2));
   const paths = e2ePaths();
   const base = loadE2eConfig({
     testEnvText: existsSync(paths.testEnv) ? readFileSync(paths.testEnv, 'utf8') : undefined,
   });
+  printWarnings(base);
   const target = chooseTarget(args.foundry, base);
   if (target.kind === 'skip') {
     process.stdout.write(`${target.message}\n`);
@@ -113,7 +126,7 @@ async function main(): Promise<number> {
   if (!existsSync(GATEWAY_CLI)) throw new PreflightError('gateway is not built; run npm run build');
 
   resetRunData(paths.runData);
-  const version = await livePreflight(config, paths);
+  const version = await livePreflight(config, paths, startedAt + CONNECT_BUDGET_MS);
   recordRunData(paths.runData, { kind: 'foundry', version });
 
   const reportPath = join(paths.stateDir, 'vitest-report.json');

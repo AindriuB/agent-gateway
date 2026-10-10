@@ -7,6 +7,7 @@ import { ArgError, parseSetupArgs } from '../lib/args.js';
 import {
   bannerScript,
   FOCUS_CODE_SCRIPT,
+  asJoinPage,
   joinWorld,
   openUserBrowser,
   OPEN_PAIRING_SCRIPT,
@@ -16,12 +17,13 @@ import {
   ConfigError,
   e2ePaths,
   loadE2eConfig,
+  printWarnings,
   type E2eConfig,
   type E2ePaths,
 } from '../lib/config.js';
 import { GatewayProcess } from '../lib/gateway.js';
 import { ensureStateDirs, tightenDb } from '../lib/state.js';
-import { waitForPairing } from '../lib/wait.js';
+import { waitForPairing, windowPrompt } from '../lib/wait.js';
 
 async function pairUser(config: E2eConfig, paths: E2ePaths, user: string): Promise<void> {
   const gateway = new GatewayProcess(config, paths, user);
@@ -32,12 +34,10 @@ async function pairUser(config: E2eConfig, paths: E2ePaths, user: string): Promi
     const code = await gateway.pairingCode();
     browser = await openUserBrowser(config, paths, user, { headed: true });
     const { page } = browser;
-    await joinWorld(page, config, user);
+    await joinWorld(asJoinPage(page), config, user);
     await page.evaluate(setGatewayUrlScript(`ws://localhost:${config.linkPort}`));
     await page.evaluate(OPEN_PAIRING_SCRIPT);
-    process.stdout.write(
-      `Waiting for a human to enter the code for ${user} (see the browser window).\n`,
-    );
+    process.stdout.write(`${windowPrompt(user)}\n`);
     await waitForPairing(user, {
       timeoutMs: config.pairTimeoutMs,
       probe: async () => {
@@ -45,7 +45,7 @@ async function pairUser(config: E2eConfig, paths: E2ePaths, user: string): Promi
         await page.evaluate(bannerScript(user, code)).catch(() => undefined);
         await page.evaluate(FOCUS_CODE_SCRIPT).catch(() => undefined);
         const r = await gateway.call('world_info');
-        return !r.isError && r.structured?.userName === user;
+        return !r.isError && String(r.structured?.userName).toLowerCase() === user.toLowerCase();
       },
     });
     process.stdout.write(`paired ${user}\n`);
@@ -61,6 +61,7 @@ async function main(): Promise<void> {
   const config = loadE2eConfig({
     testEnvText: existsSync(paths.testEnv) ? readFileSync(paths.testEnv, 'utf8') : undefined,
   });
+  printWarnings(config);
   let users = [config.gmUser, config.playerUser];
   if (args.includePlayer2) users.push(config.player2User);
   if (args.only.length) users = users.filter((u) => args.only.includes(u));

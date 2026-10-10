@@ -74,7 +74,9 @@ export function preflightState(input: PreflightInput): string[] {
     try {
       const pairings = (input.readPairings ?? readActivePairings)(paths.db);
       for (const u of users) {
-        if (!pairings.some((p) => p.userName === u && p.worldId === world)) {
+        if (
+          !pairings.some((p) => p.userName.toLowerCase() === u.toLowerCase() && p.worldId === world)
+        ) {
           problems.push(`no active pairing for ${u} in world ${world}`);
         }
       }

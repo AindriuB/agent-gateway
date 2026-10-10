@@ -1,6 +1,13 @@
 import type { E2eConfig, E2ePaths } from './config.js';
-import { foundryVersion, joinWorld, openUserBrowser, type UserBrowser } from './browser.js';
+import {
+  asJoinPage,
+  foundryVersion,
+  joinWorld,
+  openUserBrowser,
+  type UserBrowser,
+} from './browser.js';
 import { GatewayProcess, waitConnected } from './gateway.js';
+import { connectWaitMs } from './wait.js';
 
 export interface UserSession {
   user: string;
@@ -20,15 +27,20 @@ export async function openUserSession(
   config: E2eConfig,
   paths: E2ePaths,
   user: string,
-  opts: { headed?: boolean } = {},
+  opts: { headed?: boolean; connectDeadlineAt?: number } = {},
 ): Promise<UserSession> {
   const gateway = new GatewayProcess(config, paths, user);
   let browser: UserBrowser | undefined;
   try {
     await gateway.start();
     browser = await openUserBrowser(config, paths, user, { headed: opts.headed ?? config.headed });
-    await joinWorld(browser.page, config, user);
-    const info = await waitConnected(gateway, config.connectTimeoutMs);
+    await joinWorld(asJoinPage(browser.page), config, user);
+    const info = await waitConnected(
+      gateway,
+      opts.connectDeadlineAt === undefined
+        ? config.connectTimeoutMs
+        : connectWaitMs(opts.connectDeadlineAt, Date.now(), config.connectTimeoutMs),
+    );
     const version = await foundryVersion(browser.page);
     const b = browser;
     return {

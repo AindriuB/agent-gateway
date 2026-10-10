@@ -10,6 +10,8 @@ export const FIXTURE_RUNTIME = String.raw`async (arg) => {
   const TYPES = ['Folder', 'JournalEntry', 'ChatMessage', 'Token', 'Drawing', 'Note', 'Wall'];
   const isFlagged = (d) => d.getFlag(flagScope, flagKey) === true;
   const scene = game.scenes.active;
+  // Fixtures may sit on any scene (the active scene can change); sweep them all.
+  const allScenes = () => game.scenes.contents;
   const world = {
     Folder: () => game.folders.contents,
     JournalEntry: () => game.journal.contents,
@@ -18,8 +20,7 @@ export const FIXTURE_RUNTIME = String.raw`async (arg) => {
   const embedded = { Token: 'tokens', Drawing: 'drawings', Note: 'notes', Wall: 'walls' };
   const docs = (type) => {
     if (world[type]) return world[type]();
-    if (!scene) return [];
-    return scene[embedded[type]].contents;
+    return allScenes().flatMap((sc) => sc[embedded[type]].contents);
   };
   const folderDocs = () => game.folders.contents.filter((f) => f.type === 'JournalEntry');
   const count = () => {
@@ -36,10 +37,10 @@ export const FIXTURE_RUNTIME = String.raw`async (arg) => {
     throw new Error('no active scene: activate a scene in the world first; the seed does not create one');
   }
   const wipe = async () => {
-    if (scene) {
+    for (const sc of allScenes()) {
       for (const t of ['Token', 'Drawing', 'Note', 'Wall']) {
-        const ids = docs(t).filter(isFlagged).map((d) => d.id);
-        if (ids.length) await scene.deleteEmbeddedDocuments(t, ids);
+        const ids = sc[embedded[t]].contents.filter(isFlagged).map((d) => d.id);
+        if (ids.length) await sc.deleteEmbeddedDocuments(t, ids);
       }
     }
     const msgs = game.messages.contents.filter(isFlagged).map((d) => d.id);

@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { bannerScript, joinWorld, launchOptions, SELECTORS, type JoinPage } from './browser.js';
+import {
+  bannerScript,
+  joinWorld,
+  launchOptions,
+  matchUserName,
+  SELECTORS,
+  type JoinPage,
+} from './browser.js';
 import { loadE2eConfig } from './config.js';
 
-function fakePage(url = 'https://foundry.local/join') {
+function fakePage(url = 'https://foundry.local/join', options = ['dev-gm', 'player1', 'Player2']) {
   const calls: Array<[string, ...unknown[]]> = [];
   const page: JoinPage = {
+    optionLabels: async () => options,
     goto: async (u) => void calls.push(['goto', u]),
     selectOption: async (s, o) => void calls.push(['select', s, o.label]),
     fill: async (s, v) => void calls.push(['fill', s, v]),
@@ -27,14 +35,38 @@ describe('joinWorld', () => {
 
   it('fills the password only when FOUNDRY_PASSWORD is set', async () => {
     const { page, calls } = fakePage();
-    await joinWorld(page, loadE2eConfig({ env: { FOUNDRY_PASSWORD: 'pw' } }), 'dev-gm');
+    await joinWorld(page, loadE2eConfig({ env: { FOUNDRY_GM_PASSWORD: 'pw' } }), 'dev-gm');
     expect(calls).toContainEqual(['fill', SELECTORS.joinPassword, 'pw']);
+    // Another user's join does not get the GM's password.
+    const other = fakePage();
+    await joinWorld(other.page, loadE2eConfig({ env: { FOUNDRY_GM_PASSWORD: 'pw' } }), 'player1');
+    expect(other.calls.some((c) => c[0] === 'fill')).toBe(false);
   });
 
   it('skips the form when a session already exists', async () => {
     const { page, calls } = fakePage('https://foundry.local/game');
     await joinWorld(page, loadE2eConfig({ env: {} }), 'dev-gm');
     expect(calls.map((c) => c[0])).toEqual(['goto', 'ready']);
+  });
+});
+
+describe('user name matching', () => {
+  it('prefers an exact match, then a case-insensitive one', () => {
+    expect(matchUserName('player2', ['Player2', 'player2'])).toBe('player2');
+    expect(matchUserName('player2', ['dev-gm', 'Player2'])).toBe('Player2');
+    expect(matchUserName('nobody', ['dev-gm'])).toBeUndefined();
+    expect(matchUserName('bob', ['Bob', 'BOB'])).toBeUndefined();
+  });
+  it('joins as the real-case name', async () => {
+    const { page, calls } = fakePage();
+    await joinWorld(page, loadE2eConfig({ env: {} }), 'player2');
+    expect(calls).toContainEqual(['select', 'select[name="userId"]', 'Player2']);
+  });
+  it('lists the available users when there is no match', async () => {
+    const { page } = fakePage();
+    await expect(joinWorld(page, loadE2eConfig({ env: {} }), 'ghost')).rejects.toThrow(
+      /no Foundry user "ghost".*available users: dev-gm, player1, Player2/,
+    );
   });
 });
 

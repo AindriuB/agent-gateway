@@ -74,9 +74,16 @@ export class GatewayProcess {
       this.stderrText += b.toString('utf8');
     });
     const client = new Client({ name: 'agent-gateway-e2e', version: '0.0.0' });
-    await client.connect(transport);
     this.transport = transport;
     this.client = client;
+    try {
+      await client.connect(transport);
+    } catch (err) {
+      // The child may already be running; record its PID so stop() can still reap it.
+      this.pid = transport.pid;
+      await this.stop();
+      throw err;
+    }
     this.pid = transport.pid;
   }
 
@@ -91,8 +98,13 @@ export class GatewayProcess {
     }
   }
 
+  /** The whole `tools/list` result, for the leak check. */
+  async listToolsRaw(): Promise<{ tools: Array<{ name: string }> }> {
+    return this.mcp().listTools();
+  }
+
   async listTools(): Promise<string[]> {
-    return (await this.mcp().listTools()).tools.map((t) => t.name);
+    return (await this.listToolsRaw()).tools.map((t) => t.name);
   }
 
   async call(name: string, args: Record<string, unknown> = {}): Promise<CallResult> {

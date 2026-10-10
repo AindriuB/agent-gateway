@@ -54,9 +54,12 @@ export function playerPublicEntryProblems(content: string): string[] {
     if (content.includes(hidden)) problems.push(`hidden text present: ${hidden}`);
   }
   if (content.includes('text.markdown')) problems.push('text.markdown field present');
-  if (!/ownership\.yours\W*:\s*2\b/.test(content)) problems.push('ownership.yours is not 2');
-  if (/ownership\.(?!yours\b)\w+/.test(content))
+  // Anchored to a line start: the top-level field, not `pages[n].ownership.*`.
+  if (!/^\**ownership\.yours\**\s*:\s*2\b/m.test(content))
+    problems.push('ownership.yours is not 2');
+  if (/^\**ownership\.(?!yours\b)/m.test(content)) {
     problems.push('ownership has keys other than yours');
+  }
   return problems;
 }
 
@@ -77,7 +80,7 @@ export function chatProblems(role: Role, msgs: readonly ChatMsg[]): string[] {
     if (has(msgs, text.npcSecret)) problems.push('NPC secret visible');
     if (!has(msgs, text.ownSecret)) problems.push('own-character secret was stripped');
     if (has(msgs, text.gmWhisper)) problems.push('GM whisper visible');
-    if (blind) problems.push('blind roll visible');
+    if (blind || has(msgs, text.blindMessage)) problems.push('blind roll visible');
   } else {
     need(text.gmWhisper, 'the GM whisper');
     if (!has(msgs, text.npcSecret)) problems.push('missing the NPC secret');
@@ -92,11 +95,27 @@ export const COMPENDIUM = {
   observablePacks: ['pf2e.actionspf2e', 'pf2e.journals'],
 } as const;
 
-/** Entries on a second page must not repeat the first page. */
-export function overlapProblems(first: readonly string[], second: readonly string[]): string[] {
-  const seen = new Set(first);
-  const dup = second.filter((u) => seen.has(u));
-  return dup.length ? [`second page repeats ${dup.length} entries, e.g. ${dup[0]}`] : [];
+const MIN_PROSE = 40;
+const LEADING = 5;
+
+/**
+ * Prose lines of a markdown page: long enough to be distinctive, not table rows and not fences.
+ * The pager repeats table headers and reopens fences by design, so those never count.
+ */
+export function proseLines(markdown: string): string[] {
+  return markdown
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length >= MIN_PROSE && !l.startsWith('|') && !/^(```|~~~)/.test(l));
+}
+
+/** The second page's leading prose must not already appear on the first page. */
+export function overlapProblems(firstPage: string, secondPage: string): string[] {
+  const seen = new Set(proseLines(firstPage));
+  const lead = proseLines(secondPage).slice(0, LEADING);
+  if (lead.length === 0) return ['second page has no prose to compare'];
+  const dup = lead.filter((l) => seen.has(l));
+  return dup.length ? [`second page starts by repeating the first: ${dup[0]}`] : [];
 }
 
 export function worldInfoProblems(
@@ -107,7 +126,8 @@ export function worldInfoProblems(
   const problems: string[] = [];
   if (info.worldId !== expected.world) problems.push(`world is ${info.worldId}`);
   if (info.systemId !== 'pf2e') problems.push(`system is ${info.systemId}`);
-  if (info.userName !== expected.user) problems.push(`user is ${info.userName}`);
+  if (info.userName?.toLowerCase() !== expected.user.toLowerCase())
+    problems.push(`user is ${info.userName}`);
   const want = role === 'gm' ? ['GAMEMASTER'] : ['PLAYER', 'TRUSTED'];
   if (!want.includes(info.userRole ?? '')) problems.push(`role is ${info.userRole}`);
   return problems;

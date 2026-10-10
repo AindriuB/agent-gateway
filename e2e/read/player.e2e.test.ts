@@ -8,7 +8,13 @@ import {
   searchProblems,
   type ChatMsg,
 } from '../lib/expect.js';
-import { limitedPackUuid, loadContext, PlayerCaller, readAllPages } from '../lib/context.js';
+import {
+  limitedPackUuid,
+  loadContext,
+  PlayerCaller,
+  readAllPages,
+  requireUuids,
+} from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 import { FIXTURE } from '../fixtures/spec.js';
 
@@ -18,7 +24,7 @@ let player: PlayerCaller;
 
 beforeAll(async () => {
   session = await openUserSession(ctx.config, ctx.paths, ctx.config.playerUser);
-  player = new PlayerCaller(session.gateway, ctx.paths, ctx.fixtures.blindRollTotal);
+  player = new PlayerCaller(session.gateway, ctx.paths, ctx.fixtures);
 });
 
 afterAll(async () => {
@@ -31,8 +37,13 @@ const names = (r: { structured?: Record<string, unknown> }): string[] =>
 
 describe('player journal reads', () => {
   it('document_search lists ag-test-public and no other fixture entry', async () => {
-    const r = await player.call('document_search', { type: 'JournalEntry', limit: 50 });
+    const r = await player.call('document_search', {
+      type: 'JournalEntry',
+      query: 'ag-test',
+      limit: 50,
+    });
     expect(r.isError, r.text).toBe(false);
+    expect(r.structured?.truncated, 'search was truncated').toBe(false);
     expect(searchProblems('player', names(r))).toEqual([]);
   });
 
@@ -41,8 +52,7 @@ describe('player journal reads', () => {
     ['ag-test-limited', 'limited'],
     ['the active Scene', 'activeScene'],
   ])('document_get on %s is "not found", never FORBIDDEN', async (_label, key) => {
-    const uuid = ctx.fixtures.uuids?.[key];
-    expect(uuid, 'fixture uuids missing; run npm run test:e2e:seed').toBeTruthy();
+    const uuid = requireUuids(ctx)[key];
     const r = await player.call('document_get', { uuid });
     expect(notFoundProblems(r)).toEqual([]);
   });
@@ -98,8 +108,7 @@ describe('player compendium', () => {
     });
     const hit = ((inPack.structured?.results ?? []) as unknown[]).length;
     expect(hit).toBe(0);
-    const uuid =
-      limitedPackUuid(ctx.paths) ?? `Compendium.${COMPENDIUM.limitedPack}.Actor.0000000000000000`;
+    const uuid = limitedPackUuid(ctx.paths);
     const get = await player.call('compendium_get', { uuid });
     expect(notFoundProblems(get)).toEqual([]);
   });
@@ -123,13 +132,8 @@ describe('player compendium', () => {
       if (!cursor) continue;
       const second = await player.call('compendium_get', { uuid: e.uuid, cursor });
       expect(second.isError, second.text).toBe(false);
-      const lines = (s: unknown) =>
-        String(s ?? '')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter((l) => l.length >= 40);
       expect(
-        overlapProblems(lines(first.structured?.markdown), lines(second.structured?.markdown)),
+        overlapProblems(String(first.structured?.markdown), String(second.structured?.markdown)),
       ).toEqual([]);
       return;
     }

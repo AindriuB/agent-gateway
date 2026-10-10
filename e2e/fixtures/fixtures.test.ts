@@ -55,6 +55,9 @@ describe('fixture spec', () => {
     expect(pub[1]?.ownership).toEqual({ default: 0 });
     expect(pub[2]?.text.format).toBe(2);
     expect(String(pub[2]?.text.markdown)).toContain('secret');
+    // The HTML is seeded too, so the page does not depend on the API rendering markdown.
+    expect(String(pub[2]?.text.content)).toContain('<section class="secret">');
+    expect(String(pub[2]?.text.content)).toContain('MARKDOWN-PAGE visible');
   });
 
   it('creates the chat messages the read flows depend on', () => {
@@ -75,10 +78,9 @@ describe('fixture spec', () => {
   });
 
   it('lists the hidden strings, including the formula, and matches the blind total only when labelled', () => {
-    expect(HIDDEN_STRINGS).toContain('7d6');
+    expect(HIDDEN_STRINGS).not.toContain('7d6');
     expect(HIDDEN_STRINGS).toContain('ag-test-hidden');
-    expect(leakMatchers(12)).toHaveLength(HIDDEN_STRINGS.length + 1);
-    expect(leakMatchers()).toHaveLength(HIDDEN_STRINGS.length);
+    expect(leakMatchers({ total: 12, messageId: 'abc' })).toHaveLength(leakMatchers().length + 3);
   });
 });
 
@@ -141,6 +143,24 @@ function fakeWorld(opts: { activeScene?: boolean } = {}) {
       c.contents = c.contents.filter((d) => !ids.includes(d.id));
     },
   });
+  // A second scene holding a stale flagged token and a real one.
+  const otherCols = { tokens: col(), drawings: col(), notes: col(), walls: col() } as Record<
+    string,
+    { contents: Doc[] }
+  >;
+  const other = {
+    ...otherCols,
+    uuid: 'Scene.s2',
+    createEmbeddedDocuments: async () => [],
+    deleteEmbeddedDocuments: async (t: string, ids: string[]) => {
+      const c = otherCols[plural[t] as string] as { contents: Doc[] };
+      c.contents = c.contents.filter((d) => !ids.includes(d.id));
+    },
+  };
+  otherCols.tokens?.contents.push(
+    mk({ name: 'ag-test-stale', flags: { 'agent-gateway': { fixture: true } } }),
+    mk({ name: 'Other Real Token' }),
+  );
   // Pre-existing, unflagged content that must survive.
   world.journal?.contents.push(mk({ name: 'Real Journal' }));
   world.messages?.contents.push(mk({ content: 'real chat' }));
@@ -151,7 +171,7 @@ function fakeWorld(opts: { activeScene?: boolean } = {}) {
   ];
   const game = {
     user: { isGM: true },
-    scenes: { active: opts.activeScene === false ? null : scene },
+    scenes: { active: opts.activeScene === false ? null : scene, contents: [scene, other] },
     folders: world.folders,
     journal: world.journal,
     messages: world.messages,
@@ -207,9 +227,18 @@ describe('fixture runtime', () => {
     await run(w, 'seed');
     const r = await run(w, 'clean');
     expect(verifyFixtureResult('clean', r)).toEqual([]);
-    expect(r.before.Token).toEqual({ flagged: 2, unflagged: 1 });
-    expect(r.after.Token).toEqual({ flagged: 0, unflagged: 1 });
+    expect(r.before.Token).toEqual({ flagged: 2, unflagged: 2 });
+    expect(r.after.Token).toEqual({ flagged: 0, unflagged: 2 });
     expect(w.world.journal?.contents.map((d) => d.name)).toEqual(['Real Journal']);
+  });
+
+  it('clean and re-seed also sweep flagged documents on other scenes', async () => {
+    const w = fakeWorld();
+    const r = await run(w, 'seed');
+    expect(r.before.Token).toEqual({ flagged: 1, unflagged: 2 });
+    expect(r.after.Token).toEqual({ flagged: 2, unflagged: 2 });
+    const c = await run(w, 'clean');
+    expect(c.after.Token).toEqual({ flagged: 0, unflagged: 2 });
   });
 
   it('seed fails clearly without an active scene; clean still works', async () => {

@@ -26,3 +26,23 @@ export async function waitForPairing(user: string, deps: WaitDeps): Promise<void
     await sleep(deps.intervalMs ?? 2000);
   }
 }
+
+/** Overall budget for the connection checks of a run (stale tokens must fail within 45 s). */
+export const CONNECT_BUDGET_MS = 43_000;
+
+/**
+ * How long one user's connection wait may take: the per-user maximum, shortened so that the
+ * shared deadline holds, but never below `floorMs` so a healthy slow start still connects.
+ */
+export function connectWaitMs(
+  deadlineAt: number,
+  now: number,
+  perUserMaxMs: number,
+  floorMs = 5000,
+): number {
+  return Math.max(floorMs, Math.min(perUserMaxMs, deadlineAt - now));
+}
+
+/** Tells the human which window to look at. Names the user only; the code stays in the window. */
+export const windowPrompt = (user: string): string =>
+  `enter the code shown in the "${user}" window`;

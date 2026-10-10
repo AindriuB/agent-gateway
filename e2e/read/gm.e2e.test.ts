@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chatProblems, COMPENDIUM, searchProblems, type ChatMsg } from '../lib/expect.js';
-import { loadContext, readAllPages } from '../lib/context.js';
+import { loadContext, readAllPages, requireUuids } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 import { FIXTURE } from '../fixtures/spec.js';
 
@@ -19,24 +19,27 @@ const gw = () => session.gateway;
 
 describe('GM reads', () => {
   it('document_search lists every fixture entry', async () => {
-    const r = await gw().call('document_search', { type: 'JournalEntry', limit: 50 });
+    const r = await gw().call('document_search', {
+      type: 'JournalEntry',
+      query: 'ag-test',
+      limit: 50,
+    });
     expect(r.isError, r.text).toBe(false);
+    expect(r.structured?.truncated, 'search was truncated').toBe(false);
     const names = ((r.structured?.results ?? []) as Array<{ name: string }>).map((x) => x.name);
     expect(searchProblems('gm', names)).toEqual([]);
   });
 
   it('document_get returns hidden and limited entries', async () => {
     for (const key of ['hidden', 'limited']) {
-      const uuid = ctx.fixtures.uuids?.[key];
-      expect(uuid, 'fixture uuids missing; run npm run test:e2e:seed').toBeTruthy();
+      const uuid = requireUuids(ctx)[key];
       const r = await gw().call('document_get', { uuid });
       expect(r.isError, r.text).toBe(false);
     }
   });
 
   it('ag-test-public includes the gm page and every secret', async () => {
-    const uuid = ctx.fixtures.uuids?.public;
-    expect(uuid).toBeTruthy();
+    const uuid = requireUuids(ctx).public;
     const content = await readAllPages(
       (extra) => gw().call('document_get', { uuid, ...extra }),
       'content',
@@ -48,8 +51,7 @@ describe('GM reads', () => {
   });
 
   it('the active scene includes the placeables', async () => {
-    const uuid = ctx.fixtures.uuids?.activeScene;
-    expect(uuid).toBeTruthy();
+    const uuid = requireUuids(ctx).activeScene;
     const content = await readAllPages(
       (extra) => gw().call('document_get', { uuid, ...extra }),
       'content',

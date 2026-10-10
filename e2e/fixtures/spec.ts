@@ -30,6 +30,7 @@ export const FIXTURE = {
     publicMessage: 'ag-test public message',
     gmWhisper: 'ag-test GM whisper',
     playerWhisper: 'ag-test player whisper',
+    blindMessage: 'ag-test blind roll',
     npcMessage: 'ag-test NPC message',
     npcSecret: 'ag-test NPC SECRET',
     ownMessage: 'ag-test own-character message',
@@ -118,7 +119,9 @@ export function buildSeedPlan(input: PlanInput): SeedStep[] {
             type: 'text',
             text: {
               format: 2,
-              content: '',
+              // Both the source and rendered HTML, so the page reads the same whether or not
+              // the API renders markdown on create.
+              content: `<p>${text.markdownVisible}</p>${secret(text.markdownSecret)}`,
               markdown: `${text.markdownVisible}\n\n<section class="secret">${text.markdownSecret}</section>`,
             },
           },
@@ -210,9 +213,16 @@ export function buildSeedPlan(input: PlanInput): SeedStep[] {
     },
     {
       type: 'ChatMessage',
+      ref: 'blindRoll',
       roll: FIXTURE.chat.blindFormula,
       recordTotal: 'blindRollTotal',
-      data: { author: { $user: p }, content: '', blind: true, whisper: { $gms: true }, ...flags() },
+      data: {
+        author: { $user: p },
+        content: `<p>${text.blindMessage}</p>`,
+        blind: true,
+        whisper: { $gms: true },
+        ...flags(),
+      },
     },
     {
       type: 'ChatMessage',

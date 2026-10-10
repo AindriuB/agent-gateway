@@ -16,20 +16,24 @@ The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It i
 | `FOUNDRY_GM_USER` | `dev-gm` |
 | `FOUNDRY_PLAYER_USER` | `player1` |
 | `FOUNDRY_PLAYER2_USER` | `player2` |
-| `FOUNDRY_PASSWORD` | unset; the password field is filled only when set |
+| `FOUNDRY_GM_PASSWORD` | unset; filled only for the GM user, and only when set |
+| `FOUNDRY_PLAYER_PASSWORD` | unset; filled only for the player user |
+| `FOUNDRY_PLAYER2_PASSWORD` | unset; filled only for the second player |
 | `AGENT_GATEWAY_E2E_LINK_PORT` | `7429` (never `7420`, the dev port) |
 | `AGENT_GATEWAY_E2E_V13_URL` | unset; enables `--foundry v13` |
 | `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S` | `300`; how long setup waits for a human |
-| `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `30`; how long a run waits for a stored pairing to connect |
+| `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `20`; the most one user's wait for a stored pairing to connect may take (the two users share a 43 s budget) |
 | `AGENT_GATEWAY_E2E_HEADED` | `1` shows the browsers during seed, clean and runs |
 
-Keep passwords out of the repo; they belong in the environment or `test.env`.
+Keep passwords out of the repo; they belong in the environment or `test.env`. The old single `FOUNDRY_PASSWORD` is no longer read: if it is set, the harness prints a one-line warning and ignores it. A password variable that is defined but empty in the environment means "no password" and overrides a value in `test.env`.
+
+Foundry user names are matched against the join screen exactly first, then case-insensitively, because the world's real names may differ in case (`test-world` has `Player2`). When nothing matches, the run fails listing the names the join screen offers. Set `FOUNDRY_PLAYER2_USER` and friends to the real spelling anyway: the gateway binds `--user` by the name recorded at pairing.
 
 ## Commands
 
 1. `npm run test:e2e:setup` (once per user, repeat if a pairing is lost). For each user it starts a gateway on the e2e port, opens a headed window whose title and red banner show the user name and the pairing code, joins the world, sets the client `gatewayUrl` to `ws://localhost:<port>`, opens the pairing app, and waits for a human to type the code. The harness never types the code. It confirms each pairing with `world_info`, prints `paired <user>`, and exits 0 when everyone is paired. Add `--player2` to pair the second player too (used by the multi-user suites).
 2. `npm run test:e2e:seed` creates the `ag-test-*` fixtures as the GM. **This writes to the world.** Run it only with the world owner's consent (Andrew), once; running it again leaves exactly one of each fixture. It prints per-type flagged and unflagged counts before and after, and records the blind roll total and the fixture UUIDs in the state directory.
-3. `npm run test:e2e [-- --foundry v14|v13]` runs unattended: local state checks (under 5 s), then reconnects each user with the stored token (fails within 30 s plus browser start), checks the fixtures, runs the read suites sequentially and writes the summary. Failure messages say `run npm run test:e2e:setup` or `run npm run test:e2e:seed`.
+3. `npm run test:e2e [-- --foundry v14|v13]` runs unattended: local state checks (under 5 s), then reconnects each user with the stored token (a stale token fails within 45 s of the start: both users share a 43 s connect budget), checks the fixtures, runs the read suites sequentially and writes the summary. Failure messages say `run npm run test:e2e:setup` or `run npm run test:e2e:seed`.
 4. `npm run test:e2e:clean` deletes only documents flagged `flags['agent-gateway'].fixture` and restores the world to its pre-seed state. It prints per-type counts before and after: flagged goes to 0, unflagged is unchanged.
 
 Offline checks of the harness itself (no browser, no Foundry): `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, then `npx tsc -p e2e/tsconfig.json --noEmit` and `npx eslint e2e`.

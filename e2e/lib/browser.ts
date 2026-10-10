@@ -1,5 +1,5 @@
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
-import { profileDir, type E2eConfig, type E2ePaths } from './config.js';
+import { passwordFor, profileDir, type E2eConfig, type E2ePaths } from './config.js';
 
 /** The selectors the harness relies on. */
 export const SELECTORS = {
@@ -40,6 +40,8 @@ export function launchOptions(
 /** The minimal Page surface joinWorld uses; lets tests drive it with a fake. */
 export interface JoinPage {
   goto(url: string): Promise<unknown>;
+  /** Visible labels of the `<option>`s under a select. */
+  optionLabels(selector: string): Promise<string[]>;
   selectOption(selector: string, option: { label: string }): Promise<unknown>;
   fill(selector: string, value: string): Promise<unknown>;
   click(selector: string): Promise<unknown>;
@@ -48,7 +50,36 @@ export interface JoinPage {
   url(): string;
 }
 
+/** Wrap a Playwright page as the JoinPage joinWorld uses. */
+export function asJoinPage(page: Page): JoinPage {
+  return {
+    goto: (url) => page.goto(url),
+    optionLabels: (selector) =>
+      page.$$eval(selector + ' option', 'els => els.map((e) => e.textContent ?? "")') as Promise<
+        string[]
+      >,
+    selectOption: (selector, option) => page.selectOption(selector, option),
+    fill: (selector, value) => page.fill(selector, value),
+    click: (selector) => page.click(selector),
+    waitForSelector: (selector, opts) => page.waitForSelector(selector, opts),
+    waitForFunction: (fn, arg, opts) => page.waitForFunction(fn, arg, opts),
+    url: () => page.url(),
+  };
+}
+
 const READY = 'globalThis.game?.ready === true';
+
+/**
+ * Find the Foundry user name for `wanted`: an exact match is preferred, otherwise a
+ * case-insensitive one (the world's real names may differ in case). Undefined when there is no
+ * match or several names differ only in case.
+ */
+export function matchUserName(wanted: string, available: readonly string[]): string | undefined {
+  const w = wanted.trim();
+  if (available.includes(w)) return w;
+  const hits = available.filter((a) => a.trim().toLowerCase() === w.toLowerCase());
+  return hits.length === 1 ? hits[0] : undefined;
+}
 
 /**
  * Join the world as `user`. The password field is filled only when one is configured. If the
@@ -64,8 +95,16 @@ export async function joinWorld(page: JoinPage, config: E2eConfig, user: string)
         `no join form at ${config.foundryUrl}/join; is world ${config.world} launched?`,
       );
     }
-    await page.selectOption(SELECTORS.joinUser, { label: user });
-    if (config.password) await page.fill(SELECTORS.joinPassword, config.password);
+    const labels = (await page.optionLabels(SELECTORS.joinUser)).map((l) => l.trim());
+    const label = matchUserName(user, labels);
+    if (label === undefined) {
+      throw new Error(
+        `no Foundry user "${user}" on the join screen; available users: ${labels.filter(Boolean).join(', ') || '(none)'}`,
+      );
+    }
+    await page.selectOption(SELECTORS.joinUser, { label });
+    const password = passwordFor(config, user);
+    if (password) await page.fill(SELECTORS.joinPassword, password);
     await page.click(SELECTORS.joinButton);
   }
   await page.waitForFunction(READY, undefined, { timeout: 120_000 });

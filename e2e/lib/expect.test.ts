@@ -4,6 +4,7 @@ import {
   chatProblems,
   notFoundProblems,
   overlapProblems,
+  proseLines,
   playerPublicEntryProblems,
   searchProblems,
   toolListProblems,
@@ -99,9 +100,42 @@ describe('chatProblems', () => {
 });
 
 describe('small checks', () => {
-  it('overlapProblems', () => {
-    expect(overlapProblems(['a', 'b'], ['c'])).toEqual([]);
-    expect(overlapProblems(['a', 'b'], ['b'])).toHaveLength(1);
+  it('overlapProblems compares leading prose and ignores tables and fences', () => {
+    const header = '| Name | Level | Description of the thing here |';
+    const sep = '| ---- | ----- | ----------------------------- |';
+    const fence = '```text with enough characters to pass the length filter';
+    const p1 = 'The first paragraph of the entry, long enough to be distinctive.';
+    const p2 = 'A second paragraph that only appears on the first page of it.';
+    const p3 = 'Fresh prose that begins the second page of the same entry.';
+    const first = [p1, header, sep, fence, p2].join('\n');
+    // Repeated header, separator and reopened fence are by design.
+    expect(overlapProblems(first, [header, sep, fence, p3].join('\n'))).toEqual([]);
+    expect(overlapProblems(first, [p2, p3].join('\n'))).toHaveLength(1);
+    expect(overlapProblems(first, [header, sep].join('\n'))).toEqual([
+      'second page has no prose to compare',
+    ]);
+  });
+  it('proseLines drops short lines, table rows and fences', () => {
+    expect(proseLines('short\n| a table row that is certainly longer than forty chars |')).toEqual(
+      [],
+    );
+  });
+  it('anchors the ownership check to the top-level line', () => {
+    const base = `${text.publicPageVisible}
+${text.markdownVisible}
+`;
+    expect(
+      playerPublicEntryProblems(`${base}pages[0].ownership.yours: 3
+**ownership.yours**: 2`),
+    ).toEqual([]);
+    expect(playerPublicEntryProblems(`${base}pages[0].ownership.yours: 2`)).toContain(
+      'ownership.yours is not 2',
+    );
+  });
+  it('treats the blind message marker as a blind-roll leak for a player', () => {
+    expect(chatProblems('player', [...playerChat, m(text.blindMessage)])).toContain(
+      'blind roll visible',
+    );
   });
   it('worldInfoProblems', () => {
     const exp = { world: 'test-world', user: 'dev-gm' };
@@ -112,6 +146,7 @@ describe('small checks', () => {
       userRole: 'GAMEMASTER',
     };
     expect(worldInfoProblems('gm', ok, exp)).toEqual([]);
+    expect(worldInfoProblems('gm', { ...ok, userName: 'Dev-GM' }, exp)).toEqual([]);
     expect(worldInfoProblems('player', ok, exp)).toEqual(['role is GAMEMASTER']);
     expect(worldInfoProblems('gm', { ...ok, systemId: 'dnd5e' }, exp)).toEqual(['system is dnd5e']);
   });
