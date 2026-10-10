@@ -1,7 +1,6 @@
 export const MAX_TERMINAL_TEXT = 80;
 
 // C0 and C1 controls, DEL, and the Unicode line and paragraph separators.
-// eslint-disable-next-line no-control-regex
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
 /**
