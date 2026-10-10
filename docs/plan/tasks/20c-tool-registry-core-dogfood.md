@@ -11,7 +11,7 @@
 - module/src/ratelimit/stage.ts (the default tool lookup only)
 - module/src/approvals/stage.ts (the default tool lookup only)
 - module/src/approvals/manager.ts (the default tool lookup only)
-- module/src/audit/index.ts (the default `categoryOf` only)
+- module/src/audit/stage.ts (the default `categoryOf` only)
 - module/test/ops/registry/**
 
 ## Goal
@@ -27,12 +27,12 @@ behaviour visible to an agent changes in this task.
 - module/src/policy/stage.ts:46,52 — `config.tools ?? TOOLS` lookup
 - task 14 `module/src/ratelimit/stage.ts` — `config.tools ?? TOOLS`, `bucketFor(category)`
 - task 16 `module/src/approvals/stage.ts` and `manager.ts` (`(this.opts.tools ?? TOOLS).find(...)` on the approver's client)
-- task 19 `module/src/audit/index.ts` — `categoryOf: (tool) => TOOLS.find(...)`
+- task 19 `module/src/audit/stage.ts` — `categoryOf: (tool) => TOOLS.find(...)`
 - protocol/src/tools/rules.ts (20b) — `checkToolDefinition`
 - docs/plan/specs/2026-10-09-agent-gateway.md section 1 "Operation registry"
 
 ## Design constraints (decided; implement as stated)
-- `registry.ts` exports a `ToolRegistry` class and the live instance `toolRegistry`. Entries hold: `name`, `category`, `minRole`, `description`, `inputSchema`, `outputSchema` (JSON), `parseArgs(args)` (returns `{ok, data}` or issues), `origin` (`'core'` or `{packId, version, prefix}`), and the handler. The handler lives in a module-private `WeakMap` or closure. `info(name)` returns a frozen record with no function-valued field. `list()`, `forRole(isGM)` and `categoryOf(name)` are built on `info`. Only `dispatch.ts` can get a handler, through a non-exported accessor or one passed at construction.
+- `registry.ts` exports a `ToolRegistry` class and the live instance `toolRegistry`. Entries hold: `name`, `category`, `minRole`, `description`, `inputSchema`, `outputSchema` (JSON), `parseArgs(args)` (returns `{ok, data}` or issues), `origin` (`'core'` or `{packId, version, prefix}`), and the handler. The handler lives in a module-private `WeakMap` or closure. `info(name)` returns a frozen record with no function-valued field. `list()`, `forRole(isGM)` and `categoryOf(name)` are built on `info`. Only `dispatch.ts` can get a handler, through a construction callback that supplies a closure to the dispatcher. The handler accessor is never exported, stored as an instance member or reachable from the live `toolRegistry`; metadata readers cannot invoke it.
 - `register(entry)` refuses, with a typed `RegistryError` and no partial change: a duplicate name (core vs core, or anything vs an existing name), a category outside the four, a missing category, `minRole` outside `player`/`gm`, any `checkToolDefinition` problem for the entry's origin, and any call after `seal()`. `registerAll(entries)` is atomic: all or none.
 - `core-tools.ts` registers every `TOOLS` entry with its `HANDLERS` handler, with `parseArgs` = the tool's zod `safeParse` (so core defaults, coercions and error messages are unchanged) and JSON schemas from `toJsonSchema`. A `TOOLS` entry without a handler, or a handler without a `TOOLS` entry, throws at load.
 - `createDispatcher({tools, handlers, stages})` keeps its signature (it builds a private registry from the arrays), so the existing dispatcher tests are untouched; the exported `dispatch` uses `toolRegistry`.

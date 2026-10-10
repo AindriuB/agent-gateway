@@ -6,6 +6,7 @@
 - examples/hello-pack/**
 - module/test/packs/example/**
 - e2e/packs/**
+- e2e/vitest.e2e.config.ts (insert `packs/**/*.e2e.test.ts` into the live project only)
 - docs/packs/** (except `docs/packs/naming.md`, owned by 20b; links to it are fine)
 
 ## Goal
@@ -24,14 +25,15 @@ pack against the e2e harness, and the versioning and compatibility policy.
 
 ## Design constraints (decided; implement as stated)
 - `examples/hello-pack/` is a complete Foundry module: `module.json` (id `agent-gateway-hello-pack`, `relationships.requires` the `agent-gateway` module, `esmodules: ["scripts/main.js"]`, compatibility `minimum: 13`, `verified: 14`, MIT), `scripts/main.js` in plain ESM JavaScript with JSDoc types, no build step, `README.md`, `LICENSE`.
-- It registers prefix `hello` with two tools: `hello-dice_odds` (player, `read`; args `count` 1-20, `sides` 2-100, `target`; returns the probability that the sum is at least `target`, computed without touching the world) and `hello-journal_stamp` (player, `write`; appends a timestamped line to a page of a journal the user owns, calling `ctx.snapshot(pageUuid)` before the update).
+- It registers prefix `hello` with two tools: `hello-dice_odds` (player, `read`; args `count` 1-20, `sides` 2-100, `target`; returns the probability that the sum is at least `target`, computed without touching the world) and `hello-journal_stamp` (player, `write`; appends a timestamped line to a page of a journal the user owns, checking ownership of both the journal and page for the calling Foundry user, awaiting `ctx.snapshot(pageUuid)` before the update and passing `ctx.callOptions` as the update options. Escape any appended user-controlled text before inserting it into page HTML).
 - Docs pages: `docs/packs/README.md` (what a pack is, free core and paid packs, where to start), `api.md` (every field, error code, the hook and lifecycle window, the handler context and result rules, limits from `TOOL_LIMITS`), `security.md` (the trust model in the spec's words, what the core guarantees and what it cannot, untrusted descriptions and results, no secrets in descriptions, the AI policy duties that apply to pack authors), `categories.md` (the four categories, default policy per category, why a mislabelled category is the author's breach of trust, `code` never auto), `testing.md` (unit-testing a handler with a stubbed context, running the example under the e2e harness), `versioning.md` (the `packApiVersion` major.minor contract: minors only add; a major change is refused at registration; the core keeps accepting the previous major for at least one core minor release after a new major; deprecations announced in the changelog), `distribution.md` (the spec's section 6 facts with their sources, and that the core does no licensing).
 
 ## Acceptance
 - [ ] `module/test/packs/example/` imports `examples/hello-pack/scripts/main.js` against the real 20d API with stubbed Foundry globals; both tools register, `hello-dice_odds` with `count: 2, sides: 6, target: 7` returns `21/36` to 6 decimal places through the full dispatcher, and `hello-journal_stamp` reaches the approval stage under default policy
+- [ ] Journal handler tests prove a non-owner is refused without snapshot/update, hostile line text appears only as escaped HTML, snapshot completes before update, and update receives `ctx.callOptions`
 - [ ] With the stubbed `game.modules.get('agent-gateway-hello-pack').active === false`, the example's registration is refused and neither tool is in `toolRegistry.list()` (test)
 - [ ] Every tool definition in the example passes `checkToolDefinition(…, 'pack')` (test)
-- [ ] `e2e/packs/hello-pack.e2e.test.ts` runs when `AGENT_GATEWAY_E2E_HELLO_PACK=1` and otherwise skips with a message naming the variable; when run on v14 with the pack linked and enabled in `test-world`, `tools/list` for the player session contains both tools with the provenance tag, `hello-dice_odds` returns the expected probability, and after Andrew disables the pack and relaunches, a second run with `AGENT_GATEWAY_E2E_HELLO_PACK=disabled` asserts neither tool is listed
+- [ ] The live e2e project includes `packs/**/*.e2e.test.ts`; `e2e/packs/hello-pack.e2e.test.ts` runs when `AGENT_GATEWAY_E2E_HELLO_PACK=1` and otherwise skips with a message naming the variable; when run on v14 with the pack linked and enabled in `test-world`, `tools/list` for the player session contains both tools with the provenance tag, `hello-dice_odds` returns the expected probability, and after Andrew disables the pack and relaunches, a second run with `AGENT_GATEWAY_E2E_HELLO_PACK=disabled` asserts neither tool is listed
 - [ ] `npx eslint examples` passes, and `grep -rn "examples" scripts/release.mjs` (if 41 has landed) shows the directory is not in the zip list
 - [ ] Each page listed under Design constraints exists; `api.md` documents every `PackError` code that `module/src/packs/**` can throw (a test or script greps the source for codes and the doc for each)
 - [ ] `npm run verify` passes
