@@ -22,12 +22,13 @@ declare module '../ops/types.js' {
      */
     snapshot?(uuid: string): Promise<void>;
     /** Record a document the handler created, after creating it. Undo deletes it. */
-    created?(uuid: string): Promise<void>;
+    created?(uuid: string, parent?: unknown): Promise<void>;
     /**
      * Declare, before the handler creates anything, that this call will create documents. On a
-     * player's client this is how the GM client learns to watch for the creation.
+     * player's client this is how the GM client learns to watch for the creation. Pass the parent
+     * document (or its uuid) the new documents will go into; the audit log is refused.
      */
-    intendCreate?(): Promise<void>;
+    intendCreate?(parent?: unknown): Promise<void>;
     /** The id of this audited call (also its audit entry id). */
     callId?: string;
     /**
@@ -75,10 +76,17 @@ class Snapshots {
   private createsDeclared = false;
   constructor(private readonly fromUuid: AuditStageDeps['fromUuid']) {}
 
-  intendCreate(): Promise<void> {
-    if (!this.witnessed || this.createsDeclared) return Promise.resolve();
+  /** Refuse a parent that is, or sits inside, the audit log. A uuid is looked up first. */
+  private async guardParent(parent: unknown): Promise<void> {
+    const doc = typeof parent === 'string' ? await this.lookup(parent) : parent;
+    if (doc) assertNotAudit(doc);
+  }
+
+  async intendCreate(parent?: unknown): Promise<void> {
+    await this.guardParent(parent);
+    if (!this.witnessed || this.createsDeclared) return;
     this.createsDeclared = true;
-    return this.witnessed({ creates: true }).then(() => undefined);
+    await this.witnessed({ creates: true });
   }
 
   private async lookup(uuid: string): Promise<any> {
@@ -117,7 +125,10 @@ class Snapshots {
     });
   }
 
-  created(uuid: string): Promise<void> {
+  async created(uuid: string, parent?: unknown): Promise<void> {
+    await this.guardParent(parent);
+    const made = await this.lookup(uuid);
+    if (made) assertNotAudit(made);
     if (this.witnessed) return this.add(uuid, async () => viewOnlyTarget(uuid));
     return this.add(uuid, async () => blank(uuid, false));
   }
@@ -210,8 +221,8 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
       ctx.callId = callId;
       ctx.callOptions = { agentGateway: { callId } };
       ctx.snapshot = (uuid) => snaps.snapshot(uuid);
-      ctx.created = (uuid) => snaps.created(uuid);
-      ctx.intendCreate = () => snaps.intendCreate();
+      ctx.created = (uuid, parent) => snaps.created(uuid, parent);
+      ctx.intendCreate = (parent) => snaps.intendCreate(parent);
       let res: DispatchResult | undefined;
       let thrown = false;
       try {

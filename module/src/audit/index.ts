@@ -55,6 +55,10 @@ function readyAudit(): void {
     fromUuid: (uuid) => fromUuidCompat(uuid),
     now: () => Date.now(),
     grace: () => new Promise((res) => setTimeout(res, GRACE_MS)),
+    every: (fn, ms) => {
+      const h = setInterval(fn, ms);
+      return () => clearInterval(h);
+    },
   });
   relay = new AuditRelay({
     selfId: self,
@@ -72,6 +76,9 @@ function readyAudit(): void {
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     now: () => Date.now(),
   });
+  witness.start();
+  const g = globalThis as { addEventListener?: (t: string, f: () => void) => void };
+  g.addEventListener?.('pagehide', () => witness.stop());
   const r = relay;
   setIntentRequester((callId, what) => r.requestIntent(callId, what));
   installWitnessHooks(

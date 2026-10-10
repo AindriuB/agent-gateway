@@ -109,7 +109,7 @@ describe('changedKeyPaths and minimalRestore', () => {
     ).toEqual({
       name: 'Old',
       'system.hp.value': 9,
-      'flags.mod.-=added': null,
+      '-=flags': null,
     });
   });
 });

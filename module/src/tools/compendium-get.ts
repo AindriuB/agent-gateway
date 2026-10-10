@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { compendiumGet } from '@agent-gateway/protocol';
 import type { OpError, OpHandler } from '../ops/types.js';
+import { isAuditDocument } from '../audit/guard.js';
 import { fromUuidCompat } from '../compat/index.js';
 import { inlineText, page, PageCursorError, serialiseDocument } from '../serialise/index.js';
 import { canObservePack, packTypeAllowed } from './compendium-search.js';
@@ -40,7 +41,8 @@ export const compendiumGetHandler: OpHandler = async (ctx) => {
   while (root?.parent) root = root.parent;
   // The pack gate above replaces the world-document root rules; embedded rules still apply.
   const tree = doc && user ? findNode(visibleTree(root, user), doc) : undefined;
-  if (!tree) return fail('Compendium entry not found.');
+  // A GM-exported copy of the audit log keeps its flag: refused like a missing entry.
+  if (!tree || isAuditDocument(root)) return fail('Compendium entry not found.');
 
   // The same pipeline as document_get: visibility, field rules, secrets, schema-typed fields.
   const data = serialiseDocument(doc) as Record<string, any>;

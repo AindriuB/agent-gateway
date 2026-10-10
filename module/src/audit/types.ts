@@ -91,4 +91,9 @@ export const AUDIT_LIMITS = {
   callTtlMs: 600_000,
   /** How long a player client waits for the GM to witness an intent. */
   intentWaitMs: 5000,
+  /** Witness memory: bytes held across a sender's open calls, and across all of them. */
+  witnessSenderBytes: 2_000_000,
+  witnessTotalBytes: 16_000_000,
+  /** How often expired witnessed calls are freed. */
+  sweepMs: 60_000,
 } as const;

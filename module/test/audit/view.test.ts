@@ -1,19 +1,13 @@
-// @vitest-environment happy-dom
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { entryView } from '../../src/apps/audit/view.js';
 import { confirmConflicts } from '../../src/apps/audit/index.js';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
 
-const findTemplate = (): string => {
-  for (const base of ['.', '..']) {
-    const p = resolve(process.cwd(), base, 'templates/audit/audit.hbs');
-    if (existsSync(p)) return p;
-  }
-  throw new Error('audit.hbs not found');
-};
+const findTemplate = (): string =>
+  fileURLToPath(new URL('../../../templates/audit/audit.hbs', import.meta.url));
 
 let stub: FoundryStub;
 afterEach(() => stub?.uninstall());

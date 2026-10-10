@@ -80,7 +80,8 @@ export async function ensureAuditJournal(): Promise<any | null> {
   if (existing) return existing;
   const id = storedId();
   if (id && game.journal?.get?.(id)) return null;
-  if (game.user?.isGM !== true) return null;
+  // Only the designated active GM creates it, so two GM clients never make two journals.
+  if (game.user?.isGM !== true || game.users?.activeGM?.id !== game.user.id) return null;
   creating ??= (async () => {
     try {
       const levels = CONST?.DOCUMENT_OWNERSHIP_LEVELS;

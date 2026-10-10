@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { jsonSize } from './record.js';
+import { jsonSize, safeText } from './record.js';
 import { AUDIT_LIMITS as L, type AuditRecord, type AuditTarget } from './types.js';
 import { undoClasses, UNDO_CLASSES, UNDO_EMBEDDED } from './undo-classes.js';
 import { assertNotAudit } from './guard.js';
@@ -36,8 +36,13 @@ interface Call {
   openedAt: number;
   creates: boolean;
   snaps: Map<string, Snap>;
-  chars: number;
+  /** Bytes held: snapshots, plus a count for every stored observation. */
+  bytes: number;
   observed: Observed[];
+  /** uuid to the user who changed or deleted it outside this call after the intent. */
+  stale: Map<string, string>;
+  /** A memory cap was hit: nothing more is recorded and nothing in the call is undoable. */
+  capped: boolean;
 }
 
 export interface WitnessDeps {
@@ -45,7 +50,13 @@ export interface WitnessDeps {
   now(): number;
   /** Wait before assembling a record, so hook events that trail the player's message are seen. */
   grace(): Promise<void>;
+  /** Run `fn` every `ms` until the returned function is called. Optional: tests drive `sweep` directly. */
+  every?(fn: () => void, ms: number): () => void;
 }
+
+export const EXPIRED_NOTE = 'the witness record expired';
+export const CAPPED_NOTE = 'witness memory limit reached';
+export const RECREATED_NOTE = 'deleted and recreated in one call';
 
 /** Flatten a hook `change` diff to the key paths it set. `-=k` and `==k` forms name the key `k`. */
 export function changedKeyPaths(change: unknown): string[] {
@@ -76,15 +87,60 @@ export function changedKeyPaths(change: unknown): string[] {
  */
 export class AuditWitness {
   private readonly calls = new Map<string, Call>();
+  private stopSweep: (() => void) | null = null;
   constructor(private readonly deps: WitnessDeps) {}
 
   private key(sender: string, callId: string): string {
     return `${sender}\u0000${callId}`;
   }
 
-  private sweep(): void {
-    const now = this.deps.now();
-    for (const [k, c] of this.calls) if (now - c.openedAt > L.callTtlMs) this.calls.delete(k);
+  private expired(c: Call): boolean {
+    return this.deps.now() - c.openedAt > L.callTtlMs;
+  }
+
+  /** Free every expired call. Runs on a timer (see `start`) and before each new intent. */
+  sweep(): void {
+    for (const [k, c] of this.calls) if (this.expired(c)) this.calls.delete(k);
+  }
+
+  /** Start the periodic sweep. */
+  start(): void {
+    this.stopSweep ??= this.deps.every?.(() => this.sweep(), L.sweepMs) ?? null;
+  }
+
+  /** Stop the sweep timer and drop everything held. */
+  stop(): void {
+    this.stopSweep?.();
+    this.stopSweep = null;
+    this.calls.clear();
+  }
+
+  /** Number of open calls (for tests and diagnostics). */
+  get open(): number {
+    return this.calls.size;
+  }
+
+  private bytesFor(sender?: string): number {
+    let n = 0;
+    for (const c of this.calls.values()) if (!sender || c.sender === sender) n += c.bytes;
+    return n;
+  }
+
+  /** Add to a call's byte count; on exceeding a cap the call is capped and nothing more is kept. */
+  private charge(call: Call, n: number): boolean {
+    if (call.capped) return false;
+    if (
+      this.bytesFor(call.sender) + n > L.witnessSenderBytes ||
+      this.bytesFor() + n > L.witnessTotalBytes
+    ) {
+      call.capped = true;
+      call.snaps.clear();
+      call.observed = [];
+      call.bytes = 0;
+      return false;
+    }
+    call.bytes += n;
+    return true;
   }
 
   /** Handle an intent from `sender` (the attested socket user). Resolves whether it was witnessed. */
@@ -104,11 +160,14 @@ export class AuditWitness {
         openedAt: this.deps.now(),
         creates: false,
         snaps: new Map(),
-        chars: 0,
+        bytes: 0,
         observed: [],
+        stale: new Map(),
+        capped: false,
       };
       this.calls.set(k, call);
     }
+    if (call.capped) return false;
     if (m.creates === true) call.creates = true;
     const uuid = typeof m.uuid === 'string' ? m.uuid : '';
     if (!uuid) return m.creates === true;
@@ -129,34 +188,61 @@ export class AuditWitness {
       }
     }
     let before: Record<string, unknown> | null = null;
+    let size = uuid.length;
     if (doc) {
       try {
         before = doc.toObject();
       } catch {
         return false;
       }
-      const size = jsonSize(before);
-      if (size > L.beforeChars || call.chars + size > L.beforeTotalChars) return false;
-      call.chars += size;
+      size += jsonSize(before);
+      if (size > L.beforeChars + L.uuid) return false;
+      if (call.bytes + size > L.beforeTotalChars) return false;
     }
+    if (!this.charge(call, size)) return false;
     call.snaps.set(uuid, { existed: !!doc, before });
     return true;
   }
 
-  private callFor(userId: unknown, options: any): Call | null {
+  private live(userId: unknown, options: any): Call | null {
     const id = options?.agentGateway?.callId;
     if (typeof userId !== 'string' || typeof id !== 'string') return null;
-    return this.calls.get(this.key(userId, id)) ?? null;
+    const call = this.calls.get(this.key(userId, id)) ?? null;
+    if (!call) return null;
+    if (this.expired(call)) {
+      this.calls.delete(this.key(userId, id));
+      return null;
+    }
+    return call.capped ? null : call;
   }
 
   private push(call: Call, o: Observed): void {
-    if (call.observed.length < L.observed) call.observed.push(o);
+    const cost =
+      100 + (o.kind === 'update' ? o.paths.reduce((n, p) => n + p.length, 0) : o.uuid.length);
+    if (call.observed.length >= L.observed || !this.charge(call, cost)) {
+      if (!call.capped) call.capped = true;
+      return;
+    }
+    call.observed.push(o);
+  }
+
+  /**
+   * A change to a snapshotted document that is not part of the call (another user, or the sender
+   * outside it) makes that snapshot stale: it no longer describes what was there before the call.
+   */
+  private intervene(uuid: string, userId: unknown, options: any): void {
+    for (const call of this.calls.values()) {
+      if (call.capped || this.expired(call) || !call.snaps.get(uuid)?.existed) continue;
+      const mine = call.sender === userId && options?.agentGateway?.callId === call.callId;
+      if (!mine && !call.stale.has(uuid)) call.stale.set(uuid, String(userId ?? 'unknown'));
+    }
   }
 
   /** `updateX(document, change, options, userId)` */
   onUpdate(doc: any, change: unknown, options: any, userId: unknown): void {
-    const call = this.callFor(userId, options);
     const uuid = String(doc?.uuid ?? '');
+    this.intervene(uuid, userId, options);
+    const call = this.live(userId, options);
     const snap = call?.snaps.get(uuid);
     if (!call || !snap?.existed) return;
     const paths = changedKeyPaths(change);
@@ -166,15 +252,16 @@ export class AuditWitness {
 
   /** `deleteX(document, options, userId)` */
   onDelete(doc: any, options: any, userId: unknown): void {
-    const call = this.callFor(userId, options);
     const uuid = String(doc?.uuid ?? '');
+    this.intervene(uuid, userId, options);
+    const call = this.live(userId, options);
     if (!call || !call.snaps.get(uuid)?.existed) return;
     this.push(call, { kind: 'delete', uuid });
   }
 
   /** `createX(document, options, userId)`: counts only if the server-set creator is the sender too. */
   onCreate(doc: any, options: any, userId: unknown): void {
-    const call = this.callFor(userId, options);
+    const call = this.live(userId, options);
     if (!call?.creates) return;
     if (doc?._stats?.createdBy !== call.sender) return;
     const uuid = String(doc?.uuid ?? '');
@@ -190,15 +277,19 @@ export class AuditWitness {
    */
   async assemble(record: AuditRecord, sender: string): Promise<AuditRecord> {
     await this.deps.grace();
-    const call = this.calls.get(this.key(sender, record.entryId));
+    const k = this.key(sender, record.entryId);
+    const call = this.calls.get(k);
     const claimed = record.targets;
     if (!call) {
-      return {
-        ...record,
-        targets: claimed.map((t) => viewOnly(t, NOT_WITNESSED_NOTE)),
-      };
+      return { ...record, targets: claimed.map((t) => viewOnly(t, NOT_WITNESSED_NOTE)) };
     }
-    this.calls.delete(this.key(sender, record.entryId));
+    this.calls.delete(k);
+    if (this.expired(call)) {
+      return { ...record, targets: claimed.map((t) => viewOnly(t, EXPIRED_NOTE)) };
+    }
+    if (call.capped) {
+      return { ...record, targets: claimed.map((t) => viewOnly(t, CAPPED_NOTE)) };
+    }
     const targets: AuditTarget[] = [];
     const done = new Set<string>();
     const byUuid = new Map<string, Observed[]>();
@@ -207,17 +298,24 @@ export class AuditWitness {
       const snap = call.snaps.get(uuid);
       const created = obs.find((o) => o.kind === 'create');
       if (created && created.kind === 'create') {
-        targets.push({
-          uuid,
-          existed: false,
-          before: null,
-          existsAfter: true,
-          afterModifiedTime: created.modifiedTime,
-          undoable: true,
-          changedPaths: [],
-          note: '',
-        });
+        if (snap?.existed) {
+          // Deleted and recreated under one id in one call: the replacement is not something
+          // undo can safely swap back, so it is left alone.
+          targets.push(viewOnly({ ...blankTarget(uuid) }, RECREATED_NOTE));
+        } else {
+          targets.push({
+            uuid,
+            existed: false,
+            before: null,
+            existsAfter: true,
+            afterModifiedTime: created.modifiedTime,
+            undoable: true,
+            changedPaths: [],
+            note: '',
+          });
+        }
       } else if (snap?.existed && snap.before) {
+        const stale = call.stale.get(uuid);
         const deleted = obs.some((o) => o.kind === 'delete');
         const paths = [...new Set(obs.flatMap((o) => (o.kind === 'update' ? o.paths : [])))].slice(
           0,
@@ -225,15 +323,21 @@ export class AuditWitness {
         );
         const last = [...obs].reverse().find((o) => o.kind === 'update');
         const updates = !deleted && paths.length > 0;
+        const ok = (deleted || updates) && stale === undefined;
         targets.push({
           uuid,
           existed: true,
           before: snap.before,
           existsAfter: !deleted,
           afterModifiedTime: last && last.kind === 'update' ? last.modifiedTime : null,
-          undoable: deleted || updates,
+          undoable: ok,
           changedPaths: deleted ? [] : paths,
-          note: deleted || updates ? '' : NOT_OBSERVED_NOTE,
+          note:
+            stale !== undefined
+              ? `changed by ${safeText(stale, 40)} after the call began; its snapshot is stale`
+              : ok
+                ? ''
+                : NOT_OBSERVED_NOTE,
         });
       } else continue;
       done.add(uuid);
@@ -244,6 +348,17 @@ export class AuditWitness {
     return { ...record, targets: targets.slice(0, L.targets) };
   }
 }
+
+const blankTarget = (uuid: string): AuditTarget => ({
+  uuid,
+  existed: false,
+  before: null,
+  existsAfter: false,
+  afterModifiedTime: null,
+  undoable: false,
+  changedPaths: [],
+  note: '',
+});
 
 const viewOnly = (t: AuditTarget, note: string): AuditTarget => ({
   uuid: t.uuid,

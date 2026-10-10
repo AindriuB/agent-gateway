@@ -76,9 +76,17 @@ export function conflictFor(target: AuditTarget, current: any): Conflict | null 
   return after === null || now > after ? { uuid: target.uuid, reason: 'modified' } : null;
 }
 
+const isPlain = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
 /**
- * A minimal update restoring only the observed key paths to their values in the GM's snapshot. A
- * path the snapshot lacks is removed (`-=key`). Prototype-pollution segments are refused.
+ * A minimal update restoring only the observed key paths to their values in the GM's snapshot.
+ * Walking a path down the snapshot:
+ * - a segment the snapshot lacks: the first missing key is removed (`-=key`);
+ * - a value that is not an object (a primitive, null, an array) where the path goes deeper: the
+ *   change turned it into an object, so the whole value at that ancestor is restored;
+ * - otherwise the leaf is restored to its snapshot value.
+ * Prototype-pollution segments are refused. A key whose ancestor is also restored is dropped.
  */
 export function minimalRestore(
   before: Record<string, unknown>,
@@ -91,17 +99,31 @@ export function minimalRestore(
       continue;
     }
     let node: unknown = before;
-    let present = true;
-    for (const s of segs) {
-      if (node && typeof node === 'object' && Object.hasOwn(node, s)) {
-        node = (node as Record<string, unknown>)[s];
-      } else {
-        present = false;
+    let done = false;
+    for (let i = 0; i < segs.length && !done; i++) {
+      const here = segs.slice(0, i + 1);
+      if (!isPlain(node) || !Object.hasOwn(node, segs[i]!)) {
+        out[[...segs.slice(0, i), `-=${segs[i]}`].join('.')] = null;
+        done = true;
         break;
       }
+      node = node[segs[i]!];
+      if (i < segs.length - 1 && !isPlain(node)) {
+        // Primitive, null or array in the snapshot, object now: restore the ancestor whole.
+        out[here.join('.')] = JSON.parse(JSON.stringify(node ?? null));
+        done = true;
+      }
     }
-    if (present) out[path] = JSON.parse(JSON.stringify(node ?? null));
-    else out[[...segs.slice(0, -1), `-=${segs[segs.length - 1]}`].join('.')] = null;
+    if (!done) out[path] = JSON.parse(JSON.stringify(node ?? null));
+  }
+  const keys = Object.keys(out);
+  for (const k of keys) {
+    const base = k.replace(/(^|\.)-=/, '$1');
+    if (
+      keys.some((o) => o !== k && !o.includes('-=') && (base === o || base.startsWith(`${o}.`)))
+    ) {
+      delete out[k];
+    }
   }
   return out;
 }

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureAuditJournal,
@@ -59,7 +59,11 @@ function world(isGM: boolean, existing: any[] = [], storedId = '') {
   });
   Object.assign(g.game, {
     user: { id: isGM ? 'gm1' : 'p1', isGM },
-    users: { contents: USERS, get: (id: string) => USERS.find((u) => u.id === id) },
+    users: {
+      contents: USERS,
+      get: (id: string) => USERS.find((u) => u.id === id),
+      activeGM: USERS[0],
+    },
     i18n: { localize: (k: string) => (k.endsWith('journalName') ? 'Agent Gateway Audit' : k) },
     journal: {
       get contents() {
@@ -95,6 +99,14 @@ describe('audit journal', () => {
     );
     await ensureAuditJournal();
     expect(journals).toHaveLength(1);
+  });
+
+  it('a GM client that is not the active GM never creates it either', async () => {
+    world(true);
+    (globalThis as any).game.users.activeGM = USERS[0];
+    (globalThis as any).game.user = { id: 'gm2', isGM: true };
+    expect(await ensureAuditJournal()).toBeNull();
+    expect(journals).toHaveLength(0);
   });
 
   it('a player client never creates it', async () => {
@@ -177,15 +189,7 @@ describe('audit journal', () => {
 
 describe('model and manifest', () => {
   it('module.json declares the audit subtype for JournalEntryPage', () => {
-    const p = ['.', '..']
-      .map((b) => resolve(process.cwd(), b, 'module.json'))
-      .find((f) => {
-        try {
-          return readFileSync(f, 'utf8').includes('agent-gateway');
-        } catch {
-          return false;
-        }
-      })!;
+    const p = fileURLToPath(new URL('../../../module.json', import.meta.url));
     expect(JSON.parse(readFileSync(p, 'utf8')).documentTypes).toEqual({
       JournalEntryPage: { audit: {} },
     });

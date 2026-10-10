@@ -28,6 +28,8 @@ export const RESEND_MS = 10_000;
 const SEEN_MAX = 1000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 120;
+/** Intents are small and many per call, so they have their own, larger budget. */
+const INTENT_RATE_MAX = 600;
 
 /**
  * Carries audit records from player clients to the active GM over the module socket. A player
@@ -51,7 +53,9 @@ export class AuditRelay {
   }
 
   async submit(record: AuditRecord): Promise<void> {
-    if (this.deps.isGM()) {
+    // Only the designated active GM writes. Any other client, a second GM included, buffers the
+    // record and relays it, so two clients never create or write the journal.
+    if (this.deps.isGM() && this.deps.activeGMId() === this.deps.selfId()) {
       await this.deps.write(record, this.deps.selfId());
       return;
     }
@@ -143,7 +147,7 @@ export class AuditRelay {
       if (!this.deps.isGM() || this.deps.activeGMId() !== this.deps.selfId()) return;
       if (senderId === this.deps.selfId()) return;
       // Rate limit first, as for entries: nothing is read from the payload until it passes.
-      if (!this.allow(senderId)) return;
+      if (!this.allow(senderId, 'intent')) return;
       const callId = typeof msg.callId === 'string' ? msg.callId.slice(0, 40) : '';
       const uuid = typeof msg.uuid === 'string' ? msg.uuid.slice(0, L.uuid) : undefined;
       let ok = false;
@@ -175,14 +179,16 @@ export class AuditRelay {
       this.deps.emit({ kind: 'audit.ack', id: peek }, [senderId]);
       return;
     }
-    if (!this.allow(senderId)) {
+    if (!this.allow(senderId, 'entry')) {
       console.warn(`agent-gateway | audit relay rate limit: dropped a record from ${senderId}`);
       return;
     }
+    // A GM's own client captured its snapshots, so a record from another GM (attested) keeps its
+    // targets; a player's is display data only (`relayed`).
     const record = sanitiseRecord(msg.record, {
       userId: senderId,
       timestamp: this.deps.now(),
-      relayed: true,
+      relayed: !this.deps.isUserGM(senderId),
     });
     if (!record) return;
     try {
@@ -196,15 +202,16 @@ export class AuditRelay {
     this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
   }
 
-  private allow(senderId: string): boolean {
+  private allow(senderId: string, kind: 'entry' | 'intent'): boolean {
     const now = this.deps.now();
-    const recent = (this.sent.get(senderId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-    if (recent.length >= RATE_MAX) {
-      this.sent.set(senderId, recent);
+    const bucket = `${kind}:${senderId}`;
+    const recent = (this.sent.get(bucket) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+    if (recent.length >= (kind === 'intent' ? INTENT_RATE_MAX : RATE_MAX)) {
+      this.sent.set(bucket, recent);
       return false;
     }
     recent.push(now);
-    this.sent.set(senderId, recent);
+    this.sent.set(bucket, recent);
     return true;
   }
 }
