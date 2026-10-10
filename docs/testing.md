@@ -9,21 +9,21 @@ The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It i
 - `npm ci` and `npm run build` in this repo. `playwright-core` is a dev dependency and downloads no browser; the harness uses the system Chrome (channel `chrome`), or the binary named by `CHROME_PATH` (`AGENT_GATEWAY_E2E_CHANNEL` selects another channel, for example `chromium`). Set `AGENT_GATEWAY_E2E_INSECURE_TLS=1` only if Chrome does not trust the Foundry certificate.
 - Optional `~/.config/agent-gateway/test.env` (`KEY=value` lines). The environment overrides it.
 
-| Key | Default |
-| --- | --- |
-| `FOUNDRY_URL` | `https://foundry.local` |
-| `FOUNDRY_WORLD` | `test-world` |
-| `FOUNDRY_GM_USER` | `dev-gm` |
-| `FOUNDRY_PLAYER_USER` | `player1` |
-| `FOUNDRY_PLAYER2_USER` | `player2` |
-| `FOUNDRY_GM_PASSWORD` | unset; filled only for the GM user, and only when set |
-| `FOUNDRY_PLAYER_PASSWORD` | unset; filled only for the player user |
-| `FOUNDRY_PLAYER2_PASSWORD` | unset; filled only for the second player |
-| `AGENT_GATEWAY_E2E_LINK_PORT` | `7429` (never `7420`, the dev port) |
-| `AGENT_GATEWAY_E2E_V13_URL` | unset; enables `--foundry v13` |
-| `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S` | `300`; how long setup waits for a human |
+| Key                                   | Default                                                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `FOUNDRY_URL`                         | `https://foundry.local`                                                                                     |
+| `FOUNDRY_WORLD`                       | `test-world`                                                                                                |
+| `FOUNDRY_GM_USER`                     | `dev-gm`                                                                                                    |
+| `FOUNDRY_PLAYER_USER`                 | `player1`                                                                                                   |
+| `FOUNDRY_PLAYER2_USER`                | `player2`                                                                                                   |
+| `FOUNDRY_GM_PASSWORD`                 | unset; filled only for the GM user, and only when set                                                       |
+| `FOUNDRY_PLAYER_PASSWORD`             | unset; filled only for the player user                                                                      |
+| `FOUNDRY_PLAYER2_PASSWORD`            | unset; filled only for the second player                                                                    |
+| `AGENT_GATEWAY_E2E_LINK_PORT`         | `7429` (never `7420`, the dev port)                                                                         |
+| `AGENT_GATEWAY_E2E_V13_URL`           | unset; enables `--foundry v13`                                                                              |
+| `AGENT_GATEWAY_E2E_PAIR_TIMEOUT_S`    | `300`; how long setup waits for a human                                                                     |
 | `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `20`; the most one user's wait for a stored pairing to connect may take (the two users share a 43 s budget) |
-| `AGENT_GATEWAY_E2E_HEADED` | `1` shows the browsers during seed, clean and runs |
+| `AGENT_GATEWAY_E2E_HEADED`            | `1` shows the browsers during seed, clean and runs                                                          |
 
 Keep passwords out of the repo; they belong in the environment or `test.env`. The old single `FOUNDRY_PASSWORD` is no longer read: if it is set, the harness prints a one-line warning and ignores it. A password variable that is defined but empty in the environment means "no password" and overrides a value in `test.env`.
 
