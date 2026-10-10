@@ -21,8 +21,8 @@ in the same commit.
 
 The tool-pack foundation is implemented on local branches and integrated in the
 20f tree. This entry records implementation and verification, **not merged or
-published completion**. Source-upload and live browser-delivery approval
-questions are pending Andrew's answer. Preserve the task files and worktrees;
+published completion**. Andrew subsequently approved the 20b source upload
+and live v14 checks; approval does not extend to publishing the other branches. Preserve the task files and worktrees;
 do not archive them while acceptance, publication and review remain open.
 
 | Task | Verified local commit | Independent verification | Review / live evidence |
@@ -30,7 +30,7 @@ do not archive them while acceptance, publication and review remain open.
 | 20b | `5790043` | PASS: 2,226 fast + 2,227 slow | Code review PASS; runtime schema/name/plain-text rules, bounded argument validator and vendor naming documentation |
 | 20c | `ca82e63` | PASS: 2,253 fast + 2,227 slow | Code review PASS; v14 final read suite 21 passed, zero leaks; unified registry with private handlers and synchronous core parity |
 | 20d | `669672e` | PASS: 2,295 fast + 2,227 slow | Code review PASS; frozen registration API, lifecycle seal, isolated context and validated pack results |
-| 20e | `438e447` | PASS: 2,281 fast + 2,227 slow | Code review PASS; dynamic definitions/provenance and gateway argument checks; exact-bundle live evidence pending |
+| 20e | `438e447` | PASS: 2,281 fast + 2,227 slow | Code review PASS; dynamic definitions/provenance and gateway argument checks; exact-bundle v14.369 read/role suite PASS (21 tests, zero leaks) |
 | 20f | `dfd8a04` | Integrated independent verify PASS: 2,335 fast + 2,227 slow | Code review PASS; free Hello Pack and reconciled author docs; enabled/disabled live evidence pending |
 
 20f's integrated verification covers the assembled predecessors; its final docs
@@ -45,18 +45,29 @@ audit mutation options.
 
 Publication state: contract PR #42 (`08c8325`) is published, not merged. Local
 20c incorporates its contract corrections and necessary cycle-breaking scope
-amendments. Runtime-rules PR #43 remains at published `b0386c5`; local fixes at
-`5790043` have not been uploaded. The remaining implementation branches and
+amendments. After Andrew explicitly approved the upload, runtime-rules PR #43
+was updated and its remote head verified as
+`57900438e3777d120903fde309cd0c490bc96795`; it is not merged. The remaining implementation branches and
 this recording branch remain local. Every implementation still lands through
 its own PR to `main`, reviewed by Andrew; predecessor commits identify the
 per-task review boundary.
 
-Pending live work: deliver the exact 20e bundle and run its v14 checks, then
-install/activate Hello Pack and run both `AGENT_GATEWAY_E2E_HELLO_PACK=1` and
-`AGENT_GATEWAY_E2E_HELLO_PACK=disabled` with the required world relaunch. Automatic
-approval review blocked live browser delivery/automation; approval was requested
-and has no answer. The older deployed bundle returned `WORLD_OFFLINE`, so no
-new-bundle pass is claimed. Foundry v13 evidence remains pending its instance.
+After Andrew approved live v14 checks, task 20e's exact bundle passed on
+Foundry v14.369: three files, 21 tests (GM 6, player 11, roles 4), seven tools
+for GM and player; 20 results × 21 hidden strings yielded zero leaks. Bundle
+SHA-256: `282e5bff8cc0b4a3adf0b39e0f97cf33f85f64b9e8ceaa1e7459de045da989e5`.
+This supersedes the earlier delivery-approval block and older deployed bundle's
+`WORLD_OFFLINE`; neither is a remaining blocker or evidence against this bundle.
+
+The genuine Foundry v14.369 browser runtime `game.modules` probe confirmed
+`agent-gateway-hello-pack`: installed `false`, active `false`, version `null`.
+The manifest URL also returned 404. No enabled/disabled pack acceptance run is
+claimed; absence alone is not an enabled-to-disabled lifecycle test.
+
+Pending live pack work: install and activate Hello Pack, run
+`AGENT_GATEWAY_E2E_HELLO_PACK=1`, then have Andrew disable it and relaunch for
+`AGENT_GATEWAY_E2E_HELLO_PACK=disabled`. Foundry v13 evidence remains pending
+its instance.
 No task files were moved and no worktrees were removed.
 
 Author docs distinguish project publishing requirements from primary-source
