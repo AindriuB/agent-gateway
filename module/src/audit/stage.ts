@@ -3,6 +3,7 @@ import { TOOLS } from '@agent-gateway/protocol';
 import { fromUuidCompat } from '../compat/index.js';
 import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
+import { assertNotAudit } from './guard.js';
 import { submitAudit } from './sink.js';
 import { boundedJson, jsonSize, newEntryId, safeText } from './record.js';
 import {
@@ -63,6 +64,8 @@ class Snapshots {
   snapshot(uuid: string): Promise<void> {
     return this.add(uuid, async () => {
       const doc = await this.lookup(uuid);
+      // The write-side guard: a handler cannot snapshot (so cannot change) the audit log.
+      if (doc) assertNotAudit(doc);
       if (!doc) return blank(uuid, false);
       let before: Record<string, unknown> | null = null;
       let note = '';

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { isAuditDocument } from '../audit/guard.js';
 import { fromUuidCompat } from '../compat/index.js';
 import { folderAllowed } from '../policy/folders.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
@@ -169,6 +170,8 @@ export function clearDocumentCache(): void {
 function readable(doc: any, user: any): VisibleNode | undefined {
   let root = doc;
   while (root.parent) root = root.parent;
+  // The audit log is closed to tools for every user, GMs included (see rootVisible).
+  if (isAuditDocument(root)) return undefined;
   // Outside the GM's folder allowlist reads as missing, same as a hidden document (never FORBIDDEN,
   // which would confirm it exists). Checked on the root so embedded uuids agree with search.
   if (!folderAllowed(root, user.isGM === true)) return undefined;

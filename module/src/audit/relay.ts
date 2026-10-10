@@ -9,7 +9,8 @@ export interface RelayDeps {
   /** The designated active GM, the one client that writes relayed entries. */
   activeGMId(): string | null;
   isUserGM(id: string): boolean;
-  emit(msg: Msg): void;
+  /** Send to these users only (the server enforces `recipients`); never broadcast. */
+  emit(msg: Msg, recipients: string[]): void;
   /** GM side: check a record from `senderId`, then write it to the journal. */
   write(record: AuditRecord, senderId: string): Promise<void>;
   setTimer(fn: () => void, ms: number): unknown;
@@ -62,8 +63,11 @@ export class AuditRelay {
       this.timer = null;
     }
     if (this.buffer.size === 0) return;
-    if (this.deps.activeGMId()) {
-      for (const record of this.buffer.values()) this.deps.emit({ kind: 'audit.entry', record });
+    const gm = this.deps.activeGMId();
+    if (gm) {
+      for (const record of this.buffer.values()) {
+        this.deps.emit({ kind: 'audit.entry', record }, [gm]);
+      }
     }
     this.timer = this.deps.setTimer(() => {
       this.timer = null;
@@ -94,20 +98,26 @@ export class AuditRelay {
     if (msg.kind !== 'audit.entry') return;
     if (!this.deps.isGM() || this.deps.activeGMId() !== this.deps.selfId()) return;
     if (senderId === this.deps.selfId()) return;
-    const record = sanitiseRecord(msg.record, {
-      userId: senderId,
-      timestamp: this.deps.now(),
-      relayed: true,
-    });
-    if (!record) return;
-    if (this.seen.has(record.entryId)) {
-      this.deps.emit({ kind: 'audit.ack', id: record.entryId });
+    // Cheap checks first: nothing below parses, copies or stringifies the payload until the
+    // sender is inside its rate limit. A resent record that was already written costs one lookup.
+    const peek =
+      typeof msg.record === 'object' && msg.record !== null
+        ? (msg.record as { entryId?: unknown }).entryId
+        : undefined;
+    if (typeof peek === 'string' && this.seen.has(peek)) {
+      this.deps.emit({ kind: 'audit.ack', id: peek }, [senderId]);
       return;
     }
     if (!this.allow(senderId)) {
       console.warn(`agent-gateway | audit relay rate limit: dropped a record from ${senderId}`);
       return;
     }
+    const record = sanitiseRecord(msg.record, {
+      userId: senderId,
+      timestamp: this.deps.now(),
+      relayed: true,
+    });
+    if (!record) return;
     try {
       await this.deps.write(record, senderId);
     } catch (err) {
@@ -116,7 +126,7 @@ export class AuditRelay {
     }
     this.seen.add(record.entryId);
     if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value as string);
-    this.deps.emit({ kind: 'audit.ack', id: record.entryId });
+    this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
   }
 
   private allow(senderId: string): boolean {

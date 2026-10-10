@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ensureAuditJournal,
   pageData,
-  verifyRelayedTargets,
+  findAuditJournal,
+  registerAuditSettings,
   writeAuditEntry,
 } from '../../src/audit/journal.js';
 import { createAuditModel } from '../../src/audit/model.js';
@@ -17,7 +18,26 @@ let stub: FoundryStub;
 let created: any[];
 let journals: any[];
 
-function world(isGM: boolean, existing: any[] = []) {
+const FLAG = { 'agent-gateway': { auditJournal: true } };
+const USERS = [
+  { id: 'gm1', isGM: true },
+  { id: 'p1', isGM: false },
+  { id: 'p2', isGM: false },
+];
+
+/** A journal as Foundry would hold it. `sees` lists non-GM users with access. */
+const fakeJournal = (id: string, over: any = {}) => ({
+  id,
+  name: 'Agent Gateway Audit',
+  flags: FLAG,
+  ownership: { default: 0 },
+  _stats: { createdBy: 'gm1' },
+  testUserPermission: (u: any) => (over.sees ?? []).includes(u.id),
+  pages: { contents: [] as any[] },
+  ...over,
+});
+
+function world(isGM: boolean, existing: any[] = [], storedId = '') {
   stub = installFoundry(14);
   const g = globalThis as any;
   created = [];
@@ -28,12 +48,7 @@ function world(isGM: boolean, existing: any[] = []) {
   };
   g.getDocumentClass = () => ({
     create: async (d: any) => {
-      const j = {
-        ...d,
-        id: `j${journals.length}`,
-        pages: { contents: [] as any[] },
-        ownership: d.ownership,
-      };
+      const j: any = fakeJournal(`j${journals.length + 1}`, { ...d, _stats: { createdBy: 'gm1' } });
       j.createEmbeddedDocuments = async (_n: string, data: any[]) => {
         created.push(...data);
         j.pages.contents.push(...data.map((x) => ({ system: x.system })));
@@ -43,14 +58,18 @@ function world(isGM: boolean, existing: any[] = []) {
     },
   });
   Object.assign(g.game, {
-    user: { id: 'u1', isGM },
+    user: { id: isGM ? 'gm1' : 'p1', isGM },
+    users: { contents: USERS, get: (id: string) => USERS.find((u) => u.id === id) },
     i18n: { localize: (k: string) => (k.endsWith('journalName') ? 'Agent Gateway Audit' : k) },
     journal: {
       get contents() {
         return journals;
       },
+      get: (id: string) => journals.find((j) => j.id === id),
     },
   });
+  registerAuditSettings();
+  if (storedId) g.game.settings.set('agent-gateway', 'auditJournalId', storedId);
 }
 afterEach(() => {
   stub?.uninstall();
@@ -59,7 +78,7 @@ afterEach(() => {
 beforeEach(() => vi.restoreAllMocks());
 
 describe('audit journal', () => {
-  it('a GM client creates it once, with default ownership NONE and the identifying flag', async () => {
+  it('a GM client creates it once, default ownership NONE, flagged, and records its id in a world setting', async () => {
     world(true);
     const [a, b] = await Promise.all([ensureAuditJournal(), ensureAuditJournal()]);
     expect(journals).toHaveLength(1);
@@ -69,6 +88,11 @@ describe('audit journal', () => {
       ownership: { default: 0 },
       flags: { 'agent-gateway': { auditJournal: true } },
     });
+    const reg = stub.registeredSettings.get('agent-gateway.auditJournalId')!;
+    expect(reg).toMatchObject({ scope: 'world', config: false });
+    expect((globalThis as any).game.settings.get('agent-gateway', 'auditJournalId')).toBe(
+      journals[0].id,
+    );
     await ensureAuditJournal();
     expect(journals).toHaveLength(1);
   });
@@ -79,20 +103,44 @@ describe('audit journal', () => {
     expect(journals).toHaveLength(0);
   });
 
-  it('finds an existing one by its flag, not its name, and warns when its ownership was raised', async () => {
+  it('a flagged journal planted by a player with a low id is ignored; the real one is created and used', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    world(true, [
-      { id: 'x', name: 'Agent Gateway Audit', flags: {} },
-      {
-        id: 'y',
-        name: 'Renamed',
-        flags: { 'agent-gateway': { auditJournal: true } },
-        ownership: { default: 2 },
-      },
-    ]);
-    expect((await ensureAuditJournal()).id).toBe('y');
+    const forged = fakeJournal('0000aaaa', { _stats: { createdBy: 'p1' } });
+    world(true, [forged]);
+    const real = await ensureAuditJournal();
+    expect(real.id).not.toBe('0000aaaa');
     expect(journals).toHaveLength(2);
+    expect(findAuditJournal()).toBe(real);
+    await writeAuditEntry(record());
+    expect(forged.pages.contents).toHaveLength(0);
+    expect(real.pages.contents).toHaveLength(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a flagged journal is not trusted unless it is the stored id, GM-created and closed to every non-GM', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const bad of [
+      fakeJournal('x1', { _stats: { createdBy: 'p1' } }),
+      fakeJournal('x1', { _stats: {} }),
+      fakeJournal('x1', { sees: ['p2'] }),
+      fakeJournal('x1', { ownership: { default: 2 } }),
+      fakeJournal('x1', { flags: {} }),
+    ]) {
+      world(true, [bad], 'x1');
+      expect(findAuditJournal()).toBeNull();
+      // Never silently replaced: the named journal exists, so no second one is made.
+      expect(await ensureAuditJournal()).toBeNull();
+      expect(journals).toHaveLength(1);
+      stub.uninstall();
+    }
     expect(warn).toHaveBeenCalled();
+    world(true, [fakeJournal('x1')], 'x1');
+    expect(findAuditJournal()?.id).toBe('x1');
+    // A journal that is flagged but not the stored id is never used even when it looks fine.
+    world(true, [fakeJournal('x1'), fakeJournal('x2')], 'x1');
+    expect(findAuditJournal()?.id).toBe('x1');
+    world(true, [fakeJournal('x2')], '');
+    expect(findAuditJournal()).toBeNull();
   });
 
   it('writes a record as an audit-subtype page once per entry id', async () => {
@@ -114,40 +162,10 @@ describe('audit journal', () => {
     ) as any;
     expect(typeof d.system.targets[0].before).toBe('string');
   });
-});
 
-describe('relayed targets are verified', () => {
-  const sender = { id: 'p1' };
-  const docs: Record<string, any> = {
-    'Actor.mine': { canUserModify: () => true },
-    'Actor.theirs': { canUserModify: () => false },
-    'Actor.parent': { canUserModify: () => true },
-  };
-  const lookup = async (u: string) => docs[u] ?? null;
-
-  it('keeps undo only for documents the sender may modify', async () => {
-    const r = await verifyRelayedTargets(
-      record({ targets: [target({ uuid: 'Actor.mine' }), target({ uuid: 'Actor.theirs' })] }),
-      sender,
-      lookup,
-    );
-    expect(r.targets.map((t) => t.undoable)).toEqual([true, false]);
-  });
-
-  it('a deleted target needs the parent or the snapshot to show the sender owned it', async () => {
-    const r = await verifyRelayedTargets(
-      record({
-        targets: [
-          target({ uuid: 'Actor.parent.Item.i1' }),
-          target({ uuid: 'Actor.gone1', before: { ownership: { default: 0 } } }),
-          target({ uuid: 'Actor.gone2', before: { ownership: { p1: 3 } } }),
-          target({ uuid: 'Actor.gone3', before: { ownership: { p1: 3 } } }),
-        ],
-      }),
-      sender,
-      lookup,
-    );
-    expect(r.targets.map((t) => t.undoable)).toEqual([true, false, true, true]);
+  it('stores a relayed record view-only: no snapshot, never undoable', () => {
+    const d = pageData(record({ relayed: true, targets: [target({ undoable: true })] })) as any;
+    expect(d.system.targets[0]).toMatchObject({ before: '', undoable: false });
   });
 });
 

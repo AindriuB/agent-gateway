@@ -6,6 +6,7 @@ import { record } from './fake.js';
 
 function rig(self: { id: string; gm: boolean }, world: { activeGM: string | null; gms: string[] }) {
   const sent: unknown[] = [];
+  const recipients: string[][] = [];
   const written: Array<{ record: AuditRecord; sender: string }> = [];
   const timers: Array<{ fn: () => void; ms: number; live: boolean }> = [];
   let now = 1_000_000;
@@ -14,7 +15,7 @@ function rig(self: { id: string; gm: boolean }, world: { activeGM: string | null
     isGM: () => self.gm,
     activeGMId: () => world.activeGM,
     isUserGM: (id) => world.gms.includes(id),
-    emit: (m) => void sent.push(m),
+    emit: (m, to) => (sent.push(m), void recipients.push(to)),
     write: async (r, sender) => void written.push({ record: r, sender }),
     setTimer: (fn, ms) => {
       const t = { fn, ms, live: true };
@@ -27,6 +28,7 @@ function rig(self: { id: string; gm: boolean }, world: { activeGM: string | null
   return {
     relay: new AuditRelay(deps),
     sent,
+    recipients,
     written,
     timers,
     tick: (ms: number) => (now += ms),
@@ -201,5 +203,82 @@ describe('audit relay: GM side', () => {
     g.tick(61_000);
     await g.relay.onMessage(entry({ entryId: 'entry-later-one' }), 'p1');
     expect(g.written).toHaveLength(62);
+  });
+});
+
+describe('audit relay: who receives what', () => {
+  /** A model of the server's `recipients` handling: a message reaches only the listed users. */
+  function bus() {
+    const inbox: Record<string, unknown[]> = { gm1: [], p1: [], p2: [] };
+    const emitFrom = (m: unknown, to: string[]) => to.forEach((u) => inbox[u]?.push(m));
+    return { inbox, emitFrom };
+  }
+  const mk = (id: string, gm: boolean, emitFrom: (m: unknown, to: string[]) => void) =>
+    new AuditRelay({
+      selfId: () => id,
+      isGM: () => gm,
+      activeGMId: () => 'gm1',
+      isUserGM: (u) => u === 'gm1',
+      emit: emitFrom as RelayDeps['emit'],
+      write: async () => {},
+      setTimer: () => 0,
+      clearTimer: () => {},
+      now: () => 1,
+    });
+
+  it('a relayed record goes only to the active GM, and the ack only to its sender', async () => {
+    const b = bus();
+    const player = mk('p1', false, b.emitFrom);
+    const gm = mk('gm1', true, b.emitFrom);
+    await player.submit(record());
+    expect(b.inbox.gm1).toHaveLength(1);
+    expect(b.inbox.p2).toEqual([]);
+    expect(b.inbox.p1).toEqual([]);
+    await gm.onMessage(b.inbox.gm1[0], 'p1');
+    expect(b.inbox.p1).toEqual([{ kind: 'audit.ack', id: 'entry-0000001' }]);
+    expect(b.inbox.p2).toEqual([]);
+  });
+
+  it('keeps no snapshot from a relayed record, whatever it sends', async () => {
+    const g = rig({ id: 'gm1', gm: true }, { activeGM: 'gm1', gms: ['gm1'] });
+    await g.relay.onMessage(
+      {
+        kind: 'audit.entry',
+        record: {
+          ...record(),
+          targets: [{ uuid: 'Actor.a', existed: true, undoable: true, before: { role: 4 } }],
+        },
+      },
+      'p1',
+    );
+    expect(g.written[0]!.record.targets[0]).toMatchObject({ before: null, undoable: false });
+    expect(g.written[0]!.record.targets[0]!.note).toContain("undo from that player's client");
+  });
+
+  it('applies the rate limit before reading anything from the payload', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const g = rig({ id: 'gm1', gm: true }, { activeGM: 'gm1', gms: ['gm1'] });
+    let reads = 0;
+    const hostile = (i: number) =>
+      new Proxy(
+        { ...record({ entryId: `entry-${String(i).padStart(8, '0')}` }) } as Record<
+          string,
+          unknown
+        >,
+        {
+          get: (t, k) => {
+            if (k !== 'entryId') reads += 1;
+            return t[k as string];
+          },
+          ownKeys: (t) => (reads++, Reflect.ownKeys(t)),
+        },
+      );
+    for (let i = 0; i < 60; i++)
+      await g.relay.onMessage({ kind: 'audit.entry', record: hostile(i) }, 'p1');
+    const before = reads;
+    for (let i = 100; i < 150; i++)
+      await g.relay.onMessage({ kind: 'audit.entry', record: hostile(i) }, 'p1');
+    expect(reads).toBe(before);
+    expect(g.written).toHaveLength(60);
   });
 });

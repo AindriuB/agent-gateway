@@ -81,6 +81,7 @@
       "user": "User",
       "agent": "Agent",
       "relayed": "relayed from a player client",
+      "relayedNoUndo": "Made by a player's agent; undo from that player's client.",
       "args": "Arguments",
       "truncated": "cut",
       "notUndoable": "cannot be undone",

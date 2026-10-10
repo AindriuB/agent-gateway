@@ -67,12 +67,21 @@ describe('the audit journal is GM-only through our own read tools', () => {
     }
   });
 
-  it('a GM can read it, so the player result above is the ownership check and not a broken fixture', async () => {
+  it('is closed to tools for GMs too, so an agent cannot read or tamper with the log', async () => {
     world();
-    const s = await call('document_search', { type: 'JournalEntry' }, gmUser);
-    expect(json(s)).toContain('Agent Gateway Audit');
-    const g = await call('document_get', { uuid: 'JournalEntry.aj1.JournalEntryPage.pg1' }, gmUser);
-    expect(json(g)).toContain(MARK);
+    const search = await call('document_search', { type: 'JournalEntry' }, gmUser);
+    expect(json(search)).not.toContain('Agent Gateway Audit');
+    for (const uuid of ['JournalEntry.aj1', 'JournalEntry.aj1.JournalEntryPage.pg1']) {
+      const r = await call('document_get', { uuid }, gmUser);
+      expect(r).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+      expect(json(r)).not.toContain(MARK);
+    }
+  });
+
+  it('a GM still reads an ordinary journal (the exclusion is not a blanket)', async () => {
+    world([], false);
+    const r = await call('document_search', { type: 'JournalEntry' }, gmUser);
+    expect(json(r)).toContain('Agent Gateway Audit');
   });
 
   it('stays hidden from players even if the default ownership is raised by mistake', async () => {

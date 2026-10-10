@@ -19,6 +19,8 @@ function rig(over: Partial<UndoDeps> = {}) {
   const confirm = vi.fn(async () => true);
   const deps: Partial<UndoDeps> = {
     isGM: () => true,
+    canModify: () => true,
+    canCreate: () => true,
     userId: () => 'gm1',
     fromUuid: store.fromUuid,
     now: () => 777,
@@ -171,5 +173,110 @@ describe('undoEntry', () => {
       deps,
     );
     expect(order).toEqual(['B', 'A']);
+  });
+
+  it('refuses a relayed record outright, whatever its stored targets say', async () => {
+    const { store, confirm, deps } = rig();
+    const doc = store.add(writable('Actor.a1', {}, 10, store));
+    const page = makePage([target()], { relayed: true });
+    expect((await undoEntry(page, confirm, deps)).status).toBe('refused');
+    expect(doc.calls.update).toEqual([]);
+    expect(doc.calls.deleted).toBe(0);
+  });
+
+  it('never creates, updates or deletes a class outside the allowlist (User, Setting, Macro)', async () => {
+    const { store, confirm, deps } = rig();
+    const created: unknown[] = [];
+    (globalThis as any).getDocumentClass = () => ({
+      create: async (d: unknown) => void created.push(d),
+    });
+    const user = store.add(writable('User.u1', {}, 10, store));
+    const macro = store.add(writable('Macro.m1', {}, 10, store));
+    const page = makePage([
+      target({
+        uuid: 'User.gone',
+        before: { _id: 'gone', role: 4 },
+        existsAfter: false,
+        afterModifiedTime: null,
+      }),
+      target({
+        uuid: 'Setting.s1',
+        before: { key: 'core.x' },
+        existsAfter: false,
+        afterModifiedTime: null,
+      }),
+      target({ uuid: 'Macro.m1', existed: false, before: null, afterModifiedTime: 10 }),
+      target({ uuid: 'User.u1', afterModifiedTime: 10 }),
+      target({
+        uuid: 'Actor.a1.Macro.m2',
+        before: { _id: 'm2' },
+        existsAfter: false,
+        afterModifiedTime: null,
+      }),
+    ]);
+    const out = await undoEntry(page, confirm, deps);
+    expect(created).toEqual([]);
+    expect(user.calls.update).toEqual([]);
+    expect(macro.calls.deleted).toBe(0);
+    expect(out.skipped).toHaveLength(5);
+    delete (globalThis as any).getDocumentClass;
+  });
+
+  it('checks the acting GM may update, delete and create, and reports a failure', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { store, confirm, deps } = rig({ canModify: () => false, canCreate: () => false });
+    const a = store.add(writable('Actor.a1', {}, 10, store));
+    const b = store.add(writable('Actor.b1', {}, 10, store));
+    (globalThis as any).getDocumentClass = () => ({
+      create: async () => void a.calls.update.push({ data: 'created', opts: {} }),
+    });
+    const page = makePage([
+      target({ uuid: 'Actor.a1' }),
+      target({ uuid: 'Actor.b1', existed: false, before: null }),
+      target({
+        uuid: 'Actor.gone',
+        before: { _id: 'gone' },
+        existsAfter: false,
+        afterModifiedTime: null,
+      }),
+    ]);
+    const out = await undoEntry(page, confirm, deps);
+    expect(out.status).toBe('failed');
+    expect(out.failed).toHaveLength(3);
+    expect(a.calls.update).toEqual([]);
+    expect(b.calls.deleted).toBe(0);
+    delete (globalThis as any).getDocumentClass;
+  });
+
+  it('a second undo of the same entry while one is running does nothing', async () => {
+    const { store, confirm, deps } = rig();
+    const doc = store.add(writable('Actor.a1', {}, 10, store));
+    let release!: () => void;
+    doc.update = async () => {
+      doc.calls.update.push({ data: 1, opts: 1 });
+      await new Promise<void>((r) => (release = r));
+    };
+    const page = makePage([target()]);
+    page.id = 'pg1';
+    const first = undoEntry(page, confirm, deps);
+    await new Promise((r) => setTimeout(r, 5));
+    expect((await undoEntry(page, confirm, deps)).status).toBe('busy');
+    release();
+    expect((await first).status).toBe('done');
+    expect(doc.calls.update).toHaveLength(1);
+    expect((await undoEntry(makePage([target()], { undoneAt: 1 }), confirm, deps)).status).toBe(
+      'refused',
+    );
+  });
+
+  it('never touches an audit document', async () => {
+    const { store, confirm, deps } = rig();
+    const j = store.add(writable('JournalEntry.aj', { flags: {} }, 10, store));
+    j.flags = { 'agent-gateway': { auditJournal: true } };
+    const page = makePage([
+      target({ uuid: 'JournalEntry.aj', existed: false, before: null, afterModifiedTime: 10 }),
+    ]);
+    expect((await undoEntry(page, confirm, deps)).skipped).toEqual(['JournalEntry.aj']);
+    expect(j.calls.deleted).toBe(0);
   });
 });

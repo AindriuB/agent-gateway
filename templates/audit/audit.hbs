@@ -12,6 +12,8 @@
           <time>{{time}}</time>
           {{#if undone}}
             <span class="undone-note">{{localize "AGENT_GATEWAY.Audit.undone"}} {{undoneTime}}</span>
+          {{else if relayed}}
+            <span class="undone-note">{{localize "AGENT_GATEWAY.Audit.relayedNoUndo"}}</span>
           {{else if canUndo}}
             <button type="button" data-action="undo" data-page-id="{{id}}">
               <i class="fa-solid fa-rotate-left"></i> {{localize "AGENT_GATEWAY.Audit.undo"}}

@@ -43,9 +43,20 @@ export function notifyOutcome(o: UndoOutcome): void {
     ui.notifications.error(
       i18n.format('AGENT_GATEWAY.Audit.undoFailed', { count: o.failed.length }),
     );
-  } else if (o.status === 'refused') {
+  } else if (o.status === 'refused' || o.status === 'busy') {
     ui.notifications.warn(i18n.localize('AGENT_GATEWAY.Audit.undoRefused'));
   }
+}
+
+/** The entries shown: pages of the trusted audit journal only, newest first. */
+export function listEntries(): ReturnType<typeof entryView>[] {
+  const journal = findAuditJournal();
+  const pages: any[] = Array.from(journal?.pages?.contents ?? []);
+  return pages
+    .filter((p) => p.type === 'agent-gateway.audit')
+    .sort((a, b) => Number(b.system?.timestamp ?? 0) - Number(a.system?.timestamp ?? 0))
+    .slice(0, SHOWN_ENTRIES)
+    .map(entryView);
 }
 
 /** Built lazily: the ApplicationV2 base class only exists once Foundry has initialised. */
@@ -70,13 +81,7 @@ export function createAuditApp(): any {
     private hookIds: Array<[string, number]> = [];
 
     async _prepareContext(): Promise<object> {
-      const journal = findAuditJournal();
-      const pages: any[] = Array.from(journal?.pages?.contents ?? []);
-      const entries = pages
-        .filter((p) => p.type === 'agent-gateway.audit')
-        .sort((a, b) => Number(b.system?.timestamp ?? 0) - Number(a.system?.timestamp ?? 0))
-        .slice(0, SHOWN_ENTRIES)
-        .map(entryView);
+      const entries = listEntries();
       return { entries, empty: entries.length === 0 };
     }
 

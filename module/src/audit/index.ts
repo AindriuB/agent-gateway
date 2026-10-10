@@ -6,7 +6,7 @@ import { setAuditSink } from './sink.js';
 import {
   ensureAuditJournal,
   findAuditJournal,
-  verifyRelayedTargets,
+  registerAuditSettings,
   writeAuditEntry,
 } from './journal.js';
 import { AUDIT_NS, AUDIT_SOCKET, AUDIT_TYPE } from './types.js';
@@ -29,6 +29,7 @@ export function getAuditRelay(): AuditRelay | null {
 function initAudit(): void {
   // Outside Foundry (unit tests that import main) there is nothing to register.
   if (typeof CONFIG === 'undefined' || !foundry?.abstract?.TypeDataModel) return;
+  registerAuditSettings();
   CONFIG.JournalEntryPage.dataModels[AUDIT_TYPE] = createAuditModel();
   CONFIG.JournalEntryPage.typeLabels[AUDIT_TYPE] = 'AGENT_GATEWAY.Audit.typeLabel';
   game.settings.registerMenu(AUDIT_NS, 'audit', {
@@ -50,14 +51,9 @@ function readyAudit(): void {
     isGM: () => game.user.isGM === true,
     activeGMId: () => game.users.activeGM?.id ?? null,
     isUserGM: (id) => game.users.get(id)?.isGM === true,
-    emit: (msg) => game.socket.emit(AUDIT_SOCKET, msg),
-    write: async (record, senderId) => {
-      if (record.relayed) {
-        const sender = game.users.get(senderId);
-        if (!sender) throw new Error('unknown sender');
-        await writeAuditEntry(await verifyRelayedTargets(record, sender));
-      } else await writeAuditEntry(record);
-    },
+    emit: (msg, recipients) => game.socket.emit(AUDIT_SOCKET, msg, { recipients }),
+    // Relayed records are written as view-only (sanitiseRecord and pageData both enforce it).
+    write: async (record) => void (await writeAuditEntry(record)),
     setTimer: (fn, ms) => setTimeout(fn, ms),
     clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
     now: () => Date.now(),

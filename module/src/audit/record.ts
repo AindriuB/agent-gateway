@@ -101,12 +101,31 @@ const UUID_OK = /^[A-Za-z0-9_.-]+$/;
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** One target from anywhere (a handler or a socket), reduced to the allowed shape and sizes. */
-export function sanitiseTarget(raw: unknown, budget: { chars: number }): AuditTarget | null {
+/** The note on every target of a record that came from a player's client. */
+export const RELAYED_NOTE = "made by a player's agent; undo from that player's client";
+
+/**
+ * One target from anywhere (a handler or a socket), reduced to the allowed shape and sizes. A
+ * `viewOnly` target (anything relayed from a player client) keeps its uuid and states but never a
+ * snapshot, and is never undoable: an undo applies only a snapshot the acting user's own client took.
+ */
+export function sanitiseTarget(
+  raw: unknown,
+  budget: { chars: number },
+  viewOnly = false,
+): AuditTarget | null {
   if (!isObject(raw)) return null;
   const uuid = typeof raw.uuid === 'string' ? raw.uuid : '';
   if (!uuid || uuid.length > L.uuid || !UUID_OK.test(uuid)) return null;
   const existed = raw.existed === true;
+  const mod = raw.afterModifiedTime;
+  const base = {
+    uuid,
+    existed,
+    existsAfter: raw.existsAfter === true,
+    afterModifiedTime: typeof mod === 'number' && Number.isFinite(mod) ? mod : null,
+  };
+  if (viewOnly) return { ...base, before: null, undoable: false, note: RELAYED_NOTE };
   let before: Record<string, unknown> | null = null;
   let undoable = raw.undoable === true;
   let note = safeText(raw.note, L.label);
@@ -125,16 +144,11 @@ export function sanitiseTarget(raw: unknown, budget: { chars: number }): AuditTa
       note ||= 'no snapshot';
     }
   }
-  const mod = raw.afterModifiedTime;
-  return {
-    uuid,
-    existed,
-    before,
-    existsAfter: raw.existsAfter === true,
-    afterModifiedTime: typeof mod === 'number' && Number.isFinite(mod) ? mod : null,
-    undoable,
-    note,
-  };
+  if (uuid.startsWith('Compendium.')) {
+    undoable = false;
+    note ||= 'compendium documents are not undone';
+  }
+  return { ...base, before, undoable, note };
 }
 
 export interface RecordForce {
@@ -162,7 +176,7 @@ export function sanitiseRecord(raw: unknown, force: RecordForce): AuditRecord | 
   const list = Array.isArray(raw.targets) ? raw.targets : [];
   const targets: AuditTarget[] = [];
   for (const t of list.slice(0, L.targets)) {
-    const clean = sanitiseTarget(t, budget);
+    const clean = sanitiseTarget(t, budget, force.relayed);
     if (clean) targets.push(clean);
   }
   return {

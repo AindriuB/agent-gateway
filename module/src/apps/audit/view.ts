@@ -95,6 +95,6 @@ export function entryView(page: any): EntryView {
     targetsDropped: Number(s.targetsDropped) > 0 ? Math.floor(Number(s.targetsDropped)) : 0,
     undone,
     undoneTime: undone ? when(s.undoneAt) : '',
-    canUndo: !undone && targets.some((t) => t.undoable),
+    canUndo: !undone && s.relayed !== true && targets.some((t) => t.undoable),
   };
 }
