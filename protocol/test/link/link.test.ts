@@ -1,3 +1,4 @@
+import { TOOLS, toJsonSchema } from '../../src/tools/index.js';
 import { describe, expect, it } from 'vitest';
 import {
   ErrorCode,
@@ -43,7 +44,18 @@ const samples: LinkMessage[] = [
   { type: 'error', id: '1', code: 'WORLD_OFFLINE', message: 'off' },
   { type: 'ping' },
   { type: 'pong' },
-  { type: 'toolset', tools: ['world_info'] },
+  {
+    type: 'toolset',
+    tools: [
+      {
+        name: TOOLS[0]!.name,
+        description: TOOLS[0]!.description,
+        category: TOOLS[0]!.category,
+        minRole: TOOLS[0]!.minRole,
+        ...toJsonSchema(TOOLS[0]!),
+      },
+    ],
+  },
 ];
 
 describe('parseLinkMessage', () => {
@@ -126,5 +138,36 @@ describe('checkCompat', () => {
 
   it('refuses unparseable versions', () => {
     expect(checkCompat('1.0.0', 'abc').ok).toBe(false);
+  });
+});
+
+// Announcement caps are separate from the general link frame ceiling.
+describe('full toolset limits', () => {
+  const tool = {
+    name: TOOLS[0]!.name,
+    description: TOOLS[0]!.description,
+    category: TOOLS[0]!.category,
+    minRole: TOOLS[0]!.minRole,
+    ...toJsonSchema(TOOLS[0]!),
+  };
+  it('rejects count and UTF-8 byte overflows', () => {
+    expect(
+      parseLinkMessage(
+        JSON.stringify({ type: 'toolset', tools: Array.from({ length: 65 }, () => tool) }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      parseLinkMessage(
+        JSON.stringify({
+          type: 'toolset',
+          tools: [{ ...tool, description: 'é'.repeat(140 * 1024) }],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+  it('rejects obsolete name-only announcements', () => {
+    expect(parseLinkMessage(JSON.stringify({ type: 'toolset', tools: ['world_info'] })).ok).toBe(
+      false,
+    );
   });
 });

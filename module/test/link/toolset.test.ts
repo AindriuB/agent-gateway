@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { defineTool, TOOLS, toolsForRole, parseLinkMessage } from '@agent-gateway/protocol';
+import {
+  defineTool,
+  TOOLS,
+  toolsForRole,
+  parseLinkMessage,
+  toJsonSchema,
+  type AnnouncedTool,
+} from '@agent-gateway/protocol';
 import { LINK_AGENT_HEADLESS, installBridge } from '../../src/link/bridge.js';
 import { LinkClient } from '../../src/link/client.js';
 import {
@@ -10,18 +17,19 @@ import {
   policyDenies,
 } from '../../src/link/toolset.js';
 import type { PolicyInputs } from '../../src/policy/evaluate.js';
+import { type ToolInfo } from '../../src/ops/registry.js';
 import { createDispatcher } from '../../src/ops/dispatch.js';
 
 const gmNames = TOOLS.filter((t) => t.minRole === 'gm').map((t) => t.name);
 
 describe('computeToolset', () => {
   it('is the role tools, sorted', () => {
-    expect(computeToolset(true)).toEqual(
+    expect(computeToolset(true).map((t) => t.name)).toEqual(
       toolsForRole(true)
         .map((t) => t.name)
         .sort(),
     );
-    expect(computeToolset(false)).toEqual(
+    expect(computeToolset(false).map((t) => t.name)).toEqual(
       toolsForRole(false)
         .map((t) => t.name)
         .sort(),
@@ -29,8 +37,8 @@ describe('computeToolset', () => {
   });
 
   it('player tools are a subset of GM tools', () => {
-    const gm = new Set(computeToolset(true));
-    for (const n of computeToolset(false)) expect(gm.has(n)).toBe(true);
+    const gm = new Set(computeToolset(true).map((t) => t.name));
+    for (const n of computeToolset(false)) expect(gm.has(n.name)).toBe(true);
   });
 
   it('drops tools whose category policy denies', () => {
@@ -40,12 +48,12 @@ describe('computeToolset', () => {
       .filter((t) => t.category !== 'read')
       .map((t) => t.name)
       .sort();
-    expect(noRead).toEqual(expected);
+    expect(noRead.map((t) => t.name)).toEqual(expected);
     expect(noRead.length).toBeLessThan(all.length);
   });
 
   it('never lists GM tools for a non-GM, whatever the policy says', () => {
-    for (const n of computeToolset(false, () => false)) expect(gmNames).not.toContain(n);
+    for (const n of computeToolset(false, () => false)) expect(gmNames).not.toContain(n.name);
   });
 });
 
@@ -59,8 +67,16 @@ const mk = (name: string, minRole: 'player' | 'gm', category: 'read' | 'write') 
     input: z.object({}),
     output: z.object({}),
   });
-const pTool = mk('p_tool', 'player', 'read');
-const gTool = mk('g_tool', 'gm', 'read');
+const info = (t: ReturnType<typeof mk>): ToolInfo => ({
+  name: t.name,
+  category: t.category,
+  minRole: t.minRole,
+  description: t.description,
+  ...toJsonSchema(t),
+  origin: 'core',
+});
+const pTool = info(mk('p_tool', 'player', 'read'));
+const gTool = info(mk('g_tool', 'gm', 'read'));
 
 describe('ToolsetAnnouncer', () => {
   const setup = () => {
@@ -135,7 +151,7 @@ describe('a forged toolset does not grant anything', () => {
       stages: [],
     });
     // The (modified) module claims the GM tool in its toolset...
-    const sent: { tools: string[] }[] = [];
+    const sent: { tools: AnnouncedTool[] }[] = [];
     new ToolsetAnnouncer({
       isGM: () => true,
       send: (m) => sent.push(m),
@@ -338,5 +354,50 @@ describe('headless', () => {
 
   it('the listing and the bridge use the same headless value', () => {
     expect(LINK_AGENT_HEADLESS).toBe(false);
+  });
+});
+
+describe('registry definition announcements', () => {
+  it('announces core and pack metadata, including schemas and pack provenance', () => {
+    const schema = { type: 'object', additionalProperties: false };
+    const packInfo: ToolInfo = {
+      name: 'demo-fixture',
+      category: 'read',
+      minRole: 'player',
+      description: 'Fixture tool',
+      inputSchema: schema,
+      outputSchema: schema,
+      origin: { packId: 'demo-pack', version: '1.0.0', prefix: 'demo' },
+    };
+    const announced = computeToolset(
+      true,
+      () => false,
+      () => [pTool, packInfo],
+    );
+    expect(announced.map((t) => t.name)).toEqual(['demo-fixture', 'p_tool']);
+    expect(announced[0]).toMatchObject({
+      inputSchema: schema,
+      outputSchema: schema,
+      pack: { id: 'demo-pack', version: '1.0.0', prefix: 'demo' },
+    });
+    expect(parseLinkMessage(JSON.stringify({ type: 'toolset', tools: announced })).ok).toBe(true);
+  });
+
+  it('refreshes when only a definition schema changes', () => {
+    let tool = pTool;
+    const send = vi.fn();
+    const announcer = new ToolsetAnnouncer({ isGM: () => false, toolsForRole: () => [tool], send });
+    announcer.connected();
+    announcer.refresh();
+    tool = {
+      ...tool,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { value: { type: 'string', description: 'Value' } },
+      },
+    };
+    announcer.refresh();
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

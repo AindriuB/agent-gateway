@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
-import type { ErrorCode } from '@agent-gateway/protocol';
+import { validateArgs, type AnnouncedTool, type ErrorCode } from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
 import {
   SessionBinding,
@@ -62,15 +63,50 @@ export function createSessionServer(opts: SessionServerOptions): Server {
 
   const toolsets = opts.toolsets ?? sharedToolsets;
 
-  // What the module last announced for this user, limited to tools the gateway knows. That
-  // announcement is the module's own view of the user's current role and policy, so it replaces
-  // the hello `isGM` hint, which goes stale when a role changes. Neither is authority: the
-  // module re-checks role and policy on every call. Until a module has announced anything, the
-  // hint's role tools stand.
-  const visibleFor = (conn: LinkConnection | undefined): readonly ToolDefinition[] => {
+  const warned = new WeakMap<LinkConnection, readonly AnnouncedTool[]>();
+  type VisibleTool = { definition: AnnouncedTool; core?: ToolDefinition };
+  const coreDefinition = (t: ToolDefinition): AnnouncedTool => ({
+    name: t.name,
+    description: t.description,
+    category: t.category,
+    minRole: t.minRole,
+    ...toJsonSchema(t),
+  });
+  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
     const announced = conn ? toolsets.get(conn) : undefined;
-    if (announced) return all.filter((t) => announced.includes(t.name));
-    return conn?.info.isGM ? all : all.filter((t) => t.minRole === 'player');
+    if (!announced)
+      return (conn?.info.isGM ? all : all.filter((t) => t.minRole === 'player')).map((core) => ({
+        core,
+        definition: coreDefinition(core),
+      }));
+    const report = conn && warned.get(conn) !== announced;
+    if (conn) warned.set(conn, announced);
+    const coreNames = new Set(announced.filter((t) => !t.name.includes('-')).map((t) => t.name));
+    if (report)
+      for (const t of announced.filter((t) => !t.name.includes('-'))) {
+        const core = all.find((c) => c.name === t.name);
+        if (!core)
+          (opts.log ?? console.warn)(
+            `dropped tool ${safeText(t.name.slice(0, 64))}: unknown core name`,
+          );
+        else if (!isDeepStrictEqual(coreDefinition(core), t))
+          (opts.log ?? console.warn)(
+            `tool ${safeText(t.name)} differs from gateway definition (version skew)`,
+          );
+      }
+    return [
+      ...all
+        .filter((t) => coreNames.has(t.name))
+        .map((core) => ({ core, definition: coreDefinition(core) })),
+      ...announced
+        .filter((t) => t.name.includes('-'))
+        .map((t) => ({
+          definition: {
+            ...t,
+            description: `[Third-party tool pack ${t.pack!.prefix}: ${t.pack!.id} ${t.pack!.version}] ${t.description}`,
+          },
+        })),
+    ];
   };
 
   const currentConn = (): LinkConnection | undefined => {
@@ -78,33 +114,27 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return r.kind === 'bound' ? r.conn : undefined;
   };
 
+  const listed = (conn: LinkConnection | undefined) =>
+    visibleFor(conn).map(({ definition: t }) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema as { type: 'object' },
+      outputSchema: t.outputSchema as { type: 'object' },
+    }));
   const signature = (conn: LinkConnection | undefined): string =>
-    visibleFor(conn)
-      .map((t) => t.name)
-      .join(',');
-  // What the client was last told (by a listing or a notification).
+    createHash('sha256')
+      .update(JSON.stringify(listed(conn)))
+      .digest('hex');
   let lastSig = signature(undefined);
-
   server.setRequestHandler(ListToolsRequestSchema, () => {
     const conn = currentConn();
     lastSig = signature(conn);
-    return listing(conn);
-  });
-  const listing = (conn: LinkConnection | undefined) => ({
-    tools: visibleFor(conn).map((t) => {
-      const { inputSchema, outputSchema } = toJsonSchema(t);
-      return {
-        name: t.name,
-        description: t.description,
-        inputSchema: inputSchema as { type: 'object' },
-        outputSchema: outputSchema as { type: 'object' },
-      };
-    }),
+    return { tools: listed(conn) };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const tool = all.find((t) => t.name === req.params.name);
-    if (!tool) return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
+    if (!req.params.name.includes('-') && !all.some((t) => t.name === req.params.name))
+      return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
     const r = binding.resolve();
     if (r.kind === 'ambiguous') {
       return failure(
@@ -116,24 +146,36 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     }
     if (r.kind === 'unbound' || !r.conn) return offline();
     const conn = r.conn;
-    if (!visibleFor(conn).includes(tool)) {
+    const visible = visibleFor(conn).find((t) => t.definition.name === req.params.name);
+    if (!visible) {
       // Answered here: not in this user's current set, so nothing goes over the link.
       return failure('FORBIDDEN', `Tool not available to this user: ${req.params.name}`);
     }
-    const parsed = tool.input.safeParse(req.params.arguments ?? {});
-    if (!parsed.success) {
-      return failure(
-        'INVALID_ARGS',
-        parsed.error.issues
-          .map((i) => (i.path.length ? `${i.path.map(String).join('.')}: ${i.message}` : i.message))
-          .join('; '),
-      );
+    const tool = visible.definition;
+    const parsed = visible.core
+      ? visible.core.input.safeParse(req.params.arguments ?? {})
+      : undefined;
+    const packParsed = visible.core
+      ? undefined
+      : validateArgs(tool.inputSchema, req.params.arguments ?? {});
+    if (parsed?.success === false || packParsed?.ok === false) {
+      const issues =
+        parsed?.success === false
+          ? parsed.error.issues.map((i) => ({
+              path: i.path.map(String).join('.'),
+              message: i.message,
+            }))
+          : packParsed?.ok === false
+            ? packParsed.issues
+            : [];
+      return failure('INVALID_ARGS', issues.map((i) => `${i.path}: ${i.message}`).join('; '));
     }
+    const args = parsed?.success ? parsed.data : packParsed?.ok ? packParsed.value : {};
     try {
       const res = await opts.registry.call(
         conn,
         tool.name,
-        parsed.data as Record<string, unknown>,
+        args as Record<string, unknown>,
         timeoutMs,
         sessionId,
       );
