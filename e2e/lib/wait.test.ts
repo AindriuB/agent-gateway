@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONNECT_BUDGET_MS,
+  ConnectBudgetError,
   connectWaitMs,
   PairTimeoutError,
   waitForPairing,
@@ -43,9 +44,25 @@ describe('connectWaitMs', () => {
     expect(connectWaitMs(deadline, start + 8000, max)).toBe(20_000);
     // Player's wait starts after GM took 8 + 20 s: only the remainder is left.
     expect(connectWaitMs(deadline, start + 30_000, max)).toBe(13_000);
-    // Never below the floor, so a healthy slow start still connects.
-    expect(connectWaitMs(deadline, start + 42_000, max)).toBe(5000);
+    // Capped by what is left, never extended past the deadline.
+    expect(connectWaitMs(deadline, start + 42_000, max)).toBe(1000);
+    expect(connectWaitMs(deadline, start + 43_000, max)).toBe(0);
+    expect(connectWaitMs(deadline, start + 50_000, max)).toBe(0);
+    // A wait that starts at any point ends by the deadline.
+    for (let t = 0; t <= 50_000; t += 500) {
+      expect(start + t + connectWaitMs(deadline, start + t, max)).toBeLessThanOrEqual(
+        Math.max(deadline, start + t),
+      );
+    }
     expect(CONNECT_BUDGET_MS).toBeLessThan(45_000);
+  });
+});
+
+describe('ConnectBudgetError', () => {
+  it('names the user and points at setup', () => {
+    expect(new ConnectBudgetError('player1').message).toMatch(
+      /^player1: the 43s connection budget ran out.*run npm run test:e2e:setup$/,
+    );
   });
 });
 

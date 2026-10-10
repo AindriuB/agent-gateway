@@ -7,7 +7,7 @@ import {
   type UserBrowser,
 } from './browser.js';
 import { GatewayProcess, waitConnected } from './gateway.js';
-import { connectWaitMs } from './wait.js';
+import { ConnectBudgetError, connectWaitMs } from './wait.js';
 
 export interface UserSession {
   user: string;
@@ -35,12 +35,12 @@ export async function openUserSession(
     await gateway.start();
     browser = await openUserBrowser(config, paths, user, { headed: opts.headed ?? config.headed });
     await joinWorld(asJoinPage(browser.page), config, user);
-    const info = await waitConnected(
-      gateway,
+    const waitMs =
       opts.connectDeadlineAt === undefined
         ? config.connectTimeoutMs
-        : connectWaitMs(opts.connectDeadlineAt, Date.now(), config.connectTimeoutMs),
-    );
+        : connectWaitMs(opts.connectDeadlineAt, Date.now(), config.connectTimeoutMs);
+    if (waitMs <= 0) throw new ConnectBudgetError(user);
+    const info = await waitConnected(gateway, waitMs);
     const version = await foundryVersion(browser.page);
     const b = browser;
     return {

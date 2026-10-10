@@ -45,8 +45,11 @@ describe('LeakChecker', () => {
   it.each([
     ['structured formula', { structuredContent: { rollFormula: '7d6' } }],
     ['rendered roll', { content: [{ type: 'text', text: 'x [roll 7d6 = 4] y' }] }],
-    ['total', { content: [{ type: 'text', text: 'x [roll 7d6 = 23] y' }] }],
-    ['structured total', { structuredContent: { rollTotal: 23 } }],
+    [
+      'total',
+      { content: [{ type: 'text', text: '[roll 7d6 = 23] (2026-01-01, aB7D6xyz12345678)' }] },
+    ],
+    ['structured total', { structuredContent: { id: 'aB7D6xyz12345678', rollTotal: 23 } }],
     ['message id', { structuredContent: { id: 'aB7D6xyz12345678' } }],
     [
       'rendered id',
@@ -56,6 +59,60 @@ describe('LeakChecker', () => {
   ])('catches the blind roll via %s', (_n, result) => {
     const c = new LeakChecker(leakMatchers(blind));
     expect(() => c.check('chat_read', {}, result)).toThrow(LeakError);
+  });
+
+  describe('the blind roll total matcher', () => {
+    const totalMatcher = () => {
+      const m = leakMatchers(blind).find((x) => x.label === 'blind roll total 23');
+      if (!m) throw new Error('total matcher missing');
+      return m;
+    };
+    const hay = (r: unknown) => JSON.stringify(r);
+
+    it('does not flag another message with the same total', () => {
+      const m = totalMatcher();
+      expect(m.test(hay({ structuredContent: { id: 'publicMsg0000001', rollTotal: 23 } }))).toBe(
+        false,
+      );
+      expect(
+        m.test(
+          hay({ structuredContent: { messages: [{ id: 'publicMsg0000001', rollTotal: 23 }] } }),
+        ),
+      ).toBe(false);
+      expect(
+        m.test(hay({ text: '[roll 2d12 = 23] (2026-01-01T00:00:00Z, publicMsg0000001)' })),
+      ).toBe(false);
+    });
+
+    it('flags the total inside the seeded message, structured or rendered', () => {
+      const m = totalMatcher();
+      expect(
+        m.test(
+          hay({ structuredContent: { messages: [{ id: 'aB7D6xyz12345678', rollTotal: 23 }] } }),
+        ),
+      ).toBe(true);
+      expect(
+        m.test(
+          hay({
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ messages: [{ id: 'aB7D6xyz12345678', rollTotal: 23 }] }),
+              },
+            ],
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        m.test(hay({ text: '[roll 7d6 = 23] (2026-01-01T00:00:00Z, aB7D6xyz12345678)' })),
+      ).toBe(true);
+    });
+
+    it('needs the message id; a total alone adds no matcher', () => {
+      expect(leakMatchers({ total: 23 }).some((x) => x.label.startsWith('blind roll total'))).toBe(
+        false,
+      );
+    });
   });
 
   it('does not flag the strings a player may see', () => {

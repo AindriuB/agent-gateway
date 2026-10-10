@@ -30,17 +30,22 @@ export async function waitForPairing(user: string, deps: WaitDeps): Promise<void
 /** Overall budget for the connection checks of a run (stale tokens must fail within 45 s). */
 export const CONNECT_BUDGET_MS = 43_000;
 
+/** The shared connection budget ran out before this user's wait could start. */
+export class ConnectBudgetError extends Error {
+  constructor(user: string) {
+    super(
+      `${user}: the ${Math.round(CONNECT_BUDGET_MS / 1000)}s connection budget ran out before the module connected; the stored token may be stale; run npm run test:e2e:setup`,
+    );
+  }
+}
+
 /**
- * How long one user's connection wait may take: the per-user maximum, shortened so that the
- * shared deadline holds, but never below `floorMs` so a healthy slow start still connects.
+ * How long one user's connection wait may take: the per-user maximum, capped by what is left of
+ * the shared deadline. Zero when the budget is spent; the caller then fails with
+ * ConnectBudgetError, so no wait ever runs past the deadline.
  */
-export function connectWaitMs(
-  deadlineAt: number,
-  now: number,
-  perUserMaxMs: number,
-  floorMs = 5000,
-): number {
-  return Math.max(floorMs, Math.min(perUserMaxMs, deadlineAt - now));
+export function connectWaitMs(deadlineAt: number, now: number, perUserMaxMs: number): number {
+  return Math.max(0, Math.min(perUserMaxMs, deadlineAt - now));
 }
 
 /** Tells the human which window to look at. Names the user only; the code stays in the window. */

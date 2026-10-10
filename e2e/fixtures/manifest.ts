@@ -43,6 +43,34 @@ export interface BlindRoll {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** True when the JSON haystack holds an object for message `id` whose `rollTotal` is `total`. */
+function structuredTotal(haystack: string, id: string, total: number): boolean {
+  let root: unknown;
+  try {
+    root = JSON.parse(haystack);
+  } catch {
+    return false;
+  }
+  const stack: unknown[] = [root];
+  while (stack.length) {
+    const v = stack.pop();
+    if (Array.isArray(v)) stack.push(...v);
+    else if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      if (o.id === id && o.rollTotal === total) return true;
+      stack.push(...Object.values(o));
+    } else if (typeof v === 'string' && v.trimStart().startsWith('{')) {
+      // Raw MCP results carry JSON text inside string fields.
+      try {
+        stack.push(JSON.parse(v));
+      } catch {
+        // not JSON
+      }
+    }
+  }
+  return false;
+}
+
 /** The chat message id from a `ChatMessage.<id>` UUID. */
 export const messageIdFromUuid = (uuid: string | undefined): string | undefined =>
   uuid?.split('.').pop() || undefined;
@@ -63,12 +91,15 @@ export function leakMatchers(blind: BlindRoll = {}): LeakMatcher[] {
   const rendered = new RegExp(`\\[roll ${f} = `, 'i');
   out.push({ label: `rollFormula ${FIXTURE.chat.blindFormula}`, test: (h) => formula.test(h) });
   out.push({ label: `[roll ${FIXTURE.chat.blindFormula} = ...]`, test: (h) => rendered.test(h) });
-  if (blind.total !== undefined) {
-    const re = new RegExp(
-      `"rollTotal"\\s*:\\s*${blind.total}\\b|\\[roll ${f} = ${blind.total}\\]`,
-      'i',
-    );
-    out.push({ label: `blind roll total ${blind.total}`, test: (h) => re.test(h) });
+  if (blind.total !== undefined && blind.messageId) {
+    // The total only counts inside the seeded message: another roll with the same total is fine.
+    const total = blind.total;
+    const id = blind.messageId;
+    const rendered = new RegExp(`\\[roll [^\\]]* = ${total}\\] \\([^)]*, ${escapeRe(id)}\\)`);
+    out.push({
+      label: `blind roll total ${total}`,
+      test: (h) => rendered.test(h) || structuredTotal(h, id, total),
+    });
   }
   if (blind.messageId) {
     const needle = `"${blind.messageId}"`;
