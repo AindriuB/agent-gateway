@@ -534,9 +534,11 @@ describe('two approvers answering at the same moment', () => {
     void call('write_thing');
     await settle();
     const id = gm.manager.listPending()[0]!.id;
+    hub.hold(); // the requester has not yet answered back
     gm.manager.resolveApproval(id, { decision: 'deny' });
     const before = gm.hooks.length;
-    hub.deliver('p2', { t: 'approval.resolved', id, status: 'approved' });
+    gm.manager.handleSocket({ t: 'approval.resolved', id, status: 'approved' }, 'p2');
     expect(gm.hooks).toHaveLength(before);
+    hub.release();
   });
 });
