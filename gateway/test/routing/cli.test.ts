@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +19,8 @@ const freePort = (): Promise<number> =>
 
 it('prints the pairing code and link URL to stderr and accepts link connections', async () => {
   const port = await freePort();
-  const db = join(mkdtempSync(join(tmpdir(), 'ag-cli-')), 'g.db');
+  const dir = mkdtempSync(join(tmpdir(), 'ag-cli-'));
+  const db = join(dir, 'g.db');
   const child = spawn(
     process.execPath,
     [cli, '--link-port', String(port), '--db', db, '--allow-origin', 'http://foundry.test'],
@@ -46,5 +47,7 @@ it('prints the pairing code and link URL to stderr and accepts link connections'
     ws.close();
   } finally {
     child.kill();
+    await new Promise((r) => child.once('close', r));
+    rmSync(dir, { recursive: true, force: true });
   }
 });

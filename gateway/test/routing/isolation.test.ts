@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { startServer, type Harness } from '../link/helpers.js';
 import {
+  expectErrorCode,
   openSession,
   pairModule,
   reconnectModule,
@@ -120,7 +121,7 @@ describe('session isolation', () => {
 
     const res = await callFixture(sa);
     expect(res.isError).toBe(true);
-    expect(res.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    expectErrorCode(res, 'WORLD_OFFLINE');
     await expectSilent(b);
 
     const a2 = await reconnectModule(h, a);
@@ -149,7 +150,7 @@ describe('session isolation', () => {
     await until(() => h!.registry.get('w1', 'uA') === undefined);
     // Exactly one connection exists again (B), but the session is A's.
     const res = await callFixture(s);
-    expect(res.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    expectErrorCode(res, 'WORLD_OFFLINE');
     await expectSilent(b);
   });
 

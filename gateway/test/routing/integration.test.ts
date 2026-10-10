@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { startServer, type Harness } from '../link/helpers.js';
 import {
+  expectErrorCode,
   openSession,
   pairModule,
   reconnectModule,
@@ -49,13 +50,9 @@ describe('gateway end to end with a fake module', () => {
 
     m.tc.ws.close();
     await until(() => h.registry.list().length === 0);
-    // A fresh client: the SDK client validates `structuredContent` of an error result against a
-    // tool's outputSchema once it has listed tools, which `{ code }` never satisfies.
-    const s2 = await openSession(h);
-    sessions.push(s2);
-    const off = await s2.client.callTool({ name: 'fixture_tool', arguments: { a: 'hi' } });
-    expect(off.isError).toBe(true);
-    expect(off.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    // Same client that already listed tools: the error must arrive as an isError result, not -32602.
+    const off = await s.client.callTool({ name: 'fixture_tool', arguments: { a: 'hi' } });
+    expectErrorCode(off, 'WORLD_OFFLINE');
   });
 
   it('is WORLD_OFFLINE with no connection at all', async () => {
@@ -63,17 +60,18 @@ describe('gateway end to end with a fake module', () => {
     const s = await openSession(h);
     sessions.push(s);
     const res = await s.client.callTool({ name: 'fixture_tool', arguments: { a: 'x' } });
-    expect(res.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    expectErrorCode(res, 'WORLD_OFFLINE');
   });
 
   it('maps a module error frame to isError with its code', async () => {
     const { m, s } = await start();
+    await s.client.listTools();
     const pending = s.client.callTool({ name: 'fixture_tool', arguments: { a: 'x' } });
     const frame = (await m.tc.next('call')) as CallFrame;
     m.tc.send({ type: 'error', id: frame.id, code: 'DENIED', message: 'no thanks' });
     const res = await pending;
     expect(res.isError).toBe(true);
-    expect(res.structuredContent).toEqual({ code: 'DENIED' });
+    expectErrorCode(res, 'DENIED');
     expect(JSON.stringify(res.content)).toContain('no thanks');
   });
 
@@ -81,21 +79,21 @@ describe('gateway end to end with a fake module', () => {
     const { m, s } = await start();
     const res = await s.client.callTool({ name: 'fixture_tool', arguments: { a: 5 } });
     expect(res.isError).toBe(true);
-    expect(res.structuredContent).toEqual({ code: 'INVALID_ARGS' });
+    expectErrorCode(res, 'INVALID_ARGS');
     expect(m.tc.messages).toEqual([]);
   });
 
   it('returns UNKNOWN_TOOL for names outside the registry', async () => {
     const { s } = await start();
     const res = await s.client.callTool({ name: 'nope_tool', arguments: {} });
-    expect(res.structuredContent).toEqual({ code: 'UNKNOWN_TOOL' });
+    expectErrorCode(res, 'UNKNOWN_TOOL');
   });
 
   it('filters the tool list by the bound user role and hides GM tools from players', async () => {
     const player = await start(false);
     expect((await player.s.client.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
     const res = await player.s.client.callTool({ name: 'fixture_gm_tool', arguments: {} });
-    expect(res.structuredContent).toEqual({ code: 'UNKNOWN_TOOL' });
+    expectErrorCode(res, 'UNKNOWN_TOOL');
     expect(player.m.tc.messages).toEqual([]);
   });
 
@@ -149,7 +147,7 @@ describe('gateway end to end with a fake module', () => {
     b.tc.send({ type: 'result', id: frame.id, ok: true, text: 't', structured: { b: 'B' } });
     await p;
     const off = await wrongWorld.client.callTool({ name: 'fixture_tool', arguments: { a: 'x' } });
-    expect(off.structuredContent).toEqual({ code: 'WORLD_OFFLINE' });
+    expectErrorCode(off, 'WORLD_OFFLINE');
     expect(a.tc.messages).toEqual([]);
   });
 });

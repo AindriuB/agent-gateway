@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { defineTool, type ToolDefinition } from '@agent-gateway/protocol/tools';
+import { expect } from 'vitest';
 import { z } from 'zod';
 import { createSessionServer } from '../../src/mcp/session.js';
 import type { UserSelector } from '../../src/routing/index.js';
@@ -138,4 +139,12 @@ export async function until(cond: () => boolean, ms = 2000): Promise<void> {
     if (Date.now() > end) throw new Error('timed out waiting for condition');
     await tick(5);
   }
+}
+
+/** An error result: isError, `<CODE>: ...` in the text, and no structuredContent. */
+export function expectErrorCode(res: Record<string, unknown>, code: string): void {
+  expect(res.isError).toBe(true);
+  expect(res.structuredContent).toBeUndefined();
+  const content = res.content as { type: string; text: string }[];
+  expect(content[0]?.text.startsWith(`${code}: `)).toBe(true);
 }

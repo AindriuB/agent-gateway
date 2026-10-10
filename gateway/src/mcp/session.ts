@@ -19,8 +19,8 @@ export interface SessionServerOptions {
 
 const failure = (code: ErrorCode | 'UNKNOWN_TOOL', text: string) => ({
   isError: true as const,
-  content: [{ type: 'text' as const, text }],
-  structuredContent: { code },
+  // No structuredContent: SDK clients validate it against the tool's outputSchema even on errors.
+  content: [{ type: 'text' as const, text: `${code}: ${text}` }],
 });
 
 const offline = () =>
