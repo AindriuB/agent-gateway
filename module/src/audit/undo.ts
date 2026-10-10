@@ -79,6 +79,21 @@ export function conflictFor(target: AuditTarget, current: any): Conflict | null 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** Remove extra keys inside one restored object without replacing its unobserved ancestors. */
+function replacementData(
+  value: Record<string, unknown>,
+  current: unknown,
+): Record<string, unknown> {
+  if (!isPlain(current)) return value;
+  for (const [key, child] of Object.entries(value)) {
+    if (isPlain(child)) value[key] = replacementData(child, current[key]);
+  }
+  for (const key of Object.keys(current)) {
+    if (!Object.hasOwn(value, key)) value[`-=${key}`] = null;
+  }
+  return value;
+}
+
 /**
  * A minimal update restoring only the observed key paths to their values in the GM's snapshot.
  * Walking a path down the snapshot:
@@ -87,10 +102,13 @@ const isPlain = (v: unknown): v is Record<string, unknown> =>
  *   change turned it into an object, so the whole value at that ancestor is restored;
  * - otherwise the leaf is restored to its snapshot value.
  * Prototype-pollution segments are refused. A key whose ancestor is also restored is dropped.
+ * With current source data, object-valued paths also remove later keys so recursive document
+ * updates restore those objects exactly while preserving siblings outside the observed paths.
  */
 export function minimalRestore(
   before: Record<string, unknown>,
   paths: readonly string[],
+  current?: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const path of paths) {
@@ -123,6 +141,16 @@ export function minimalRestore(
       keys.some((o) => o !== k && !o.includes('-=') && (base === o || base.startsWith(`${o}.`)))
     ) {
       delete out[k];
+    }
+  }
+  if (current) {
+    for (const [path, value] of Object.entries(out)) {
+      if (!isPlain(value)) continue;
+      let now: unknown = current;
+      for (const segment of path.split('.')) {
+        now = isPlain(now) && Object.hasOwn(now, segment) ? now[segment] : undefined;
+      }
+      out[path] = replacementData(value, now);
     }
   }
   return out;
@@ -264,7 +292,9 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
         if (!deps.canModify(doc, 'update')) throw new Error('not permitted to update');
         if (target.changedPaths.length) {
           // Observed by this GM client: restore just those paths from the GM's own snapshot.
-          await doc.update(minimalRestore(target.before!, target.changedPaths), { diff: false });
+          await doc.update(minimalRestore(target.before!, target.changedPaths, doc.toObject()), {
+            diff: false,
+          });
         } else {
           await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false });
         }

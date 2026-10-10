@@ -118,12 +118,15 @@ export function pageData(record: AuditRecord): Record<string, unknown> {
   };
 }
 
-/** Write one record as a page. A record already written (same entry id) is not written again. */
+/** Write one record as a page, deduplicated by the trusted user id and entry id together. */
 export async function writeAuditEntry(record: AuditRecord): Promise<boolean> {
   const journal = await ensureAuditJournal();
   if (!journal) throw new Error('no audit journal and this client cannot create one');
   const pages: any[] = Array.from(journal.pages?.contents ?? []);
-  if (pages.some((p) => p?.system?.entryId === record.entryId)) return false;
+  if (
+    pages.some((p) => p?.system?.userId === record.userId && p?.system?.entryId === record.entryId)
+  )
+    return false;
   await journal.createEmbeddedDocuments('JournalEntryPage', [pageData(record)]);
   return true;
 }

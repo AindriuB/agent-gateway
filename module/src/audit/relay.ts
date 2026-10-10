@@ -34,8 +34,8 @@ const INTENT_RATE_MAX = 600;
 /**
  * Carries audit records from player clients to the active GM over the module socket. A player
  * client holds a record until a GM acknowledges it, and resends it while no acknowledgement comes;
- * the GM writes each entry id once. Who sent a record is the socket's attested sender (the second
- * handler argument, appended by the server), never a field of the payload.
+ * the GM writes each sender's entry id once. Who sent a record is the socket's attested sender
+ * (the second handler argument, appended by the server), never a field of the payload.
  */
 export class AuditRelay {
   private readonly buffer = new Map<string, AuditRecord>();
@@ -176,12 +176,16 @@ export class AuditRelay {
       typeof msg.record === 'object' && msg.record !== null
         ? (msg.record as { entryId?: unknown }).entryId
         : undefined;
-    if (typeof peek === 'string' && this.seen.has(peek)) {
+    // Socket-attested identity scopes both cached successes and pending writes. Keep this
+    // fast-path key bounded; longer IDs must pass through sanitisation below.
+    const peekKey =
+      typeof peek === 'string' && peek.length <= 40 ? JSON.stringify([senderId, peek]) : null;
+    if (typeof peek === 'string' && peekKey !== null && this.seen.has(peekKey)) {
       this.deps.emit({ kind: 'audit.ack', id: peek }, [senderId]);
       return;
     }
     // A resend cannot start another write or be acknowledged before the first succeeds.
-    if (typeof peek === 'string' && this.writing.has(peek)) return;
+    if (peekKey !== null && this.writing.has(peekKey)) return;
     if (!this.allow(senderId, 'entry')) {
       console.warn(`agent-gateway | audit relay rate limit: dropped a record from ${senderId}`);
       return;
@@ -195,21 +199,22 @@ export class AuditRelay {
     });
     if (!record) return;
     // Sanitisation can normalise the ID (for example, trim whitespace).
-    if (this.seen.has(record.entryId)) {
+    const key = JSON.stringify([senderId, record.entryId]);
+    if (this.seen.has(key)) {
       this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
       return;
     }
-    if (this.writing.has(record.entryId)) return;
-    this.writing.add(record.entryId);
+    if (this.writing.has(key)) return;
+    this.writing.add(key);
     try {
       await this.deps.write(record, senderId);
-      this.seen.add(record.entryId);
+      this.seen.add(key);
       if (this.seen.size > SEEN_MAX) this.seen.delete(this.seen.values().next().value as string);
       this.deps.emit({ kind: 'audit.ack', id: record.entryId }, [senderId]);
     } catch (err) {
       console.error('agent-gateway | audit write failed', err);
     } finally {
-      this.writing.delete(record.entryId);
+      this.writing.delete(key);
     }
   }
 

@@ -168,6 +168,17 @@ describe('audit journal', () => {
     expect(created[0].system.targets[0].before).toBe(JSON.stringify({ name: 'Old' }));
   });
 
+  it('persists the same entry ID for different users while deduplicating each user separately', async () => {
+    world(true);
+    for (const userId of ['p2', 'p1', 'gm1']) {
+      expect(await writeAuditEntry(record({ userId }))).toBe(true);
+    }
+    for (const userId of ['p2', 'p1', 'gm1']) {
+      expect(await writeAuditEntry(record({ userId }))).toBe(false);
+    }
+    expect(created.map((p) => p.system.userId)).toEqual(['p2', 'p1', 'gm1']);
+  });
+
   it('stores a snapshot with hostile keys as inert text', () => {
     const d = pageData(
       record({ targets: [target({ before: { '-=flags': 1, 'a.b': 2 } })] }),

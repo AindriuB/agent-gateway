@@ -160,6 +160,28 @@ describe('the GM witnesses a player agent change', () => {
     expect(d.calls.update).toEqual([{ data: { name: 'Old' }, opts: { diff: false } }]);
   });
 
+  it('keeps witnessed undo data when another sender submits the same call ID first', async () => {
+    const w = gmWorld();
+    const d = w.doc('Actor.a1', { name: 'Old' });
+    await intent(w, d.uuid);
+    d.data.name = 'New';
+    d._stats.modifiedTime = 20;
+    w.emit('updateActor', d, { name: 'New' }, opts(), 'p1');
+    // The other player knows the hook's callId and even claims the real user's identity.
+    await entry(w, { userId: 'p1', targets: [target()] }, 'p2');
+    await entry(w, { targets: [target()] }, 'p1');
+    expect(w.written).toHaveLength(2);
+    expect(w.written[0]).toMatchObject({ userId: 'p2', targets: [{ undoable: false }] });
+    expect(w.written[1]).toMatchObject({
+      userId: 'p1',
+      targets: [{ undoable: true, changedPaths: ['name'] }],
+    });
+    expect(
+      await undoEntry(stored(w.written[1]!), async () => true, undoDeps(w.store)),
+    ).toMatchObject({ status: 'done', restored: 1 });
+    expect(d.data.name).toBe('Old');
+  });
+
   it('a forged relay that supplies a before, a created target or undoable flags has no effect on undo', async () => {
     const w = gmWorld();
     const victim = w.doc('Actor.victim', { name: 'Keep' });
