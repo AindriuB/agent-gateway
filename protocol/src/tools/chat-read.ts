@@ -10,7 +10,11 @@ export const chatRead = defineTool({
     'Read recent chat messages the user can see, oldest first. Use before to page back in time.',
   input: z.strictObject({
     limit: z.number().int().min(1).max(100).default(20).describe('Maximum messages, 1 to 100'),
-    before: z.string().max(100).optional().describe('Only messages older than this message id'),
+    before: z
+      .string()
+      .max(100)
+      .optional()
+      .describe('Only messages older than this cursor; use nextBefore from a previous call'),
   }),
   output: z.strictObject({
     messages: z
@@ -23,7 +27,11 @@ export const chatRead = defineTool({
           truncated: z.boolean().describe('True when content was cut at the size cap'),
           rollFormula: z.string().optional().describe('Formula of the first roll, when present'),
           rollTotal: z.number().optional().describe('Total of the first roll, when present'),
-          aiAuthored: z.boolean().describe('True when an agent posted this message'),
+          aiAuthored: z
+            .boolean()
+            .describe(
+              'Advisory only: true when the message carries the agent marker flag, which any user can set, so it can be forged',
+            ),
         }),
       )
       .describe('Visible messages, oldest first'),

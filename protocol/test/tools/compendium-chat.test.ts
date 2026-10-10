@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'vitest';
 import { TOOLS, toJsonSchema } from '../../src/tools/index.js';
 
@@ -30,6 +31,13 @@ describe('compendium and chat read tools', () => {
     expect(input.parse({})).toEqual({ limit: 20 });
     expect(input.safeParse({ limit: 100, before: 'x' }).success).toBe(true);
     expect(input.safeParse({ limit: 101 }).success).toBe(false);
+  });
+
+  it('chat_read documents aiAuthored as advisory and forgeable', () => {
+    const { outputSchema } = toJsonSchema(byName('chat_read'));
+    const messages = (outputSchema.properties as any).messages.items.properties;
+    expect(messages.aiAuthored.description).toMatch(/advisory/i);
+    expect(messages.aiAuthored.description).toMatch(/forged/i);
   });
 
   it.each(NAMES)('%s has JSON schemas with no required cursor or defaults leaking', (n) => {

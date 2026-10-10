@@ -113,14 +113,103 @@ describe('chat_read', () => {
     expect(seen).not.toContain('c0');
     expect(seen).not.toContain('c3');
     expect(seen).toEqual(expect.arrayContaining(['c1', 'c2', 'c4', 'c5', 'c7', 'c8']));
-    expect(first.structured.nextBefore).toBe(first.structured.messages[0].id);
+    const oldest = first.structured.messages[0];
+    expect(first.structured.nextBefore).toBe(`${oldest.timestamp}.${oldest.id}`);
   });
 
-  it('before must be a visible message', async () => {
-    setup([msg({ whisper: ['u2'] }), msg()]);
-    const r = await read({ before: 'm1' });
-    expect(r).toEqual({ error: { code: 'INVALID_ARGS', message: 'Message not found.' } });
-    expect(await read({ before: 'nope' })).toEqual(r);
+  it('rejects a malformed before cursor', async () => {
+    setup([msg()]);
+    for (const before of ['m1', 'abc.m1', '12', '.m1', '12.']) {
+      expect(await read({ before })).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+    }
+  });
+
+  it('pages correctly when the anchor message was deleted', async () => {
+    const all = Array.from({ length: 8 }, (_, i) => msg({ content: `<p>c${i}</p>` }));
+    setup(all);
+    const first = await read({ limit: 3 });
+    expect(first.structured.messages.map((m: any) => m.content)).toEqual(['c5', 'c6', 'c7']);
+    // The anchor (c5) is deleted before the next call.
+    (globalThis as any).game.messages.contents = all.filter((m) => m.content !== '<p>c5</p>');
+    const second = await read({ limit: 3, before: first.structured.nextBefore });
+    expect(second.structured.messages.map((m: any) => m.content)).toEqual(['c2', 'c3', 'c4']);
+    const third = await read({ limit: 3, before: second.structured.nextBefore });
+    expect(third.structured.messages.map((m: any) => m.content)).toEqual(['c0', 'c1']);
+    expect(third.structured.nextBefore).toBeUndefined();
+  });
+
+  it('an anchor that is not visible or never existed reveals nothing extra', async () => {
+    setup([
+      msg({ content: '<p>a</p>' }),
+      msg({ whisper: ['u2'], content: '<p>hid</p>' }),
+      msg({ content: '<p>c</p>' }),
+    ]);
+    const r = await read({ before: '1002.m2' });
+    expect(r.structured.messages.map((m: any) => m.content)).toEqual(['a']);
+    expect(await read({ before: '1002.nothing' })).toEqual(r);
+  });
+
+  it('nextBefore points at a visible message only', async () => {
+    setup([
+      msg({ content: '<p>a</p>' }),
+      msg({ whisper: ['u2'], content: '<p>hid</p>' }),
+      msg({ content: '<p>c</p>' }),
+      msg({ content: '<p>d</p>' }),
+    ]);
+    const r = await read({ limit: 2 });
+    expect(r.structured.nextBefore).toBe('1003.m3');
+    expect(JSON.stringify(r)).not.toContain('hid');
+  });
+
+  describe('blind rolls', () => {
+    const blind = (whisper: string[]) =>
+      msg({
+        author: { id: 'u1' },
+        blind: true,
+        whisper,
+        content: '<p>blind-secret</p>',
+        rolls: [{ formula: '7d6+3', total: 24 }],
+      });
+    const leaks = (r: any) => /blind-secret|7d6|24/.test(JSON.stringify(r));
+
+    it.each([
+      ['whispered to the GM', ['gm']],
+      ['not whispered', []],
+    ] as const)(
+      'author of a blind roll %s sees no content, formula or total',
+      async (_n, whisper) => {
+        setup([blind([...whisper]), msg({ content: '<p>pub</p>' })]);
+        const r = await read({}, player);
+        expect(r.structured.messages.map((m: any) => m.content)).toEqual(['pub']);
+        expect(leaks(r)).toBe(false);
+      },
+    );
+
+    it.each([
+      ['whispered to the GM', ['gm']],
+      ['not whispered', []],
+    ] as const)('another player sees nothing of a blind roll %s', async (_n, whisper) => {
+      setup([blind([...whisper])]);
+      const r = await read({}, { id: 'u3', isGM: false });
+      expect(r.structured.messages).toEqual([]);
+      expect(leaks(r)).toBe(false);
+    });
+
+    it.each([
+      ['whispered to the GM', ['gm']],
+      ['not whispered', []],
+    ] as const)(
+      'a GM sees a blind roll %s with content, formula and total',
+      async (_n, whisper) => {
+        setup([blind([...whisper])]);
+        const r = await read({}, gm);
+        expect(r.structured.messages[0]).toMatchObject({
+          content: 'blind-secret',
+          rollFormula: '7d6+3',
+          rollTotal: 24,
+        });
+      },
+    );
   });
 
   it('treats content as untrusted: no raw HTML or live links in output', async () => {

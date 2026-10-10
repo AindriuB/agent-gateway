@@ -16,14 +16,23 @@ const authorIdOf = (msg: any): string | undefined => {
   return (typeof a === 'string' ? a : a?.id) ?? msg._source?.author ?? msg._source?.user;
 };
 
-/** Chat visibility for a given user (not game.user): public, own, whispered to them, or GM-visible blind. */
+/**
+ * Whether `userId` may see the message at all, evaluated for that user rather than `game.user`.
+ * Modelled on Foundry's `ChatMessage#visible` (a whisper is for its author and recipients) and
+ * `ChatMessage#isContentVisible` (client/documents/chat-message.mjs; a blind roll's content is hidden
+ * from its own author). Deliberately stricter than Foundry: a blind roll is dropped entirely for a
+ * non-GM, even if they are the author or a whisper recipient, so no content, formula or total of it
+ * can reach an agent. A GM sees blind rolls, as in Foundry.
+ */
 function visibleTo(msg: any, userId: string, isGM: boolean): boolean {
-  const isAuthor = authorIdOf(msg) === userId;
+  if (msg.blind) return isGM;
   const whisper: unknown[] = Array.isArray(msg.whisper) ? msg.whisper : [];
-  if (whisper.length > 0) return isAuthor || whisper.includes(userId);
-  if (msg.blind) return isAuthor || isGM;
+  if (whisper.length > 0) return authorIdOf(msg) === userId || whisper.includes(userId);
   return true;
 }
+
+/** `before` is `<timestamp>.<message id>`, the form `nextBefore` is returned in. */
+const BEFORE_RE = /^(\d{1,16})\.(.+)$/;
 
 function speakerOf(msg: any): string {
   const alias = msg.speaker?.alias;
@@ -36,16 +45,17 @@ function speakerOf(msg: any): string {
 
 export const chatReadHandler: OpHandler = (ctx) => {
   const { limit, before } = chatRead.input.parse(ctx.args);
-  const all: any[] = [...(game.messages.contents as any[])].sort(
-    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0) || String(a.id).localeCompare(String(b.id)),
-  );
+  // Foundry's collection is already in creation order, so timestamps do not decrease along it.
+  const all: any[] = game.messages.contents;
   let end = all.length;
   if (before !== undefined) {
-    const at = all.findIndex((m) => m.id === before);
-    if (at < 0 || !visibleTo(all[at], ctx.user.id, ctx.user.isGM)) {
-      return { error: { code: 'INVALID_ARGS', message: 'Message not found.' } };
-    }
-    end = at;
+    const m = BEFORE_RE.exec(before);
+    if (!m) return { error: { code: 'INVALID_ARGS', message: 'Invalid before cursor.' } };
+    const ts = Number(m[1]);
+    const at = all.findIndex((x) => x.id === m[2]);
+    // A deleted anchor still pages by time: everything strictly newer than it is excluded.
+    end = at >= 0 ? at : all.findIndex((x) => (Number(x.timestamp) || 0) > ts);
+    if (end < 0) end = all.length;
   }
 
   const picked: any[] = [];
@@ -79,7 +89,8 @@ export const chatReadHandler: OpHandler = (ctx) => {
   });
 
   const structured: Record<string, unknown> = { messages };
-  if (more && picked.length) structured.nextBefore = String(picked[0].id);
+  if (more && picked.length)
+    structured.nextBefore = `${Number(picked[0].timestamp) || 0}.${picked[0].id}`;
   const text = messages.length
     ? messages
         .map((m) => {

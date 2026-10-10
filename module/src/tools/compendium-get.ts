@@ -13,34 +13,81 @@ import { canObservePack, inlineText } from './compendium-search.js';
 declare const game: any;
 declare function fromUuid(uuid: string): Promise<any>;
 
-/** Rich-text (HTML) fields of a serialised entry, in reading order. */
-function richText(data: any): string[] {
-  const out: string[] = [];
-  const add = (v: unknown) => {
-    if (typeof v === 'string' && v.trim()) out.push(v);
+declare const foundry: any;
+
+type Kind = 'html' | 'text' | 'code';
+interface Chunk {
+  kind: Kind;
+  value: string;
+}
+
+const getPath = (obj: any, path: string): unknown =>
+  path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
+
+/**
+ * The text fields of an entry, in reading order. Whether a value is HTML is decided by the data model
+ * (an `HTMLField`), never by what the value looks like: a plain string field is escaped even if it
+ * contains tags. A path the model does not define is skipped. Values come from the flag-filtered
+ * serialised data; only the schema is read from the live documents.
+ */
+function collect(doc: any, data: any): Chunk[] {
+  const out: Chunk[] = [];
+  const HTMLField = foundry?.data?.fields?.HTMLField;
+  const take = (owner: any, src: any, path: string, as?: Kind) => {
+    const v = getPath(src, path);
+    if (typeof v !== 'string' || !v.trim()) return;
+    const field = owner?.schema?.getField?.(path);
+    if (!field) return;
+    out.push({ kind: as ?? (HTMLField && field instanceof HTMLField ? 'html' : 'text'), value: v });
   };
-  add(data?.system?.description?.value);
-  add(data?.system?.description);
-  add(data?.system?.details?.biography?.value);
-  add(data?.description);
-  add(data?.content);
-  for (const p of Array.isArray(data?.pages) ? data.pages : []) {
-    add(p?.text?.content);
+  for (const path of [
+    'system.description.value',
+    'system.description',
+    'system.details.biography.value',
+    'description',
+    'content',
+  ]) {
+    take(doc, data, path);
+  }
+  take(doc, data, 'command', 'code');
+  // Embedded documents, each judged by its own data model: journal pages, table results, scene notes.
+  const embedded: Array<[string, string[]]> = [
+    ['pages', ['text.content']],
+    ['results', ['description', 'text']],
+    ['notes', ['text']],
+  ];
+  for (const [collection, paths] of embedded) {
+    for (const item of Array.isArray(data?.[collection]) ? data[collection] : []) {
+      const owner = doc?.[collection]?.get?.(item?._id);
+      for (const path of paths) take(owner, item, path);
+    }
   }
   return out;
 }
 
-/** Entry name, then each rich-text field, parsed in an inert document and converted. */
-function entryToDocument(data: any, fallbackName: string): MdDocument {
+/** Entry name, then each text field, built in an inert document and converted. */
+function entryToDocument(doc: any, data: any, fallbackName: string): MdDocument {
   const inert = new DOMParser().parseFromString('', 'text/html');
   const h = inert.createElement('h1');
   h.textContent = String(data?.name ?? fallbackName);
   inert.body.append(h);
-  for (const html of richText(data)) {
-    const section = inert.createElement('div');
-    // Inert document: nothing loads or runs. The converter treats the result as untrusted.
-    section.innerHTML = html;
-    inert.body.append(section);
+  for (const { kind, value } of collect(doc, data)) {
+    if (kind === 'html') {
+      const section = inert.createElement('div');
+      // Inert document: nothing loads or runs. The converter treats the result as untrusted.
+      section.innerHTML = value;
+      inert.body.append(section);
+    } else if (kind === 'code') {
+      const pre = inert.createElement('pre');
+      const code = inert.createElement('code');
+      code.textContent = value;
+      pre.append(code);
+      inert.body.append(pre);
+    } else {
+      const p = inert.createElement('p');
+      p.textContent = value;
+      inert.body.append(p);
+    }
   }
   return domToDocument(inert.body);
 }
@@ -63,7 +110,7 @@ export const compendiumGetHandler: OpHandler = async (ctx) => {
   const data = serialiseDocument(doc);
   const name = String(data.name ?? doc.name ?? '');
   const type = String(doc.documentName ?? parts[3]);
-  const mdDoc = entryToDocument(data, name);
+  const mdDoc = entryToDocument(doc, data, name);
   let result;
   try {
     result = page(mdDoc, cursor);

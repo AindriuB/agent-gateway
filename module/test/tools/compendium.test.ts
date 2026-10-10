@@ -132,12 +132,27 @@ describe('compendium_search', () => {
 
 describe('compendium_get', () => {
   const uuid = 'Compendium.w.journals.JournalEntry.j1';
+  // Field types come from the data model: a schema lists which paths exist and which are HTMLField.
+  const fieldsOf = () => (globalThis as any).foundry.data.fields;
+  const schemaOf = (spec: Record<string, 'html' | 'string'>) => ({
+    getField: (path: string) => {
+      const kind = spec[path];
+      if (!kind) return null;
+      const f = fieldsOf();
+      return new (kind === 'html' ? f.HTMLField : f.StringField)();
+    },
+  });
+  const collectionOf = (items: Array<{ _id: string; schema: unknown }>) => ({
+    get: (id: string) => items.find((x) => x._id === id),
+  });
   const entry = (html: string, extra: Record<string, unknown> = {}) => ({
     documentName: 'JournalEntry',
     name: 'Lore',
+    schema: schemaOf({ 'system.description.value': 'html' }),
+    pages: collectionOf([{ _id: 'p1', schema: schemaOf({ 'text.content': 'html' }) }]),
     toObject: () => ({
       name: 'Lore',
-      pages: [{ text: { content: html } }],
+      pages: [{ _id: 'p1', text: { content: html } }],
       flags: { core: { a: 1 }, evil: { secret: 'x' }, 'agent-gateway': { ok: 1 } },
       ...extra,
     }),
@@ -219,10 +234,115 @@ describe('compendium_get', () => {
 
   it('escapes a hostile name and neutralises markup in content', async () => {
     const e = entry('<p>[click](javascript:alert(1)) <img src=x onerror=alert(1)></p>');
-    e.toObject = () => ({ name: '# <b>boom</b>', pages: [{ text: { content: '<p>[a](b)</p>' } }] });
+    e.toObject = () => ({
+      name: '# <b>boom</b>',
+      pages: [{ _id: 'p1', text: { content: '<p>[a](b)</p>' } }],
+    });
     setup([makePack('w.journals', 'JournalEntry', [])], { [uuid]: e });
     const r = (await get({ uuid })) as any;
     expect(r.text).not.toMatch(/<b>|<img/);
     expect(r.structured.markdown).toContain('\\[a\\]');
+  });
+
+  describe('rich text by field type', () => {
+    const doc = (
+      documentName: string,
+      spec: Record<string, 'html' | 'string'>,
+      data: any,
+      extra = {},
+    ) => ({
+      documentName,
+      name: data.name,
+      schema: schemaOf(spec),
+      toObject: () => data,
+      ...extra,
+    });
+    const run = async (d: any) => {
+      const u = `Compendium.w.p.${d.documentName}.x1`;
+      setup([makePack('w.p', d.documentName, [])], { [u]: d });
+      return (await get({ uuid: u })) as any;
+    };
+
+    it('RollTable result text: HTMLField is converted, a plain string field is escaped, not parsed', async () => {
+      const table = (kind: 'html' | 'string') =>
+        doc(
+          'RollTable',
+          { description: 'html' },
+          {
+            name: 'Loot',
+            description: '<p>Table <i>intro</i></p>',
+            results: [{ _id: 'r1', description: '<b>Gold</b> coins' }],
+          },
+          { results: collectionOf([{ _id: 'r1', schema: schemaOf({ description: kind }) }]) },
+        );
+      const html = await run(table('html'));
+      expect(html.structured.markdown).toContain('Table *intro*');
+      expect(html.structured.markdown).toContain('**Gold** coins');
+      const plain = await run(table('string'));
+      expect(plain.structured.markdown).toContain('&lt;b>Gold&lt;/b> coins');
+      expect(plain.structured.markdown).not.toContain('**Gold**');
+    });
+
+    it('RollTable v12 `text` result field is read when the model has it', async () => {
+      const t = doc(
+        'RollTable',
+        {},
+        { name: 'Old', results: [{ _id: 'r1', text: 'A <i>rat</i>' }] },
+        {
+          results: collectionOf([{ _id: 'r1', schema: schemaOf({ text: 'string' }) }]),
+        },
+      );
+      expect((await run(t)).structured.markdown).toContain('A &lt;i>rat&lt;/i>');
+    });
+
+    it('Macro command is a fenced code block, never interpreted', async () => {
+      const cmd = 'const x = "<b>hi</b>";\n```\n# not a heading\nawait ui.notifications.info(x);';
+      const r = await run(
+        doc('Macro', { command: 'string' }, { name: 'Zap', type: 'script', command: cmd }),
+      );
+      const md: string = r.structured.markdown;
+      expect(md).toContain('<b>hi</b>');
+      expect(md).toMatch(/^(`{3,}|~{3,})/m);
+      // The embedded fence cannot close the block: the fence in use is longer than any run in the command.
+      const open = /^(`{3,})/m.exec(md)![1]!;
+      expect(open.length).toBeGreaterThan(3);
+      expect(md.split(open).length).toBe(3);
+    });
+
+    it('Macro command is ignored when the model has no such string field', async () => {
+      const r = await run(doc('Macro', {}, { name: 'Zap', command: 'secretcode()' }));
+      expect(r.structured.markdown).not.toContain('secretcode');
+    });
+
+    it('Scene notes text is included as plain text, with HTMLField description as HTML', async () => {
+      const scene = doc(
+        'Scene',
+        { description: 'html' },
+        {
+          name: 'Cave',
+          description: '<p>A <b>dark</b> cave</p>',
+          notes: [
+            { _id: 'n1', text: 'Trap <b>here</b>' },
+            { _id: 'n2', text: '' },
+          ],
+        },
+        {
+          notes: collectionOf([
+            { _id: 'n1', schema: schemaOf({ text: 'string' }) },
+            { _id: 'n2', schema: schemaOf({ text: 'string' }) },
+          ]),
+        },
+      );
+      const md: string = (await run(scene)).structured.markdown;
+      expect(md).toContain('A **dark** cave');
+      expect(md).toContain('Trap &lt;b>here&lt;/b>');
+    });
+
+    it('a field absent from the data model is ignored whatever its content', async () => {
+      const r = await run(
+        doc('Item', {}, { name: 'Odd', description: '<p>phantom</p>', system: {} }),
+      );
+      expect(r.structured.markdown).not.toContain('phantom');
+    });
   });
 });
