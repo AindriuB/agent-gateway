@@ -15,7 +15,10 @@ const run = (user: { id: string; isGM: boolean }) =>
 
 describe('world_info', () => {
   it('reports world, system, generation, user, scene and combat', async () => {
-    stub = setupWorld({ activeScene: { name: 'Tavern' }, combatActive: true });
+    stub = setupWorld({
+      activeScene: { documentName: 'Scene', name: 'Tavern' },
+      combatActive: true,
+    });
     const r = await run(playerUser);
     expect(r).toMatchObject({
       structured: {
@@ -53,15 +56,17 @@ describe('world_info', () => {
     expect(r).toMatchObject({ error: { code: 'INVALID_ARGS' } });
   });
   it('players get the scene navigation name, the GM the real name', async () => {
-    stub = setupWorld({ activeScene: { name: 'Secret Lair Plans', navName: 'Cellar' } });
+    stub = setupWorld({
+      activeScene: { documentName: 'Scene', name: 'Secret Lair Plans', navName: 'Cellar' },
+    });
     expect(await run(playerUser)).toMatchObject({ structured: { activeScene: 'Cellar' } });
     expect(await run(gmUser)).toMatchObject({ structured: { activeScene: 'Secret Lair Plans' } });
     stub.uninstall();
-    stub = setupWorld({ activeScene: { name: 'Plain' } });
+    stub = setupWorld({ activeScene: { documentName: 'Scene', name: 'Plain' } });
     expect(await run(playerUser)).toMatchObject({ structured: { activeScene: 'Plain' } });
   });
   it.each(HOSTILE_NAMES)('escapes names in the text: %j', async (name) => {
-    stub = setupWorld({ activeScene: { name } });
+    stub = setupWorld({ activeScene: { documentName: 'Scene', name } });
     (globalThis as any).game.world.title = name;
     (globalThis as any).game.users.get('p1').name = name;
     const r = await run(playerUser);

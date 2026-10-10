@@ -1010,3 +1010,63 @@ describe('cache for nodes without a modified time', () => {
     expect(j.toObjectCalls.count).toBe(2);
   });
 });
+
+describe('scene visibility and folders for players', () => {
+  const hiddenScene = (extra: object = {}) =>
+    fakeDoc({
+      id: 'hs',
+      name: 'Backstage',
+      documentName: 'Scene',
+      observers: ['p1'],
+      navigation: false,
+      folder: { id: 'fo', name: 'GM Prep' },
+      ...extra,
+    });
+  const names = async (user: typeof playerUser, query?: object) =>
+    structured(await call('document_search', { type: 'Scene', ...query }, user)).results.map(
+      (r: any) => r.name,
+    );
+  afterEach(() => {
+    delete (playerUser as { viewedScene?: string }).viewedScene;
+  });
+  it('an observed scene that is not in navigation, active or viewed is not found or listed for a player', async () => {
+    stub = setupWorld({ docs: { scenes: [hiddenScene()] } });
+    expect(await names(playerUser)).toEqual([]);
+    expect(await get2('Scene.hs')).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+    expect(await names(gmUser)).toEqual(['Backstage']);
+    expect(structured(await get2('Scene.hs', gmUser)).name).toBe('Backstage');
+  });
+  it('becomes visible when active, in navigation, or viewed by that user', async () => {
+    for (const extra of [{ active: true }, { navigation: true }]) {
+      stub = setupWorld({ docs: { scenes: [hiddenScene(extra)] } });
+      expect(await names(playerUser)).toEqual(['Backstage']);
+      expect(structured(await get2('Scene.hs')).name).toBe('Backstage');
+      stub.uninstall();
+    }
+    stub = setupWorld({ docs: { scenes: [hiddenScene()] } });
+    (playerUser as { viewedScene?: string }).viewedScene = 'hs';
+    expect(await names(playerUser)).toEqual(['Backstage']);
+    expect(structured(await get2('Scene.hs')).name).toBe('Backstage');
+    expect(await names(ownerUser)).toEqual([]);
+  });
+  it('blanks the folder of a scene for players and ignores folder filters, but not for the GM', async () => {
+    stub = setupWorld({ docs: { scenes: [hiddenScene({ navigation: true })] } });
+    const player = structured(await call('document_search', { type: 'Scene', folder: 'GM Prep' }));
+    expect(player.results).toEqual([
+      { uuid: 'Scene.hs', name: 'Backstage', type: 'Scene', folder: '' },
+    ]);
+    const other = structured(
+      await call('document_search', { type: 'Scene', folder: 'nonexistent' }),
+    );
+    expect(other.results).toHaveLength(1);
+    const text = (await call('document_search', { type: 'Scene' })) as { text: string };
+    expect(text.text).not.toContain('GM Prep');
+    const gm = structured(
+      await call('document_search', { type: 'Scene', folder: 'nonexistent' }, gmUser),
+    );
+    expect(gm.results).toEqual([]);
+    expect(
+      structured(await call('document_search', { type: 'Scene' }, gmUser)).results[0].folder,
+    ).toBe('GM Prep');
+  });
+});

@@ -2,6 +2,7 @@
 import { foundryGeneration } from '../compat/index.js';
 import type { OpHandler } from '../ops/types.js';
 import { inlineText } from '../serialise/index.js';
+import { presentedName } from './visibility.js';
 
 declare const game: any;
 declare const CONST: any;
@@ -26,7 +27,7 @@ export const worldInfoHandler: OpHandler = (ctx) => {
     userName: String(user?.name ?? ''),
     userRole: roleName(user?.role),
     // Players see the navigation name, as in Foundry's scene navigation.
-    activeScene: String((ctx.user.isGM ? scene?.name : scene?.navName || scene?.name) ?? ''),
+    activeScene: scene ? presentedName(scene, user) : '',
     combatActive,
   };
   const text =

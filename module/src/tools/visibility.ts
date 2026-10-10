@@ -57,9 +57,14 @@ const EMBEDDED_RULES: Record<string, Record<string, Rule>> = {
 
 /**
  * May a non-GM user see this top-level document at all, beyond OBSERVER? A playlist is visible
- * only to its owners or while playing (client/documents/playlist.mjs `visible`).
+ * only to its owners or while playing (client/documents/playlist.mjs `visible`); a scene only when
+ * active, in the navigation bar or viewed by that user.
  */
 const ROOT_RULES: Record<string, (c: { user: any; doc: any }) => boolean> = {
+  // client/applications/ui/scene-navigation.mjs: active, in the navigation bar, or what the user is
+  // viewing. `viewedScene` is the requesting user's, not `doc.isView`, which reflects this client.
+  Scene: ({ user, doc }) =>
+    doc.active === true || doc.navigation === true || user.viewedScene === doc.id,
   Playlist: ({ user, doc }) => can(doc, user, 'OWNER') || doc.playing === true,
 };
 
@@ -327,4 +332,9 @@ function collectFields(doc: any): FieldSets | null {
   };
   for (const [k, f] of Object.entries(fields)) visit(f, k, 0);
   return { html, code };
+}
+
+/** Players never see the Scenes sidebar (sidebar.mjs, gmOnly), so a scene's folder is not theirs to read. */
+export function folderVisible(doc: any, user: any): boolean {
+  return user?.isGM === true || doc?.documentName !== 'Scene';
 }

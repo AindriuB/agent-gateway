@@ -28,6 +28,9 @@ export interface FakeDocInit {
   disposition?: number;
   playing?: boolean;
   navName?: string;
+  /** Scene state; `navigation` defaults to true as in Foundry. */
+  active?: boolean;
+  navigation?: boolean;
   data?: Record<string, unknown>;
   /** Schema fields (SchemaField-like `{ fields }`, `{ element }`, HTMLField, JavaScriptField, plain objects) */
   schema?: Record<string, unknown>;
@@ -69,6 +72,8 @@ export function fakeDoc(init: FakeDocInit): any {
     disposition: init.disposition,
     playing: init.playing,
     navName: init.navName,
+    active: init.active,
+    navigation: init.navigation ?? true,
     entry: init.entry,
     page: init.page,
     actor: init.actor,
@@ -123,7 +128,7 @@ const collection = (docs: any[]) => ({
 
 export interface WorldSetup {
   docs?: Record<string, any[]>;
-  activeScene?: { name: string; navName?: string };
+  activeScene?: { documentName?: string; name: string; navName?: string };
   combatActive?: boolean;
   optIn?: boolean;
 }

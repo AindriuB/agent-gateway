@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { OpHandler } from '../ops/types.js';
 import { inlineText } from '../serialise/index.js';
-import { presentedName, rootVisible } from './visibility.js';
+import { folderVisible, presentedName, rootVisible } from './visibility.js';
 
 declare const game: any;
 
@@ -33,7 +33,7 @@ export const documentSearchHandler: OpHandler = (ctx) => {
     .filter((d) => {
       if (!user || !d.testUserPermission(user, 'OBSERVER') || !rootVisible(d, user)) return false;
       if (query && !presentedName(d, user).toLowerCase().includes(query)) return false;
-      if (folder) {
+      if (folder && folderVisible(d, user)) {
         const f = d.folder;
         if (!f || (f.id?.toLowerCase() !== folder && String(f.name ?? '').toLowerCase() !== folder))
           return false;
@@ -44,7 +44,7 @@ export const documentSearchHandler: OpHandler = (ctx) => {
       uuid: String(d.uuid),
       name: presentedName(d, user),
       type: args.type,
-      folder: String(d.folder?.name ?? ''),
+      folder: folderVisible(d, user) ? String(d.folder?.name ?? '') : '',
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.uuid.localeCompare(b.uuid));
   const results = matches.slice(0, args.limit);
