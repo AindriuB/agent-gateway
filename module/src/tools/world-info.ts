@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { foundryGeneration } from '../compat/index.js';
 import type { OpHandler } from '../ops/types.js';
+import { inlineText } from '../serialise/index.js';
 
 declare const game: any;
 declare const CONST: any;
@@ -24,12 +25,15 @@ export const worldInfoHandler: OpHandler = (ctx) => {
     foundryGeneration: foundryGeneration(),
     userName: String(user?.name ?? ''),
     userRole: roleName(user?.role),
-    activeScene: String(scene?.name ?? ''),
+    // Players see the navigation name, as in Foundry's scene navigation.
+    activeScene: String((ctx.user.isGM ? scene?.name : scene?.navName || scene?.name) ?? ''),
     combatActive,
   };
   const text =
-    `World "${info.worldTitle}" (${info.worldId}), system ${info.systemId} ${info.systemVersion}, ` +
-    `Foundry v${info.foundryGeneration}. You act as ${info.userName} (${info.userRole}). ` +
-    `Active scene: ${info.activeScene || 'none'}. Combat ${combatActive ? 'is' : 'is not'} active.`;
+    `World "${inlineText(info.worldTitle)}" (${inlineText(info.worldId)}), ` +
+    `system ${inlineText(info.systemId)} ${inlineText(info.systemVersion)}, ` +
+    `Foundry v${info.foundryGeneration}. You act as ${inlineText(info.userName)} (${info.userRole}). ` +
+    `Active scene: ${inlineText(info.activeScene) || 'none'}. ` +
+    `Combat ${combatActive ? 'is' : 'is not'} active.`;
   return { text, structured: info };
 };

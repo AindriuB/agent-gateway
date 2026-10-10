@@ -3,41 +3,103 @@ import { fromUuidCompat } from '../compat/index.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
 import {
   domToDocument,
+  inlineText,
   page,
   PageCursorError,
   serialiseDocument,
+  stripSecrets,
+  includeOtherModuleDataSetting,
   type MdDocument,
 } from '../serialise/index.js';
+import {
+  applyTree,
+  treeStamp,
+  visibleTree,
+  type DocContext,
+  type VisibleNode,
+} from './visibility.js';
 
 declare const game: any;
+
+/** World document types this tool reads; their embedded documents come with them. */
+export const READABLE_TYPES = [
+  'Actor',
+  'Item',
+  'JournalEntry',
+  'Scene',
+  'RollTable',
+  'Macro',
+  'Playlist',
+] as const;
 
 const looksLikeHtml = (s: string) => /<\/?[a-z][^>]*>/i.test(s);
 
 /**
- * The serialised document as one markdown document: a heading plus raw value per HTML field,
- * a `path: value` line per other field. Built through the DOM so HTML is never spliced into
- * other markup, and flags are already filtered by `serialiseDocument`.
+ * The serialised document as one markdown document: a heading plus the converted value per HTML
+ * field, a fenced block per code field, a `path: value` line per other field. Built through the
+ * DOM so nothing is spliced into other markup. Secret sections are dropped from HTML fields unless
+ * the user owns the document that holds the field.
  */
-function toMdDocument(data: Record<string, unknown>): MdDocument {
+function toMdDocument(
+  data: Record<string, unknown>,
+  contexts: Map<object, DocContext>,
+): MdDocument {
   const dom = new DOMParser().parseFromString('', 'text/html');
   const el = (tag: string, text?: string) => {
     const e = dom.createElement(tag);
     if (text !== undefined) e.textContent = text;
     return e;
   };
-  const stack: Array<[string, unknown]> = Object.entries(data).reverse();
+  interface Item {
+    path: string;
+    rel: string;
+    value: unknown;
+    ctx: DocContext | undefined;
+  }
+  const stack: Item[] = [{ path: '', rel: '', value: data, ctx: undefined }];
+  const join = (a: string, k: string) => (a ? `${a}.${k}` : k);
   while (stack.length) {
-    const [path, value] = stack.pop()!;
+    const { path, rel, value, ctx: outer } = stack.pop()!;
+    let ctx = outer;
+    let here = rel;
+    if (value && typeof value === 'object' && contexts.has(value)) {
+      ctx = contexts.get(value);
+      here = '';
+    }
     if (Array.isArray(value)) {
-      for (let i = value.length - 1; i >= 0; i--) stack.push([`${path}[${i}]`, value[i]]);
+      for (let i = value.length - 1; i >= 0; i--) {
+        stack.push({ path: `${path}[${i}]`, rel: `${here}[*]`, value: value[i], ctx });
+      }
     } else if (value && typeof value === 'object') {
-      for (const [k, v] of Object.entries(value).reverse()) stack.push([`${path}.${k}`, v]);
-    } else if (typeof value === 'string' && looksLikeHtml(value)) {
-      dom.body.append(el('h3', path));
-      const box = el('div');
-      box.innerHTML = value;
-      dom.body.append(box);
-    } else if (value !== null && value !== '' && value !== undefined) {
+      for (const [k, v] of Object.entries(value).reverse()) {
+        stack.push({ path: join(path, k), rel: join(here, k), value: v, ctx });
+      }
+    } else if (typeof value === 'string') {
+      if (value === '') continue;
+      const isHtml = ctx?.html ? ctx.html.has(here) : looksLikeHtml(value);
+      const isCode =
+        ctx !== undefined && (ctx.code.has(here) || (ctx.isMacro && here === 'command'));
+      if (isHtml) {
+        dom.body.append(el('h3', path));
+        const box = el('div');
+        box.innerHTML = value;
+        if (!ctx?.owner) stripSecrets(box);
+        dom.body.append(box);
+      } else if (isCode) {
+        dom.body.append(el('p', path));
+        const pre = el('pre');
+        pre.append(el('code', value));
+        dom.body.append(pre);
+      } else {
+        const p = el('p');
+        p.append(el('strong', path), dom.createTextNode(': '));
+        value.split(/\r\n?|\n/).forEach((line, i) => {
+          if (i > 0) p.append(el('br'));
+          p.append(dom.createTextNode(line));
+        });
+        dom.body.append(p);
+      }
+    } else if (value !== null && value !== undefined) {
       const p = el('p');
       p.append(el('strong', path), dom.createTextNode(`: ${String(value)}`));
       dom.body.append(p);
@@ -46,12 +108,71 @@ function toMdDocument(data: Record<string, unknown>): MdDocument {
   return domToDocument(dom.body);
 }
 
-const notFound = (uuid: string): DispatchResult => ({
-  error: { code: 'INVALID_ARGS', message: `Document "${uuid}" not found` },
-});
+const err = (message: string): DispatchResult => ({ error: { code: 'INVALID_ARGS', message } });
+const notFound = (uuid: string) => err(`Document "${uuid}" not found`);
+
+/** Built documents, so paging does not re-serialise. Bounded by entry count and total size. */
+const CACHE_MAX_ENTRIES = 8;
+const CACHE_MAX_SIZE = 4_000_000;
+const cache = new Map<string, { md: MdDocument; size: number }>();
+
+const sizeOf = (md: MdDocument): number =>
+  md.blocks.reduce((n, b) => b.segs.reduce((m, s) => m + s.md.length, n) + 16, 0);
+
+function cacheGet(key: string): MdDocument | undefined {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  cache.delete(key);
+  cache.set(key, hit);
+  return hit.md;
+}
+
+function cachePut(key: string, md: MdDocument): void {
+  const size = sizeOf(md);
+  if (size > CACHE_MAX_SIZE) return;
+  cache.set(key, { md, size });
+  let total = 0;
+  for (const e of cache.values()) total += e.size;
+  for (const k of cache.keys()) {
+    if (cache.size <= CACHE_MAX_ENTRIES && total <= CACHE_MAX_SIZE) break;
+    total -= cache.get(k)!.size;
+    cache.delete(k);
+  }
+}
+
+/** Test hook: forget every cached document. */
+export function clearDocumentCache(): void {
+  cache.clear();
+}
+
+/** Every document from `doc` up to its world document must be visible to `user`. */
+function readableBy(doc: any, user: any): boolean {
+  if (user.isGM === true) return true;
+  const chain: any[] = [];
+  for (let d = doc; d; d = d.parent) chain.push(d);
+  const root = chain[chain.length - 1];
+  if (typeof root.testUserPermission !== 'function' || !root.testUserPermission(user, 'OBSERVER'))
+    return false;
+  // Rebuild the tree top-down and require each step to survive the embedded-visibility rules.
+  let node: VisibleNode = visibleTree(root, user);
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const next: VisibleNode | undefined = Object.values(node.children)
+      .flat()
+      .find((k) => k.doc === chain[i]);
+    if (!next) return false;
+    node = next;
+  }
+  return true;
+}
 
 export const documentGetHandler: OpHandler = async (ctx) => {
   const { uuid, cursor } = ctx.args as { uuid: string; cursor?: string };
+  if (uuid.startsWith('Compendium.')) {
+    return err('Compendium documents are not read here; use compendium_get');
+  }
+  if (!(READABLE_TYPES as readonly string[]).includes(uuid.split('.')[0]!)) {
+    return err(`document_get reads ${READABLE_TYPES.join(', ')} documents only`);
+  }
   let doc: any = null;
   try {
     doc = await fromUuidCompat(uuid);
@@ -60,21 +181,32 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   }
   const user = game.users.get(ctx.user.id);
   // A document the user cannot observe looks exactly like a missing one, so uuids cannot be probed.
-  if (
-    !doc ||
-    typeof doc.testUserPermission !== 'function' ||
-    !user ||
-    !doc.testUserPermission(user, 'OBSERVER')
-  ) {
-    return notFound(uuid);
+  if (!doc || !user || doc.pack || !readableBy(doc, user)) return notFound(uuid);
+
+  const tree = visibleTree(doc, user);
+  const stamp = treeStamp(tree);
+  const optIn = includeOtherModuleDataSetting();
+  const key =
+    stamp === null ? null : [doc.uuid ?? uuid, user.id, user.role, optIn, stamp].join('|');
+  let md = key === null ? undefined : cacheGet(key);
+  if (!md) {
+    const data = serialiseDocument(doc) as Record<string, any>;
+    const contexts = new Map<object, DocContext>();
+    applyTree(tree, data, contexts);
+    md = toMdDocument(data, contexts);
+    if (key !== null) cachePut(key, md);
   }
   let result;
   try {
-    result = page(toMdDocument(serialiseDocument(doc)), cursor);
-  } catch (err) {
-    if (err instanceof PageCursorError)
-      return { error: { code: 'INVALID_ARGS', message: 'Invalid page cursor' } };
-    throw err;
+    result = page(md, cursor);
+  } catch (e) {
+    if (!(e instanceof PageCursorError)) throw e;
+    const issued = cursor ? /^p1\.([0-9a-f]{8})\./.exec(cursor) : null;
+    return err(
+      issued && issued[1] !== md.id
+        ? 'The document changed since this cursor was issued; call again without a cursor to restart'
+        : 'Invalid page cursor',
+    );
   }
   const name = String(doc.name ?? '');
   const type = String(doc.documentName ?? doc.constructor?.documentName ?? '');
@@ -86,5 +218,6 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   };
   if (result.nextCursor) structured.nextCursor = result.nextCursor;
   const more = result.nextCursor ? `\n\n[more: call again with cursor "${result.nextCursor}"]` : '';
-  return { text: `${type} "${name}" (${structured.uuid})\n\n${result.chunk}${more}`, structured };
+  const head = `${inlineText(type)}: ${inlineText(name)} (${inlineText(String(structured.uuid))})`;
+  return { text: `${head}\n\n${result.chunk}${more}`, structured };
 };

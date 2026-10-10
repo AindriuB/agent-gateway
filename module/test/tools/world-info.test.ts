@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, describe, expect, it } from 'vitest';
 import { dispatch } from '../../src/ops/dispatch.js';
 import type { FoundryStub } from '../stubs/foundry.js';
-import { gmUser, playerUser, setupWorld } from './fixtures.js';
+import { expectInertSpan, HOSTILE_NAMES } from '../stubs/inert.js';
+import { gmUser, playerUser, setupWorld } from '../stubs/world.js';
 
 let stub: FoundryStub;
 afterEach(() => stub?.uninstall());
@@ -49,5 +51,23 @@ describe('world_info', () => {
       playerUser,
     );
     expect(r).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+  });
+  it('players get the scene navigation name, the GM the real name', async () => {
+    stub = setupWorld({ activeScene: { name: 'Secret Lair Plans', navName: 'Cellar' } });
+    expect(await run(playerUser)).toMatchObject({ structured: { activeScene: 'Cellar' } });
+    expect(await run(gmUser)).toMatchObject({ structured: { activeScene: 'Secret Lair Plans' } });
+    stub.uninstall();
+    stub = setupWorld({ activeScene: { name: 'Plain' } });
+    expect(await run(playerUser)).toMatchObject({ structured: { activeScene: 'Plain' } });
+  });
+  it.each(HOSTILE_NAMES)('escapes names in the text: %j', async (name) => {
+    stub = setupWorld({ activeScene: { name } });
+    (globalThis as any).game.world.title = name;
+    (globalThis as any).game.users.get('p1').name = name;
+    const r = await run(playerUser);
+    const t = 'text' in r ? r.text : '';
+    expect(t.split('\n')).toHaveLength(1);
+    expectInertSpan(t);
+    playerUser.name = 'Pat';
   });
 });

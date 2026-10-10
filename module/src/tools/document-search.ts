@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { OpHandler } from '../ops/types.js';
+import { inlineText } from '../serialise/index.js';
 
 declare const game: any;
 
@@ -53,7 +54,10 @@ export const documentSearchHandler: OpHandler = (ctx) => {
     .sort((a, b) => a.name.localeCompare(b.name) || a.uuid.localeCompare(b.uuid));
   const results = matches.slice(0, args.limit);
   const truncated = matches.length > results.length;
-  const lines = results.map((r) => `- ${r.name} (${r.uuid})${r.folder ? ` in ${r.folder}` : ''}`);
+  const lines = results.map(
+    (r) =>
+      `- ${inlineText(r.name)} (${inlineText(r.uuid)})${r.folder ? ` in ${inlineText(r.folder)}` : ''}`,
+  );
   const text =
     `${results.length} of ${matches.length} ${args.type} documents` +
     `${truncated ? ' (truncated; narrow the query)' : ''}.` +
