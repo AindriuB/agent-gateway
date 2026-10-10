@@ -1,5 +1,8 @@
 {
   "AGENT_GATEWAY": {
+    "Packs": {
+      "Sealed": "Register tool packs in the agentGateway.registerPacks hook before ready."
+    },
     "Settings": {
       "gatewayUrl": {
         "name": "Gateway URL",

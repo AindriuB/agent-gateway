@@ -1,3 +1,4 @@
+import { installPackApi, registerPacks, sealPacks } from './packs/live.js';
 import { foundryGeneration } from './compat/index.js';
 import { installBridge } from './link/bridge.js';
 import {
@@ -18,10 +19,14 @@ declare const Hooks: {
 declare const game: { user?: { id?: string } } | undefined;
 
 Hooks.once('init', () => {
+  installPackApi();
   registerSettings();
 });
 
+Hooks.once('setup', registerPacks);
+
 Hooks.once('ready', () => {
+  sealPacks();
   console.log(`agent-gateway | ready (v${foundryGeneration()})`);
   installBridge(getLinkClient());
   // Role changes and policy edits change what this user may call; tell the gateway.

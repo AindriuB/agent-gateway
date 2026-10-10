@@ -81,14 +81,6 @@ export function startApprovals(): void {
     if (now && !wasConnected) m.representAll();
     wasConnected = now;
   });
-  const mod = game.modules?.get(NS);
-  if (mod) {
-    mod.api = {
-      ...(mod.api ?? {}),
-      resolveApproval: (id: string, o: any) => m.resolveApproval(id, o),
-      listApprovals: () => m.listPending(),
-    };
-  }
   m.representAll();
 }
 
