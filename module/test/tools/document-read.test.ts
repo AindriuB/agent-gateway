@@ -160,9 +160,15 @@ describe('document_get', () => {
     expect(out.content).not.toContain('other-module');
     expect(out.content).toContain('flags.core.a');
   });
-  it('FORBIDDEN for a document the user cannot observe, allowed for a GM', async () => {
+  it('an unobservable document is indistinguishable from a missing one; a GM can read it', async () => {
     stub = world();
-    expect(await get('Actor.h')).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    const hiddenRes = await get('Actor.h');
+    const missingRes = await get('Actor.nope');
+    expect(hiddenRes).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+    expect('error' in hiddenRes && hiddenRes.error.message).toMatch(/not found/);
+    expect(JSON.stringify(hiddenRes).replace('Actor.h', 'X')).toBe(
+      JSON.stringify(missingRes).replace('Actor.nope', 'X'),
+    );
     expect(structured(await get('Actor.h', undefined, gmUser)).name).toBe('Hidden');
   });
   it('INVALID_ARGS not found for an unknown uuid, also when resolution throws', async () => {

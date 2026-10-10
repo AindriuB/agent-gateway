@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { fromUuidCompat } from '../compat/index.js';
-import type { OpError, OpHandler, OpResult } from '../ops/types.js';
+import type { DispatchResult, OpHandler } from '../ops/types.js';
 import {
   domToDocument,
   page,
@@ -46,9 +46,9 @@ function toMdDocument(data: Record<string, unknown>): MdDocument {
   return domToDocument(dom.body);
 }
 
-/** Handlers return failures as `{ error }`, which the dispatcher passes through as it does a stage's. */
-const failure = (code: OpError['error']['code'], message: string): OpResult =>
-  ({ error: { code, message } }) as unknown as OpResult;
+const notFound = (uuid: string): DispatchResult => ({
+  error: { code: 'INVALID_ARGS', message: `Document "${uuid}" not found` },
+});
 
 export const documentGetHandler: OpHandler = async (ctx) => {
   const { uuid, cursor } = ctx.args as { uuid: string; cursor?: string };
@@ -58,18 +58,22 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   } catch {
     doc = null;
   }
-  if (!doc || typeof doc.testUserPermission !== 'function') {
-    return failure('INVALID_ARGS', `Document "${uuid}" not found`);
-  }
   const user = game.users.get(ctx.user.id);
-  if (!user || !doc.testUserPermission(user, 'OBSERVER')) {
-    return failure('FORBIDDEN', `You may not view document "${uuid}"`);
+  // A document the user cannot observe looks exactly like a missing one, so uuids cannot be probed.
+  if (
+    !doc ||
+    typeof doc.testUserPermission !== 'function' ||
+    !user ||
+    !doc.testUserPermission(user, 'OBSERVER')
+  ) {
+    return notFound(uuid);
   }
   let result;
   try {
     result = page(toMdDocument(serialiseDocument(doc)), cursor);
   } catch (err) {
-    if (err instanceof PageCursorError) return failure('INVALID_ARGS', 'Invalid page cursor');
+    if (err instanceof PageCursorError)
+      return { error: { code: 'INVALID_ARGS', message: 'Invalid page cursor' } };
     throw err;
   }
   const name = String(doc.name ?? '');
