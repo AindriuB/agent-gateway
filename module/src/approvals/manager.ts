@@ -1,5 +1,6 @@
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
-import { TOOLS, type ToolDefinition } from '@agent-gateway/protocol';
+import type { ToolDefinition } from '@agent-gateway/protocol';
+import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import { callHash } from './canonical.js';
 import { APPROVAL_CONFIG as CFG } from './config.js';
 import type {
@@ -268,7 +269,9 @@ export class ApprovalManager {
     if (!user) {
       return { error: { code: 'FORBIDDEN', message: 'The requesting user no longer exists' } };
     }
-    const def = (this.opts.tools ?? TOOLS).find((d) => d.name === ctx.tool);
+    const def = this.opts.tools
+      ? this.opts.tools.find((d) => d.name === ctx.tool)
+      : toolRegistry.info(ctx.tool);
     if (!def) {
       return { error: { code: 'TOOL_NOT_FOUND', message: `Unknown tool "${ctx.tool}"` } };
     }
@@ -694,7 +697,9 @@ export class ApprovalManager {
     // The hash shown to the approver and echoed back must be the hash of the arguments shown.
     if (data.argsHash !== callHash(data.tool, data.args)) return;
     // The category is the registry's, never the sender's, and an unknown tool is not shown at all.
-    const def = (this.opts.tools ?? TOOLS).find((d) => d.name === data.tool);
+    const def = this.opts.tools
+      ? this.opts.tools.find((d) => d.name === data.tool)
+      : toolRegistry.info(data.tool);
     if (!def) return;
     // The sender cannot keep a request alive longer than this client's own limit.
     const now = this.env.now();

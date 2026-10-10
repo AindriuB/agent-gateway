@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TOOLS, type ToolDefinition } from '@agent-gateway/protocol';
+import type { ToolDefinition } from '@agent-gateway/protocol';
+import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import type { Stage } from '../ops/stages.js';
 import type { DispatchResult } from '../ops/types.js';
 import { bucketFor, resolveLimit, type LoadedLimits } from './config.js';
@@ -31,7 +32,6 @@ export interface RateLimitConfig {
  * budget. The agent class is the calling user's, as in the policy engine.
  */
 export function createRateLimitStage(config: RateLimitConfig = {}): Stage {
-  const tools = config.tools ?? TOOLS;
   const limits = config.limits ?? loadRateLimits;
   const limiter =
     config.limiter ?? new SlidingWindowLimiter(config.now ?? (() => performance.now()));
@@ -39,7 +39,11 @@ export function createRateLimitStage(config: RateLimitConfig = {}): Stage {
     name: 'rate-limit',
     order: RATE_LIMIT_STAGE_ORDER,
     async run(ctx, next) {
-      const bucket = bucketFor(tools.find((d) => d.name === ctx.tool)?.category);
+      const bucket = bucketFor(
+        config.tools
+          ? config.tools.find((d) => d.name === ctx.tool)?.category
+          : toolRegistry.categoryOf(ctx.tool),
+      );
       const limit = resolveLimit(
         limits(),
         ctx.user.isGM ? 'gmAgents' : 'playerAgents',

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TOOLS, type ToolDefinition } from '@agent-gateway/protocol';
+import type { ToolDefinition } from '@agent-gateway/protocol';
+import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import type { Stage } from '../ops/stages.js';
 import type { DispatchResult } from '../ops/types.js';
 import { evaluate, type PolicyInputs } from './evaluate.js';
@@ -43,13 +44,16 @@ export function createPolicyStage(
     inputs?: () => PolicyInputs;
   } = {},
 ): Stage {
-  const tools = config.tools ?? TOOLS;
   const inputs = config.inputs ?? liveInputs;
   return {
     name: 'policy',
     order: POLICY_STAGE_ORDER,
     async run(ctx, next) {
-      const category = tools.find((d) => d.name === ctx.tool)?.category as Category | undefined;
+      const category = (
+        config.tools
+          ? config.tools.find((d) => d.name === ctx.tool)?.category
+          : toolRegistry.categoryOf(ctx.tool)
+      ) as Category | undefined;
       if (!category || !(CATEGORIES as readonly string[]).includes(category)) {
         return denied(t('AGENT_GATEWAY.Policy.unknownCategory', { tool: ctx.tool }));
       }

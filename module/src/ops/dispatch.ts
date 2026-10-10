@@ -1,5 +1,6 @@
-import { TOOLS, type ToolDefinition } from '@agent-gateway/protocol';
-import { HANDLERS } from '../tools/index.js';
+import { checkToolDefinition, type ToolDefinition } from '@agent-gateway/protocol';
+import { coreEntry, registerCoreTools } from './core-tools.js';
+import { ToolRegistry, installToolRegistry, type RegistryLookup } from './registry-class.js';
 import { STAGES, type Stage } from './stages.js';
 import type { DispatchResult, OpCall, OpContext, OpErrorCode, OpHandler, OpUser } from './types.js';
 
@@ -20,17 +21,21 @@ export function summariseIssues(issues: readonly { path: PropertyKey[]; message:
     .replace(/\s+/g, ' ');
 }
 
-export function createDispatcher(config: DispatcherConfig) {
+export function createRegistryDispatcher(
+  registry: ToolRegistry,
+  lookup: RegistryLookup,
+  configuredStages: readonly Stage[],
+) {
   return async function dispatch(call: OpCall, user: OpUser): Promise<DispatchResult> {
-    const def = config.tools.find((t) => t.name === call.tool);
-    const handler =
-      def && Object.hasOwn(config.handlers, def.name) ? config.handlers[def.name] : undefined;
+    const def = registry.info(call.tool);
+    const implementation = lookup(call.tool);
+    const handler = implementation?.handler;
     if (!def || !handler) return fail('TOOL_NOT_FOUND', `Unknown tool "${call.tool}"`);
     if (def.minRole === 'gm' && !user.isGM) {
       return fail('FORBIDDEN', `Tool "${def.name}" requires a GM`);
     }
-    const parsed = def.input.safeParse(call.args);
-    if (!parsed.success) return fail('INVALID_ARGS', summariseIssues(parsed.error.issues));
+    const parsed = implementation!.parseArgs(call.args);
+    if (!parsed.ok) return fail('INVALID_ARGS', summariseIssues(parsed.issues));
 
     const ctx: OpContext = {
       user,
@@ -39,7 +44,7 @@ export function createDispatcher(config: DispatcherConfig) {
       tool: def.name,
       args: parsed.data,
     };
-    const stages = [...config.stages].sort((a, b) => a.order - b.order);
+    const stages = [...configuredStages].sort((a, b) => a.order - b.order);
     const run = async (i: number): Promise<DispatchResult> => {
       const stage = stages[i];
       if (!stage) {
@@ -62,5 +67,34 @@ export function createDispatcher(config: DispatcherConfig) {
   };
 }
 
-export const dispatch = (call: OpCall, user: OpUser) =>
-  createDispatcher({ tools: TOOLS, handlers: HANDLERS, stages: STAGES })(call, user);
+/** Compatibility factory for existing injected Zod definitions and handler subsets. */
+export function createDispatcher(config: DispatcherConfig) {
+  let lookup!: RegistryLookup;
+  const registry = new ToolRegistry((value) => {
+    lookup = value;
+  });
+  for (const tool of config.tools) {
+    if (!Object.hasOwn(config.handlers, tool.name)) continue;
+    const entry = coreEntry(tool, config.handlers[tool.name]!);
+    // Legacy injected fixtures include unknown schemas and deliberately invalid categories.
+    // They are never announced. Use conservative synthetic metadata only when their JSON
+    // representation fails today's rules, and retain the original Zod parser and role.
+    if (checkToolDefinition(entry, 'core').length) {
+      entry.inputSchema = { type: 'object', properties: {}, additionalProperties: false };
+      entry.outputSchema = { type: 'object', properties: {}, additionalProperties: false };
+      if (!['read', 'write', 'destructive', 'code'].includes(entry.category))
+        entry.category = 'write';
+    }
+    registry.register(entry);
+  }
+  return createRegistryDispatcher(registry, lookup, config.stages);
+}
+
+let liveLookup!: RegistryLookup;
+export const toolRegistry = new ToolRegistry((lookup) => {
+  liveLookup = lookup;
+});
+installToolRegistry(toolRegistry);
+registerCoreTools(toolRegistry);
+export const dispatch = (call: OpCall, user: OpUser): Promise<DispatchResult> =>
+  createRegistryDispatcher(toolRegistry, liveLookup, STAGES)(call, user);

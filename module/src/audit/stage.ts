@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { TOOLS } from '@agent-gateway/protocol';
+import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import { fromUuidCompat } from '../compat/index.js';
 import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
@@ -63,7 +63,7 @@ export interface AuditStageDeps {
 }
 
 const defaultDeps: AuditStageDeps = {
-  categoryOf: (tool) => TOOLS.find((t) => t.name === tool)?.category,
+  categoryOf: (tool) => toolRegistry.categoryOf(tool),
   fromUuid: (uuid) => fromUuidCompat(uuid),
   submit: submitAudit,
   isGM: () => (globalThis as { game?: { user?: { isGM?: boolean } } }).game?.user?.isGM === true,
