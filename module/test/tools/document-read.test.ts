@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { dispatch } from '../../src/ops/dispatch.js';
 import type { DispatchResult } from '../../src/ops/types.js';
 import type { FoundryStub } from '../stubs/foundry.js';
-import { clearDocumentCache } from '../../src/tools/document-get.js';
+import { documentGetHandler, clearDocumentCache } from '../../src/tools/document-get.js';
 import { expectInertSpan, HOSTILE_NAMES } from '../stubs/inert.js';
 import {
   codeField,
@@ -1069,4 +1069,62 @@ describe('scene visibility and folders for players', () => {
       structured(await call('document_search', { type: 'Scene' }, gmUser)).results[0].folder,
     ).toBe('GM Prep');
   });
+});
+
+it('document_get retains its complete handler-entry folder snapshot across UUID resolution', async () => {
+  const actor = fakeDoc({
+    id: 'deferred',
+    name: 'Hidden by initial folder',
+    documentName: 'Actor',
+    folder: { id: 'outside', name: 'Outside' },
+    observers: ['p1'],
+  });
+  stub = setupWorld({ docs: { actors: [actor] } });
+  const g = globalThis as any;
+  const { publishWorldSnapshot } = await import('../../src/policy/snapshot.js');
+  const { DEFAULT_WORLD_MATRIX } = await import('../../src/policy/matrix.js');
+  const { DEFAULT_LIMITS } = await import('../../src/ratelimit/config.js');
+  // Native-shaped persisted world records; changing the full published value during UUID await.
+  const docs: any[] = [];
+  g.game.settings.storage.set('world', {
+    contents: docs,
+    get: (id: string) => docs.find((doc) => doc.id === id),
+  });
+  const oldGet = g.game.settings.get;
+  g.game.settings.get = (ns: string, key: string) =>
+    docs.find((d) => d.key === `${ns}.${key}`)?.value ?? oldGet(ns, key);
+  g.game.settings.set = async (ns: string, key: string, value: unknown) => {
+    let doc = docs.find((d) => d.key === `${ns}.${key}`);
+    if (!doc) {
+      doc = { id: key, key: `${ns}.${key}`, user: null };
+      docs.push(doc);
+    }
+    doc.value = value;
+    doc._source = { _id: doc.id, key: doc.key, user: null, value: JSON.stringify(value) };
+  };
+  g.game.user = gmUser;
+  const p = {
+    version: 1,
+    world: DEFAULT_WORLD_MATRIX,
+    playerEnabled: true,
+    headlessEnabled: false,
+    folders: { playerAgents: ['F'], gmAgents: [] },
+    limits: DEFAULT_LIMITS,
+  };
+  await publishWorldSnapshot(p);
+  let release!: () => void;
+  const waiting = new Promise<void>((done) => {
+    release = done;
+  });
+  g.fromUuid = async () => {
+    await waiting;
+    return actor;
+  };
+  const read = documentGetHandler({ args: { uuid: actor.uuid }, user: playerUser } as any);
+  await publishWorldSnapshot({ ...p, folders: { playerAgents: [], gmAgents: [] } });
+  release();
+  expect(await read).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+  expect(
+    structured(await documentGetHandler({ args: { uuid: actor.uuid }, user: playerUser } as any)),
+  ).toBeDefined();
 });

@@ -30,6 +30,7 @@ export function installFoundry(
     sceneLevels?: boolean;
     stringStorage?: boolean;
     worldSettingWriter?: () => string | undefined;
+    persistedWorldSettings?: boolean;
   } = {},
 ): FoundryStub {
   const g = globalThis as any;
@@ -47,6 +48,9 @@ export function installFoundry(
   const hooks = new Map<string, Array<() => void>>();
   // Tool tests act as player agents, which are off in a fresh world; policy tests set this explicitly.
   values.set('agent-gateway.playerAgentsEnabled', true);
+  values.set('agent-gateway.headlessAgentsEnabled', false);
+  values.set('agent-gateway.folderAllowlist', JSON.stringify({ playerAgents: [], gmAgents: [] }));
+  values.set('agent-gateway.worldPolicySnapshotMigrated', false);
   // The registered default world policy (spec section 3), as an unset real world would hold it.
   values.set(
     'agent-gateway.worldPolicy',
@@ -75,6 +79,10 @@ export function installFoundry(
         [
           'world',
           {
+            get: (id: string) => [...worldSettings.values()].find((doc) => doc.id === id),
+            get contents() {
+              return [...worldSettings.values()];
+            },
             getSetting: (key: string, user: string | null = null) => {
               const doc = worldSettings.get(key);
               return doc?.user === user ? doc : undefined;
@@ -99,12 +107,22 @@ export function installFoundry(
         const full = `${ns}.${key}`;
         values.set(full, opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v);
         // Explicit test-only writer injection: no invented GM proof for ordinary settings.
-        if (registeredSettings.get(full)?.scope === 'world' && opts.worldSettingWriter) {
+        if (
+          (registeredSettings.get(full)?.scope === 'world' && opts.worldSettingWriter) ||
+          (opts.persistedWorldSettings && key !== 'ownerPolicy')
+        ) {
           worldSettings.set(full, {
+            id: worldSettings.get(full)?.id ?? `setting-${worldSettings.size}`,
             key: full,
             user: null,
+            _source: {
+              _id: worldSettings.get(full)?.id ?? `setting-${worldSettings.size}`,
+              key: full,
+              user: null,
+              value: JSON.stringify(v),
+            },
             value: v,
-            _stats: { lastModifiedBy: opts.worldSettingWriter() },
+            _stats: { lastModifiedBy: opts.worldSettingWriter?.() },
           });
         }
       },

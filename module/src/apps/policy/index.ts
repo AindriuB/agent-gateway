@@ -1,19 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getApplicationV2, getHandlebarsApplicationMixin } from '../../compat/index.js';
-import { AGENT_CLASSES, CATEGORIES, DENY_ALL_MATRIX } from '../../policy/matrix.js';
-import {
-  folderAllowlist,
-  headlessAgentsEnabled,
-  loadOwnerPolicy,
-  loadWorldPolicy,
-  playerAgentsEnabled,
-  saveOwnerPolicy,
-  saveWorldPolicy,
-  FOLDER_ALLOWLIST_KEY,
-  PLAYER_AGENTS_KEY,
-  HEADLESS_AGENTS_KEY,
-} from '../../policy/store.js';
-import { loadRateLimits, saveRateLimits } from '../../ratelimit/store.js';
+import { AGENT_CLASSES, CATEGORIES } from '../../policy/matrix.js';
+import { loadOwnerPolicy, saveOwnerPolicy } from '../../policy/store.js';
+import { readWorldSnapshot, publishWorldSnapshot } from '../../policy/snapshot.js';
 import { isDecision, strictness } from '../../policy/lattice.js';
 import { policyContext, validatePolicyForm, type PolicyState } from './model.js';
 
@@ -22,13 +11,13 @@ declare const ui: any;
 const NS = 'agent-gateway';
 
 export function currentPolicyState(): PolicyState {
-  const limits = loadRateLimits();
+  const snapshot = readWorldSnapshot();
   return {
     isGM: game.user?.isGM === true,
-    world: loadWorldPolicy(),
+    world: snapshot.world,
     owner: loadOwnerPolicy(),
-    playerEnabled: playerAgentsEnabled(),
-    headlessEnabled: headlessAgentsEnabled(),
+    playerEnabled: snapshot.playerEnabled,
+    headlessEnabled: snapshot.headlessEnabled,
     // Only GMs need folder metadata; players see only the ceiling and their own matrix.
     folders:
       game.user?.isGM === true
@@ -36,51 +25,30 @@ export function currentPolicyState(): PolicyState {
             .map((f: any) => ({ id: String(f.id), name: String(f.name) }))
             .sort((a: any, b: any) => a.name.localeCompare(b.name))
         : [],
-    allowlists: Object.fromEntries(AGENT_CLASSES.map((cls) => [cls, folderAllowlist(cls)])),
-    limits: { ...limits.classes, agents: Object.fromEntries(limits.agents) },
-    agentsCorrupt: limits.agentsCorrupt,
+    allowlists: snapshot.folders,
+    limits: snapshot.limits,
+    agentsCorrupt: snapshot.agentsCorrupt,
   };
 }
 
 export async function savePolicyForm(values: Record<string, unknown>): Promise<boolean> {
-  let savingWorld = false;
   try {
     const validated = validatePolicyForm(values, currentPolicyState());
     if ('world' in validated) {
-      savingWorld = true;
-      // The matrix also closes interactive GM access, which the agent toggles do not gate.
-      // Abort on any quiescence failure before changing restrictions.
-      await saveWorldPolicy(DENY_ALL_MATRIX);
-      await game.settings.set(NS, PLAYER_AGENTS_KEY, false);
-      await game.settings.set(NS, HEADLESS_AGENTS_KEY, false);
-      await game.settings.set(NS, FOLDER_ALLOWLIST_KEY, JSON.stringify(validated.folders));
-      await saveRateLimits(validated.limits);
       await saveOwnerPolicy(validated.owner);
-      // All restrictions are persisted before either class can gain access.
-      if (validated.playerEnabled) await game.settings.set(NS, PLAYER_AGENTS_KEY, true);
-      if (validated.headlessEnabled) await game.settings.set(NS, HEADLESS_AGENTS_KEY, true);
-      // Publish the requested ceiling only after every restriction and toggle has persisted.
-      await saveWorldPolicy(validated.world);
+      if (game.user?.isGM !== true) throw Error('World policy requires a GM');
+      await publishWorldSnapshot({
+        version: 1,
+        world: validated.world,
+        playerEnabled: validated.playerEnabled,
+        headlessEnabled: validated.headlessEnabled,
+        folders: validated.folders,
+        limits: validated.limits,
+      });
     } else await saveOwnerPolicy(validated.owner);
     ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.PolicyApp.saved'));
     return true;
   } catch {
-    if (savingWorld) {
-      // Settings are not transactional. Never restore broader access after a partial save;
-      // attempt both disables even if one fails (an unavailable backend may reject rollback).
-      try {
-        await saveWorldPolicy(DENY_ALL_MATRIX);
-      } catch {
-        // An unavailable backend may refuse this too; still try both remaining gates.
-      }
-      for (const key of [PLAYER_AGENTS_KEY, HEADLESS_AGENTS_KEY]) {
-        try {
-          await game.settings.set(NS, key, false);
-        } catch {
-          // Still try to close the other gate and report the failed save below.
-        }
-      }
-    }
     ui.notifications.error(game.i18n.localize('AGENT_GATEWAY.PolicyApp.invalid'));
     return false;
   }

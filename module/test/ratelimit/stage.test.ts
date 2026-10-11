@@ -39,7 +39,8 @@ const player = { id: 'u', isGM: false };
 const gm = { id: 'g', isGM: true };
 
 async function setup(withPolicy = false) {
-  stub = installFoundry(14);
+  stub = installFoundry(14, { persistedWorldSettings: true });
+  (globalThis as any).game.user = { id: 'gm', isGM: true };
   (globalThis as any).game.i18n = englishI18n;
   registerPolicySettings();
   registerRateLimitSettings();
