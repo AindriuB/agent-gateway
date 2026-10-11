@@ -17,6 +17,35 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — Foundry v13 validation completed and fresh-world setup clarified
+
+Foundry v13.351 / PF2e 7.12.2 passed the full
+suite from reviewed harness PR #53 (`b3f5674`): eight files discovered, seven
+passed and one optional Hello Pack file skipped; 34 tests passed, one skipped,
+zero failed. Core reads (21), ambiguity (7), isolation (3), resilience (2) and
+stale-token handling (1) passed. GM and player each listed seven tools; 20 player
+results × 21 hidden strings produced zero leaks. Ambiguous sessions sent zero
+call frames; reload recovered in 3.4 s and restart in 1.2 s with pairings 3→3;
+stale-token failure completed in 10.1 s. The genuine installed bundle matched
+SHA-256 `27efa51c11498137fd6de60b73bb5e88408db2ebb3a6a6fe240ff9f2c94add2a`,
+using trusted TLS and no bundle interception. Sessions closed and source stayed
+clean. This supersedes the earlier unavailable-instance deferral; no v13 Hello
+Pack lifecycle pass is claimed. Full v14 acceptance remains complete. PRs #50
+and #51 are merged; this recording branch depends on reviewed PR #53.
+
+**Cost:** Fresh-world player pairing initially failed because player agents were
+not yet enabled; owner-approved GM seed resolved that prerequisite. The first
+full run then passed 33 tests, failed one own-character chat assertion and
+skipped the optional pack test. Its hardcoded owned actor was absent, and
+Foundry itself stripped the secret exactly as the gateway did: a fixture
+prerequisite, not a core regression. With Andrew's approval, a flagged character
+`Actor.6i6mZ5g8vX8iU9RD` was created with name `player1`, type `character`,
+default OBSERVER (2) and Player1 OWNER. The pre-existing party was unchanged.
+The focused chat check and full rerun passed. The seed does not create that
+actor; testing docs now state this prerequisite and GM pairing → approved seed
+→ player pairing order. No cross-version PF2e actor schema was imported.
+
+
 ## 2026-10-11 — Tool-pack PRs merged and v14 lifecycle verified; v13 pending (tasks 20b–20f)
 
 PR #47 merged head `87d050e47340b536131c2161019762bff79c32af` at

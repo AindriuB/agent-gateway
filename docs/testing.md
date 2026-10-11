@@ -4,8 +4,8 @@ The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It i
 
 ## Prerequisites
 
-- Foundry v14 at `FOUNDRY_URL` with world `test-world` (game system `pf2e`) launched, the Agent Gateway module linked and enabled, and an active scene.
-- Foundry users that exist already: GM `dev-gm`, players `player1` and `player2`. `player1` owns `Actor.6i6mZ5g8vX8iU9RD`.
+- Foundry v13 or v14 at `FOUNDRY_URL` with world `test-world` (game system `pf2e`) launched, the Agent Gateway module linked and enabled, and an active scene.
+- Foundry users that exist already: GM `dev-gm`, players `player1` and `player2`. `player1` owns `Actor.6i6mZ5g8vX8iU9RD` (OWNER permission). This character is a prerequisite: the seed does not create it. On a fresh world, obtain the owner's approval to create the test character before seeding; do not repurpose an existing actor.
 - `npm ci` and `npm run build` in this repo. `playwright-core` is a dev dependency and downloads no browser; the harness uses the system Chrome (channel `chrome`), or the binary named by `CHROME_PATH` (`AGENT_GATEWAY_E2E_CHANNEL` selects another channel, for example `chromium`). Set `AGENT_GATEWAY_E2E_INSECURE_TLS=1` only if Chrome does not trust the Foundry certificate.
 - Optional `~/.config/agent-gateway/test.env` (`KEY=value` lines). The environment overrides it.
 
@@ -35,6 +35,8 @@ Foundry user names are matched against the join screen exactly first, then case-
 2. `npm run test:e2e:seed` creates the `ag-test-*` fixtures as the GM. **This writes to the world.** Run it only with the world owner's consent (Andrew), once; running it again leaves exactly one of each fixture. It prints per-type flagged and unflagged counts before and after, and records the blind roll total and the fixture UUIDs in the state directory.
 3. `npm run test:e2e [-- --foundry v14|v13]` runs unattended: local state checks (under 5 s), then reconnects each user with the stored token (a stale token fails within 45 s of the start: opening both users' sessions, including the gateway start, browser launch, join and connection wait, runs inside one shared 43 s deadline, and cleanup after a failure is bounded to 2 s), checks the fixtures, runs the read suites sequentially and writes the summary. Failure messages say `run npm run test:e2e:setup` or `run npm run test:e2e:seed`.
 4. `npm run test:e2e:clean` deletes only documents flagged `flags['agent-gateway'].fixture` and restores the world to its pre-seed state. It prints per-type counts before and after: flagged goes to 0, unflagged is unchanged.
+
+On a fresh world, pair only the GM first (`npm run test:e2e:setup -- --only dev-gm`), run the owner-approved seed, then pair the players (`npm run test:e2e:setup -- --only Player1 --only Player2 --player2`). Use the exact configured user names in `--only`; the example spelling may differ from your world. Seed enables player agents for the fixtures, so pairing a fresh player before seeding can fail the setup `world_info` probe with `FORBIDDEN`. All pairing codes remain human-entered. Ensure the owned-character prerequisite above exists before the read suites.
 
 Offline checks of the harness itself (no browser, no Foundry): `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, then `npx tsc -p e2e/tsconfig.json --noEmit` and `npx eslint e2e`.
 
@@ -69,9 +71,11 @@ The suites under `e2e/multi/` prove the guarantees of tasks 11 and 11b with two 
 
 Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_PLAYER2_USER` has no active pairing in the DB (pair it with `npm run test:e2e:setup -- --player2`). Measured frame counts and recovery times are printed as `[multi] ...` lines and listed in the printed summary and `e2e-summary.json` (`multi`).
 
-## The v13 gap
+## Testing v13 separately
 
-`npm run test:e2e -- --foundry v13` targets `AGENT_GATEWAY_E2E_V13_URL`. Without it the run prints `SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)` and exits 0. The v13 instance is a homelab prerequisite; until it exists the v13 evidence for tools 09, 10 and 11 is pending.
+`npm run test:e2e -- --foundry v13` targets `AGENT_GATEWAY_E2E_V13_URL`. Without it the run prints `SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)` and exits 0. For setup and seed, set `FOUNDRY_URL` to that same v13 URL; those commands do not accept `--foundry`. Set `AGENT_GATEWAY_E2E_STATE_DIR` consistently to a separate directory (for example `~/.config/agent-gateway/e2e-v13`) for setup, seed and runs, keeping v13 pairings and profiles separate from v14.
+
+The configured v13.351 / PF2e 7.12.2 instance passed the full core/read/multi-user gate: 34 tests passed, zero failed, and the optional Hello Pack test skipped (35 discovered). The v14.369 gate passed all 35 tests, and Hello Pack enabled/disabled lifecycle acceptance was also checked separately on v14. These results do not claim Hello Pack lifecycle validation on v13.
 
 ## Permission rules on the Mac (auto mode)
 

@@ -11,12 +11,10 @@ than no plan.
 
 ## Now
 
-### Tool-pack foundation merged; v14 pack lifecycle proven
-Tasks 20b–20f and the P1 toolset follow-up are merged through PRs #43–47 and #49; contract PR #42 and record PR #48 are also merged. Open bridge-fix PR #50 resolves the production-bundle initialization cycle, and record PR #51 includes it as a dependency. Andrew reviews and merges those PRs.
+### Tool-pack foundation and v13/v14 acceptance complete
+Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs #42–51. Full v14 acceptance passed all 35 tests, including the disabled Hello Pack case; enabled and disabled v14 lifecycle checks also passed separately.
 
-Hello Pack's four remote files match reviewed `14b6c3`. After Andrew enabled/reloaded and then disabled/reloaded, both existing v14.369 pack lifecycle suites passed (one test each). Independent read-only sessions confirmed both provenance-tagged tools and dice probability `21/36` when active, no `hello-` tools when inactive, and successful core `world_info` in both states, using the exact fixed PR #50 bundle. No live journal mutation was run; mutation behavior has automated unit/integration coverage. The full corrected-bundle v14 e2e gate also passed all 35 tests in eight files with zero skips/failures and zero leaks. The explicit v13 run skipped because its instance is unconfigured; that evidence remains pending.
-
-Retain task files and worktrees for the remaining PR review and v13 evidence. Tasks 15 and 18 remain open.
+Foundry v13.351 / PF2e 7.12.2 now passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Harness selector PR #53 is a dependency of this record. The earlier deferral is superseded by this configured-instance evidence. Tasks 15 and 18 remain open.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -25,7 +23,7 @@ Retain task files and worktrees for the remaining PR review and v13 evidence. Ta
 - Pairing is a one-time headed `npm run test:e2e:setup` in which Andrew types each pairing code; the harness never types one. State lives in `~/.config/agent-gateway/e2e/`.
 - After setup the Mac runs `npm run test:e2e` unattended, under an exact allow rule from Andrew in its auto mode.
 - A newly linked module only appears after `test-world` is relaunched from the setup screen (admin key, Andrew only).
-- **Deferred by Andrew:** Foundry v13 validation has no available instance. Revisit validation when a v13 instance is provisioned; full v14 acceptance is complete.
+- **Validated:** v13.351 and v14.369 core/read/multi-user suites passed; Hello Pack lifecycle acceptance is proven on v14. See docs/testing.md for fresh-world prerequisites.
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
 
 ## Next
@@ -39,7 +37,7 @@ Retain task files and worktrees for the remaining PR review and v13 evidence. Ta
 - Confirm `result.structured` being optional is what the tool framework wants.
 - `hasSceneLevels()` is tree-shaken out of the bundle (unused), so its runtime result is unverified live. Verify once a task uses it, for example by exposing it through the module api or a log line.
 - Compat isolation test should also catch `game['release']`, destructuring and `game.version`; `foundryGeneration()` silently returns 13 if `game.release` is missing.
-- Task 04 v13 evidence is pending until the v13 instance exists.
+- Task 04 now has live v13.351 evidence through the full core/read/multi-user gate; retain task-specific follow-ups independently.
 - Task 01b's task file was never committed (only HISTORY records it). Future mid-wave tasks put their task file in their PR.
 
 ### Follow-ups from task 05
