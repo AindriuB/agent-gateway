@@ -210,6 +210,15 @@ export function checkData(
   const walk = (patch: Record<string, any>, prefix = ''): void => {
     for (const [key, value] of Object.entries(patch)) {
       const path = prefix ? `${prefix}.${key}` : key;
+      // Native special keys and v14 serialized operators can replace whole fields,
+      // which the shared preview does not model. Refuse every raw path boundary.
+      if (
+        path.split('.').some((part) => {
+          const key = part.replace(/^(?:-=)+/, '');
+          return key.startsWith('==') || key === '__$OPERATOR$__';
+        })
+      )
+        invalid('Native data operators are not supported');
       const parts = path.split('.').map((p) => p.replace(/^-=/, ''));
       if (!update && path.split('.').some((p) => p.startsWith('-=')))
         invalid('Creation data cannot contain deletion paths');
