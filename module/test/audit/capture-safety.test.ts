@@ -140,19 +140,25 @@ describe('capture completeness', () => {
   it.each([0, 1, 3])(
     'reports witnessed target overflow without double-counting %s claimed drops',
     async (claimedDrops) => {
+      const created = new Map<string, any>();
       const witness = new AuditWitness({
-        fromUuid: async () => null,
+        fromUuid: async (uuid) => created.get(uuid),
         now: () => 1,
         grace: async () => {},
       });
       const callId = 'witness-overflow-001';
       await witness.onIntent({ callId, creates: true }, 'p1');
-      for (let i = 0; i < 51; i++)
-        witness.onCreate(
-          { uuid: `Actor.A${i}`, _stats: { createdBy: 'p1', modifiedTime: 2 } },
-          { agentGateway: { callId } },
-          'p1',
-        );
+      for (let i = 0; i < 51; i++) {
+        const doc = {
+          uuid: `Actor.A${i}`,
+          id: `A${i}`,
+          documentName: 'Actor',
+          parent: null,
+          _stats: { modifiedTime: 2 },
+        };
+        created.set(doc.uuid, doc);
+        witness.onCreate(doc, { agentGateway: { callId } }, 'p1');
+      }
       const result = await witness.assemble(
         record({ entryId: callId, targetsDropped: claimedDrops }),
         'p1',

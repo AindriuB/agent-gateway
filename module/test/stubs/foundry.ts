@@ -13,6 +13,7 @@ export interface SettingConfig {
 
 export interface FoundryStub {
   registeredSettings: Map<string, SettingConfig>;
+  worldSettings: Map<string, any>;
   registeredMenus: Map<string, any>;
   hooks: Map<string, Array<() => void>>;
   fire(hook: string): void;
@@ -25,7 +26,11 @@ const HandlebarsApplicationMixin = (base: any) => class extends base {};
 /** Install minimal Foundry globals for the given generation. */
 export function installFoundry(
   generation: Generation,
-  opts: { sceneLevels?: boolean; stringStorage?: boolean } = {},
+  opts: {
+    sceneLevels?: boolean;
+    stringStorage?: boolean;
+    worldSettingWriter?: () => string | undefined;
+  } = {},
 ): FoundryStub {
   const g = globalThis as any;
   const saved = {
@@ -38,6 +43,7 @@ export function installFoundry(
   const registeredSettings = new Map<string, SettingConfig>();
   const registeredMenus = new Map<string, any>();
   const values = new Map<string, unknown>();
+  const worldSettings = new Map<string, any>();
   const hooks = new Map<string, Array<() => void>>();
   // Tool tests act as player agents, which are off in a fresh world; policy tests set this explicitly.
   values.set('agent-gateway.playerAgentsEnabled', true);
@@ -65,6 +71,17 @@ export function installFoundry(
     modules: new Map([['agent-gateway', { active: true }]]),
     release: { generation },
     settings: {
+      storage: new Map([
+        [
+          'world',
+          {
+            getSetting: (key: string, user: string | null = null) => {
+              const doc = worldSettings.get(key);
+              return doc?.user === user ? doc : undefined;
+            },
+          },
+        ],
+      ]),
       register: (ns: string, key: string, cfg: SettingConfig) =>
         registeredSettings.set(`${ns}.${key}`, cfg),
       registerMenu: (ns: string, key: string, cfg: any) => {
@@ -78,12 +95,19 @@ export function installFoundry(
       },
       get: (ns: string, key: string) =>
         values.get(`${ns}.${key}`) ?? registeredSettings.get(`${ns}.${key}`)?.default,
-      set: async (ns: string, key: string, v: unknown) =>
-        void values.set(
-          `${ns}.${key}`,
-          // Like localStorage: with stringStorage, only strings survive a round trip.
-          opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v,
-        ),
+      set: async (ns: string, key: string, v: unknown) => {
+        const full = `${ns}.${key}`;
+        values.set(full, opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v);
+        // Explicit test-only writer injection: no invented GM proof for ordinary settings.
+        if (registeredSettings.get(full)?.scope === 'world' && opts.worldSettingWriter) {
+          worldSettings.set(full, {
+            key: full,
+            user: null,
+            value: v,
+            _stats: { lastModifiedBy: opts.worldSettingWriter() },
+          });
+        }
+      },
     },
     actors: collection(),
     items: collection(),
@@ -108,6 +132,7 @@ export function installFoundry(
 
   return {
     registeredSettings,
+    worldSettings,
     registeredMenus,
     hooks,
     fire: (hook) => (hooks.get(hook) ?? []).forEach((fn) => fn()),

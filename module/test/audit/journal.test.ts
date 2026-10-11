@@ -32,14 +32,14 @@ const fakeJournal = (id: string, over: any = {}) => ({
   name: 'Agent Gateway Audit',
   flags: FLAG,
   ownership: { default: 0 },
-  _stats: { createdBy: 'gm1' },
+  _stats: { lastModifiedBy: 'gm1', modifiedTime: 1 },
   testUserPermission: (u: any) => (over.sees ?? []).includes(u.id),
   pages: { contents: [] as any[] },
   ...over,
 });
 
 function world(isGM: boolean, existing: any[] = [], storedId = '') {
-  stub = installFoundry(14);
+  stub = installFoundry(14, { worldSettingWriter: () => (globalThis as any).game.user.id });
   const g = globalThis as any;
   created = [];
   journals = existing;
@@ -49,7 +49,10 @@ function world(isGM: boolean, existing: any[] = [], storedId = '') {
   };
   g.getDocumentClass = () => ({
     create: async (d: any) => {
-      const j: any = fakeJournal(`j${journals.length + 1}`, { ...d, _stats: { createdBy: 'gm1' } });
+      const j: any = fakeJournal(`j${journals.length + 1}`, {
+        ...d,
+        _stats: { lastModifiedBy: 'gm1', modifiedTime: 1 },
+      });
       j.createEmbeddedDocuments = async (_n: string, data: any[]) => {
         created.push(...data);
         j.pages.contents.push(...data.map((x) => ({ type: x.type, system: x.system })));
@@ -75,7 +78,10 @@ function world(isGM: boolean, existing: any[] = [], storedId = '') {
     },
   });
   registerAuditSettings();
-  if (storedId) g.game.settings.set('agent-gateway', 'auditJournalId', storedId);
+  if (storedId) {
+    g.game.settings.set('agent-gateway', 'auditJournalId', storedId);
+    stub.worldSettings.get('agent-gateway.auditJournalId')._stats.lastModifiedBy = 'gm1';
+  }
 }
 afterEach(() => {
   stub?.uninstall();
@@ -131,11 +137,9 @@ describe('audit journal', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('a flagged journal is not trusted unless it is the stored id, GM-created and closed to every non-GM', async () => {
+  it('a flagged journal is not trusted unless it is the stored id, GM-designated and closed to every non-GM', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (const bad of [
-      fakeJournal('x1', { _stats: { createdBy: 'p1' } }),
-      fakeJournal('x1', { _stats: {} }),
       fakeJournal('x1', { sees: ['p2'] }),
       fakeJournal('x1', { ownership: { default: 2 } }),
       fakeJournal('x1', { flags: {} }),
@@ -154,6 +158,132 @@ describe('audit journal', () => {
     world(true, [fakeJournal('x1'), fakeJournal('x2')], 'x1');
     expect(findAuditJournal()?.id).toBe('x1');
     world(true, [fakeJournal('x2')], '');
+    expect(findAuditJournal()).toBeNull();
+  });
+
+  it.each([13, 14] as const)(
+    'trusts native v%s GM designation without invented creator metadata',
+    (generation) => {
+      world(true, [fakeJournal('x1')], 'x1');
+      (globalThis as any).game.release.generation = generation;
+      expect(journals[0]._stats).not.toHaveProperty('createdBy');
+      expect(findAuditJournal()).toBe(journals[0]);
+      const setting = stub.worldSettings.get('agent-gateway.auditJournalId');
+      setting._stats.lastModifiedBy = 'p1';
+      journals[0]._stats = { createdBy: 'gm1', lastModifiedBy: 'gm1' };
+      expect(findAuditJournal()).toBeNull();
+    },
+  );
+
+  it.each([
+    'missing setting',
+    'wrong key',
+    'user scoped',
+    'wrong value',
+    'encoded value',
+    'numeric value',
+    'no stats',
+    'no writer',
+    'unknown writer',
+    'player writer',
+    'demoted writer',
+    'inaccessible storage',
+  ])('rejects %s without adopting or replacing a selected journal', async (failure) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    world(true, [fakeJournal('x1')], 'x1');
+    const key = 'agent-gateway.auditJournalId';
+    const setting = stub.worldSettings.get(key);
+    if (failure === 'missing setting') stub.worldSettings.delete(key);
+    if (failure === 'wrong key') setting.key = 'other.auditJournalId';
+    if (failure === 'user scoped') setting.user = 'gm1';
+    if (failure === 'wrong value') setting.value = 'x2';
+    if (failure === 'encoded value') setting.value = JSON.stringify('x1');
+    if (failure === 'numeric value') setting.value = 42;
+    if (failure === 'no stats') delete setting._stats;
+    if (failure === 'no writer') setting._stats = {};
+    if (failure === 'unknown writer') setting._stats.lastModifiedBy = 'gone';
+    if (failure === 'player writer') setting._stats.lastModifiedBy = 'p1';
+    if (failure === 'demoted writer') (globalThis as any).game.users.get = () => ({ isGM: false });
+    if (failure === 'inaccessible storage')
+      (globalThis as any).game.settings.storage.get = () => {
+        throw Error('unavailable');
+      };
+    expect(findAuditJournal()).toBeNull();
+    expect(await ensureAuditJournal()).toBeNull();
+    expect(journals).toHaveLength(1);
+  });
+
+  it('does not repair a nonempty designation whose journal or writer proof is missing', async () => {
+    world(true, [], 'deleted');
+    stub.worldSettings.clear();
+    expect(await ensureAuditJournal()).toBeNull();
+    expect(journals).toHaveLength(0);
+  });
+
+  it.each(['get throws', 'nonstring', 'storage throws', 'missing storage', 'inconsistent empty'])(
+    'does not create or overwrite a journal when selection has %s',
+    async (failure) => {
+      world(true);
+      const g = globalThis as any;
+      const create = vi.fn();
+      g.getDocumentClass = () => ({ create });
+      const set = vi.spyOn(g.game.settings, 'set');
+      if (failure === 'get throws')
+        g.game.settings.get = () => {
+          throw Error('unavailable');
+        };
+      if (failure === 'nonstring') g.game.settings.get = () => 12;
+      if (failure === 'storage throws')
+        g.game.settings.storage.get = () => {
+          throw Error('unavailable');
+        };
+      if (failure === 'missing storage') delete g.game.settings.storage;
+      if (failure === 'inconsistent empty')
+        stub.worldSettings.set('agent-gateway.auditJournalId', {
+          key: 'agent-gateway.auditJournalId',
+          user: null,
+          value: 'other',
+          _stats: { lastModifiedBy: 'gm1' },
+        });
+      expect(await ensureAuditJournal()).toBeNull();
+      expect(create).not.toHaveBeenCalled();
+      expect(set).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'setting rejection',
+    'missing proof',
+    'wrong readback',
+    'role switch',
+    'user switch',
+    'selection switch',
+  ])('refuses an unverified factory result after %s', async (failure) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    world(true);
+    const g = globalThis as any;
+    const set = g.game.settings.set;
+    g.game.settings.set = vi.fn(async (...args: any[]) => {
+      if (failure === 'setting rejection') throw Error('setting denied');
+      await set(...args);
+      if (failure === 'missing proof') stub.worldSettings.clear();
+      if (failure === 'wrong readback')
+        stub.worldSettings.get('agent-gateway.auditJournalId').value = 'other';
+    });
+    if (failure === 'role switch' || failure === 'user switch' || failure === 'selection switch') {
+      const create = g.getDocumentClass().create;
+      g.getDocumentClass = () => ({
+        create: async (data: any) => {
+          const j = await create(data);
+          if (failure === 'selection switch') g.game.settings.get = () => 'new-selection';
+          else g.game.user = { id: failure === 'user switch' ? 'p1' : 'gm1', isGM: false };
+          return j;
+        },
+      });
+    }
+    await expect(ensureAuditJournal()).rejects.toThrow();
+    if (failure.endsWith('switch')) expect(g.game.settings.set).not.toHaveBeenCalled();
+    expect(journals).toHaveLength(1);
     expect(findAuditJournal()).toBeNull();
   });
 
@@ -323,7 +453,7 @@ describe('model and manifest', () => {
   });
 
   it('the data model defines every audit field', () => {
-    stub = installFoundry(14);
+    stub = installFoundry(14, { worldSettingWriter: () => (globalThis as any).game.user.id });
     const g = globalThis as any;
     const F = (name: string) =>
       class {
@@ -365,7 +495,7 @@ describe('model and manifest', () => {
 describe('installAudit hooks', () => {
   it('init registers the data model, label and a GM-only menu; ready creates the journal and starts the relay', async () => {
     vi.resetModules();
-    stub = installFoundry(14);
+    stub = installFoundry(14, { worldSettingWriter: () => (globalThis as any).game.user.id });
     const g = globalThis as any;
     g.foundry.data = {
       fields: new Proxy(
@@ -394,7 +524,7 @@ describe('installAudit hooks', () => {
   });
 
   it('is inert outside Foundry (no CONFIG): init does nothing, ready without a user does nothing', () => {
-    stub = installFoundry(14);
+    stub = installFoundry(14, { worldSettingWriter: () => (globalThis as any).game.user.id });
     installAudit();
     stub.fire('init');
     stub.fire('ready');

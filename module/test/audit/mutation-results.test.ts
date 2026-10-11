@@ -66,12 +66,27 @@ it('rejects an audit page creation veto so the relay can retry', async () => {
     id: 'J',
     flags: { 'agent-gateway': { auditJournal: true } },
     ownership: { default: 0 },
-    _stats: { createdBy: gm.id },
+    _stats: { lastModifiedBy: gm.id },
     pages: { contents: [] },
     createEmbeddedDocuments: vi.fn(async () => []),
   };
   vi.stubGlobal('game', {
-    settings: { get: () => journal.id },
+    settings: {
+      get: () => journal.id,
+      storage: new Map([
+        [
+          'world',
+          {
+            getSetting: () => ({
+              key: 'agent-gateway.auditJournalId',
+              user: null,
+              value: journal.id,
+              _stats: { lastModifiedBy: gm.id },
+            }),
+          },
+        ],
+      ]),
+    },
     journal: { get: () => journal },
     users: { contents: [gm], get: () => gm },
   });
