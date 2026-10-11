@@ -160,3 +160,36 @@ it('projects the actual native agent and excludes prior identical fixture rows b
     else Object.assign(globalThis, { game: previousGame });
   }
 });
+
+it('waits for initial create audit before issuing a fast append that would invalidate its witness', async () => {
+  const { waitForLiveAudit } = await import('./live-settlement.js');
+  let now = 0;
+  let pageVersion = 1;
+  let witnessedVersion: number | undefined;
+  let appendIssued = false;
+  const initial = ['chat', 'roll', 'create', 'no-chat'];
+  const rows = initial.filter((key) => key !== 'create').map((key) => ({ key }));
+  const batch = startLiveBatch(initial.map((key) => Promise.resolve(key)));
+  const run = (async () => {
+    await batch.result(() =>
+      waitForLiveAudit(async () => [...rows], initial, {
+        now: () => now,
+        sleep: async () => {
+          expect(appendIssued).toBe(false);
+          now += 100;
+          if (now === 1500) {
+            witnessedVersion = pageVersion;
+            rows.push({ key: 'create' });
+          }
+        },
+      }),
+    );
+    appendIssued = true;
+    pageVersion++;
+  })();
+  await run;
+  expect(now).toBe(1500);
+  expect(witnessedVersion).toBe(1);
+  expect(appendIssued).toBe(true);
+  expect(pageVersion).toBe(2);
+});

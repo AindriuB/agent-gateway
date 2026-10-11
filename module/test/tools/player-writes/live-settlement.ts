@@ -3,7 +3,7 @@ export function startLiveBatch<T>(calls: readonly Promise<T>[]) {
   const settled = Promise.allSettled(calls);
   return {
     settled,
-    async result(): Promise<T[]> {
+    async result(afterSuccess?: () => Promise<unknown>): Promise<T[]> {
       const results = await settled;
       const failures = results.filter((result) => result.status === 'rejected');
       if (failures.length)
@@ -11,6 +11,7 @@ export function startLiveBatch<T>(calls: readonly Promise<T>[]) {
           failures.map((result) => result.reason),
           'Native call batch failed after every call settled',
         );
+      await afterSuccess?.();
       return results.map((result) => (result as PromiseFulfilledResult<T>).value);
     },
   };

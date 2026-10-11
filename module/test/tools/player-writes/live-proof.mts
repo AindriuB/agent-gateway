@@ -325,9 +325,23 @@ try {
     const app = browser.page.locator('#agent-gateway-approval');
     await app.locator('article').first().waitFor({ timeout: 15000 });
     await app.screenshot({ path: resolve(evidence, `${version}-${who}-approval.png`) });
-    const results = await batch.result();
+    // Finalize witnessed creation before a fast append can legitimately invalidate its version.
+    const results = await batch.result(drainAudit);
     const messages = [uuid(results[0], 'ChatMessage'), uuid(results[1], 'ChatMessage')];
     const pageUuid = uuid(results[2], 'JournalEntryPage');
+    await gmBrowser.page.evaluate(
+      ({ messages, pageUuid, baseline }) => {
+        const game = (globalThis as any).game;
+        const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
+        const targets = (journal?.pages.contents ?? [])
+          .filter((p: any) => !baseline.includes(p.uuid))
+          .flatMap((p: any) => p.system.targets)
+          .filter((t: any) => [...messages, pageUuid].includes(t.uuid) && t.existed === false);
+        if (targets.length !== 3 || targets.some((t: any) => !t.undoable))
+          throw Error('Initial native creation witnesses are not safe before append');
+      },
+      { messages, pageUuid, baseline: auditBaseline },
+    );
     console.log(
       `[task21] READY ${version} ${user.name}: approve the journal append in the same native owner dialog.`,
     );
