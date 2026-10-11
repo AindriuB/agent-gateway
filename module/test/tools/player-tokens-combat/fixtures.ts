@@ -49,6 +49,7 @@ export function setup(generation: 13 | 14 = 14) {
       width: 1,
       height: 1,
       hidden: false,
+      movement: { state: 'completed' },
       owners,
       testUserPermission: (u: any, level: string) =>
         level === 'OWNER' && (u.isGM || owners.has(u.id)),

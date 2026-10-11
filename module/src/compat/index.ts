@@ -45,7 +45,12 @@ export async function moveTokenCompat(
   );
   if (typeof completed !== 'boolean')
     throw new Error('Native movement returned no completion result');
-  return completed;
+  // v13 returns whether any movement occurred, including a path shortened by walls/cost.
+  // Its post-update state distinguishes that from actually completing the movement.
+  // v14 already returns destination completion from Scene.moveTokens.
+  return foundryGeneration() === 13
+    ? completed && token.movement?.state === 'completed'
+    : completed;
 }
 
 declare const Hooks: any;

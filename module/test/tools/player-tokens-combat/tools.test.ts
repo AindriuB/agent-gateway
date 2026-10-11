@@ -44,7 +44,7 @@ describe('bounded core schemas and canonical token movement', () => {
   );
   it.each([
     { x: Infinity, y: 1 },
-    { x: -1, y: 1 },
+    { x: -1000001, y: 1 },
     { path: [] },
     { path: Array.from({ length: 21 }, () => ({ x: 1, y: 1 })) },
     { x: 1, y: 1, bypass: true },
@@ -65,7 +65,9 @@ describe('bounded core schemas and canonical token movement', () => {
   );
   it.each([13, 14] as const)(
     'moves fractional grid waypoints and forwards audited options on v%i',
-    async () => {
+    async (generation) => {
+      f.restore();
+      f = setup(generation);
       const t = f.token();
       const ctx = f.ctx('token_move', {
         tokenUuid: t.uuid,
@@ -98,6 +100,48 @@ describe('bounded core schemas and canonical token movement', () => {
     expect(
       await tokenMoveHandler(f.ctx('token_move', { tokenUuid: t.uuid, x: 11, y: 8 })),
     ).toMatchObject({ structured: { completed: true, x: 11, y: 8 } });
+  });
+  it('accepts signed grid coordinates only within the shifted native scene rectangle', async () => {
+    const t = f.token();
+    f.scene.dimensions.sceneRect = { x: -250, y: -150, width: 1000, height: 800 };
+    expect(
+      await tokenMoveHandler(
+        f.ctx('token_move', {
+          tokenUuid: t.uuid,
+          path: [
+            { x: -2.5, y: -1.5 },
+            { x: -1, y: -0.5 },
+          ],
+        }),
+      ),
+    ).toMatchObject({ structured: { completed: true, x: -1, y: -0.5 } });
+    t.move.mockClear();
+    expect(
+      await tokenMoveHandler(f.ctx('token_move', { tokenUuid: t.uuid, x: -2.51, y: -1.5 })),
+    ).toMatchObject({ error: { code: 'INVALID_ARGS' } });
+    expect(t.move).not.toHaveBeenCalled();
+  });
+  it('reports actual partial v13 coordinates with completed false', async () => {
+    f.restore();
+    f = setup(13);
+    const t = f.token();
+    t.move.mockImplementation(async () => {
+      t.x = 150;
+      t.y = 100;
+      t.movement.state = 'stopped';
+      return true;
+    });
+    expect(
+      await tokenMoveHandler(
+        f.ctx('token_move', {
+          tokenUuid: t.uuid,
+          path: [
+            { x: 1, y: 1 },
+            { x: 3, y: 1 },
+          ],
+        }),
+      ),
+    ).toMatchObject({ structured: { completed: false, x: 1.5, y: 1 } });
   });
   it('uses native non-square hex footprint instead of width times nominal grid size', async () => {
     const t = f.token();

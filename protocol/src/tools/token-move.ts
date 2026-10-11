@@ -1,8 +1,18 @@
 import { z } from 'zod';
 import { defineTool } from './define.js';
 const point = z.strictObject({
-  x: z.number().finite().min(0).max(1000000).describe('Horizontal coordinate in grid-size units'),
-  y: z.number().finite().min(0).max(1000000).describe('Vertical coordinate in grid-size units'),
+  x: z
+    .number()
+    .finite()
+    .min(-1000000)
+    .max(1000000)
+    .describe('Horizontal coordinate in grid-size units'),
+  y: z
+    .number()
+    .finite()
+    .min(-1000000)
+    .max(1000000)
+    .describe('Vertical coordinate in grid-size units'),
 });
 export const tokenMove = defineTool({
   name: 'token_move',

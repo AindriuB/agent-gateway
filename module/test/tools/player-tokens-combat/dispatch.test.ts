@@ -102,6 +102,20 @@ describe('real default approval and audit dispatch', () => {
       expect(f.combat.update.mock.calls[0][1].agentGateway.callId).toBe(r.records[0]!.entryId);
     },
   );
+  it('dispatches signed shifted-scene coordinates but refuses outside footprint bounds', async () => {
+    const t = f.token();
+    f.scene.dimensions.sceneRect = { x: -250, y: -150, width: 1000, height: 800 };
+    const r = integrated();
+    expect(await r.approve('token_move', { tokenUuid: t.uuid, x: -2.5, y: -1.5 })).toMatchObject({
+      structured: { completed: true, x: -2.5, y: -1.5 },
+    });
+    t.move.mockClear();
+    expect(await r.approve('token_move', { tokenUuid: t.uuid, x: -2.51, y: -1.5 })).toMatchObject({
+      error: { code: 'INVALID_ARGS' },
+    });
+    expect(t.move).not.toHaveBeenCalled();
+    expect(r.records.map((record) => record.status)).toEqual(['ok', 'error']);
+  });
   it('does not expose a hidden owned current combatant through real read dispatch', async () => {
     const c = f.combat.combatant;
     c.hidden = true;

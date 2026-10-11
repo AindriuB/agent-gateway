@@ -24,6 +24,7 @@ describe.each([13, 14] as const)('native movement compat v%i', (generation) => {
       };
       const token = {
         id: 't',
+        movement: { state: completed ? 'completed' : 'stopped' },
         move: vi.fn(async (path: any, opts: any) =>
           generation === 13
             ? nativeUpdate({ movement: { t: { waypoints: path } } }, opts)
@@ -60,5 +61,64 @@ describe.each([13, 14] as const)('native movement compat v%i', (generation) => {
     await expect(
       moveTokenCompat({ move: async () => undefined }, [{ x: 1, y: 1 }], {}),
     ).rejects.toThrow();
+  });
+});
+
+describe('v13 movement result means moved, not completed', () => {
+  beforeEach(() => {
+    f = setup(13);
+  });
+  it.each(['wall', 'cost'])(
+    'reports a shortened %s path as incomplete despite native true',
+    async (constraint) => {
+      const options = { agentGateway: { callId: 'partial' } };
+      const token = {
+        x: 0,
+        y: 0,
+        movement: { state: 'completed', constrained: false },
+        move: vi.fn(async (_path: unknown, opts: unknown) => {
+          expect(opts).toBe(options);
+          token.x = constraint === 'wall' ? 150 : 200;
+          token.y = 100;
+          token.movement = { state: 'stopped', constrained: true };
+          return true; // Native v13 applied a partial update.
+        }),
+      };
+      expect(
+        await moveTokenCompat(
+          token,
+          [
+            { x: 100, y: 100 },
+            { x: 300, y: 100 },
+          ],
+          options,
+        ),
+      ).toBe(false);
+      expect(token.x).toBeLessThan(300);
+      expect(token.move).toHaveBeenCalledOnce();
+    },
+  );
+  it.each(['pending', 'paused', 'stopped', undefined])(
+    'does not claim completion in state %s',
+    async (state) => {
+      expect(
+        await moveTokenCompat(
+          { move: async () => true, movement: state ? { state } : undefined },
+          [{ x: 1, y: 2 }],
+          {},
+        ),
+      ).toBe(false);
+    },
+  );
+  it('preserves v14 native completion without probing v13 movement state', async () => {
+    f.restore();
+    f = setup(14);
+    const token = {
+      move: async () => true,
+      get movement() {
+        throw Error('v13 state must not be read');
+      },
+    };
+    expect(await moveTokenCompat(token, [{ x: 1, y: 2 }], {})).toBe(true);
   });
 });
