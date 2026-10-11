@@ -16,6 +16,7 @@ export interface PolicyState {
   folders: Array<{ id: string; name: string }>;
   allowlists: Record<string, string[]>;
   limits: StoredLimits;
+  agentsCorrupt: boolean;
 }
 
 /** Template data contains decisions and labels, never HTML from world documents. */
@@ -84,6 +85,9 @@ export function validatePolicyForm(values: Record<string, unknown>, state: Polic
         throw new Error('owner exceeds ceiling');
     }
   if (!state.isGM) return { owner };
+  // This app does not edit overrides: never turn an unreadable block into empty defaults.
+  if (state.agentsCorrupt)
+    throw new Error('Repair per-agent overrides before saving world policies');
   const toggle = (key: string) => {
     const v = values[key];
     if (v !== undefined && typeof v !== 'boolean') throw new Error('invalid toggle');

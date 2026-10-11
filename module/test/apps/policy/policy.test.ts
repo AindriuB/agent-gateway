@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_OWNER_MATRIX, DEFAULT_WORLD_MATRIX } from '../../../src/policy/matrix.js';
-import { DEFAULT_LIMITS } from '../../../src/ratelimit/config.js';
+import { DEFAULT_LIMITS, resolveLimit } from '../../../src/ratelimit/config.js';
+import { loadRateLimits } from '../../../src/ratelimit/store.js';
 import {
   policyContext,
   validatePolicyForm,
@@ -24,6 +25,7 @@ const state = (isGM = false): PolicyState => ({
   folders: [{ id: 'folder', name: '<script>folder</script>' }],
   allowlists: { playerAgents: [], gmAgents: [] },
   limits: structuredClone(DEFAULT_LIMITS),
+  agentsCorrupt: false,
 });
 function values(s: PolicyState) {
   const context = policyContext(s);
@@ -152,6 +154,68 @@ it('saves all GM controls through registered policy and limit settings', async (
     JSON.parse(set.mock.calls.find((call) => call[1] === 'folderAllowlist')![2] as string)
       .playerAgents,
   ).toEqual(['folder']);
+});
+
+it('rejects an unrelated GM save without relaxing a corrupt per-agent limit block', async () => {
+  const settings = (globalThis as any).game.settings;
+  const raw = JSON.stringify({ ...DEFAULT_LIMITS, agents: 'damaged' });
+  await persist('agent-gateway', 'rateLimits', raw);
+  await persist('agent-gateway', 'playerAgentsEnabled', true);
+  await persist('agent-gateway', 'headlessAgentsEnabled', true);
+  const before = loadRateLimits();
+  expect(before.agentsCorrupt).toBe(true);
+  expect(resolveLimit(before, 'playerAgents', 'agent', 'read')).toBe(1);
+  const owner = settings.get('agent-gateway', 'ownerPolicy');
+  const form = { ...values(currentPolicyState()), owner_playerAgents_read: 'deny' };
+  const saved = await savePolicyForm(form);
+  expect(resolveLimit(loadRateLimits(), 'playerAgents', 'agent', 'read')).toBe(1);
+  expect(saved).toBe(false);
+  expect(set).not.toHaveBeenCalled();
+  expect(settings.get('agent-gateway', 'rateLimits')).toBe(raw);
+  expect(settings.get('agent-gateway', 'playerAgentsEnabled')).toBe(true);
+  expect(settings.get('agent-gateway', 'headlessAgentsEnabled')).toBe(true);
+  expect(settings.get('agent-gateway', 'ownerPolicy')).toBe(owner);
+  expect(loadRateLimits().agentsCorrupt).toBe(true);
+  expect(resolveLimit(loadRateLimits(), 'playerAgents', 'agent', 'read')).toBe(1);
+  expect(error).toHaveBeenCalledWith('L:AGENT_GATEWAY.PolicyApp.invalid');
+});
+
+it('re-reads corrupt overrides at submit after the form was opened with valid limits', async () => {
+  const form = { ...values(currentPolicyState()), owner_playerAgents_read: 'deny' };
+  expect(loadRateLimits().agentsCorrupt).toBe(false);
+  const raw = JSON.stringify({ ...DEFAULT_LIMITS, agents: 'damaged' });
+  await persist('agent-gateway', 'rateLimits', raw);
+  expect(await savePolicyForm(form)).toBe(false);
+  expect(set).not.toHaveBeenCalled();
+  expect((globalThis as any).game.settings.get('agent-gateway', 'rateLimits')).toBe(raw);
+  expect(resolveLimit(loadRateLimits(), 'playerAgents', 'agent', 'read')).toBe(1);
+});
+
+it('allows player owner-only restrictions while leaving corrupt world overrides untouched', async () => {
+  const g = globalThis as any;
+  const raw = JSON.stringify({ ...DEFAULT_LIMITS, agents: 'damaged' });
+  await persist('agent-gateway', 'rateLimits', raw);
+  g.game.user.isGM = false;
+  expect(
+    await savePolicyForm({ ...values(currentPolicyState()), owner_playerAgents_read: 'deny' }),
+  ).toBe(true);
+  expect(set.mock.calls.map((call) => call[1])).toEqual(['ownerPolicy']);
+  expect(g.game.settings.get('agent-gateway', 'rateLimits')).toBe(raw);
+  expect(resolveLimit(loadRateLimits(), 'playerAgents', 'agent', 'read')).toBe(1);
+});
+
+it('preserves actual per-agent overrides and special IDs while saving class defaults', async () => {
+  const agents = JSON.parse('{"agent":{"read":9},"__proto__":{"write":3}}');
+  await persist('agent-gateway', 'rateLimits', JSON.stringify({ ...DEFAULT_LIMITS, agents }));
+  expect(
+    await savePolicyForm({ ...values(currentPolicyState()), limits_playerAgents_read: 123 }),
+  ).toBe(true);
+  const loaded = loadRateLimits();
+  expect(loaded.agentsCorrupt).toBe(false);
+  expect(Object.fromEntries(loaded.agents)).toEqual(agents);
+  expect(resolveLimit(loaded, 'playerAgents', 'agent', 'read')).toBe(9);
+  expect(resolveLimit(loaded, 'playerAgents', '__proto__', 'write')).toBe(3);
+  expect(resolveLimit(loaded, 'playerAgents', 'other', 'read')).toBe(123);
 });
 
 it.each([
