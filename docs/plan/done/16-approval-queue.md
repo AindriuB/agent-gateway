@@ -1,6 +1,7 @@
 # 16 — Add the approval queue, relay and approval_status tool
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 13
 **Owns:**
 - module/src/approvals/**

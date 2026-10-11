@@ -1,6 +1,7 @@
 # 20 — Filter tool lists by role and policy and announce changes
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 13
 **Owns:**
 - module/src/link/toolset.ts

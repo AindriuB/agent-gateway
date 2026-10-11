@@ -1,6 +1,7 @@
 # 20b — Add runtime tool-definition rules and a JSON Schema subset validator to protocol
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** none
 **Owns:**
 - protocol/src/tools/rules.ts
@@ -12,7 +13,7 @@
 - protocol/test/tools/fixtures.ts (insertions only)
 - protocol/test/tools/rules/**
 - docs/packs/naming.md
-- docs/plan/tasks/20b-tool-definition-runtime-rules.md (scope and acceptance amendments only)
+- docs/plan/done/20b-tool-definition-runtime-rules.md (scope and acceptance amendments only)
 - protocol/vitest.config.ts
 - protocol/vitest.slow.config.ts
 - vitest.config.ts

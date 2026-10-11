@@ -1,6 +1,7 @@
 # 19 — Add the audit log journal and human-only undo
 
 **Repo:** .
+**Status:** Implementation merged in PR #41 and archived. Recorded evidence is offline verification and v14 backend reservation inspection; native successful Undo UI evidence and v13 reservation verification remain follow-ups, not newly proven by task 21.
 **Depends on:** 13
 **Owns:**
 - module/src/audit/**

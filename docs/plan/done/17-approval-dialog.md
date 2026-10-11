@@ -1,6 +1,7 @@
 # 17 — Add the approval diff dialog with batch approval
 
 **Repo:** .
+**Status:** Complete; merged in PR #56 (`f127431`), including committed-DOM approval membership hardening. Historical native no-op MCP UI proof passed on v13/v14.
 **Depends on:** 16, 20c
 **Owns:**
 - module/src/apps/approval/**

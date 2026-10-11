@@ -1,6 +1,7 @@
 # 15 — Add the world and owner policy settings app
 
 **Repo:** .
+**Status:** Complete; merged in PR #55 (`d62dc36`), with atomic world publication follow-up 15a merged in PR #57. Native UI evidence and later offline fixes are recorded in HISTORY.
 **Depends on:** 13, 14
 **Owns:**
 - module/src/apps/policy/**

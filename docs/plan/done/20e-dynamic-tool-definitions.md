@@ -1,6 +1,7 @@
 # 20e — Announce full tool definitions over the link and serve them from the gateway
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 20b, 20c, 20
 **Owns:**
 - protocol/src/link/messages.ts (the full `ToolsetMessage` validator, its doc comment, and narrow safe parser exception fallback only)

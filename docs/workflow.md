@@ -73,8 +73,8 @@ It does not get "fixed inline" — that is how the main context blows up.
 
 ## Phase 4 — record
 
-`scribe` merges the passing branches, removes their worktrees, moves the task
-files out of `tasks/`, and updates `PLAN.md` and `HISTORY.md`. It is the only
+`scribe` merges the passing branches, removes their worktrees, moves completed task
+files from `docs/plan/tasks/` into `docs/plan/done/`, and updates `PLAN.md` and `HISTORY.md`. It is the only
 role that touches those files, which is why they never end up with conflicting
 concurrent edits.
 

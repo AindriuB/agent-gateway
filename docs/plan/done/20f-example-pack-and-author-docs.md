@@ -1,6 +1,7 @@
 # 20f — Add a free example tool pack and the pack-author documentation
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 20d, 20e
 **Owns:**
 - examples/hello-pack/**

@@ -1,6 +1,7 @@
 # 20d — Add the public tool-pack API: registerPack, lifecycle, isolation and security tests
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 20c, 20
 **Owns:**
 - module/src/packs/**

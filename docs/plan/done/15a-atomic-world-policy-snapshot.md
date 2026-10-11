@@ -1,7 +1,7 @@
 # 15a — Publish world enforcement as one complete snapshot
 
 **Repo:** .
-**Status:** Planned follow-up to the cross-GM save race in task 15 / PR #57.
+**Status:** Complete; merged in PR #57 (`c6421ee`), including atomic snapshot candidate `ab6b67f` and reconciliation `f66de98`. Required and independent focused verification passed.
 **Depends on:** 15, 17
 **Owns:**
 - module/src/policy/snapshot.ts (new validated snapshot storage/legacy adapter)

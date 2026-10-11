@@ -1,6 +1,7 @@
 # 21 — Add player write tools chat_post, roll_formula and journal_write
 
 **Repo:** .
+**Status:** Complete; merged in PR #57 (`c6421ee`), with prerequisites PR #58 (21a) and #60 (21b) merged. Native acceptance remains exact historical `d0a11fb` / `9151…33c4`; later offline gates are recorded separately.
 **Depends on:** 17, 19, 20d, 20e
 **Owns:**
 - protocol/src/tools/chat-post.ts

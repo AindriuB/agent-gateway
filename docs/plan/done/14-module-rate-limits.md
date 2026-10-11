@@ -1,6 +1,7 @@
 # 14 — Add per-category rate limits enforced in the module
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 13
 **Owns:**
 - module/src/ratelimit/**

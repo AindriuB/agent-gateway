@@ -1,6 +1,7 @@
 # 20c — Make the operation registry the single tool source and register core tools through it
 
 **Repo:** .
+**Status:** Complete; implementation merged and archived after the completion audit. See done/README.md and HISTORY for evidence.
 **Depends on:** 20b, 14, 16, 19
 **Owns:**
 - module/src/ops/registry.ts
