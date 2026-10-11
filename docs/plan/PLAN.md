@@ -16,12 +16,14 @@ Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs 
 
 Foundry v13.351 / PF2e 7.12.2 passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Those merged foundation checks remain separate from the new write acceptance below.
 
-### Policy, approval and player-write wave verified; awaiting review
-Tasks 15, 17, 21, 21a and 21b are implemented and independently reviewed in open PRs #55–58 and #60. PR #54 supplies the earlier contracts; this recording PR incorporates that planning head and the task 21b contract. None of these open PRs is recorded as merged into main, and their task files remain in place for Andrew's review. Review/merge order is #54 → #55 → #56 → #58 → #60 → #57 → #59; the task 21b contract was reviewed before its runtime implementation, while #59 lands the final validation record last.
+### Policy, approval and player-write wave complete
+Tasks 15, 15a, 17, 21, 21a and 21b are complete and merged through PRs #54–58 and #60; current main is `9b3b05b`. PR #59 records the final evidence and completed-contract archive. Completed contracts are in `docs/plan/done/`; `docs/plan/tasks/` contains only queued or blocked work. Earlier tasks 01–12 were already retired and remain recorded in HISTORY/its index. The completion inventory also includes merged tasks 13, 14, 16, 19, 20 and 20b–20f.
 
 The combined task 21 head `d0a11fb` passed `npm run verify` (2,562 fast / 2,227 slow tests). Exact production bundle SHA-256 `9151dcaece963660a3c93039613b4580ded558f9c9f0d5546f4e9f59cecb33c4` passed native GM and Player1 acceptance on Foundry v14.369 and v13.351: real owner approvals, cached-SDK pending results, chat/roll AI badges, five persisted audited calls per role, three safe created targets, append before-snapshots and zero no-chat targets. Exact fixture cleanup and retained audit UUIDs were checked; local visual evidence was independently reviewed. No public screenshot upload is claimed. See the matching history entry for scope and limits.
 
 Task 18 remains architecture-blocked: immediate gateway token invalidation for another owner, including while that owner is offline, lacks trusted cross-owner attestation. Preserve that acceptance requirement; hello role hints cannot authorize it. Design a trusted gateway-controlled observer prerequisite before implementing 18; this introduces a production browser/credential/configuration surface and needs a deliberate future contract. Do not add an 18 → 36 dependency cycle or silently substitute pending revocation.
+
+Task 15a's atomic world-policy snapshot replaced the multi-setting save sequence after cross-GM concurrency review. Candidate `ab6b67f` and its main reconciliation `f66de98` passed 2,607 fast / 2,227 slow tests; independent focused review passed 247 tests. The harness-only envelope preflight fix `c6421ee` passed 2,626 fast / 2,227 slow and 26 independent focused tests. These later offline gates do not establish a new native bundle proof: native acceptance above remains tied to `d0a11fb` / `9151…33c4`. Last complete world writer wins; participating clients must reload, duplicate initialization fails closed, and no immediate revocation or CAS is claimed.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -34,6 +36,9 @@ Task 18 remains architecture-blocked: immediate gateway token invalidation for a
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
 
 ## Next
+
+### Audit undo acceptance follow-up
+Task 19's implementation is merged and archived, but PR #41 records only offline verification and v14 backend reservation inspection. Preserve the native successful Undo UI/screenshot criterion and v13 reservation verification as unproven; task 21's safe targets and before-snapshots do not establish an actual Undo invocation.
 
 ### Pointer for task 36
 36 must use the 10b recommendation (docs/spikes/foundry-socket-identity.md); identity only from server-set args; v13 re-check list in the spike.
@@ -104,13 +109,13 @@ Task 18 remains architecture-blocked: immediate gateway token invalidation for a
 - `gateway/src/mcp/server.ts` and `EmptyModuleConnections` are unused; remove them.
 - Name-collision denial of service on `--user <name>`: bind by id instead.
 - Task 36 must prove the claimed identity at pairing per spike 10b, and must add pairing revocation (11b already ignores revoked pairings).
-- v13 evidence is still pending for 09, 10 and 11.
+- v13 core/read/multi-user evidence for 09, 10 and 11 passed; retain the separate task-specific follow-ups above.
 
 ### Follow-ups from task 12
 - The summary JSON should include the run duration and the e2e-unit count.
 - The seed counts do not list Tokens.
 - The roles suite takes about 44 s because of per-role gateway restarts.
 - Lint e2e with `npx eslint e2e`; `scripts/` holds only .sh files, so `npx eslint e2e scripts` no longer applies.
-- v13 is still pending for all e2e suites.
+- v13 core/read/multi-user acceptance passed; optional v13 Hello Pack lifecycle remains unproven.
 
 ## Someday

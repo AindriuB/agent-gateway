@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { defineTool } from '@agent-gateway/protocol/tools';
+import { defineTool, toJsonSchema } from '@agent-gateway/protocol/tools';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { EmptyModuleConnections } from '../../src/app.js';
@@ -43,6 +43,13 @@ describe('mcp server', () => {
     const { tools } = await (await connect([fixture])).listTools();
     expect(tools.map((t) => t.name)).toEqual(['fixture_tool']);
     expect(tools[0]?.inputSchema.type).toBe('object');
+    expect(tools[0]?.outputSchema).toEqual({
+      type: 'object',
+      anyOf: [
+        toJsonSchema(fixture).outputSchema,
+        expect.objectContaining({ required: ['status', 'id'], additionalProperties: false }),
+      ],
+    });
   });
   it('answers calls with world offline', async () => {
     const res = await (await connect([fixture])).callTool({ name: 'fixture_tool', arguments: {} });

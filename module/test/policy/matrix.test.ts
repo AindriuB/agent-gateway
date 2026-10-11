@@ -23,7 +23,8 @@ let stub: FoundryStub;
 afterEach(() => stub?.uninstall());
 
 const fresh = () => {
-  stub = installFoundry(14);
+  stub = installFoundry(14, { persistedWorldSettings: true });
+  (globalThis as any).game.user = { id: 'gm', isGM: true };
   registerPolicySettings();
 };
 const withCode = (code: string) => ({
@@ -109,7 +110,7 @@ describe('world policy fails strict', () => {
       }),
     );
     expect(loadWorldPolicy().playerAgents.write).toBe('deny');
-    expect(loadWorldPolicy().playerAgents.read).toBe('allow');
+    expect(loadWorldPolicy().playerAgents.read).toBe('deny');
   });
 
   it('a code allow is still coerced to ask_owner, not deny', async () => {

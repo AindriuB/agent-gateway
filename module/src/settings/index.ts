@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
@@ -52,6 +53,7 @@ export const settingRegistrars: Array<() => void> = [registerFoundation];
 settingRegistrars.push(registerPairingCredential, registerPairingMenu);
 settingRegistrars.push(registerPolicySettings);
 settingRegistrars.push(registerRateLimitSettings);
+settingRegistrars.push(registerPolicyMenu);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {

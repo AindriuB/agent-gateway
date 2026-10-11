@@ -13,6 +13,7 @@ export interface SettingConfig {
 
 export interface FoundryStub {
   registeredSettings: Map<string, SettingConfig>;
+  worldSettings: Map<string, any>;
   registeredMenus: Map<string, any>;
   hooks: Map<string, Array<() => void>>;
   fire(hook: string): void;
@@ -25,7 +26,12 @@ const HandlebarsApplicationMixin = (base: any) => class extends base {};
 /** Install minimal Foundry globals for the given generation. */
 export function installFoundry(
   generation: Generation,
-  opts: { sceneLevels?: boolean; stringStorage?: boolean } = {},
+  opts: {
+    sceneLevels?: boolean;
+    stringStorage?: boolean;
+    worldSettingWriter?: () => string | undefined;
+    persistedWorldSettings?: boolean;
+  } = {},
 ): FoundryStub {
   const g = globalThis as any;
   const saved = {
@@ -38,9 +44,13 @@ export function installFoundry(
   const registeredSettings = new Map<string, SettingConfig>();
   const registeredMenus = new Map<string, any>();
   const values = new Map<string, unknown>();
+  const worldSettings = new Map<string, any>();
   const hooks = new Map<string, Array<() => void>>();
   // Tool tests act as player agents, which are off in a fresh world; policy tests set this explicitly.
   values.set('agent-gateway.playerAgentsEnabled', true);
+  values.set('agent-gateway.headlessAgentsEnabled', false);
+  values.set('agent-gateway.folderAllowlist', JSON.stringify({ playerAgents: [], gmAgents: [] }));
+  values.set('agent-gateway.worldPolicySnapshotMigrated', false);
   // The registered default world policy (spec section 3), as an unset real world would hold it.
   values.set(
     'agent-gateway.worldPolicy',
@@ -65,6 +75,21 @@ export function installFoundry(
     modules: new Map([['agent-gateway', { active: true }]]),
     release: { generation },
     settings: {
+      storage: new Map([
+        [
+          'world',
+          {
+            get: (id: string) => [...worldSettings.values()].find((doc) => doc.id === id),
+            get contents() {
+              return [...worldSettings.values()];
+            },
+            getSetting: (key: string, user: string | null = null) => {
+              const doc = worldSettings.get(key);
+              return doc?.user === user ? doc : undefined;
+            },
+          },
+        ],
+      ]),
       register: (ns: string, key: string, cfg: SettingConfig) =>
         registeredSettings.set(`${ns}.${key}`, cfg),
       registerMenu: (ns: string, key: string, cfg: any) => {
@@ -78,12 +103,29 @@ export function installFoundry(
       },
       get: (ns: string, key: string) =>
         values.get(`${ns}.${key}`) ?? registeredSettings.get(`${ns}.${key}`)?.default,
-      set: async (ns: string, key: string, v: unknown) =>
-        void values.set(
-          `${ns}.${key}`,
-          // Like localStorage: with stringStorage, only strings survive a round trip.
-          opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v,
-        ),
+      set: async (ns: string, key: string, v: unknown) => {
+        const full = `${ns}.${key}`;
+        values.set(full, opts.stringStorage && typeof v !== 'string' ? JSON.stringify(v) : v);
+        // Explicit test-only writer injection: no invented GM proof for ordinary settings.
+        if (
+          (registeredSettings.get(full)?.scope === 'world' && opts.worldSettingWriter) ||
+          (opts.persistedWorldSettings && key !== 'ownerPolicy')
+        ) {
+          worldSettings.set(full, {
+            id: worldSettings.get(full)?.id ?? `setting-${worldSettings.size}`,
+            key: full,
+            user: null,
+            _source: {
+              _id: worldSettings.get(full)?.id ?? `setting-${worldSettings.size}`,
+              key: full,
+              user: null,
+              value: JSON.stringify(v),
+            },
+            value: v,
+            _stats: { lastModifiedBy: opts.worldSettingWriter?.() },
+          });
+        }
+      },
     },
     actors: collection(),
     items: collection(),
@@ -108,6 +150,7 @@ export function installFoundry(
 
   return {
     registeredSettings,
+    worldSettings,
     registeredMenus,
     hooks,
     fire: (hook) => (hooks.get(hook) ?? []).forEach((fn) => fn()),

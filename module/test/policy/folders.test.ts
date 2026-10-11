@@ -100,10 +100,14 @@ describe('folder allowlist', () => {
   it('a corrupt allowlist hides everything rather than nothing', async () => {
     await world();
     await setSetting('folderAllowlist', '{not json');
-    expect(await names()).toEqual([]);
+    expect(await call('document_search', { type: 'Actor' })).toMatchObject({
+      error: { code: 'DENIED' },
+    });
     expect(folderAllowlist('playerAgents')).toHaveLength(1);
     await setSetting('folderAllowlist', JSON.stringify({ playerAgents: 'villains' }));
-    expect(await names()).toEqual([]);
+    expect(await call('document_search', { type: 'Actor' })).toMatchObject({
+      error: { code: 'DENIED' },
+    });
   });
 
   it('survives a folder cycle', async () => {

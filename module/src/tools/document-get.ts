@@ -2,6 +2,7 @@
 import { isAuditDocument } from '../audit/guard.js';
 import { fromUuidCompat } from '../compat/index.js';
 import { folderAllowed } from '../policy/folders.js';
+import { readWorldSnapshot, type AdmittedSnapshot } from '../policy/snapshot.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
 import {
   domToDocument,
@@ -167,14 +168,14 @@ export function clearDocumentCache(): void {
  * `doc` within it; undefined unless the user may observe the root and every step down to `doc`
  * survives the embedded-visibility rules.
  */
-function readable(doc: any, user: any): VisibleNode | undefined {
+function readable(doc: any, user: any, snapshot: AdmittedSnapshot): VisibleNode | undefined {
   let root = doc;
   while (root.parent) root = root.parent;
   // The audit log is closed to tools for every user, GMs included (see rootVisible).
   if (isAuditDocument(root)) return undefined;
   // Outside the GM's folder allowlist reads as missing, same as a hidden document (never FORBIDDEN,
   // which would confirm it exists). Checked on the root so embedded uuids agree with search.
-  if (!folderAllowed(root, user.isGM === true)) return undefined;
+  if (!folderAllowed(root, user.isGM === true, snapshot)) return undefined;
   if (
     user.isGM !== true &&
     (!(
@@ -194,6 +195,7 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   if (!(READABLE_TYPES as readonly string[]).includes(uuid.split('.')[0]!)) {
     return err(`document_get reads ${READABLE_TYPES.join(', ')} documents only`);
   }
+  const snapshot = readWorldSnapshot();
   let doc: any = null;
   try {
     doc = await fromUuidCompat(uuid);
@@ -202,7 +204,7 @@ export const documentGetHandler: OpHandler = async (ctx) => {
   }
   const user = game.users.get(ctx.user.id);
   // A document the user cannot observe looks exactly like a missing one, so uuids cannot be probed.
-  const tree = !doc || !user || doc.pack ? undefined : readable(doc, user);
+  const tree = !doc || !user || doc.pack ? undefined : readable(doc, user, snapshot);
   if (!tree) return notFound(uuid);
 
   const optIn = includeOtherModuleDataSetting();

@@ -31,3 +31,118 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Policy settings (task 15). */
+.agent-gateway-policy {
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.agent-gateway-policy fieldset {
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+.agent-gateway-policy table {
+  table-layout: fixed;
+  width: 100%;
+}
+.agent-gateway-policy th,
+.agent-gateway-policy td {
+  padding: 0.3rem;
+  overflow-wrap: anywhere;
+}
+.agent-gateway-policy select {
+  width: 100%;
+}
+.agent-gateway-policy .policy-columns {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.agent-gateway-policy .toggle,
+.agent-gateway-policy .limit {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.agent-gateway-policy .limit input {
+  margin-left: auto;
+  width: 6rem;
+}
+.agent-gateway-policy .hint {
+  font-size: 0.9em;
+}
+.agent-gateway-policy select[multiple] {
+  height: 8rem;
+}
+.agent-gateway-policy h3 {
+  font-size: 1em;
+  margin: 0.5rem 0;
+}
+
+/* Approval dialog */
+.ag-approval {
+  overflow: auto;
+  padding: 0.5rem;
+}
+.ag-approval article {
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+.ag-approval dl {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.25rem 0.75rem;
+}
+.ag-approval dt {
+  font-weight: bold;
+}
+.ag-approval dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ag-approval pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  user-select: text;
+}
+.ag-approval th,
+.ag-approval td {
+  vertical-align: top;
+  padding: 0.35rem;
+}
+.ag-approval td {
+  max-width: 18rem;
+  overflow-wrap: anywhere;
+}
+.ag-approval label {
+  display: block;
+}
+.ag-approval textarea {
+  width: 100%;
+}
+.ag-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.ag-approval-actions button {
+  flex: 1;
+  min-width: 8rem;
+}
+
+/* Chat marker: agent-authored messages always visibly carry this badge. */
+.agent-gateway-ai-marker {
+  display: inline-block;
+  padding: 0 0.35em;
+  margin-inline-start: 0.4em;
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  font-size: 0.75em;
+  font-weight: bold;
+  line-height: 1.5;
+}

@@ -5,12 +5,8 @@ import type { Stage } from '../ops/stages.js';
 import type { DispatchResult } from '../ops/types.js';
 import { evaluate, type PolicyInputs } from './evaluate.js';
 import { CATEGORIES, type Category } from './matrix.js';
-import {
-  headlessAgentsEnabled,
-  loadOwnerPolicy,
-  loadWorldPolicy,
-  playerAgentsEnabled,
-} from './store.js';
+import { loadOwnerPolicy } from './store.js';
+import { readWorldSnapshot } from './snapshot.js';
 import './types.js';
 
 declare const game: any;
@@ -25,11 +21,12 @@ const t = (key: string, data: Record<string, string> = {}): string => {
 const denied = (message: string): DispatchResult => ({ error: { code: 'DENIED', message } });
 
 export function liveInputs(): PolicyInputs {
+  const snapshot = readWorldSnapshot();
   return {
-    world: loadWorldPolicy(),
+    world: snapshot.world,
     owner: loadOwnerPolicy(),
-    playerAgentsEnabled: playerAgentsEnabled(),
-    headlessAgentsEnabled: headlessAgentsEnabled(),
+    playerAgentsEnabled: snapshot.playerEnabled,
+    headlessAgentsEnabled: snapshot.headlessEnabled,
   };
 }
 

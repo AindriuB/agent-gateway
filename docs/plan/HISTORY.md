@@ -17,21 +17,40 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-10-11 — Policy, approval and native player-write wave verified; PRs awaiting review
+## 2026-10-11 — Policy, approval and native player-write wave completed and contracts archived
 
-Tasks 15, 17, 21, 21a and 21b are implemented and independently reviewed; PRs
-#55, #56, #57, #58 and #60 remain open for Andrew's review and merge. PR #54's
-planning head `42e54cd` is incorporated into this recording branch, together
-with the 21b contract. This records verified branch behavior, not a claim that
-these changes are on main; unmerged task contracts remain in `tasks/`.
+Tasks 15, 15a, 17, 21, 21a and 21b are complete and merged through PRs
+#54–58 and #60, verified against current main `9b3b05b`. PR #59 records the
+final cumulative state. Sixteen surviving completed contracts moved to
+`docs/plan/done/`: 13, 14, 15, 15a, 16, 17, 19, 20, 20b–20f, 21, 21a and
+21b. Earlier 01–12 contracts were already retired; their history/index entries
+remain. Task 18 stays blocked, and 22–43 remain queued rather than archived.
 
-Task 15 (`c26b19c`) provides world ceilings, owner policy, folder allowlists and
-rate-limit controls with GM/player privacy on native v13/v14 UI. Its save path
-closes both agent gates before persisting restrictions and owner policy, then
-enables requested classes last. Failure attempts both disables independently;
-Foundry settings are not transactional and a backend that refuses rollback
-cannot be forced to close a gate. Independent policy tests passed 23/23 and
-its required gate passed 2,379 fast / 2,227 slow tests.
+The older foundation completion evidence is merged PR #33 (13), #34 (14),
+#37 (16), #41 (19), #36 (20), and #43–47 (20b–20f), with follow-up fixes
+#49–50 and v13/read/lifecycle records #48, #51–53. These are completion records,
+not claims that every optional future integration or v13 pack lifecycle passed.
+PR #41 establishes offline verification and v14 backend reservation inspection;
+its native successful Undo UI criterion and v13 reservation verification remain
+follow-ups. Task 21 proves safe targets/snapshots, not an Undo invocation.
+
+Task 15 initially provided native v13/v14 policy UI at `c26b19c` (23 focused;
+2,379 fast / 2,227 slow). Review then hardened corrupt per-agent overrides,
+interactive-GM save windows and draft ceiling controls, culminating in merged
+PR #55 `d62dc36` (2,390 fast / 2,227 slow). Native draft-selector checks used
+actual Handlebars/ApplicationV2 with intercepted memory-only settings writes;
+six original server settings were unchanged. They prove captured one-submit
+payloads, not server persistence.
+
+Task 15a supersedes the earlier multi-setting quiesce/rollback design: complete
+world matrix, flags, folders and rates publish as one validated record. Candidate
+`ab6b67f` and main reconciliation `f66de98` passed 2,607 fast / 2,227 slow;
+independent focused tests passed 247. Acknowledgement failure never compensates
+over another GM's newer complete proposal. Last complete writer wins, clients
+must reload, and ambiguous initialization denies/requires repair. This is not
+CAS, immediate revocation or an owner/world transaction. Deliberately resetting
+both authoritative migration documents is outside the supported migration path.
+
 
 Task 17 (`63edd37`) provides eligible native approval dialogs, escaped pack
 provenance and arguments, nested document diffs, full 500-line source review,
@@ -40,7 +59,9 @@ MCP calls with no-op fixture handlers and a local no-op audit sink; actors and
 journals were unchanged. Full source DOM equality and zero rendered hostile
 HTML were asserted. Source diffs require target OWNER permission. Its required
 gate passed 2,392 fast / 2,227 slow tests; local screenshots passed independent
-visual review.
+visual review. The later committed-DOM group-approval race fix `f127431`
+passed 24 independent focused tests and 2,414 fast / 2,227 slow; it does not
+constitute a new native UI proof.
 
 Task 21a (`6e6f3d4`) projects normal outputs plus a strict pending-approval
 branch at the MCP boundary so SDK clients that first list tools accept delayed
@@ -63,6 +84,13 @@ all exact created fixture UUIDs were absent after cleanup, and the matched
 audit UUIDs remained. The successful role proofs span separate controlled
 runs; they are not a single uninterrupted full-suite run. Local native visual
 evidence was reviewed; no public PNG upload is claimed.
+
+The later harness-only migrated-envelope preflight fix `c6421ee` passed
+2,626 fast / 2,227 slow and 26 independent parser/settlement tests. It accepts
+valid legacy matrices or fully validated version1 envelopes, rejecting malformed
+policy before fixture setup. Later policy and harness changes were not rerun as
+native world-write acceptance; the native hash and controlled-run evidence above
+remain historical and exact.
 
 **Cost:** Native validation exposed stale installed audit subtype metadata,
 a non-designated GM recipient, and two uses of a nonexistent `_stats.createdBy`

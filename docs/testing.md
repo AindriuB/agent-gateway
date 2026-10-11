@@ -123,8 +123,12 @@ retention of matched audit UUIDs, close only the sessions/processes started by
 the run, and preserve audit records. Local screenshots can establish readable
 native approvals and AI badges without publishing campaign data or credentials.
 The verified task 21 evidence covers GM and Player1 on v14.369 and v13.351,
-using separate controlled runs and the same production bundle; its PRs remain
-open until Andrew reviews and merges them.
+using separate controlled runs and the exact historical `d0a11fb` bundle
+`9151dcaece963660a3c93039613b4580ded558f9c9f0d5546f4e9f59cecb33c4`.
+The implementation PRs #55–58 and #60 are now merged. Later policy snapshot
+and harness-only preflight gates are offline verification, not new native
+acceptance. The preflight accepts valid legacy matrices or validated version1
+envelopes and refuses malformed data before fixture setup.
 
 ## Permission rules on the Mac (auto mode)
 

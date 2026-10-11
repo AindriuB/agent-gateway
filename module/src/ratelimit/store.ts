@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DEFAULT_LIMITS, loadLimits, validateLimits, type LoadedLimits } from './config.js';
+import { DEFAULT_LIMITS, validateLimits, type LoadedLimits } from './config.js';
+
+import { readWorldSnapshot, publishWorldSnapshot, snapshotLimits } from '../policy/snapshot.js';
 
 declare const game: any;
 
@@ -9,18 +11,21 @@ export const RATE_LIMITS_KEY = 'rateLimits';
 
 /** The saved limits; an unreadable setting loads as the strict limit, never unlimited. */
 export function loadRateLimits(): LoadedLimits {
-  let raw: unknown;
-  try {
-    raw = game.settings.get(NS, RATE_LIMITS_KEY);
-  } catch {
-    raw = undefined;
-  }
-  return loadLimits(raw);
+  return snapshotLimits();
 }
 
 /** Rejects an invalid configuration before it reaches storage. */
 export async function saveRateLimits(limits: unknown): Promise<void> {
-  await game.settings.set(NS, RATE_LIMITS_KEY, JSON.stringify(validateLimits(limits)));
+  const current = readWorldSnapshot();
+  if (!current.valid) throw Error('Policy initialization or repair required');
+  await publishWorldSnapshot({
+    version: 1,
+    world: current.world,
+    playerEnabled: current.playerEnabled,
+    headlessEnabled: current.headlessEnabled,
+    folders: current.folders,
+    limits: validateLimits(limits),
+  });
 }
 
 export function registerRateLimitSettings(): void {

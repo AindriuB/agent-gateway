@@ -1,3 +1,4 @@
+import { installApprovalUi } from './apps/approval/index.js';
 import { installPackApi, registerPacks, sealPacks } from './packs/live.js';
 import { foundryGeneration } from './compat/index.js';
 import { installBridge } from './link/bridge.js';
@@ -28,6 +29,7 @@ Hooks.once('setup', registerPacks);
 Hooks.once('ready', () => {
   sealPacks();
   console.log(`agent-gateway | ready (v${foundryGeneration()})`);
+  installApprovalUi();
   installBridge(getLinkClient());
   // Role changes and policy edits change what this user may call; tell the gateway.
   Hooks.on('updateUser', (user: { id?: string }) => {

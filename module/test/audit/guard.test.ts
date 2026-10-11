@@ -90,14 +90,14 @@ describe('targets', () => {
 
 describe('the audit app list', () => {
   it('shows pages of the trusted journal only, never those of a forged flagged one', () => {
-    stub = installFoundry(14);
+    stub = installFoundry(14, { worldSettingWriter: () => 'gm1' });
     const g = globalThis as any;
     const users = [{ id: 'gm1', isGM: true }];
     const mk = (id: string, createdBy: string, tool: string) => ({
       id,
       flags: FLAG,
       ownership: { default: 0 },
-      _stats: { createdBy },
+      _stats: { lastModifiedBy: createdBy },
       testUserPermission: () => false,
       pages: {
         contents: [{ id: `${id}p`, type: 'agent-gateway.audit', system: { tool, targets: [] } }],
@@ -117,6 +117,7 @@ describe('the audit app list', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(listEntries().map((e) => e.tool)).toEqual(['REAL_ENTRY']);
     g.game.settings.set('agent-gateway', 'auditJournalId', '0000aaaa');
+    stub.worldSettings.get('agent-gateway.auditJournalId')._stats.lastModifiedBy = 'p1';
     expect(listEntries()).toEqual([]);
   });
 });

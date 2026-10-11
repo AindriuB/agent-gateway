@@ -34,7 +34,7 @@ storage. That rule matters most in server mode, where the gateway operator may n
 
 ## Context
 - docs/plan/specs/2026-10-09-agent-gateway.md:114-115 — storage holds OAuth clients, hashed tokens, event buffer, headless config; "Never world data"
-- docs/plan/specs/2026-10-09-agent-gateway.md:81-83 and docs/plan/tasks/19-audit-log-undo.md — the module's in-world audit; this trail is distinct from it
+- docs/plan/specs/2026-10-09-agent-gateway.md:81-83 and docs/plan/done/19-audit-log-undo.md — the module's in-world audit; this trail is distinct from it
 - docs/plan/tasks/28-gateway-event-buffer.md — the gateway's other bounded SQLite table; follow its bounding approach
 - gateway/src/mcp/session.ts:47 — `sessionId` is already a per-session `randomUUID()` and is passed to `registry.call`; reuse it as the audit session id
 - gateway/src/mcp/session.ts:91-137 — the call handler and every return point: `UNKNOWN_TOOL` (twice), ambiguity (returned as `INVALID_ARGS`), `WORLD_OFFLINE`, schema `INVALID_ARGS`, success, `LinkCallError` codes, `INTERNAL`. 35 adds `FORBIDDEN` for scope refusals.

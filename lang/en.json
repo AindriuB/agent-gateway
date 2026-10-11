@@ -1,5 +1,36 @@
 {
   "AGENT_GATEWAY": {
+    "Tools": { "aiMarker": "AI-authored" },
+    "PolicyApp": {
+      "title": "Agent policies",
+      "open": "Configure policies",
+      "hint": "Set the world ceiling and tighten your own agent permissions.",
+      "world": "World ceiling",
+      "ceilingHint": "Only a GM can edit the world ceiling.",
+      "owner": "Your owner policy",
+      "ownerHint": "You may tighten the world ceiling. Choices that would loosen it are unavailable. Code always requires approval.",
+      "agentClass": "Agent class",
+      "playerAgents": "Player agents",
+      "gmAgents": "GM agents",
+      "read": "Read",
+      "write": "Write",
+      "destructive": "Destructive",
+      "code": "Code",
+      "allow": "Allow",
+      "ask_owner": "Ask owner",
+      "ask_gm": "Ask GM",
+      "deny": "Deny",
+      "agents": "Agent access",
+      "playerEnabled": "Enable player agents",
+      "headlessEnabled": "Enable headless agents",
+      "folders": "Allowed world folders",
+      "folderHint": "Select folders for each agent class. An empty selection allows all folders. Use Command/Ctrl to select more than one.",
+      "limits": "Default rate limits",
+      "limitsHint": "Calls per minute (1–10000). Destructive and code calls use the write limit. Per-agent overrides are preserved.",
+      "save": "Save policies",
+      "saved": "Policies saved.",
+      "invalid": "Policies were not saved. Check the choices, folder selections, rate limits and your current permissions, then try again."
+    },
     "Packs": {
       "Sealed": "Register tool packs in the agentGateway.registerPacks hook before ready."
     },
@@ -127,5 +158,26 @@
         "deleted": "was deleted since"
       }
     }
-  }
+  },
+  "AGENT_GATEWAY.ApprovalDialog.title": "Agent approval requests",
+  "AGENT_GATEWAY.ApprovalDialog.approveAll": "Approve all shown in group",
+  "AGENT_GATEWAY.ApprovalDialog.agent": "Agent",
+  "AGENT_GATEWAY.ApprovalDialog.owner": "Owner",
+  "AGENT_GATEWAY.ApprovalDialog.requester": "Requester",
+  "AGENT_GATEWAY.ApprovalDialog.category": "Category",
+  "AGENT_GATEWAY.ApprovalDialog.thirdParty": "Third-party tool pack",
+  "AGENT_GATEWAY.ApprovalDialog.unavailable": "Current document unavailable or not visible. Review the full arguments below.",
+  "AGENT_GATEWAY.ApprovalDialog.path": "Field",
+  "AGENT_GATEWAY.ApprovalDialog.before": "Before",
+  "AGENT_GATEWAY.ApprovalDialog.after": "After",
+  "AGENT_GATEWAY.ApprovalDialog.arguments": "Arguments",
+  "AGENT_GATEWAY.ApprovalDialog.source": "Full source",
+  "AGENT_GATEWAY.ApprovalDialog.reason": "Reason for denial",
+  "AGENT_GATEWAY.ApprovalDialog.reasonRequired": "Enter a reason before denying this request.",
+  "AGENT_GATEWAY.ApprovalDialog.approve": "Approve once",
+  "AGENT_GATEWAY.ApprovalDialog.session": "Approve for this session",
+  "AGENT_GATEWAY.ApprovalDialog.deny": "Deny",
+  "AGENT_GATEWAY.ApprovalDialog.tooLarge": "Request exceeds safe review limits. Deny it and ask the agent for a smaller request.",
+  "AGENT_GATEWAY.ApprovalDialog.previous": "Previous requests",
+  "AGENT_GATEWAY.ApprovalDialog.next": "Next requests"
 }
