@@ -39,7 +39,7 @@ describe('joinWorld', () => {
     const { page, calls } = fakePage();
     await joinWorld(page, loadE2eConfig({ env: {} }), 'player1');
     expect(calls.map((c) => c[0])).toEqual(['goto', 'wait', 'select', 'click', 'ready']);
-    expect(calls).toContainEqual(['select', 'select[name="userId"]', 'player1']);
+    expect(calls).toContainEqual(['select', SELECTORS.joinUser, 'player1']);
     expect(calls).toContainEqual(['click', 'button[name="join"]']);
   });
 
@@ -70,7 +70,7 @@ describe('user name matching', () => {
   it('joins as the real-case name', async () => {
     const { page, calls } = fakePage();
     await joinWorld(page, loadE2eConfig({ env: {} }), 'player2');
-    expect(calls).toContainEqual(['select', 'select[name="userId"]', 'Player2']);
+    expect(calls).toContainEqual(['select', SELECTORS.joinUser, 'Player2']);
   });
   it('lists the available users when there is no match', async () => {
     const { page } = fakePage();
