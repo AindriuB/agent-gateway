@@ -17,6 +17,16 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — GM scene, token and combat task merged and archived (task 24)
+
+Andrew merged PR #65 at 2026-10-11T21:52:02Z, exact head `377ae79609a056d47ce094b996b10da3bb323a27`, as main `a1504985a6563ae89fa0618de84541284bfc06c9`. Task 24's contract moves from tasks to done with only its status changed; the archive now contains 20 contracts. Task 25 is next, task 18 remains architecture-blocked, and no other queued task is marked complete.
+
+The merged reusable harness/documentation predecessor `b669465` passed build/lint/full verification (3,158 fast / 2,227 slow), 15 focused checks, standalone TypeScript, ESLint and actual-transpiled browser serialization. The final head added only the actual verification result to three docs. Production source remains `79f6d713`, whose source gate passed 3,143 fast / 2,227 slow and 51 focused Token freshness checks; the combined tooling gate is not another native run.
+
+Native proof remains Foundry v14.369 / PF2e 8.6.0 and v13.351 / PF2e 7.12.2 serving exact bundle `5e23eca373bd9728e837bc7fe9cac135b147ec210635c44ddcec93023683dee0`. Each world matched all 16 approved-plan outcomes, including one actual human denial and 15 persisted audit records. V14 had 13 successful actions/two handler refusals; v13 had 12 successes/three refusals. Cleanup proved nine/seven exact fixture UUIDs absent, all 15 audits retained, baseline roots/ordinary sources, active scenes and personal scene/level/target/combat views restored, and world time unchanged. The prior entry preserves the v14 audit-drain ambiguity and separate zero-MCP cleanup, wrong-port v13 attempt and cleanup, initial Token timestamp failure, exact executed harness hashes and subsequent offline repairs. Private evidence and images remain local.
+
+**Cost:** Archive recording waited for the actual merge. PF2e initiative is explicitly unsupported; native Undo, every action, concurrent GM calls and clock-changing progression remain outside this proof. The prior merge-pending entry stays unchanged as history. This docs-only cleanup changes no production source, tests, live world, credentials or exported evidence.
+
 ## 2026-10-11 — GM scene, token and combat tools validated; merge pending (task 24)
 
 PR #65 remains open: task 24 is verified, not merged or archived. Core preparation binds one immutable effective category before policy/rate/approval/audit; destructive actions cannot relax their base write permission or reuse a write session grant. Token, scene and combat tools use canonical native identities, bounded inputs and audited explicit mutations. PF2e initiative remains deliberately unsupported because native rule/preparation paths can cause uncorrelated effects; no altered core-formula fallback is claimed.

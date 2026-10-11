@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 19 contracts have merged implementations and recorded evidence. Task 19's
+These 20 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -19,6 +19,7 @@ over unchecked historical boxes.
 | 21a, 21b | Complete | PR #58 (`6e6f3d4`), #60 (`0d7a4b3`) |
 | 22 | Complete; native v13/v14 full movement/target/turn acceptance passed, no native partial-wall or Undo claim | PR #61 (`c4ff5f0`, merged `ba52acd`); production gate 2,751 fast / 2,227 slow |
 | 23, 23a | Complete; native v13/v14 eight-call GM document and grouped subtree Undo acceptance passed | PR #63 (`0cf35c3`, merged `83d216d`); combined gate 3,042 fast / 2,227 slow |
+| 24 | Complete; native v13/v14 bounded scene/token/combat acceptance passed; PF2e initiative unsupported | PR #65 (`377ae79`, merged `a150498`); combined gate 3,158 fast / 2,227 slow |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains
@@ -40,3 +41,13 @@ fixtures with source compendium, personal views and world time unchanged.
 The later reusable harness gate is distinct from native-executed private
 harness `8ede52416c640d127472b2e3375846b12c7b65e14013fab42588c1a22f78a235`.
 See the task23/23a HISTORY entries for earlier failures and coverage limits.
+
+Task 24 has separate native proof at source `79f6d713`, production bundle
+`5e23eca373bd9728e837bc7fe9cac135b147ec210635c44ddcec93023683dee0`.
+Each version completed 16 requests with one actual human denial and 15 retained
+audits. Cleanup removed nine exact fixture UUIDs on v14 and seven on v13,
+restoring baseline roots/sources, active scenes and personal views with unchanged
+world time. V14 used separately reconciled zero-MCP cleanup after the final
+harness audit match failed; the first wrong-port v13 attempt was cleaned before
+the successful run. See HISTORY for executed harness hashes and bounded coverage;
+the merged reusable harness gate is separate from native execution.
