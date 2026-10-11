@@ -41,19 +41,37 @@ export function currentPolicyState(): PolicyState {
 }
 
 export async function savePolicyForm(values: Record<string, unknown>): Promise<boolean> {
+  let savingWorld = false;
   try {
     const validated = validatePolicyForm(values, currentPolicyState());
     if ('world' in validated) {
+      savingWorld = true;
+      // Quiesce access before changing restrictions, including already-enabled agents.
+      // A rejected disable aborts the save before any restriction is changed.
+      await game.settings.set(NS, PLAYER_AGENTS_KEY, false);
+      await game.settings.set(NS, HEADLESS_AGENTS_KEY, false);
       await saveWorldPolicy(validated.world);
-      await game.settings.set(NS, PLAYER_AGENTS_KEY, validated.playerEnabled);
-      await game.settings.set(NS, HEADLESS_AGENTS_KEY, validated.headlessEnabled);
       await game.settings.set(NS, FOLDER_ALLOWLIST_KEY, JSON.stringify(validated.folders));
       await saveRateLimits(validated.limits);
-    }
-    await saveOwnerPolicy(validated.owner);
+      await saveOwnerPolicy(validated.owner);
+      // All restrictions are persisted before either class can gain access.
+      if (validated.playerEnabled) await game.settings.set(NS, PLAYER_AGENTS_KEY, true);
+      if (validated.headlessEnabled) await game.settings.set(NS, HEADLESS_AGENTS_KEY, true);
+    } else await saveOwnerPolicy(validated.owner);
     ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.PolicyApp.saved'));
     return true;
   } catch {
+    if (savingWorld) {
+      // Settings are not transactional. Never restore broader access after a partial save;
+      // attempt both disables even if one fails (an unavailable backend may reject rollback).
+      for (const key of [PLAYER_AGENTS_KEY, HEADLESS_AGENTS_KEY]) {
+        try {
+          await game.settings.set(NS, key, false);
+        } catch {
+          // Still try to close the other gate and report the failed save below.
+        }
+      }
+    }
     ui.notifications.error(game.i18n.localize('AGENT_GATEWAY.PolicyApp.invalid'));
     return false;
   }
