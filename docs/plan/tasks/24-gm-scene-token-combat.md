@@ -1,5 +1,7 @@
 # 24 — Add GM tools token_manage, combat_manage and scene_control
 
+**Status:** Verified implementation and bounded native v13/v14 acceptance; PR #65 awaiting merge. Remains active until merged.
+
 **Repo:** .
 **Depends on:** 23, 20d, 20e
 **Owns:**
@@ -78,3 +80,6 @@ All schemas are closed, action-specific, bounded objects; no raw JSON, arbitrary
 ## Out of scope
 - Player token and combat tools (22)
 - Tables, playlists, notify (25)
+
+## Validation record
+Source `79f6d713` passed build/lint/full verification (3,143 fast / 2,227 slow) and 51 focused Token freshness checks. Native v14.369 and v13.351 acceptance passed the approved 16-request plan with 15 persisted audits per world, actual human denial, exact fixture cleanup and original state restoration. V14 cleanup was completed separately without MCP replay after a harness audit-correlation ambiguity; the initial wrong-port v13 attempt was cleaned before the successful run. See the paired task24 HISTORY entry and `docs/testing.md` for source/bundle identities, historical failures and coverage limits. PF2e initiative remains explicitly unsupported. This is not native Undo, every-action, concurrent-GM or clock-changing progression proof; later reusable harness changes have a separate offline gate.
