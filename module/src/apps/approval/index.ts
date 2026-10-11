@@ -105,21 +105,15 @@ export function createApprovalApp(controller: ApprovalUiController): any {
     };
     groups: ApprovalGroup[] = [];
     page = 0;
-    shown = new Map<string, string[]>();
     async _prepareContext(): Promise<object> {
       // Manager rechecks role and pending state even on a rerender of an already open window.
       const eligible = new Set(controller.pending().map((r) => r.id));
       const requests = this.groups.flatMap((g) => g.requests).filter((r) => eligible.has(r.id));
       this.page = Math.max(0, Math.min(this.page, Math.ceil(requests.length / 5) - 1));
       const visible = new Set(requests.slice(this.page * 5, this.page * 5 + 5).map((r) => r.id));
-      this.shown.clear();
       const groups = await Promise.all(
         this.groups.map(async (group) => {
           const shown = group.requests.filter((r) => visible.has(r.id));
-          this.shown.set(
-            group.id,
-            shown.map((r) => r.id),
-          );
           return { id: group.id, requests: await Promise.all(shown.map(requestView)) };
         }),
       );
@@ -156,9 +150,25 @@ export function createApprovalApp(controller: ApprovalUiController): any {
       controller.resolve(target.dataset.requestId ?? '', { decision: 'deny', reason });
     }
     static approveAll(this: any, _event: Event, target: HTMLElement): void {
-      for (const id of this.shown.get(target.dataset.groupId ?? '') ?? []) {
-        controller.resolve(id, { decision: 'approve', scope: 'once' });
+      // Preparation may await document previews while an older button remains visible.
+      // Bind the action to its committed DOM, never to mutable preparation state.
+      if (!this.element?.isConnected || !this.element.contains(target)) return;
+      if (target.dataset.action !== 'approveAll') return;
+      const group = target.closest('.ag-approval-group');
+      if (!group || !this.element.contains(group)) return;
+      const rows = group.querySelectorAll<HTMLElement>('article[data-request]');
+      if (!rows.length || rows.length > 5) return;
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      for (const row of rows) {
+        const id = row.dataset.request;
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        const approve = row.querySelector<HTMLButtonElement>('[data-action="approve"]');
+        if (approve && !approve.disabled && approve.dataset.requestId === id) ids.push(id);
       }
+      // Snapshot before resolving: each resolution can synchronously request another render.
+      for (const id of ids) controller.resolve(id, { decision: 'approve', scope: 'once' });
     }
   };
 }
