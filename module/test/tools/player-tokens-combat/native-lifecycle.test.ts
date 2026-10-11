@@ -24,6 +24,21 @@ describe('native fixture failure and cleanup lifecycle', () => {
     expect(viewed).toBe(original);
     expect(original).toEqual({ active: false, round: 7, turn: 2 });
   });
+  it('leaves an uncaptured original combat view untouched on preflight failure', async () => {
+    const original = { active: false };
+    let viewed: typeof original | null = original;
+    const clearViewed = vi.fn(async () => {
+      viewed = null;
+    });
+    await cleanupNativeFixtures({
+      hasFixtureCombat: false,
+      clearViewed,
+      deleteFixtures: async () => {},
+      restoreViews: async () => {}, // No browser baseline was captured before preflight failed.
+    });
+    expect(clearViewed).not.toHaveBeenCalled();
+    expect(viewed).toBe(original);
+  });
   it('restores views even if exact fixture deletion fails', async () => {
     const restoreViews = vi.fn(async () => {});
     await expect(

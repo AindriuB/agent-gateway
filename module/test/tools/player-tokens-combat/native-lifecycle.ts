@@ -10,11 +10,12 @@ export function retainNativeAudit(
 
 /** Native Combat deletion may activate the viewed combat; restore personal state afterwards. */
 export async function cleanupNativeFixtures(steps: {
+  hasFixtureCombat?: boolean;
   clearViewed: () => Promise<void>;
   deleteFixtures: () => Promise<void>;
   restoreViews: () => Promise<void>;
 }) {
-  await steps.clearViewed();
+  if (steps.hasFixtureCombat !== false) await steps.clearViewed();
   try {
     await steps.deleteFixtures();
   } finally {

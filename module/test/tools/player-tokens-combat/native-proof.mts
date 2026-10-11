@@ -504,6 +504,9 @@ try {
         console.error(`[task22] audit drain: ${String(error)}`);
       }
       await cleanupNativeFixtures({
+        hasFixtureCombat: created.some(
+          (uuid) => uuid.startsWith('Combat.') && uuid.split('.').length === 2,
+        ),
         clearViewed: async () => {
           for (const browser of [gmBrowser, playerBrowser])
             if (browser)
