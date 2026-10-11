@@ -7,6 +7,7 @@
 - protocol/src/tools/roll-formula.ts
 - protocol/src/tools/journal-write.ts
 - protocol/src/tools/index.ts (insertions only)
+- protocol/test/tools/rules/validate.test.ts (insertions only: canonical example-map entries for `chat_post`, `roll_formula` and `journal_write`)
 - module/src/tools/chat-post.ts
 - module/src/tools/roll-formula.ts
 - module/src/tools/journal-write.ts

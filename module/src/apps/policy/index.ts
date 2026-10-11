@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getApplicationV2, getHandlebarsApplicationMixin } from '../../compat/index.js';
-import { AGENT_CLASSES } from '../../policy/matrix.js';
+import { AGENT_CLASSES, CATEGORIES, DENY_ALL_MATRIX } from '../../policy/matrix.js';
 import {
   folderAllowlist,
   headlessAgentsEnabled,
@@ -14,6 +14,7 @@ import {
   HEADLESS_AGENTS_KEY,
 } from '../../policy/store.js';
 import { loadRateLimits, saveRateLimits } from '../../ratelimit/store.js';
+import { isDecision, strictness } from '../../policy/lattice.js';
 import { policyContext, validatePolicyForm, type PolicyState } from './model.js';
 
 declare const game: any;
@@ -37,23 +38,49 @@ export function currentPolicyState(): PolicyState {
         : [],
     allowlists: Object.fromEntries(AGENT_CLASSES.map((cls) => [cls, folderAllowlist(cls)])),
     limits: { ...limits.classes, agents: Object.fromEntries(limits.agents) },
+    agentsCorrupt: limits.agentsCorrupt,
   };
 }
 
 export async function savePolicyForm(values: Record<string, unknown>): Promise<boolean> {
+  let savingWorld = false;
   try {
     const validated = validatePolicyForm(values, currentPolicyState());
     if ('world' in validated) {
-      await saveWorldPolicy(validated.world);
-      await game.settings.set(NS, PLAYER_AGENTS_KEY, validated.playerEnabled);
-      await game.settings.set(NS, HEADLESS_AGENTS_KEY, validated.headlessEnabled);
+      savingWorld = true;
+      // The matrix also closes interactive GM access, which the agent toggles do not gate.
+      // Abort on any quiescence failure before changing restrictions.
+      await saveWorldPolicy(DENY_ALL_MATRIX);
+      await game.settings.set(NS, PLAYER_AGENTS_KEY, false);
+      await game.settings.set(NS, HEADLESS_AGENTS_KEY, false);
       await game.settings.set(NS, FOLDER_ALLOWLIST_KEY, JSON.stringify(validated.folders));
       await saveRateLimits(validated.limits);
-    }
-    await saveOwnerPolicy(validated.owner);
+      await saveOwnerPolicy(validated.owner);
+      // All restrictions are persisted before either class can gain access.
+      if (validated.playerEnabled) await game.settings.set(NS, PLAYER_AGENTS_KEY, true);
+      if (validated.headlessEnabled) await game.settings.set(NS, HEADLESS_AGENTS_KEY, true);
+      // Publish the requested ceiling only after every restriction and toggle has persisted.
+      await saveWorldPolicy(validated.world);
+    } else await saveOwnerPolicy(validated.owner);
     ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.PolicyApp.saved'));
     return true;
   } catch {
+    if (savingWorld) {
+      // Settings are not transactional. Never restore broader access after a partial save;
+      // attempt both disables even if one fails (an unavailable backend may reject rollback).
+      try {
+        await saveWorldPolicy(DENY_ALL_MATRIX);
+      } catch {
+        // An unavailable backend may refuse this too; still try both remaining gates.
+      }
+      for (const key of [PLAYER_AGENTS_KEY, HEADLESS_AGENTS_KEY]) {
+        try {
+          await game.settings.set(NS, key, false);
+        } catch {
+          // Still try to close the other gate and report the failed save below.
+        }
+      }
+    }
     ui.notifications.error(game.i18n.localize('AGENT_GATEWAY.PolicyApp.invalid'));
     return false;
   }
@@ -77,6 +104,27 @@ export function createPolicyApp(): any {
     static PARTS = { form: { template: `modules/${NS}/templates/policy/policy.hbs` } };
     async _prepareContext(): Promise<object> {
       return policyContext(currentPolicyState());
+    }
+    async _onRender(context: object, options: object): Promise<void> {
+      await super._onRender?.(context, options);
+      if (game.user?.isGM !== true) return;
+      for (const cls of AGENT_CLASSES)
+        for (const cat of CATEGORIES) {
+          const world = this.element.querySelector(`select[name="world_${cls}_${cat}"]`);
+          const owner = this.element.querySelector(`select[name="owner_${cls}_${cat}"]`);
+          if (!world || !owner) continue;
+          // Assignment keeps repeated renders idempotent on retained controls.
+          world.onchange = () => {
+            if (game.user?.isGM !== true || !isDecision(world.value)) return;
+            for (const option of owner.options)
+              option.disabled =
+                !isDecision(option.value) ||
+                strictness(option.value) < strictness(world.value) ||
+                (cat === 'code' && option.value === 'allow');
+            if (!isDecision(owner.value) || strictness(owner.value) < strictness(world.value))
+              owner.value = world.value;
+          };
+        }
     }
     static async onSubmit(
       this: any,
