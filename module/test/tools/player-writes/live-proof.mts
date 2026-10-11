@@ -4,7 +4,7 @@
  * Run one configured instance at a time after Andrew approves the exact fixture plan and cleanup.
  * Uses the production module bundle, real MCP/link, default policy and native owner approval UI.
  */
-import { settleLiveBatch } from './live-settlement.js';
+import { startLiveBatch } from './live-settlement.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,7 @@ await link.listen();
 const browsers: Array<Awaited<ReturnType<typeof openUserBrowser>>> = [];
 const sessions: Array<{ client: Client; server: ReturnType<typeof createSessionServer> }> = [];
 const cleanupMessages: string[] = [];
+const outstandingBatches: Promise<unknown>[] = [];
 const retainedAuditUuids: string[] = [];
 let createdJournal = false;
 let gmBrowser: (typeof browsers)[number] | undefined;
@@ -268,10 +269,12 @@ try {
       }),
       mcp.approvedCall('roll_formula', { formula: '1d6 + 2', toChat: false }),
     ];
+    const batch = startLiveBatch(pending);
+    outstandingBatches.push(batch.settled);
     const app = browser.page.locator('#agent-gateway-approval');
     await app.locator('article').first().waitFor({ timeout: 15000 });
     await app.screenshot({ path: resolve(evidence, `${version}-${who}-approval.png`) });
-    const results = await settleLiveBatch(pending);
+    const results = await batch.result();
     const messages = [uuid(results[0], 'ChatMessage'), uuid(results[1], 'ChatMessage')];
     const pageUuid = uuid(results[2], 'JournalEntryPage');
     console.log(
@@ -283,9 +286,11 @@ try {
       title: `${tag} page`,
       markdown: `${tag}: second line.`,
     });
+    const appendBatch = startLiveBatch([append]);
+    outstandingBatches.push(appendBatch.settled);
     await app.locator('article').first().waitFor({ timeout: 15000 });
     await app.screenshot({ path: resolve(evidence, `${version}-${who}-append-approval.png`) });
-    await append;
+    await appendBatch.result();
     const facts = await browser.page.evaluate(
       async ({ messages, pageUuid, journalUuid, before, tag }) => {
         const g = globalThis as any;
@@ -394,12 +399,13 @@ try {
     try {
       if (!completed) {
         // A polling timeout must not leave an approvable continuation alive during cleanup.
-        // All batch promises settled first; reload destroys any still-pending local waiters.
+        // Reload destroys pending local waiters; all started calls settle before deletion below.
         for (const browser of browsers) {
           await browser.page.reload();
           await browser.page.waitForFunction('globalThis.game?.ready === true');
         }
       }
+      await Promise.all(outstandingBatches);
       await gmBrowser.page.evaluate(
         async ({ messages, journalUuid, createdJournal }) => {
           const g = globalThis as any;
