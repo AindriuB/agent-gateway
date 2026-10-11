@@ -1,3 +1,4 @@
+import { effectiveCategory } from '../ops/context.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
@@ -40,9 +41,12 @@ export function createRateLimitStage(config: RateLimitConfig = {}): Stage {
     order: RATE_LIMIT_STAGE_ORDER,
     async run(ctx, next) {
       const bucket = bucketFor(
-        config.tools
-          ? config.tools.find((d) => d.name === ctx.tool)?.category
-          : toolRegistry.categoryOf(ctx.tool),
+        effectiveCategory(
+          ctx,
+          config.tools
+            ? config.tools.find((d) => d.name === ctx.tool)?.category
+            : toolRegistry.categoryOf(ctx.tool),
+        ),
       );
       const limit = resolveLimit(
         limits(),

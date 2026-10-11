@@ -1,3 +1,6 @@
+import { tokenManageHandler } from './token-manage.js';
+import { combatManageHandler } from './combat-manage.js';
+import { sceneControlHandler } from './scene-control.js';
 import { documentCreateHandler } from './document-create.js';
 import { documentUpdateHandler } from './document-update.js';
 import { documentDeleteHandler } from './document-delete.js';
@@ -20,6 +23,9 @@ import { approvalStatusHandler } from './approval-status.js';
 
 /** Map from tool name to handler. Later tasks only insert entries. */
 export const HANDLERS: Record<string, OpHandler> = {
+  token_manage: tokenManageHandler,
+  combat_manage: combatManageHandler,
+  scene_control: sceneControlHandler,
   world_info: worldInfoHandler,
   document_search: documentSearchHandler,
   document_get: documentGetHandler,

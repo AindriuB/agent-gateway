@@ -1,3 +1,4 @@
+import { effectiveCategory } from '../ops/context.js';
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import type { Stage } from '../ops/stages.js';
@@ -20,7 +21,7 @@ export function createApprovalStage(
         (tools
           ? tools.find((d) => d.name === ctx.tool)?.category
           : toolRegistry.categoryOf(ctx.tool)) ?? 'unknown';
-      return getManager().request(ctx, category, next);
+      return getManager().request(ctx, effectiveCategory(ctx, category)!, next);
     },
   };
 }

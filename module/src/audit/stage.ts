@@ -1,3 +1,4 @@
+import { effectiveCategory } from '../ops/context.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import { fromUuidCompat } from '../compat/index.js';
@@ -266,7 +267,7 @@ export function createAuditStage(overrides: Partial<AuditStageDeps> = {}): Stage
     name: 'audit',
     order: AUDIT_STAGE_ORDER,
     async run(ctx: OpContext, next) {
-      const category = deps.categoryOf(ctx.tool);
+      const category = effectiveCategory(ctx, deps.categoryOf(ctx.tool));
       if (category === 'read') return next();
       const snaps = new Snapshots(deps.fromUuid);
       const callId = deps.newId();
