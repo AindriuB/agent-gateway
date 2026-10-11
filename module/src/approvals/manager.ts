@@ -1,3 +1,4 @@
+import { actionCategory, effectiveCategory } from '../ops/context.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
@@ -230,7 +231,16 @@ export class ApprovalManager {
   // ---- the call side --------------------------------------------------------------------
 
   private grantKey(ctx: OpContext): string {
-    return JSON.stringify([ctx.user.id, ctx.agent.id, ctx.sessionId, ctx.tool]);
+    const base =
+      this.opts.tools?.find((d) => d.name === ctx.tool)?.category ??
+      toolRegistry.info(ctx.tool)?.category;
+    return JSON.stringify([
+      ctx.user.id,
+      ctx.agent.id,
+      ctx.sessionId,
+      ctx.tool,
+      effectiveCategory(ctx, base),
+    ]);
   }
 
   /** What the policy says about this call right now; the stricter approver of old and new. */
@@ -239,8 +249,26 @@ export class ApprovalManager {
     headless: boolean,
     category: string,
     approver: ApproverClass,
+    base = category,
   ): { kind: 'allow' } | { kind: 'deny' } | { kind: 'ask'; approver: ApproverClass } {
-    const now = this.env.currentDecision({ requesterId, headless, category, approver });
+    const first = this.env.currentDecision({ requesterId, headless, category: base, approver });
+    const second =
+      base === category
+        ? first
+        : this.env.currentDecision({ requesterId, headless, category, approver });
+    const now =
+      first.kind === 'deny' || second.kind === 'deny'
+        ? { kind: 'deny' as const }
+        : first.kind === 'ask' || second.kind === 'ask'
+          ? {
+              kind: 'ask' as const,
+              approver:
+                (first.kind === 'ask' && first.approver === 'gm') ||
+                (second.kind === 'ask' && second.approver === 'gm')
+                  ? ('gm' as const)
+                  : ('owner' as const),
+            }
+          : { kind: 'allow' as const };
     if (now.kind === 'ask' && approver === 'gm') return { kind: 'ask', approver: 'gm' };
     return now;
   }
@@ -256,7 +284,13 @@ export class ApprovalManager {
       r.agentId === ctx.agent.id &&
       r.requesterId === ctx.user.id &&
       r.sessionId === ctx.sessionId &&
-      r.argsHash === callHash(ctx.tool, ctx.args)
+      r.argsHash === callHash(ctx.tool, ctx.args) &&
+      r.category ===
+        effectiveCategory(
+          ctx,
+          this.opts.tools?.find((d) => d.name === ctx.tool)?.category ??
+            toolRegistry.info(ctx.tool)?.category,
+        )
     );
   }
 
@@ -278,6 +312,23 @@ export class ApprovalManager {
     if (def.minRole === 'gm' && !user.isGM) {
       return { error: { code: 'FORBIDDEN', message: `Tool "${ctx.tool}" requires a GM` } };
     }
+    const category = effectiveCategory(ctx, def.category)!;
+    if (
+      category !==
+      actionCategory(ctx.tool, ctx.args, def.category, !('origin' in def) || def.origin === 'core')
+    )
+      return { error: { code: 'INTERNAL', message: 'Tool classification changed' } };
+    const decision = this.currentDecision(
+      user.id,
+      ctx.agent.headless,
+      category,
+      ctx.approval?.approver ?? 'owner',
+      def.category,
+    );
+    if (decision.kind === 'deny')
+      return {
+        error: { code: 'DENIED', message: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') },
+      };
     ctx.user = { id: user.id, isGM: user.isGM };
     ctx.approved = true;
     return next();
@@ -319,7 +370,17 @@ export class ApprovalManager {
 
     // A session grant is only as good as today's policy: a call the policy now denies is refused,
     // and one it now sends to a GM needs a grant a GM gave.
-    const now0 = this.currentDecision(ctx.user.id, ctx.agent.headless, category, approval.approver);
+    const base =
+      this.opts.tools?.find((d) => d.name === ctx.tool)?.category ??
+      toolRegistry.info(ctx.tool)?.category ??
+      category;
+    const now0 = this.currentDecision(
+      ctx.user.id,
+      ctx.agent.headless,
+      category,
+      approval.approver,
+      base,
+    );
     if (now0.kind === 'deny') {
       return {
         error: { code: 'DENIED', message: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') },
@@ -414,12 +475,10 @@ export class ApprovalManager {
     if (o.decision !== 'approve' && o.decision !== 'deny') return false;
     if (o.decision === 'approve') {
       // The request may have waited a long time. Judge it by today's policy, not the old one.
-      const cur = this.env.currentDecision({
-        requesterId: r.requesterId,
-        headless: r.headless,
-        category: r.category,
-        approver: r.approver,
-      });
+      const def = this.opts.tools?.find((d) => d.name === r.tool) ?? toolRegistry.info(r.tool);
+      const cur = def
+        ? this.currentDecision(r.requesterId, r.headless, r.category, r.approver, def.category)
+        : { kind: 'deny' as const };
       if (cur.kind === 'deny') {
         o = { decision: 'deny', reason: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') };
       } else if (cur.kind === 'ask' && cur.approver === 'gm' && !who.isGM) {
@@ -454,7 +513,7 @@ export class ApprovalManager {
       r.scope = o.scope === 'session' && r.category !== 'code' ? 'session' : 'once';
       if (r.scope === 'session') {
         this.grants.set(
-          JSON.stringify([r.requesterId, r.agentId, r.sessionId, r.tool]),
+          JSON.stringify([r.requesterId, r.agentId, r.sessionId, r.tool, r.category]),
           who.isGM ? 'gm' : 'owner',
         );
       }
@@ -720,7 +779,12 @@ export class ApprovalManager {
       tool: data.tool,
       args: data.args,
       argsHash: data.argsHash,
-      category: def.category,
+      category: actionCategory(
+        def.name,
+        data.args,
+        def.category,
+        !('origin' in def) || def.origin === 'core',
+      ),
       approver: data.approver,
       createdAt: data.createdAt,
       expiresAt,

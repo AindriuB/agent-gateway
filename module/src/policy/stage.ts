@@ -1,3 +1,4 @@
+import { policyCategories } from '../ops/context.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
@@ -54,19 +55,24 @@ export function createPolicyStage(
       if (!category || !(CATEGORIES as readonly string[]).includes(category)) {
         return denied(t('AGENT_GATEWAY.Policy.unknownCategory', { tool: ctx.tool }));
       }
-      const verdict = evaluate(inputs(), {
-        isGM: ctx.user.isGM,
-        headless: ctx.agent.headless,
-        category,
-      });
-      if (verdict.kind === 'disabled') {
-        const key =
-          verdict.setting === 'playerAgentsEnabled'
-            ? 'AGENT_GATEWAY.Policy.playerAgentsDisabled'
-            : 'AGENT_GATEWAY.Policy.headlessAgentsDisabled';
-        return denied(t(key, { setting: t(`AGENT_GATEWAY.Settings.${verdict.setting}.name`) }));
+      const input = inputs();
+      let decision: 'allow' | 'deny' | 'ask_owner' | 'ask_gm' = 'allow';
+      const rank = { allow: 0, ask_owner: 1, ask_gm: 2, deny: 3 };
+      for (const selected of policyCategories(ctx, category)) {
+        const verdict = evaluate(input, {
+          isGM: ctx.user.isGM,
+          headless: ctx.agent.headless,
+          category: selected as Category,
+        });
+        if (verdict.kind === 'disabled') {
+          const key =
+            verdict.setting === 'playerAgentsEnabled'
+              ? 'AGENT_GATEWAY.Policy.playerAgentsDisabled'
+              : 'AGENT_GATEWAY.Policy.headlessAgentsDisabled';
+          return denied(t(key, { setting: t(`AGENT_GATEWAY.Settings.${verdict.setting}.name`) }));
+        }
+        if (rank[verdict.decision] > rank[decision]) decision = verdict.decision;
       }
-      const { decision } = verdict;
       if (decision === 'deny') return denied(t('AGENT_GATEWAY.Policy.denied', { category }));
       if (decision === 'allow') return next();
       const approver = decision === 'ask_gm' ? 'gm' : 'owner';

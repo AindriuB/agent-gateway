@@ -1,3 +1,9 @@
+import { tokenManage } from './token-manage.js';
+import { combatManage } from './combat-manage.js';
+import { sceneControl } from './scene-control.js';
+export * from './token-manage.js';
+export * from './combat-manage.js';
+export * from './scene-control.js';
 import { documentCreate } from './document-create.js';
 import { documentUpdate } from './document-update.js';
 import { documentDelete } from './document-delete.js';
@@ -41,6 +47,9 @@ export * from './approval-status.js';
 
 /** Registry of all tools. Later tasks only append entries. */
 export const TOOLS: readonly ToolDefinition[] = [
+  tokenManage,
+  combatManage,
+  sceneControl,
   worldInfo,
   documentSearch,
   documentGet,

@@ -161,7 +161,7 @@ describe('audit stage', () => {
     const records: AuditRecord[] = [];
     const stage = createAuditStage({
       isGM: () => true,
-      categoryOf: () => 'write',
+      categoryOf: (name) => tools.find((tool) => tool.name === name)?.category,
       fromUuid: store.fromUuid,
       submit: async (r) => void records.push(r),
     });

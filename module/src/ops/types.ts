@@ -1,3 +1,4 @@
+import type { ToolCategory } from '@agent-gateway/protocol';
 import type { ApprovalRequest } from '../policy/types.js';
 
 export interface OpUser {
@@ -24,6 +25,8 @@ export interface OpContext {
   sessionId: string;
   tool: string;
   args: unknown;
+  /** Dispatcher-owned, available only during synchronous core preparation. */
+  escalate?(category: ToolCategory): void;
   /** Set by the policy stage when the call needs an approver's answer. */
   approval?: ApprovalRequest;
   /** Set by the approval stage once an approver (or a session grant) allowed this very call. */
@@ -35,7 +38,9 @@ export interface OpResult {
   structured: Record<string, unknown>;
 }
 
-export type OpHandler = (ctx: OpContext) => Promise<DispatchResult> | DispatchResult;
+export type OpHandler = ((ctx: OpContext) => Promise<DispatchResult> | DispatchResult) & {
+  prepare?: (ctx: OpContext) => void;
+};
 
 export type OpErrorCode =
   'TOOL_NOT_FOUND' | 'FORBIDDEN' | 'INVALID_ARGS' | 'RATE_LIMITED' | 'DENIED' | 'INTERNAL';

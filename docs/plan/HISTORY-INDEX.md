@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-11 | 24 | GM scene/token/combat native v13/v14 acceptance and exact cleanup passed; PR #65 merge pending, historical harness failures retained | ## 2026-10-11 — GM scene, token and combat tools validated; merge pending (task 24) |
 | 2026-10-11 | 23, 23a | PR #63 merged; 19 completed contracts archived, task24 next and18 blocked; native/history bounds retained | ## 2026-10-11 — GM document and Undo tasks merged and archived (tasks 23, 23a) |
 | 2026-10-11 | 23, 23a | GM CRUD/import and grouped native subtree Undo passed v13/v14; PR #63 merge pending, historical failures retained | ## 2026-10-11 — GM document tools and native subtree Undo validated; merge pending (tasks 23, 23a) |
 | 2026-10-11 | 22 | Merged movement/target/combat tools; native v13/v14 six-call audits and exact cleanup passed; local harness follow-up | ## 2026-10-11 — Token movement, targeting and combat tools validated on v13 and v14 (task 22) |

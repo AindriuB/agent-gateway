@@ -1,3 +1,4 @@
+import { prepareContext } from './context.js';
 import { checkToolDefinition, type ToolDefinition } from '@agent-gateway/protocol';
 import { coreEntry, registerCoreTools } from './core-tools.js';
 import { ToolRegistry, installToolRegistry, type RegistryLookup } from './registry-class.js';
@@ -59,6 +60,7 @@ export function createRegistryDispatcher(
       return stage.run(ctx, () => (pending ??= run(i + 1)));
     };
     try {
+      prepareContext(ctx, def.category, def.origin === 'core', handler);
       return await run(0);
     } catch (err) {
       console.error(`agent-gateway | tool "${def.name}" failed`, err);

@@ -225,6 +225,50 @@ at `plan/done/23-gm-document-tools.md` and
 and exact cleanup, including the optional native Page defaults repaired in
 task23a. The combined reusable-harness gate is separate from the native runs.
 
+## GM scene, token and combat native acceptance (task 24)
+
+The explicitly approved write harness is
+`module/test/tools/gm-scene/native-proof.mts`, separate from read-only E2E.
+Require a generation-specific test-world target, isolated existing pairing/profile,
+exact reviewed source/bundle pin, sole active GM and no other same-account tabs,
+trusted audit anchor, once-only owner approval for write/destructive, and zero
+turnTime with the approved two-combatant same-round plan. Match the native gateway
+port to the local listener; stored pairing or an offline tools list is insufficient.
+The harness must prove exact authenticated world/user/agent/live connection and
+three tool announcements before any fixture write, then recheck that connection.
+The `AGENT_GATEWAY_TASK24_PREFLIGHT=readonly` mode performs these prerequisites and
+MCP listing without fixture creation or tool calls; it is not native acceptance.
+
+Fixture execution needs `AGENT_GATEWAY_TASK24_APPROVED=exact-fixtures-and-cleanup`
+and a separately approved per-world plan. It runs 16 real MCP requests, with a
+human once-only decision for each: deliberate denial of the first end request,
+then approval of the second. Never substitute expiry or a session grant. The plan
+creates only returned disposable Actor/Scene/Combat roots and descendants, uses
+global fixture activation and personal view changes, and retains 15 exact audits.
+Verify per-step native effects and unchanged time; cleanup only exact owned UUIDs,
+restoring original active scenes, scene/level/targets/combat views, baseline roots
+and ordinary source data. Uncertain pending execution, changed activation custody
+or missing/ambiguous audit evidence requires manual reconciliation, not broad
+cleanup. Previously captured audit UUID plus entry ID binds repeated equal-args
+calls; revalidate identity, args, category and result rather than choosing a row.
+
+Source `79f6d713` and production SHA-256
+`5e23eca373bd9728e837bc7fe9cac135b147ec210635c44ddcec93023683dee0` passed the approved native
+v14.369/v13.351 plan: respectively 13/12 successes, two/three handler refusals and
+one human denial; 15 audits each, nine/seven fixture UUIDs absent after cleanup.
+The v14 final drain required separate zero-MCP reconciliation/cleanup; the initial
+v13 wrong-port attempt created three roots, produced no new audits and was cleaned
+before the successful run. Native v14 executed private harness SHA-256
+`9d80382faada6fbfa063714233f1675ee445483b6fb5fb4aed1aaf3831300894`; native v13 executed private harness SHA-256
+`598038a43af03baf601833bcba181a21afba97ca644f3a01cd11fc102671bcb6`; later reusable publication is a
+separate offline change. Temporary exact bundle routes/native template preload
+were used; no installed deployment or public screenshot claim is made. PF2e
+initiative is expected to refuse, v13 Levels are unsupported, and this evidence
+does not cover Undo, every combat action, concurrent GM calls or clock-changing
+progression. PR #65 remains merge pending and its contract stays in `plan/tasks/`.
+
+Reusable harness/documentation head `b669465671ed67baaadc507c63b85cf7f8bbd7c7` passed the combined required build/lint/full gate (3,158 fast / 2,227 slow tests), with 15 focused harness checks, standalone TypeScript, ESLint and actual-transpiled browser serialization checks. Production bundle remained unchanged. This is offline tooling verification, separate from the native-executed harnesses and the 3,143-test source gate.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
