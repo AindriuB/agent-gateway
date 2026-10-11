@@ -31,3 +31,51 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Policy settings (task 15). */
+.agent-gateway-policy {
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.agent-gateway-policy fieldset {
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+.agent-gateway-policy table {
+  table-layout: fixed;
+  width: 100%;
+}
+.agent-gateway-policy th,
+.agent-gateway-policy td {
+  padding: 0.3rem;
+  overflow-wrap: anywhere;
+}
+.agent-gateway-policy select {
+  width: 100%;
+}
+.agent-gateway-policy .policy-columns {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.agent-gateway-policy .toggle,
+.agent-gateway-policy .limit {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.agent-gateway-policy .limit input {
+  margin-left: auto;
+  width: 6rem;
+}
+.agent-gateway-policy .hint {
+  font-size: 0.9em;
+}
+.agent-gateway-policy select[multiple] {
+  height: 8rem;
+}
+.agent-gateway-policy h3 {
+  font-size: 1em;
+  margin: 0.5rem 0;
+}

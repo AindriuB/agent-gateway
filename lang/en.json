@@ -1,5 +1,35 @@
 {
   "AGENT_GATEWAY": {
+    "PolicyApp": {
+      "title": "Agent policies",
+      "open": "Configure policies",
+      "hint": "Set the world ceiling and tighten your own agent permissions.",
+      "world": "World ceiling",
+      "ceilingHint": "Only a GM can edit the world ceiling.",
+      "owner": "Your owner policy",
+      "ownerHint": "You may tighten the world ceiling. Choices that would loosen it are unavailable. Code always requires approval.",
+      "agentClass": "Agent class",
+      "playerAgents": "Player agents",
+      "gmAgents": "GM agents",
+      "read": "Read",
+      "write": "Write",
+      "destructive": "Destructive",
+      "code": "Code",
+      "allow": "Allow",
+      "ask_owner": "Ask owner",
+      "ask_gm": "Ask GM",
+      "deny": "Deny",
+      "agents": "Agent access",
+      "playerEnabled": "Enable player agents",
+      "headlessEnabled": "Enable headless agents",
+      "folders": "Allowed world folders",
+      "folderHint": "Select folders for each agent class. An empty selection allows all folders. Use Command/Ctrl to select more than one.",
+      "limits": "Default rate limits",
+      "limitsHint": "Calls per minute (1–10000). Destructive and code calls use the write limit. Per-agent overrides are preserved.",
+      "save": "Save policies",
+      "saved": "Policies saved.",
+      "invalid": "Policies were not saved. Check the choices, folder selections, rate limits and your current permissions, then try again."
+    },
     "Packs": {
       "Sealed": "Register tool packs in the agentGateway.registerPacks hook before ready."
     },
