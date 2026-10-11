@@ -37,6 +37,7 @@ export function currentPolicyState(): PolicyState {
         : [],
     allowlists: Object.fromEntries(AGENT_CLASSES.map((cls) => [cls, folderAllowlist(cls)])),
     limits: { ...limits.classes, agents: Object.fromEntries(limits.agents) },
+    agentsCorrupt: limits.agentsCorrupt,
   };
 }
 
