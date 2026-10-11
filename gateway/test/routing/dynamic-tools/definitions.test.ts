@@ -82,10 +82,28 @@ describe('dynamic definitions', () => {
       name: core().name,
       description: core().description,
       ...toJsonSchema(TOOLS[0]!),
+      outputSchema: {
+        type: 'object',
+        anyOf: [
+          toJsonSchema(TOOLS[0]!).outputSchema,
+          expect.objectContaining({ required: ['status', 'id'], additionalProperties: false }),
+        ],
+      },
     });
     expect(list).toHaveLength(TOOLS.length + 1);
     expect(list.slice(0, TOOLS.length)).toEqual(
-      TOOLS.map((t) => ({ name: t.name, description: t.description, ...toJsonSchema(t) })),
+      TOOLS.map((t) => ({
+        name: t.name,
+        description: t.description,
+        ...toJsonSchema(t),
+        outputSchema: {
+          type: 'object',
+          anyOf: [
+            toJsonSchema(t).outputSchema,
+            expect.objectContaining({ required: ['status', 'id'], additionalProperties: false }),
+          ],
+        },
+      })),
     );
     expect(list.at(-1)?.description).toBe(
       '[Third-party tool pack demo: demo-pack 1.0.0] Fixture pack tool',

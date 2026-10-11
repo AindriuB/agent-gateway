@@ -23,6 +23,8 @@ Task 18 is architecture-blocked: immediate gateway token invalidation for anothe
 ### Native audit provenance blocks player-write acceptance
 Task 21b replaces unavailable native creator metadata with verified GM designation of the audit journal and attested creation-hook observations. Native v13.351/v14.369 both lack `_stats.createdBy`; journal factory replacement alone cannot repair this. Task 21 remains incomplete until 21b passes independent verification and its approved native GM/player audit, UI and cleanup checks pass on both versions. Task 18 requirements remain unchanged.
 
+Task 21 is implemented in draft PR #57 with offline verification; native world-write acceptance is not yet approved or run. Its delayed-approval SDK proof is blocked by task 21a: add the generic MCP-only output envelope projection so a client that first lists tools accepts legitimate pending approval results. Task 21a depends on 16/20e and can base on current main independently of task 21.
+
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
 - The test-world users are dev-gm (GM), player1 and Player2. The harness matches user names case-insensitively on the join screen, preferring an exact match; set FOUNDRY_PLAYER2_USER=Player2 to match the world's spelling exactly. The test users have no password; the per-user `FOUNDRY_{GM,PLAYER,PLAYER2}_PASSWORD` variables are optional.

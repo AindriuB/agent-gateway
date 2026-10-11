@@ -1,3 +1,4 @@
+import { projectOutputSchema } from './output-schema.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
@@ -26,7 +27,7 @@ export function createMcpServer(opts: McpServerOptions): Server {
         name: t.name,
         description: t.description,
         inputSchema: inputSchema as { type: 'object' },
-        outputSchema: outputSchema as { type: 'object' },
+        outputSchema: projectOutputSchema(outputSchema),
       };
     }),
   }));
