@@ -4,7 +4,6 @@ import { createAgentMessage } from './chat-post.js';
 import { defineWriteHandler, escapeHtml, invalid, trustedUser } from './_write.js';
 
 declare const Roll: any;
-declare const CONST: any;
 
 /** Restrict native Roll parsing to a small finite arithmetic/dice grammar before evaluation. */
 export function checkRollFormula(formula: string): void {
@@ -102,7 +101,6 @@ export const rollFormulaHandler = defineWriteHandler({
       messageUuid = await createAgentMessage(ctx, {
         content: String(roll.total),
         rolls: [roll],
-        style: CONST.CHAT_MESSAGE_STYLES?.ROLL ?? 5,
         ...(args.flavor ? { flavor: escapeHtml(args.flavor) } : {}),
       });
     return {

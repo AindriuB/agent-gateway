@@ -8,7 +8,7 @@ const browser = await openUserBrowser(config, paths, config.gmUser, { headed: fa
 try {
   await joinWorld(asJoinPage(browser.page), config, config.gmUser);
   const facts = await browser.page.evaluate(
-    ({ playerName, gmName }) => {
+    async ({ playerName, gmName }) => {
       const game = (globalThis as any).game;
       const player = game.users.find(
         (u: any) => u.name === playerName || u.name.toLowerCase() === playerName.toLowerCase(),
@@ -27,6 +27,12 @@ try {
         ),
         world: game.world.id,
         version: game.version,
+        moduleVersion: game.modules.get('agent-gateway')?.version,
+        loadedDocumentTypes: game.modules.get('agent-gateway')?.documentTypes,
+        allowedJournalPageTypes: game.documentTypes.JournalEntryPage,
+        servedManifestDocumentTypes: (
+          await (await fetch('modules/agent-gateway/module.json')).json()
+        ).documentTypes,
         users: [gm, player].map((u: any) => ({ id: u?.id, name: u?.name, isGM: u?.isGM })),
         journals: journals.map((j: any) => ({
           uuid: j.uuid,

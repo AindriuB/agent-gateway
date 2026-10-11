@@ -4,6 +4,7 @@
  * Run one configured instance at a time after Andrew approves the exact fixture plan and cleanup.
  * Uses the production module bundle, real MCP/link, default policy and native owner approval UI.
  */
+import { settleLiveBatch } from './live-settlement.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +45,7 @@ await link.listen();
 const browsers: Array<Awaited<ReturnType<typeof openUserBrowser>>> = [];
 const sessions: Array<{ client: Client; server: ReturnType<typeof createSessionServer> }> = [];
 const cleanupMessages: string[] = [];
+const retainedAuditUuids: string[] = [];
 let createdJournal = false;
 let gmBrowser: (typeof browsers)[number] | undefined;
 let completed = false;
@@ -79,11 +81,17 @@ async function session(user: string) {
     let result = await call(name, args);
     if (result.structured?.status === 'pending_approval') {
       const id = result.structured.id;
+      console.log(
+        `[task21] PENDING ${version} ${name}: status=pending_approval idPresent=${typeof id === 'string'} at=${new Date().toISOString()}`,
+      );
       for (let i = 0; i < 600; i++) {
         const status = await call('approval_status', { id });
         if (status.isError || ['denied', 'expired'].includes(status.structured?.status))
           throw Error(`${name} approval failed: ${status.text}`);
         if (status.structured?.result !== undefined) {
+          console.log(
+            `[task21] POLL ${version} ${name}: completed resultPresent=true at=${new Date().toISOString()}`,
+          );
           result = {
             isError: status.structured.resultFailed === true,
             text: status.structured.result,
@@ -103,6 +111,11 @@ async function session(user: string) {
 async function open(user: string) {
   const browser = await openUserBrowser(config, paths, user, { headed: true });
   browsers.push(browser);
+  browser.page.on('console', (message) => {
+    const text = message.text();
+    if (text.startsWith('agent-gateway |') && ['error', 'warning'].includes(message.type()))
+      console.log(`[task21] NATIVE ${version} ${text}`);
+  });
   let servedBundle = false;
   for (const [pattern, path, contentType] of [
     [
@@ -171,12 +184,21 @@ try {
         gm: { id: game.user.id, name: game.user.name },
         player: { id: player.id, name: player.name },
         version: game.version,
+        moduleVersion: game.modules.get('agent-gateway')?.version,
+        auditTypeDeclared: game.documentTypes.JournalEntryPage.includes('agent-gateway.audit'),
       };
     },
     { id: journalId, playerName: config.playerUser },
   );
   if (!String(targets.version).startsWith(version.slice(1) + '.'))
     throw Error('Foundry generation differs from approved target');
+  console.log(
+    `[task21] VERSIONS ${version}: Foundry=${targets.version} module=${targets.moduleVersion}`,
+  );
+  if (!targets.auditTypeDeclared)
+    throw Error(
+      'Installed module manifest needs the reviewed audit document type and world reload',
+    );
   // This one fixture parent creation is separately included in Andrew's exact approval plan.
   await gmBrowser.page.evaluate(
     ({ id, playerId }) =>
@@ -249,7 +271,7 @@ try {
     const app = browser.page.locator('#agent-gateway-approval');
     await app.locator('article').first().waitFor({ timeout: 15000 });
     await app.screenshot({ path: resolve(evidence, `${version}-${who}-approval.png`) });
-    const results = await Promise.all(pending);
+    const results = await settleLiveBatch(pending);
     const messages = [uuid(results[0], 'ChatMessage'), uuid(results[1], 'ChatMessage')];
     const pageUuid = uuid(results[2], 'JournalEntryPage');
     console.log(
@@ -317,9 +339,10 @@ try {
       ({ before, userId, messages, pageUuid }) => {
         const game = (globalThis as any).game;
         const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
-        const entries = (journal?.pages.contents ?? [])
-          .filter((p: any) => !before.includes(p.id) && p.system.userId === userId)
-          .map((p: any) => p.system);
+        const pages = (journal?.pages.contents ?? []).filter(
+          (p: any) => !before.includes(p.id) && p.system.userId === userId,
+        );
+        const entries = pages.map((p: any) => p.system);
         if (entries.length !== 5 || entries.some((r: any) => r.status !== 'ok'))
           throw Error('Native audited calls were not all retained');
         const creates = entries.filter((r: any) =>
@@ -348,6 +371,7 @@ try {
         );
         if (!noChat || noChat.targets.length) throw Error('No-chat roll audit target is incorrect');
         return {
+          auditUuids: pages.map((p: any) => p.uuid),
           entries: entries.length,
           createdTargets: creates.length,
           appendSnapshot: true,
@@ -356,6 +380,7 @@ try {
       },
       { before: auditBefore, userId: user.id, messages, pageUuid },
     );
+    retainedAuditUuids.push(...audit.auditUuids);
     if ((await mcp.call('world_info')).isError) throw Error('Core call failed after native writes');
     console.log(`[task21] AUDIT ${version} ${user.name}: ${JSON.stringify(audit)}`);
     console.log(
@@ -367,6 +392,14 @@ try {
   // Cleanup was included in the same explicit approval. Preserve audit records and other fixtures.
   if (gmBrowser) {
     try {
+      if (!completed) {
+        // A polling timeout must not leave an approvable continuation alive during cleanup.
+        // All batch promises settled first; reload destroys any still-pending local waiters.
+        for (const browser of browsers) {
+          await browser.page.reload();
+          await browser.page.waitForFunction('globalThis.game?.ready === true');
+        }
+      }
       await gmBrowser.page.evaluate(
         async ({ messages, journalUuid, createdJournal }) => {
           const g = globalThis as any;
@@ -392,6 +425,26 @@ try {
         },
         { messages: cleanupMessages, journalUuid, createdJournal },
       );
+      const readback = await gmBrowser.page.evaluate(
+        async ({ absent, retained }) => {
+          const g = globalThis as any;
+          for (const uuid of absent)
+            if (await g.fromUuid(uuid)) throw Error('Created fixture remains after cleanup');
+          for (const uuid of retained)
+            if (!(await g.fromUuid(uuid))) throw Error('Audit entry missing after cleanup');
+          return {
+            absent: absent.length,
+            retainedAuditEntries: retained.length,
+            foundryVersion: g.game.version,
+            moduleVersion: g.game.modules.get('agent-gateway')?.version,
+          };
+        },
+        {
+          absent: [...cleanupMessages, ...(createdJournal ? [journalUuid] : [])],
+          retained: retainedAuditUuids,
+        },
+      );
+      console.log(`[task21] READBACK ${version}: ${JSON.stringify(readback)}`);
       cleaned = true;
       console.log(
         `[task21] CLEAN ${version}: exact created journal and ${cleanupMessages.length} chat messages deleted; audit entries retained`,

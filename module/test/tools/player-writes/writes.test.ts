@@ -118,6 +118,11 @@ beforeEach(() => {
   g.fromUuid = vi.fn(async (uuid: string) => docs.get(uuid));
   g.ChatMessage = {
     create: vi.fn(async (data: any, options: any) => {
+      if (
+        data.style !== undefined &&
+        !Object.values(g.CONST.CHAT_MESSAGE_STYLES).includes(data.style)
+      )
+        throw Error('Native ChatMessage style is outside the allowed enum');
       const made = doc(`ChatMessage.m${++seq}`, 'ChatMessage', data);
       created.push({ made, data, options });
       return made;
@@ -130,7 +135,7 @@ beforeEach(() => {
       return this;
     }
   };
-  g.CONST.CHAT_MESSAGE_STYLES = { ROLL: 5 };
+  g.CONST.CHAT_MESSAGE_STYLES = { OTHER: 0, OOC: 1, IC: 2, EMOTE: 3 };
 });
 afterEach(() => {
   stub.uninstall();
@@ -367,6 +372,18 @@ describe('bounded native dice evaluation', () => {
     });
     expect(created[0].data.flags['agent-gateway'].ai).toBe(true);
     expect(created[0].data.flavor).toBe('&lt;img onerror=alert(1)&gt;');
+    expect(created[0].options).toBe(c.callOptions);
+  });
+  it.each([13, 14])('uses native Roll message defaults on Foundry v%s', async (version) => {
+    if (version === 13)
+      Object.defineProperty(g.CONST.CHAT_MESSAGE_STYLES, 'ROLL', { get: () => 0 });
+    const c = ctx('roll_formula', { formula: '1d6 + 2', toChat: true });
+    expect(await rollFormulaHandler(c)).toMatchObject({
+      structured: { messageUuid: 'ChatMessage.m1' },
+    });
+    expect(created[0].data).not.toHaveProperty('style');
+    expect(created[0].data.rolls).toHaveLength(1);
+    expect(created[0].data.rolls[0]).toBeInstanceOf(g.Roll);
     expect(created[0].options).toBe(c.callOptions);
   });
   it('toChat:false still requires audit but declares no mutation or creation', async () => {
