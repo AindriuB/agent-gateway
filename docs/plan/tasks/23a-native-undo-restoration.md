@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 19, 23 (including embedded actual-data create permission fix fae67f3)
-**Status:** Scoped native acceptance repair; implementation and validation pending.
+**Status:** Implementation and specified native v13/v14 acceptance verified at a45541a; PR #63 awaiting merge. Contract remains active until merge; see PLAN and the task23/23a HISTORY entry for evidence and limits.
 **Owns:**
 - module/src/audit/undo.ts
 - module/src/audit/undo-restoration.ts (optional shared bounded restoration/verification helper only)
