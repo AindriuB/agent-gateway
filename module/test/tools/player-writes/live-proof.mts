@@ -4,11 +4,16 @@
  * Run one configured instance at a time after Andrew approves the exact fixture plan and cleanup.
  * Uses the production module bundle, real MCP/link, default policy and native owner approval UI.
  */
-import { startLiveBatch } from './live-settlement.js';
+import {
+  startLiveBatch,
+  waitForLiveAudit,
+  readNativeAuditRows,
+  liveAuditKey,
+} from './live-settlement.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { loadContext } from '../../../../e2e/lib/context.js';
@@ -25,6 +30,11 @@ if (config.world !== 'test-world') throw Error('Only the prepared fixture world 
 const version = process.env.AGENT_GATEWAY_TASK21_GENERATION;
 if (version !== 'v13' && version !== 'v14')
   throw Error('Set the explicitly approved fixture generation');
+const fixtureRun = randomBytes(6).toString('hex');
+const roleSelection = process.env.AGENT_GATEWAY_TASK21_ROLES ?? 'all';
+if (roleSelection !== 'all' && roleSelection !== 'player')
+  throw Error('Only all or player roles are supported');
+const roles: Array<'gm' | 'player'> = roleSelection === 'player' ? ['player'] : ['gm', 'player'];
 const journalId = version === 'v13' ? 'ag21v13writes001' : 'ag21v14writes001';
 const journalUuid = `JournalEntry.${journalId}`;
 const bundle = readFileSync(resolve(root, 'dist/module/main.js'));
@@ -47,11 +57,31 @@ const sessions: Array<{ client: Client; server: ReturnType<typeof createSessionS
 const cleanupMessages: string[] = [];
 const outstandingBatches: Promise<unknown>[] = [];
 const retainedAuditUuids: string[] = [];
+let auditBaseline: string[] = [];
+const completedAuditKeys: string[] = [];
+async function drainAudit() {
+  if (!gmBrowser || !completedAuditKeys.length) return;
+  const rows = await waitForLiveAudit(async () => {
+    const facts = await gmBrowser!.page.evaluate(readNativeAuditRows, auditBaseline);
+    const found = facts.map((row: any) => ({
+      ...row,
+      key: liveAuditKey(row.userId, row.agentId, row.tool, JSON.parse(row.args)),
+    }));
+    for (const row of found)
+      if (completedAuditKeys.includes(row.key) && !retainedAuditUuids.includes(row.uuid))
+        retainedAuditUuids.push(row.uuid);
+    return found;
+  }, completedAuditKeys);
+  console.log(
+    `[task21] AUDIT-DRAIN ${version}: ${JSON.stringify(rows.filter((row) => completedAuditKeys.includes(row.key)).map((row) => ({ entryId: row.entryId, uuid: row.uuid })))}`,
+  );
+}
+
 let createdJournal = false;
 let gmBrowser: (typeof browsers)[number] | undefined;
 let completed = false;
 let cleaned = false;
-async function session(user: string) {
+async function session(user: string, userId: string) {
   const server = createSessionServer({
     version: '0.1.0',
     registry,
@@ -79,6 +109,8 @@ async function session(user: string) {
     };
   };
   const approvedCall = async (name: string, args: Record<string, unknown>) => {
+    const agentId = registry.get(config.world, userId)?.agentId;
+    if (!agentId) throw Error('The exact paired agent is unavailable');
     let result = await call(name, args);
     if (result.structured?.status === 'pending_approval') {
       const id = result.structured.id;
@@ -105,6 +137,7 @@ async function session(user: string) {
       }
     }
     if (result.isError) throw Error(`${name}: ${result.text}`);
+    completedAuditKeys.push(liveAuditKey(userId, agentId, name, args));
     return result;
   };
   return { client, call, approvedCall };
@@ -179,7 +212,13 @@ try {
     ({ id, playerName }) => {
       const game = (globalThis as any).game;
       const player = game.users.find((u: any) => u.name.toLowerCase() === playerName.toLowerCase());
-      if (!game.user.isGM || !player || game.world.id !== 'test-world' || game.journal.has(id))
+      if (
+        !game.user.isGM ||
+        game.users.activeGM?.id !== game.user.id ||
+        !player ||
+        game.world.id !== 'test-world' ||
+        game.journal.has(id)
+      )
         throw Error('Prepared fixture identity is unavailable or already exists');
       return {
         gm: { id: game.user.id, name: game.user.name },
@@ -200,6 +239,14 @@ try {
     throw Error(
       'Installed module manifest needs the reviewed audit document type and world reload',
     );
+  auditBaseline = await gmBrowser.page.evaluate(() => {
+    const game = (globalThis as any).game;
+    return (
+      game.journal
+        .get(game.settings.get('agent-gateway', 'auditJournalId'))
+        ?.pages.contents.map((p: any) => p.uuid) ?? []
+    );
+  });
   // This one fixture parent creation is separately included in Andrew's exact approval plan.
   await gmBrowser.page.evaluate(
     ({ id, playerId }) =>
@@ -218,10 +265,10 @@ try {
   );
   createdJournal = true;
   console.log(`[task21] ${version} fixture ${journalUuid} created; production bundle ${sha}`);
-  for (const who of ['gm', 'player'] as const) {
+  for (const who of roles) {
     const user = targets[who];
     const browser = who === 'gm' ? gmBrowser : await open(user.name);
-    const mcp = await session(user.name);
+    const mcp = await session(user.name, user.id);
     for (let i = 0; i < 30; i++) {
       const info = await mcp.call('world_info');
       if (!info.isError) break;
@@ -235,7 +282,7 @@ try {
     const before = await browser.page.evaluate(() => ({
       messages: (globalThis as any).game.messages.contents.map((m: any) => m.uuid),
     }));
-    const tag = `Task 21 ${version} ${who}`;
+    const tag = `Task 21 ${version} ${who} ${fixtureRun}`;
     console.log(
       `[task21] READY ${version} ${user.name}: four real owner approvals will appear (chat, roll, page create, no-chat roll). Andrew must approve them in Foundry.`,
     );
@@ -267,7 +314,11 @@ try {
         title: `${tag} page`,
         markdown: `${tag}: **first line**.`,
       }),
-      mcp.approvedCall('roll_formula', { formula: '1d6 + 2', toChat: false }),
+      mcp.approvedCall('roll_formula', {
+        formula: '1d6 + 2',
+        flavor: `${tag}: no-chat validation roll`,
+        toChat: false,
+      }),
     ];
     const batch = startLiveBatch(pending);
     outstandingBatches.push(batch.settled);
@@ -340,6 +391,7 @@ try {
     await browser.page
       .locator('#ag-task21-native-evidence')
       .screenshot({ path: resolve(evidence, `${version}-${who}-native-ai-markers.png`) });
+    await drainAudit();
     const audit = await gmBrowser.page.evaluate(
       ({ before, userId, messages, pageUuid }) => {
         const game = (globalThis as any).game;
@@ -348,7 +400,11 @@ try {
           (p: any) => !before.includes(p.id) && p.system.userId === userId,
         );
         const entries = pages.map((p: any) => p.system);
-        if (entries.length !== 5 || entries.some((r: any) => r.status !== 'ok'))
+        if (
+          entries.length !== 5 ||
+          new Set(entries.map((r: any) => r.entryId)).size !== 5 ||
+          entries.some((r: any) => typeof r.entryId !== 'string' || !r.entryId || r.status !== 'ok')
+        )
           throw Error('Native audited calls were not all retained');
         const creates = entries.filter((r: any) =>
           r.targets.some(
@@ -385,7 +441,8 @@ try {
       },
       { before: auditBefore, userId: user.id, messages, pageUuid },
     );
-    retainedAuditUuids.push(...audit.auditUuids);
+    for (const auditUuid of audit.auditUuids)
+      if (!retainedAuditUuids.includes(auditUuid)) retainedAuditUuids.push(auditUuid);
     if ((await mcp.call('world_info')).isError) throw Error('Core call failed after native writes');
     console.log(`[task21] AUDIT ${version} ${user.name}: ${JSON.stringify(audit)}`);
     console.log(
@@ -397,6 +454,12 @@ try {
   // Cleanup was included in the same explicit approval. Preserve audit records and other fixtures.
   if (gmBrowser) {
     try {
+      // Keep the GM witness alive while completed calls persist, even after UI/assertion failure.
+      try {
+        await drainAudit();
+      } catch (error) {
+        console.error(`[task21] AUDIT-DRAIN FAILED ${version}: ${String(error)}`);
+      }
       if (!completed) {
         // A polling timeout must not leave an approvable continuation alive during cleanup.
         // Reload destroys pending local waiters; all started calls settle before deletion below.
@@ -406,6 +469,11 @@ try {
         }
       }
       await Promise.all(outstandingBatches);
+      try {
+        await drainAudit();
+      } catch (error) {
+        console.error(`[task21] AUDIT-DRAIN FAILED ${version}: ${String(error)}`);
+      }
       await gmBrowser.page.evaluate(
         async ({ messages, journalUuid, createdJournal }) => {
           const g = globalThis as any;
