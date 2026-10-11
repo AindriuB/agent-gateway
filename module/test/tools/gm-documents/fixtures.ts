@@ -75,6 +75,11 @@ export function setup(generation: 13 | 14 = 14) {
       documentName: type,
       metadata: { embedded: embedded[type] ?? {} },
       canUserCreate: vi.fn((user: any) => user.isGM),
+      fromSource: vi.fn((data: any, options: any) => ({
+        documentName: type,
+        parent: options.parent,
+        canUserModify: (user: any, action: string) => action === 'create' && user.isGM,
+      })),
       create: vi.fn(async (data: any, options: any) => {
         mutations.push({ kind: 'create', type, data, options });
         return doc(type, options?.keepId ? data : { ...data, _id: undefined });

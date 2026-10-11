@@ -164,16 +164,39 @@ export async function resolveFolder(
   checkFolder(ctx, folder, type);
   return folder;
 }
-export function checkCreate(ctx: WriteContext, type: string, parent?: any, folder?: any): any {
+export function checkCreate(
+  ctx: WriteContext,
+  type: string,
+  data: Record<string, any>,
+  parent?: any,
+  folder?: any,
+): any {
   const user = gm(ctx);
   const cls = documentClass(type);
-  if (cls.canUserCreate?.(user) !== true) forbid('Native create permission is required');
   if (parent) {
     checkDocument(ctx, parent);
     if (!RELATIONS[type]?.includes(parent.documentName) || folder)
       forbid('Unsupported embedded parent');
-  } else if (!ROOTS.includes(type as any)) forbid('An embedded parent is required');
+    // The inherited UI affordance builds a blank strict sample, which can fail
+    // required embedded fields. Check this actual validated request and parent instead.
+    let candidate;
+    try {
+      candidate = cls.fromSource(structuredClone(data), { parent, strict: true, creation: true });
+    } catch {
+      invalid('Creation data does not satisfy the native document schema');
+    }
+    if (
+      candidate?.documentName !== type ||
+      candidate.parent !== parent ||
+      candidate.canUserModify?.(user, 'create', data) !== true
+    )
+      forbid('Native create permission is required');
+  } else {
+    if (!ROOTS.includes(type as any)) forbid('An embedded parent is required');
+    if (cls.canUserCreate?.(user) !== true) forbid('Native create permission is required');
+  }
   if (folder) checkFolder(ctx, folder, type);
+  gm(ctx);
   return cls;
 }
 /** Validate document-level fields separately from raw system/custom-flag data. */
@@ -267,14 +290,15 @@ export async function createDocument(
   beforeCreate?: () => void,
 ): Promise<string> {
   checkData(data, type, false, imported);
-  checkCreate(ctx, type, parent, folder);
+  const createData = { ...data, ...(folder ? { folder: folder.id } : {}) };
+  checkCreate(ctx, type, createData, parent, folder);
   await ctx.intendCreate(parent);
   // Recheck object identity and native authorization after the awaited audit intent.
   beforeCreate?.();
-  const cls = checkCreate(ctx, type, parent, folder);
+  const cls = checkCreate(ctx, type, createData, parent, folder);
   const made = parent
     ? (await parent.createEmbeddedDocuments(type, [data], ctx.callOptions))?.[0]
-    : await cls.create({ ...data, ...(folder ? { folder: folder.id } : {}) }, ctx.callOptions);
+    : await cls.create(createData, ctx.callOptions);
   if (
     !canonical(made) ||
     made.documentName !== type ||
