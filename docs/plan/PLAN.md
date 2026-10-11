@@ -25,7 +25,7 @@ Retain task files and worktrees for the remaining PR review and v13 evidence. Ta
 - Pairing is a one-time headed `npm run test:e2e:setup` in which Andrew types each pairing code; the harness never types one. State lives in `~/.config/agent-gateway/e2e/`.
 - After setup the Mac runs `npm run test:e2e` unattended, under an exact allow rule from Andrew in its auto mode.
 - A newly linked module only appears after `test-world` is relaunched from the setup screen (admin key, Andrew only).
-- **Prerequisite still open:** homelab Foundry v13 instance, needed for the v13 test evidence every PR owes.
+- **Deferred by Andrew:** Foundry v13 validation has no available instance. Revisit validation when a v13 instance is provisioned; full v14 acceptance is complete.
 - Criterion 11 of task 01 was checked with a console capture that missed about 617 early boot messages; a full Playwright capture from first load is in progress on the Mac and may be added to the PR.
 
 ## Next
