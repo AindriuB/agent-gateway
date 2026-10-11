@@ -1,3 +1,4 @@
+import { projectOutputSchema } from './output-schema.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -119,7 +120,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema as { type: 'object' },
-      outputSchema: t.outputSchema as { type: 'object' },
+      outputSchema: projectOutputSchema(t.outputSchema),
     }));
   const signature = (conn: LinkConnection | undefined): string =>
     createHash('sha256')

@@ -60,6 +60,22 @@ describe('announced tool sets', () => {
     expect(await names(s)).toEqual(['fixture_tool', 'fixture_gm_tool']);
   });
 
+  it('projects MCP output without mutating canonical or stored announcement schemas', async () => {
+    const { s, toolsets, conn } = await start(true);
+    const announcement = definition('fixture_tool');
+    const before = structuredClone(announcement);
+    toolsets.set(conn, [announcement]);
+    const stored = structuredClone(toolsets.get(conn));
+    const listed = (await s.client.listTools()).tools[0]!;
+    expect(listed.outputSchema).toMatchObject({
+      type: 'object',
+      anyOf: [before.outputSchema, { additionalProperties: false }],
+    });
+    expect(announcement).toEqual(before);
+    expect(toolsets.get(conn)).toEqual(stored);
+    expect(toJsonSchema(fixtureTool).outputSchema).toEqual(before.outputSchema);
+  });
+
   it('lists exactly the announced tools, and a GM tool is hidden when not announced', async () => {
     const { s, toolsets, conn } = await start(true);
     await names(s);
