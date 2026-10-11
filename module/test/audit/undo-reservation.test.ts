@@ -111,12 +111,20 @@ describe('server undo reservations', () => {
       const mutate = vi.fn(async () => {
         opened();
         await wait;
+        if (action === 'create') {
+          w.doc.data.name = 'Before';
+          w.store.add(w.doc);
+        }
         return w.doc;
       });
       if (action === 'update') w.doc.update = mutate;
       else {
+        w.doc.documentName = 'Actor';
+        w.doc.collection = { get: (id: string) => w.store.docs.get(`Actor.${id}`) };
+        w.doc.constructor = { metadata: { embedded: {} } };
         w.store.docs.delete(w.doc.uuid);
         for (const page of [a.page, b.page, w.server.get(w.initial.id)]) {
+          page.system.targets[0].before = JSON.stringify({ _id: 'A', name: 'Before' });
           page.system.targets[0].existsAfter = false;
           page.system.targets[0].afterModifiedTime = null;
         }

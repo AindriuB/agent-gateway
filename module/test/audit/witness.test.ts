@@ -446,7 +446,15 @@ describe('the GM witnesses a player agent change', () => {
     });
     const created: any[] = [];
     (globalThis as any).getDocumentClass = () => ({
-      create: async (x: any, o: any) => created.push({ x, o }),
+      metadata: { embedded: {} },
+      create: async (x: any, o: any) => {
+        created.push({ x, o });
+        const restored = writable(`Actor.${x._id}`, { name: x.name, system: x.system }, 1, w.store);
+        restored.documentName = 'Actor';
+        restored.constructor = { metadata: { embedded: {} } };
+        restored.collection = { get: (id: string) => w.store.docs.get(`Actor.${id}`) };
+        return w.store.add(restored);
+      },
     });
     const out = await undoEntry(
       stored(w.written[0]!),
@@ -458,7 +466,7 @@ describe('the GM witnesses a player agent change', () => {
     expect(created).toHaveLength(1);
     expect(created[0].x.name).toBe('Original');
     expect(created[0].x.system).toEqual({ hp: 9 });
-    expect(created[0].o).toEqual({ keepId: true });
+    expect(created[0].o).toEqual({ keepId: true, keepEmbeddedIds: true });
   });
 
   it('warns on conflict using the GM-observed modified time', async () => {

@@ -92,11 +92,28 @@ describe('undoEntry', () => {
     const { store, confirm, deps } = rig();
     const created: any[] = [];
     (globalThis as any).getDocumentClass = (name: string) => ({
-      create: async (d: any, o: any) => created.push({ name, d, o }),
+      metadata: { embedded: {} },
+      fromSource: (data: any, { parent }: any) => ({ parent, canUserModify: () => true, data }),
+      create: async (d: any, o: any) => {
+        created.push({ name, d, o });
+        const root = writable(`${name}.${d._id}`, { name: d.name }, 1, store);
+        root.documentName = name;
+        root.constructor = { metadata: { embedded: {} } };
+        root.collection = { get: (id: string) => store.docs.get(`${name}.${id}`) };
+        return store.add(root);
+      },
     });
     const parent = store.add(writable('Actor.a1', {}, 5, store));
-    parent.createEmbeddedDocuments = async (n: string, d: any[], o: any) =>
+    parent.collection = { get: (id: string) => store.docs.get(`Actor.${id}`) };
+    parent.createEmbeddedDocuments = async (n: string, d: any[], o: any) => {
       created.push({ n, d, o });
+      const child = writable(`${parent.uuid}.${n}.${d[0]._id}`, { name: d[0].name }, 1, store);
+      child.parent = parent;
+      child.documentName = n;
+      child.constructor = { metadata: { embedded: {} } };
+      child.collection = { get: (id: string) => store.docs.get(`${parent.uuid}.${n}.${id}`) };
+      return [store.add(child)];
+    };
     const page = makePage([
       target({
         uuid: 'Actor.gone',
@@ -114,8 +131,8 @@ describe('undoEntry', () => {
     const out = await undoEntry(page, confirm, deps);
     expect(out.status).toBe('done');
     expect(created).toEqual([
-      { n: 'Item', d: [{ _id: 'i9', name: 'Sword' }], o: { keepId: true } },
-      { name: 'Actor', d: { _id: 'gone', name: 'G' }, o: { keepId: true } },
+      { n: 'Item', d: [{ _id: 'i9', name: 'Sword' }], o: { keepId: true, keepEmbeddedIds: true } },
+      { name: 'Actor', d: { _id: 'gone', name: 'G' }, o: { keepId: true, keepEmbeddedIds: true } },
     ]);
     delete (globalThis as any).getDocumentClass;
   });

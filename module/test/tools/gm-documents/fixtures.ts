@@ -41,15 +41,27 @@ export function setup(generation: 13 | 14 = 14) {
       const result = { _id: id, _stats: { ...d._stats }, flags: structuredClone(d.flags) } as any;
       for (const key of ['name', 'type', 'system', 'text', 'folder', 'prototypeToken'])
         if (d[key] !== undefined) result[key] = structuredClone(d[key]);
+      for (const [name, field] of Object.entries(embedded[type] ?? {})) {
+        const children = d.getEmbeddedCollection(name);
+        if (field in data || children.size)
+          result[field as string] = children.contents.map((child: any) => child.toObject());
+      }
       return result;
     };
     d.testUserPermission = vi.fn((user: any) => user.isGM && d.allowed);
     d.canUserModify = vi.fn((user: any) => user.isGM && d.allowed);
     d.children = new Map();
     d.getEmbeddedCollection = (name: string) => {
-      if (!d.children.has(name)) d.children.set(name, new Map());
+      if (!d.children.has(name)) {
+        const collection: any = new Map();
+        Object.defineProperty(collection, 'contents', { get: () => [...collection.values()] });
+        d.children.set(name, collection);
+      }
       return d.children.get(name);
     };
+    for (const [name, field] of Object.entries(embedded[type] ?? {}))
+      d[field as string] = d.getEmbeddedCollection(name);
+    d.collection = parent ? parent.getEmbeddedCollection(type) : collections.get(type);
     d.update = vi.fn(async (change: any, options: any) => {
       mutations.push({ kind: 'update', d, change, options });
       Object.assign(d, updatedDocument(d.toObject(), change));

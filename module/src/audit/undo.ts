@@ -5,6 +5,7 @@ import { reserveUndo, type UndoReservation } from './reservation.js';
 import { undoClasses } from './undo-classes.js';
 export { UNDO_CLASSES, UNDO_EMBEDDED, undoClasses } from './undo-classes.js';
 import { decodeBefore } from './record.js';
+import { restoreDeletedSubtree, UncertainRestorationError } from './undo-restoration.js';
 import type { AuditTarget, StoredTarget } from './types.js';
 
 declare const game: any;
@@ -171,29 +172,6 @@ function requireMutation(result: unknown): void {
   if (!result || (Array.isArray(result) && result.length === 0)) {
     throw new Error('Foundry refused the document mutation');
   }
-}
-
-async function recreate(target: AuditTarget, deps: UndoDeps): Promise<void> {
-  const parts = target.uuid.split('.');
-  const before = target.before!;
-  if (parts.length <= 2) {
-    if (!deps.canCreate(parts[0]!)) throw new Error('not permitted to create this document');
-    const cls = getDocumentClass(parts[0]!);
-    requireMutation(await cls.create(before, { keepId: true }));
-    return;
-  }
-  const docName = parts[parts.length - 2]!;
-  const parent = await deps.fromUuid(parts.slice(0, -2).join('.'));
-  if (!parent) throw new Error('the parent document no longer exists');
-  if (!deps.isGM()) throw new Error('only a GM may undo');
-  if (isAuditDocument(parent)) throw new Error('the audit log cannot be changed by undo');
-  if (!deps.canCreate(docName)) throw new Error('not permitted to create this document');
-  if (!deps.canModify(parent, 'update')) throw new Error('not permitted to change the parent');
-  const collection = Object.entries(parent.constructor?.metadata?.embedded ?? {}).find(
-    ([name]) => name === docName,
-  )?.[0];
-  if (!collection) throw new Error(`cannot recreate a ${docName} here`);
-  requireMutation(await parent.createEmbeddedDocuments(docName, [before], { keepId: true }));
 }
 
 /**
@@ -375,6 +353,11 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
           if (!deps.canModify(doc, 'delete')) throw new Error('not permitted to delete');
           requireMutation(await doc.delete());
         }
+      } else if (!target.existsAfter || !doc) {
+        await restoreDeletedSubtree(target.uuid, target.before!, doc, {
+          ...deps,
+          getClass: getDocumentClass,
+        });
       } else if (doc) {
         if (!deps.canModify(doc, 'update')) throw new Error('not permitted to update');
         if (target.changedPaths.length) {
@@ -389,10 +372,9 @@ async function run(page: any, system: any, deps: UndoDeps, out: UndoOutcome): Pr
             await doc.update(restoreData(target.before!, doc), { diff: false, recursive: false }),
           );
         }
-      } else {
-        await recreate(target, deps);
       }
     } catch (err) {
+      if (err instanceof UncertainRestorationError) throw err;
       console.error(`agent-gateway | undo failed for ${target.uuid}`, err);
       out.failed.push(target.uuid);
       plan.shift();
