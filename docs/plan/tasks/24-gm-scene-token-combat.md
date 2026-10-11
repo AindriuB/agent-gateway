@@ -22,6 +22,7 @@
 - module/src/audit/stage.ts (effective category recording only)
 - module/src/compat/index.ts (narrow audited native scene/combat adapters only)
 - module/test/compat/gm-scene.test.ts
+- module/test/audit/stage.test.ts (fixture category callback only: derive canonical category from existing tool definitions; preserve all assertions)
 - protocol/test/tools/rules/validate.test.ts (three new canonical argument examples only)
 - module/test/tools/gm-scene/**
 - module/test/stubs/** (insertions only)
