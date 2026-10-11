@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-11 | 20b–20f | All task20 PRs and P1 follow-up merged; installed Hello Pack synchronized to reviewed code; live pack acceptance pending | ## 2026-10-11 — Tool-pack PRs merged and installed pack synchronized; live acceptance pending (tasks 20b–20f) |
 | 2026-10-10 | 20b–20f | 20b–20e merged; later P1 guard and PR #47 under review; protocol-2 v14 passed; Hello Pack activation/relaunch and live evidence pending | ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f) |
 | 2026-10-10 | 12b | e2e multi-user suites: bound isolation, cross-player, no-user ambiguity, reload, restart, stale token | ## 2026-10-10 — E2E multi-user isolation, binding and resilience suites (task 12b) |
 | 2026-10-10 | 12a | e2e harness, one-time headed pairing setup, ag-test fixtures seed/clean, single-user read flows, leak check | ## 2026-10-10 — E2E harness and single-user read flows (task 12a) |

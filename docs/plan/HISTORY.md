@@ -17,6 +17,44 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — Tool-pack PRs merged and installed pack synchronized; live acceptance pending (tasks 20b–20f)
+
+PR #47 merged head `87d050e47340b536131c2161019762bff79c32af` at
+2026-10-10 23:21:46 UTC, followed by P1 security PR #49 head
+`d7cb64bdb3dc2923ceb8e686040bdb6b7b98542c` at 23:21:47 UTC. Both are
+2026-10-11 in Europe/Dublin. Record PR #48 merged head
+`4f7ec6f12e50603e9590c3d6379d372baab5c08a` at 2026-10-11 06:30:53 UTC.
+Together with already merged PRs #42–46, the task20 implementation, reviewed
+security fixes and prior record are now on main (`1283470`). This supersedes
+older open-PR and pending-P1 statements in the preceding historical entry.
+
+The remote chat confirmed synchronization of all four Hello Pack files from
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4`, byte for byte, at
+`/srv/data/foundry/data/Data/modules/agent-gateway-hello-pack`. The prior
+`dfd8a04` installation was unmodified before replacement; README and main
+script were updated. The prior directory was backed up at
+`/tmp/hello-pack-backup-ovppwkva/agent-gateway-hello-pack`. Manifest and script
+both returned HTTP 200 with exact expected content. This supersedes the
+pending-synchronization statement; it establishes installation, not runtime
+activation or a live test pass.
+
+The combined implementation previously passed 2,355 fast and 2,227 slow tests;
+the reviewed protocol-2 exact bundle passed 21 v14.369 read/role tests with zero
+leaks. A subsequent enabled-mode attempt on actual Foundry v14.369 confirmed
+that the genuine runtime still reports Hello Pack installed `false`, active
+`false`, version `null`, despite the installed server files. Suite setup failed
+while waiting for the core `world_info` call, which returned `INTERNAL` with
+`n is not a function`; its one pack test skipped after the failed setup.
+Sessions were cleaned up. This is a blocked attempt, not an enabled-mode pass;
+the core error needs diagnosis before relying on that live setup.
+
+Real Hello Pack enabled/disabled acceptance remains pending runtime discovery
+through setup relaunch, activation/deactivation, recovery of the live core call
+and the required world relaunches. Foundry v13 remains pending its instance.
+Task files and worktrees remain for that acceptance work. The docs-only final
+record on main `1283470` passed the required full verification: 2,355 fast +
+2,227 slow tests.
+
 ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
 
 The tool-pack foundation is implemented on local branches and integrated in the
