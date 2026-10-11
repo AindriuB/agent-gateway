@@ -94,7 +94,92 @@ export function notInCombat(token: any): void {
     }
   }
 }
-export function version(doc: any): number {
+/** Native Tokens have no DocumentStatsField; bind their complete bounded source to the owning Scene. */
+function tokenSource(doc: any): string {
+  let nodes = 0,
+    bytes = 0;
+  const text = (value: string) => {
+    if (value.length > 65536 || (bytes += new TextEncoder().encode(value).length) > 65536)
+      forbid('Native token source exceeds supported bounds');
+  };
+  const seen = new WeakSet<object>();
+  const visit = (value: any, depth: number): any => {
+    if (++nodes > 5000 || depth > 16) forbid('Native token source exceeds supported bounds');
+    if (typeof value === 'string') {
+      text(value);
+      return value;
+    }
+    if (value === null || typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (!value || typeof value !== 'object' || seen.has(value))
+      forbid('Native token source is not bounded JSON data');
+    if (Object.getOwnPropertySymbols(value).length)
+      forbid('Native token symbol keys are unsupported');
+    seen.add(value);
+    let result: any;
+    if (Array.isArray(value)) {
+      if (
+        Object.getPrototypeOf(value) !== Array.prototype ||
+        value.length > 5000 ||
+        Object.keys(value).length !== value.length ||
+        Object.getOwnPropertyNames(value).length !== value.length + 1
+      )
+        forbid('Sparse/oversized native token arrays are unsupported');
+      const descriptors: PropertyDescriptor[] = [];
+      for (let index = 0; index < value.length; index++) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !Object.hasOwn(descriptor, 'value'))
+          forbid('Native token array accessors are unsupported');
+        descriptors.push(descriptor!);
+      }
+      result = descriptors.map((descriptor) => visit(descriptor.value, depth + 1));
+    } else {
+      if (![Object.prototype, null].includes(Object.getPrototypeOf(value)))
+        forbid('Native token source must contain plain objects');
+      result = Object.create(null);
+      const keys = Object.keys(value);
+      if (keys.length > 5000) forbid('Native token source exceeds supported bounds');
+      for (const key of keys.sort()) {
+        text(key);
+        if (['__proto__', 'prototype', 'constructor'].includes(key))
+          forbid('Unsafe native token source key');
+        const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+        if (!Object.hasOwn(descriptor, 'value')) forbid('Native token accessors are unsupported');
+        // Native optional object fields are omitted by JSON snapshots; array entries remain strict.
+        if (descriptor.value === undefined) {
+          if (++nodes > 5000) forbid('Native token source exceeds supported bounds');
+          continue;
+        }
+        result[key] = visit(descriptor.value, depth + 1);
+      }
+    }
+    seen.delete(value);
+    return result;
+  };
+  if (typeof doc.toObject !== 'function') forbid('Native token source is unavailable');
+  const source = doc.toObject();
+  const identity =
+    source && typeof source === 'object'
+      ? Object.getOwnPropertyDescriptor(source, '_id')
+      : undefined;
+  if (!identity || !Object.hasOwn(identity, 'value') || identity.value !== doc.id)
+    forbid('Native token source identity mismatch');
+  const json = JSON.stringify(visit(source, 0));
+  if (new TextEncoder().encode(json).length > 65536)
+    forbid('Native token source exceeds supported bounds');
+  return json;
+}
+export function version(doc: any): number | string {
+  if (doc?.documentName === 'Token') {
+    if (!canonical(doc)) forbid('A canonical native Token and Scene are required');
+    const parent = doc.parent;
+    const stamp = parent?._stats?.modifiedTime;
+    if (!Number.isFinite(stamp) || stamp < 0) forbid('Native parent Scene version is unavailable');
+    const source = tokenSource(doc);
+    if (doc.parent !== parent || !canonical(doc) || parent._stats?.modifiedTime !== stamp)
+      forbid('Native Token/Scene changed during source capture');
+    return `Token:${parent.uuid}:${stamp}:${source}`;
+  }
   const value = doc?._stats?.modifiedTime;
   if (!Number.isFinite(value) || value < 0) forbid('Native document version is unavailable');
   return value;

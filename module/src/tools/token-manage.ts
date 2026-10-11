@@ -64,9 +64,11 @@ export const tokenManageHandler = withPreparation(
       } else {
         actionFields(args, ['tokenUuid']);
         const token = await resolve(ctx, args.tokenUuid!, 'Token');
+        const parent = token.parent;
         const before = version(token);
         const validate = () => {
           check(ctx, token, 'Token');
+          if (token.parent !== parent) throw new Error('Token parent changed before mutation');
           if (version(token) !== before) throw new Error('Token changed before mutation');
           if (args.action === 'remove') notInCombat(token);
         };
@@ -77,13 +79,16 @@ export const tokenManageHandler = withPreparation(
         if (args.action === 'remove') {
           const result = await token.delete(ctx.callOptions);
           gm(ctx);
-          check(ctx, token.parent, 'Scene');
+          check(ctx, parent, 'Scene');
+          if (token.parent !== parent) throw new Error('Token parent changed during deletion');
           if (result !== token || token.parent.tokens.get(token.id))
             throw new Error('Native token deletion did not persist');
         } else {
           const hidden = args.action === 'hide';
           const result = await token.update({ hidden }, ctx.callOptions);
           check(ctx, token, 'Token');
+          if (token.parent !== parent)
+            throw new Error('Token parent changed during visibility update');
           if (result !== token || token.hidden !== hidden)
             throw new Error('Native token visibility update did not persist');
         }

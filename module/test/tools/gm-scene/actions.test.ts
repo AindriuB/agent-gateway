@@ -3,11 +3,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { tokenManageHandler } from '../../../src/tools/token-manage.js';
 import { combatManageHandler } from '../../../src/tools/combat-manage.js';
 import { sceneControlHandler } from '../../../src/tools/scene-control.js';
+import { version } from '../../../src/tools/_scene.js';
 import { setup, g, gm } from '../player-tokens-combat/fixtures.js';
 let f: ReturnType<typeof setup>;
 afterEach(() => f?.restore());
-function base(args: any) {
-  f = setup();
+function base(args: any, generation: 13 | 14 = 14) {
+  f = setup(generation);
   g.game.user = gm;
   f.scene.testUserPermission = () => true;
   f.scene._stats = { modifiedTime: 1 };
@@ -299,4 +300,140 @@ it('refuses scene rebinding during native start update before effect refresh', a
   });
   await expect(combatManageHandler(ctx)).rejects.toThrow('scene changed');
   expect(refresh).not.toHaveBeenCalled();
+});
+
+function nativeToken() {
+  const token = f.token();
+  delete token._stats;
+  token.toObject = () => ({
+    _id: token.id,
+    x: token.x,
+    y: token.y,
+    hidden: token.hidden,
+    rotation: token.rotation ?? 0,
+    flags: token.flags ?? {},
+    delta: { system: token.system ?? {} },
+    optional: undefined,
+  });
+  return token;
+}
+it.each([13, 14] as const)(
+  'native v%s Token without stats can hide through canonical Scene/source attestation',
+  async (generation) => {
+    const ctx = base({ action: 'hide', tokenUuid: 'Scene.s.Token.t' }, generation);
+    const token = nativeToken();
+    token.update = vi.fn(async (data: any, options: any) => {
+      expect(options).toBe(ctx.callOptions);
+      Object.assign(token, data);
+      return token;
+    });
+    expect(await tokenManageHandler(ctx)).toMatchObject({ structured: { completed: true } });
+    expect(token.update).toHaveBeenCalledOnce();
+  },
+);
+it.each(['hidden', 'flags', 'system', 'replacement', 'parent', 'demotion', 'sceneStamp'] as const)(
+  'refuses native no-stats Token %s change during snapshot',
+  async (change) => {
+    const ctx = base({ action: 'hide', tokenUuid: 'Scene.s.Token.t' });
+    const token = nativeToken();
+    token.update = vi.fn();
+    ctx.snapshot = async () => {
+      if (change === 'hidden') token.hidden = true;
+      if (change === 'flags') token.flags = { world: { changed: true } };
+      if (change === 'system') token.system = { changed: true };
+      if (change === 'replacement') f.scene.tokens.set(token.id, { ...token });
+      if (change === 'parent') token.parent = { ...f.scene };
+      if (change === 'demotion') g.game.users = { get: () => ({ ...gm, isGM: false }) };
+      if (change === 'sceneStamp') f.scene._stats.modifiedTime++;
+    };
+    await Promise.resolve()
+      .then(() => tokenManageHandler(ctx))
+      .then(
+        (result) => expect(result).toHaveProperty('error'),
+        (error) => expect(error).toBeInstanceOf(Error),
+      );
+    expect(token.update).not.toHaveBeenCalled();
+  },
+);
+it.each([undefined, NaN, Infinity, -1])(
+  'refuses Token when parent Scene timestamp is %s',
+  async (stamp) => {
+    const ctx = base({ action: 'hide', tokenUuid: 'Scene.s.Token.t' });
+    const token = nativeToken();
+    token.update = vi.fn();
+    f.scene._stats.modifiedTime = stamp;
+    expect(await tokenManageHandler(ctx)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(ctx.snapshot).not.toHaveBeenCalled();
+    expect(token.update).not.toHaveBeenCalled();
+  },
+);
+it('native Token source is deterministic, bounded and strict except optional object fields', () => {
+  base({});
+  const token = nativeToken();
+  token.toObject = () => ({ _id: token.id, flags: { b: 2, a: 1 }, optional: undefined });
+  const before = version(token);
+  token.toObject = () => ({ flags: { a: 1, b: 2 }, _id: token.id });
+  expect(version(token)).toBe(before);
+  const cycle: any = {};
+  cycle.self = cycle;
+  for (const bad of [
+    NaN,
+    Infinity,
+    () => {},
+    Symbol('bad'),
+    new Date(),
+    cycle,
+    [undefined],
+    Array(1),
+    'x'.repeat(65537),
+    JSON.parse('{"__proto__":{}}'),
+  ]) {
+    token.toObject = () => ({ _id: token.id, flags: { bad } });
+    expect(() => version(token)).toThrow();
+  }
+  let deep: any = {};
+  for (let i = 0; i < 17; i++) deep = { nested: deep };
+  for (const bad of [deep, Array.from({ length: 5001 }, () => 0)]) {
+    token.toObject = () => ({ _id: token.id, bad });
+    expect(() => version(token)).toThrow();
+  }
+});
+
+it('rejects native source accessors without invoking them and oversized sparse arrays before allocation', () => {
+  base({});
+  const token = nativeToken();
+  const read = vi.fn(() => token.id);
+  const identity = Object.defineProperty({}, '_id', { enumerable: true, get: read });
+  token.toObject = () => identity;
+  expect(() => version(token)).toThrow();
+  expect(read).not.toHaveBeenCalled();
+  const values = Object.defineProperty([0], '0', { enumerable: true, get: read });
+  token.toObject = () => ({ _id: token.id, values });
+  expect(() => version(token)).toThrow();
+  expect(read).not.toHaveBeenCalled();
+  const flags = Object.defineProperty({}, 'value', { enumerable: true, get: read });
+  token.toObject = () => ({ _id: token.id, flags });
+  expect(() => version(token)).toThrow();
+  expect(read).not.toHaveBeenCalled();
+  const exotic = Object.setPrototypeOf([], Object.create(Array.prototype));
+  token.toObject = () => ({ _id: token.id, values: exotic });
+  expect(() => version(token)).toThrow();
+  const custom = Object.defineProperty([], 'custom', { value: true });
+  token.toObject = () => ({ _id: token.id, values: custom });
+  expect(() => version(token)).toThrow();
+  token.toObject = () => ({ _id: token.id, values: Array(1_000_000_000) });
+  expect(() => version(token)).toThrow();
+});
+
+it('refuses canonical same-ID same-stamp parent replacement across snapshot', async () => {
+  const ctx = base({ action: 'hide', tokenUuid: 'Scene.s.Token.t' });
+  const token = nativeToken();
+  token.update = vi.fn();
+  ctx.snapshot = async () => {
+    const replacement = { ...f.scene, tokens: new Map([[token.id, token]]) };
+    g.game.scenes.set(replacement.id, replacement);
+    token.parent = replacement;
+  };
+  await expect(tokenManageHandler(ctx)).rejects.toThrow('parent changed');
+  expect(token.update).not.toHaveBeenCalled();
 });
