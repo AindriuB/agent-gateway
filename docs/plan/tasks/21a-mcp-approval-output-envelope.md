@@ -9,6 +9,7 @@
 - gateway/test/mcp/output-schema.test.ts (new focused helper tests)
 - gateway/test/mcp/server.test.ts (listing projection assertions only)
 - gateway/test/routing/approval-pending.test.ts
+- gateway/test/routing/dynamic-tools/definitions.test.ts (MCP listing projection assertion only: normal branch remains canonical and pending branch is strict)
 - gateway/test/routing/toolset.test.ts (announcement/schema immutability assertions only)
 
 ## Goal
