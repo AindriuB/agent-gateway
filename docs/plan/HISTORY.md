@@ -45,15 +45,29 @@ that the genuine runtime still reports Hello Pack installed `false`, active
 `false`, version `null`, despite the installed server files. Suite setup failed
 while waiting for the core `world_info` call, which returned `INTERNAL` with
 `n is not a function`; its one pack test skipped after the failed setup.
-Sessions were cleaned up. This is a blocked attempt, not an enabled-mode pass;
-the core error needs diagnosis before relying on that live setup.
+Sessions were cleaned up. This was a blocked attempt, not an enabled-mode pass.
+The subsequent diagnosis found an eager dispatcher binding in the bridge
+initialization cycle, which captured `undefined` in the production bundle.
 
-Real Hello Pack enabled/disabled acceptance remains pending runtime discovery
-through setup relaunch, activation/deactivation, recovery of the live core call
-and the required world relaunches. Foundry v13 remains pending its instance.
+Bridge fix PR #50 (`43cea16b25837f1b67485d4d0065b1351547c8ca`) is published,
+open, mergeable and clean, with independent review PASS. Its production-bundle
+regression reproduces the old failure and passes with the fix; full verification
+passed 2,356 fast + 2,227 slow tests. A player probe using the exact fixed local
+bundle on Foundry v14.369 then returned successful `world_info` for `test-world`
+(`isError: false`). Bundle SHA-256:
+`27efa51c11498137fd6de60b73bb5e88408db2ebb3a6a6fe240ff9f2c94add2a`.
+This confirms recovery for that fixed-bundle probe; PR #50 is not claimed merged
+or deployed as the core's server files. The final recording branch includes the
+fix as a dependency and introduces no direct runtime edits.
+
+The genuine runtime still reports Hello Pack absent/inactive and lists no
+`hello-` tools. Real enabled/disabled acceptance remains pending owner-driven
+setup relaunch for discovery, activation/deactivation and the required world
+relaunches. Foundry v13 remains pending its instance.
 Task files and worktrees remain for that acceptance work. The docs-only final
 record on main `1283470` passed the required full verification: 2,355 fast +
-2,227 slow tests.
+2,227 slow tests. After incorporating PR #50, the final record branch passed
+2,356 fast + 2,227 slow tests.
 
 ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
 
