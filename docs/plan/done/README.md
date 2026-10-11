@@ -1,7 +1,7 @@
 # Completed task contracts
 
 These 17 contracts have merged implementations and recorded evidence. Task 19's
-native Undo acceptance follow-ups remain explicitly open in PLAN. Active,
+new bounded native Undo evidence and remaining limits are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
 HISTORY and HISTORY-INDEX rather than recreated here. Archived checklists retain
@@ -12,7 +12,7 @@ over unchecked historical boxes.
 |---|---|---|
 | 13, 14 | Complete | PR #33, #34 |
 | 16, 20 | Complete | PR #37, #36 |
-| 19 | Implementation merged; native Undo UI and v13 reservation validation pending | PR #41 |
+| 19 | Implementation merged; task23a native grouped-root Undo evidence verified on unmerged PR #63; broader limits in PLAN | PR #41 |
 | 20b–20f | Complete; optional v13 pack lifecycle unproven | PR #43–47; follow-ups #49–50 and acceptance records #48, #51–53 |
 | 15, 17 | Complete | PR #55 (`d62dc36`), #56 (`f127431`) |
 | 15a, 21 | Complete; later offline gates distinct from native proof | PR #57 (`c6421ee`); atomic candidate `ab6b67f` / reconciliation `f66de98` |

@@ -171,6 +171,57 @@ proof is claimed. The initial v14 selector failure expired all five unexecuted
 requests and removed all ten fixtures before the reviewed retry. Private images
 remain local. See `plan/done/22-player-tokens-combat.md` and its HISTORY entry.
 
+## Native GM document and Undo acceptance (tasks 23, 23a)
+
+The separate test-only harness is under
+`module/test/tools/gm-documents/native-proof.mts`; it is not the read-only E2E
+suite. Run only with explicit human approval for the exact per-world fixtures,
+MCP mutations, one human Undo and exact cleanup. An opt-in environment flag is
+not permission. Keep v13/v14 pairing state separate, close other sessions using
+the controlled GM account, pin `AGENT_GATEWAY_TASK23_EXPECTED_BUNDLE_SHA` to the
+reviewed local build, and validate the active module, actual version,
+private GM-designated audit anchor and current owner-approval policy before
+creating fixtures. The harness must never click approval or Undo controls.
+
+The approved plan creates/imports three roots (minimal PF2e NPC Actor,
+JournalEntry and a copy of an existing compendium Item), adds one named
+ActiveEffect and one text Page, updates Actor/Page data, then deletes the three
+roots in one grouped call. Human approvals are batches of 3/2/2/1. Wait for eight
+exact current-run successful audit records before presenting the one grouped
+Audit UI Undo. Verify all five saved root/child UUIDs and content after that
+human action, not merely root return values or a success notification. Preserve
+the read-only source compendium entry.
+
+A passive test-only SocketInterface observer preserves original arguments,
+receiver, return promise and errors. It captures only the exact audit page's
+raw update progress, then performs bounded raw reads and reservation checks.
+Sensor errors, missing/ambiguous observations, limits or unfinished reads fail
+the proof. Final completion needs three exact root IDs, current GM, positive
+completion time, zero reservation and fresh persisted confirmation. This is
+observability, not a replacement for native Undo, document permissions or the
+reservation authority. Standalone browser compilation avoids reliance on tsx
+serialization helpers. Resume mode may reuse an unchanged verified deletion
+entry without replaying MCP calls only after exact checkpoint custody and
+fresh authority checks, under the already-approved unconsumed human Undo scope.
+
+Cleanup targets only the returned fixture roots and their descendants. Settle
+calls and drain audits with the GM relay alive; refuse uncertain mutation or
+live reservation rather than broadly deleting campaign data. Verify all five
+UUIDs absent, eight matched audits retained, personal views and world time
+unchanged. Keep before/after evidence and images local.
+
+The successful v14.369/v13.351 proof used source `a45541a`, production SHA-256
+`4a35b9e697c17ba92d4f35efb128b0ebf665c144637657c67acec083aef04b32`
+and native-executed private harness SHA-256
+`8ede52416c640d127472b2e3375846b12c7b65e14013fab42588c1a22f78a235`.
+Temporary bundle routes and compiled native template-cache entries were used;
+no deployment is claimed. A later reusable harness preparation is offline-only
+unless separately run. Native coverage is one grouped three-root deletion with
+Effect/Page restoration per version, not direct embedded-only Undo, every
+class, concurrent reservations or partial-failure retries. PR #63 and both
+contracts remain awaiting merge; HISTORY preserves earlier failures and exact
+cleanup, including the optional native Page defaults repaired in task23a.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:

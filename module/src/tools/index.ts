@@ -1,3 +1,7 @@
+import { documentCreateHandler } from './document-create.js';
+import { documentUpdateHandler } from './document-update.js';
+import { documentDeleteHandler } from './document-delete.js';
+import { compendiumImportHandler } from './compendium-import.js';
 import { tokenMoveHandler } from './token-move.js';
 import { targetSetHandler } from './target-set.js';
 import { combatStatusHandler } from './combat-status.js';
@@ -30,4 +34,8 @@ export const HANDLERS: Record<string, OpHandler> = {
   target_set: targetSetHandler,
   combat_status: combatStatusHandler,
   combat_end_turn: combatEndTurnHandler,
+  document_create: documentCreateHandler,
+  document_update: documentUpdateHandler,
+  document_delete: documentDeleteHandler,
+  compendium_import: compendiumImportHandler,
 };
