@@ -1,0 +1,42 @@
+<section class="agent-gateway-policy">
+  <p>{{localize "AGENT_GATEWAY.PolicyApp.hint"}}</p>
+  <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.PolicyApp.world"}}</legend>
+    {{#unless isGM}}<p class="hint">{{localize "AGENT_GATEWAY.PolicyApp.ceilingHint"}}</p>{{/unless}}
+    <table>
+      <thead><tr><th>{{localize "AGENT_GATEWAY.PolicyApp.agentClass"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.read"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.write"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.destructive"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.code"}}</th></tr></thead>
+      <tbody>{{#each worldRows}}<tr><th scope="row">{{localize label}}</th>{{#each cells}}<td>
+        {{#if @root.isGM}}<select name="{{name}}" aria-label="{{localize ../label}}: {{localize label}}">{{#each options}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{localize label}}</option>{{/each}}</select>
+        {{else}}{{#each options}}{{#if selected}}<span>{{localize label}}</span>{{/if}}{{/each}}{{/if}}
+      </td>{{/each}}</tr>{{/each}}</tbody>
+    </table>
+  </fieldset>
+  <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.PolicyApp.owner"}}</legend>
+    <p class="hint">{{localize "AGENT_GATEWAY.PolicyApp.ownerHint"}}</p>
+    <table>
+      <thead><tr><th>{{localize "AGENT_GATEWAY.PolicyApp.agentClass"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.read"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.write"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.destructive"}}</th><th>{{localize "AGENT_GATEWAY.PolicyApp.code"}}</th></tr></thead>
+      <tbody>{{#each ownerRows}}<tr><th scope="row">{{localize label}}</th>{{#each cells}}<td>
+        <select name="{{name}}" aria-label="{{localize ../label}}: {{localize label}}">{{#each options}}<option value="{{value}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{localize label}}</option>{{/each}}</select>
+      </td>{{/each}}</tr>{{/each}}</tbody>
+    </table>
+  </fieldset>
+  {{#if isGM}}
+  <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.PolicyApp.agents"}}</legend>
+    <label class="toggle"><input type="checkbox" name="playerEnabled" {{#if playerEnabled}}checked{{/if}} />{{localize "AGENT_GATEWAY.PolicyApp.playerEnabled"}}</label>
+    <label class="toggle"><input type="checkbox" name="headlessEnabled" {{#if headlessEnabled}}checked{{/if}} />{{localize "AGENT_GATEWAY.PolicyApp.headlessEnabled"}}</label>
+  </fieldset>
+  <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.PolicyApp.folders"}}</legend>
+    <p class="hint">{{localize "AGENT_GATEWAY.PolicyApp.folderHint"}}</p>
+    <div class="policy-columns">{{#each classes}}<label>{{localize label}}<select name="{{folderName}}" multiple size="5">{{#each folders}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select></label>{{/each}}</div>
+  </fieldset>
+  <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.PolicyApp.limits"}}</legend>
+    <p class="hint">{{localize "AGENT_GATEWAY.PolicyApp.limitsHint"}}</p>
+    <div class="policy-columns">{{#each classes}}<div><h3>{{localize label}}</h3>{{#each buckets}}<label class="limit">{{localize label}}<input type="number" name="{{name}}" value="{{value}}" min="1" max="{{@root.maxLimit}}" step="1" required /></label>{{/each}}</div>{{/each}}</div>
+  </fieldset>
+  {{/if}}
+  <footer class="form-footer"><button type="submit"><i class="fa-solid fa-save"></i> {{localize "AGENT_GATEWAY.PolicyApp.save"}}</button></footer>
+</section>
