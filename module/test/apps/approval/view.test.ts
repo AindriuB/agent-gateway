@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ beforeEach(() => {
   mocks.pending.mockReturnValue([]);
 });
 afterEach(() => {
+  document.body.replaceChildren();
   stub.uninstall();
   vi.clearAllMocks();
 });
@@ -126,7 +128,8 @@ describe('approval presentation', () => {
     const first = await app._prepareContext();
     expect(first.groups[0].requests).toHaveLength(5);
     expect(first.next).toBe(true);
-    App.approveAll.call(app, null, { dataset: { groupId: 'group' } });
+    const button = commitView(app, first);
+    App.approveAll.call(app, null, button);
     expect(resolveApproval.mock.calls.map((c) => c[0])).toEqual(['r0', 'r1', 'r2', 'r3', 'r4']);
     app.page = 1;
     const second = await app._prepareContext();
@@ -146,4 +149,130 @@ describe('approval presentation', () => {
     ]);
     expect(mocks.pending).toHaveBeenCalledTimes(2);
   });
+});
+
+// Commit real controls separately from context preparation, as the native render lifecycle does.
+function commitView(app: any, context: any): HTMLButtonElement {
+  const root = document.createElement('div');
+  for (const group of context.groups) {
+    const section = document.createElement('section');
+    section.className = 'ag-approval-group';
+    const button = document.createElement('button');
+    button.dataset.action = 'approveAll';
+    button.dataset.groupId = group.id;
+    section.append(button);
+    for (const request of group.requests) {
+      const article = document.createElement('article');
+      article.dataset.request = request.id;
+      if (request.reviewable) {
+        const approve = document.createElement('button');
+        approve.dataset.action = 'approve';
+        approve.dataset.requestId = request.id;
+        article.append(approve);
+      }
+      section.append(article);
+    }
+    root.append(section);
+  }
+  app.element?.remove();
+  app.element = root;
+  document.body.append(root);
+  return root.querySelector('button')!;
+}
+
+function raceApp(requests: any[]) {
+  const resolveApproval = vi.fn(() => true);
+  const controller = new ApprovalUiController({
+    manager: () => ({ listPending: () => requests, ownRecords: () => [], resolveApproval }),
+    isGM: () => true,
+    now: () => 0,
+    on: () => {},
+    present: () => {},
+  });
+  const App = createApprovalApp(controller);
+  const app = new App();
+  app.groups = [{ id: 'group', requests: [...requests] }];
+  return { App, app, resolveApproval };
+}
+
+it('approves only committed rows while a new document preview is awaiting resolution', async () => {
+  const requests = [request({ id: 'visible' })];
+  const { App, app, resolveApproval } = raceApp(requests);
+  const button = commitView(app, await app._prepareContext());
+  let release!: (value: any) => void;
+  (globalThis as any).fromUuid = vi.fn(
+    () =>
+      new Promise((done) => {
+        release = done;
+      }),
+  );
+  requests.push(request({ id: 'unseen', args: { uuid: 'Actor.delayed', update: '{}' } }));
+  app.groups = [{ id: 'group', requests: [...requests] }];
+  const preparing = app._prepareContext();
+  App.approveAll.call(app, null, button);
+  expect(resolveApproval.mock.calls.map((c) => c[0])).toEqual(['visible']);
+  release(null);
+  await preparing; // Discarded/failed DOM render must not change the old action.
+  resolveApproval.mockClear();
+  App.approveAll.call(app, null, button);
+  expect(resolveApproval.mock.calls.map((c) => c[0])).toEqual(['visible']);
+});
+
+it('uses committed DOM even when preview preparations complete out of order', async () => {
+  const requests = [
+    request({ id: 'slow', args: { uuid: 'Actor.slow', update: '{}' } }),
+    request({ id: 'fast' }),
+  ];
+  const { App, app, resolveApproval } = raceApp(requests);
+  let release!: (value: any) => void;
+  (globalThis as any).fromUuid = () =>
+    new Promise((done) => {
+      release = done;
+    });
+  app.groups = [{ id: 'group', requests: [requests[0]] }];
+  const slow = app._prepareContext();
+  app.groups = [{ id: 'group', requests: [requests[1]] }];
+  const fastButton = commitView(app, await app._prepareContext());
+  release(null);
+  const slowContext = await slow;
+  App.approveAll.call(app, null, fastButton);
+  expect(resolveApproval.mock.calls.map((c) => c[0])).toEqual(['fast']);
+  resolveApproval.mockClear();
+  const slowButton = commitView(app, slowContext);
+  App.approveAll.call(app, null, fastButton); // Detached button from the superseded render.
+  expect(resolveApproval).not.toHaveBeenCalled();
+  App.approveAll.call(app, null, slowButton);
+  expect(resolveApproval.mock.calls.map((c) => c[0])).toEqual(['slow']);
+});
+
+it('fails closed for uncommitted, oversized or duplicate group rows and rechecks eligibility', async () => {
+  const requests = [request({ id: 'visible' })];
+  const { App, app, resolveApproval } = raceApp(requests);
+  const context = await app._prepareContext();
+  App.approveAll.call(app, null, document.createElement('button'));
+  expect(resolveApproval).not.toHaveBeenCalled();
+  const button = commitView(app, context);
+  const row = app.element.querySelector('article');
+  row.append(document.createElement('span'));
+  row.after(row.cloneNode(true));
+  App.approveAll.call(app, null, button);
+  expect(resolveApproval).not.toHaveBeenCalled();
+  const oversized = commitView(app, context);
+  const group = oversized.closest('section')!;
+  for (let i = 0; i < 5; i++) {
+    const extra = row.cloneNode(true) as HTMLElement;
+    extra.dataset.request = `extra-${i}`;
+    group.append(extra);
+  }
+  App.approveAll.call(app, null, oversized);
+  expect(resolveApproval).not.toHaveBeenCalled();
+  const unreviewable = commitView(app, {
+    groups: [{ id: 'group', requests: [{ id: 'visible', reviewable: false }] }],
+  });
+  App.approveAll.call(app, null, unreviewable);
+  expect(resolveApproval).not.toHaveBeenCalled();
+  const valid = commitView(app, context);
+  requests.length = 0;
+  App.approveAll.call(app, null, valid);
+  expect(resolveApproval).not.toHaveBeenCalled();
 });
