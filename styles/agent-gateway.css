@@ -134,3 +134,15 @@
   flex: 1;
   min-width: 8rem;
 }
+
+/* Chat marker: agent-authored messages always visibly carry this badge. */
+.agent-gateway-ai-marker {
+  display: inline-block;
+  padding: 0 0.35em;
+  margin-inline-start: 0.4em;
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  font-size: 0.75em;
+  font-weight: bold;
+  line-height: 1.5;
+}

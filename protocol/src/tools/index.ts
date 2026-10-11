@@ -1,3 +1,6 @@
+import { chatPost } from './chat-post.js';
+import { rollFormula } from './roll-formula.js';
+import { journalWrite } from './journal-write.js';
 import type { ToolDefinition } from './define.js';
 import { documentGet } from './document-get.js';
 import { documentSearch } from './document-search.js';
@@ -7,6 +10,9 @@ import { compendiumGet } from './compendium-get.js';
 import { compendiumSearch } from './compendium-search.js';
 import { approvalStatus } from './approval-status.js';
 
+export * from './chat-post.js';
+export * from './roll-formula.js';
+export * from './journal-write.js';
 export * from './define.js';
 export * from './json-schema.js';
 export * from './document-get.js';
@@ -26,6 +32,9 @@ export const TOOLS: readonly ToolDefinition[] = [
   compendiumGet,
   chatRead,
   approvalStatus,
+  chatPost,
+  rollFormula,
+  journalWrite,
 ];
 
 export function toolsForRole(isGM: boolean): readonly ToolDefinition[] {

@@ -1,3 +1,6 @@
+import { chatPostHandler } from './chat-post.js';
+import { rollFormulaHandler } from './roll-formula.js';
+import { journalWriteHandler } from './journal-write.js';
 import type { OpHandler } from '../ops/types.js';
 import { documentGetHandler } from './document-get.js';
 import { documentSearchHandler } from './document-search.js';
@@ -16,4 +19,7 @@ export const HANDLERS: Record<string, OpHandler> = {
   compendium_get: compendiumGetHandler,
   chat_read: chatReadHandler,
   approval_status: approvalStatusHandler,
+  chat_post: chatPostHandler,
+  roll_formula: rollFormulaHandler,
+  journal_write: journalWriteHandler,
 };
