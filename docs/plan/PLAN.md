@@ -11,12 +11,12 @@ than no plan.
 
 ## Now
 
-### Tool-pack foundation merged; final live pack acceptance pending
-Tasks 20b–20f and the P1 toolset follow-up are merged through PRs #43–47 and #49; contract PR #42 and record PR #48 are also merged. The implementations include strict pack error-code validation, protocol 2, bounded hostile-toolset traversal and the bounded browser-local journal queue. Historical test counts and review fixes remain in HISTORY.
+### Tool-pack foundation merged; v14 pack lifecycle proven
+Tasks 20b–20f and the P1 toolset follow-up are merged through PRs #43–47 and #49; contract PR #42 and record PR #48 are also merged. Open bridge-fix PR #50 resolves the production-bundle initialization cycle, and record PR #51 includes it as a dependency. Andrew reviews and merges those PRs.
 
-Hello Pack's four files are now confirmed byte-exact to the reviewed combined implementation `14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4` on the remote Foundry host, with manifest and script HTTP 200 verified. Installation is complete; real enabled/disabled acceptance still requires runtime discovery, activation/deactivation and the appropriate world relaunch. An enabled-mode attempt found the runtime still had no discovered pack; suite setup failed on core `world_info` (`INTERNAL`, `n is not a function`), so its skipped pack test is not a pass. The diagnosed production-bundle bridge initialization cycle is fixed in open PR #50; a fixed-bundle v14.369 `world_info` probe passed. PR #50 still awaits Andrew's review/merge. Relaunch through setup to discover and activate Hello Pack before completing live acceptance. Foundry v13 evidence remains pending its instance.
+Hello Pack's four remote files match reviewed `14b6c3`. After Andrew enabled/reloaded and then disabled/reloaded, both existing v14.369 pack lifecycle suites passed (one test each). Independent read-only sessions confirmed both provenance-tagged tools and dice probability `21/36` when active, no `hello-` tools when inactive, and successful core `world_info` in both states, using the exact fixed PR #50 bundle. No live journal mutation was run; mutation behavior has automated unit/integration coverage. The full corrected-bundle v14 e2e gate also passed all 35 tests in eight files with zero skips/failures and zero leaks. The explicit v13 run skipped because its instance is unconfigured; that evidence remains pending.
 
-Retain the task files and worktrees while live acceptance is open. Tasks 15 and 18 remain open.
+Retain task files and worktrees for the remaining PR review and v13 evidence. Tasks 15 and 18 remain open.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
