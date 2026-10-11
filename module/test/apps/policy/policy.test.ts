@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -477,4 +478,93 @@ it('aborts restriction changes if the initial world denial cannot be persisted',
   expect(headlessAgentsEnabled()).toBe(false);
   // Persisted denial cannot be guaranteed when the backend rejects every world write.
   expect(loadWorldPolicy()).toEqual(DEFAULT_WORLD_MATRIX);
+});
+
+// Render context-backed native form controls, then exercise the real Application lifecycle.
+async function renderedPolicyForm() {
+  const App = createPolicyApp();
+  const app = new App();
+  const context = await app._prepareContext();
+  const form = document.createElement('form');
+  for (const row of [...(context.isGM ? context.worldRows : []), ...context.ownerRows])
+    for (const cell of row.cells) {
+      const select = document.createElement('select');
+      select.name = cell.name;
+      for (const item of cell.options) {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.selected = item.selected;
+        option.disabled = item.disabled;
+        select.append(option);
+      }
+      form.append(select);
+    }
+  app.element = form;
+  app.render = vi.fn();
+  await app._onRender(context, {});
+  await app._onRender(context, {});
+  const submit = async () => {
+    const data = values(currentPolicyState());
+    for (const select of form.querySelectorAll('select')) data[select.name] = select.value;
+    await App.onSubmit.call(app, new Event('submit'), form, { object: data });
+  };
+  return { form, app, submit };
+}
+
+it('enables relaxed draft owner options and saves both choices in one native form submission', async () => {
+  await persist('agent-gateway', 'worldPolicy', JSON.stringify(DENY_ALL_MATRIX));
+  const { form, app, submit } = await renderedPolicyForm();
+  const world = form.querySelector<HTMLSelectElement>('[name="world_gmAgents_read"]')!;
+  const owner = form.querySelector<HTMLSelectElement>('[name="owner_gmAgents_read"]')!;
+  expect(owner.querySelector<HTMLOptionElement>('[value="allow"]')!.disabled).toBe(true);
+  const other = form.querySelector<HTMLSelectElement>('[name="owner_playerAgents_read"]')!;
+  const otherBefore = other.value;
+  world.value = 'allow';
+  world.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(owner.querySelector<HTMLOptionElement>('[value="allow"]')!.disabled).toBe(false);
+  expect(other.value).toBe(otherBefore);
+  expect(owner.value).toBe('deny'); // A stricter existing choice stays selected.
+  owner.value = 'allow';
+  expect(set).not.toHaveBeenCalled();
+  await submit();
+  expect(loadWorldPolicy().gmAgents.read).toBe('allow');
+  expect(loadOwnerPolicy().gmAgents.read).toBe('allow');
+  expect(app.render).toHaveBeenCalledOnce();
+});
+
+it('clamps a weaker owner choice when the draft ceiling tightens and saves once', async () => {
+  const { form, app, submit } = await renderedPolicyForm();
+  const world = form.querySelector<HTMLSelectElement>('[name="world_gmAgents_read"]')!;
+  const owner = form.querySelector<HTMLSelectElement>('[name="owner_gmAgents_read"]')!;
+  expect(owner.value).toBe('allow');
+  world.value = 'ask_gm';
+  world.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(owner.value).toBe('ask_gm');
+  expect(owner.querySelector<HTMLOptionElement>('[value="allow"]')!.disabled).toBe(true);
+  expect(owner.querySelector<HTMLOptionElement>('[value="ask_owner"]')!.disabled).toBe(true);
+  owner.value = 'deny';
+  world.value = 'ask_owner';
+  world.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(owner.value).toBe('deny');
+  expect(set).not.toHaveBeenCalled();
+  await submit();
+  expect(loadWorldPolicy().gmAgents.read).toBe('ask_owner');
+  expect(loadOwnerPolicy().gmAgents.read).toBe('deny');
+  expect(app.render).toHaveBeenCalledOnce();
+});
+
+it('keeps player ceilings immutable and ignores GM draft handlers after role loss', async () => {
+  const { form } = await renderedPolicyForm();
+  const world = form.querySelector<HTMLSelectElement>('[name="world_gmAgents_read"]')!;
+  const owner = form.querySelector<HTMLSelectElement>('[name="owner_gmAgents_read"]')!;
+  (globalThis as any).game.user.isGM = false;
+  world.value = 'deny';
+  world.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(owner.value).toBe('allow');
+  const player = await renderedPolicyForm();
+  expect(player.form.querySelector('[name^="world_"]')).toBeNull();
+  expect(
+    [...player.form.querySelectorAll('select')].every((s) => s.name.startsWith('owner_')),
+  ).toBe(true);
+  expect(set).not.toHaveBeenCalled();
 });

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getApplicationV2, getHandlebarsApplicationMixin } from '../../compat/index.js';
-import { AGENT_CLASSES, DENY_ALL_MATRIX } from '../../policy/matrix.js';
+import { AGENT_CLASSES, CATEGORIES, DENY_ALL_MATRIX } from '../../policy/matrix.js';
 import {
   folderAllowlist,
   headlessAgentsEnabled,
@@ -14,6 +14,7 @@ import {
   HEADLESS_AGENTS_KEY,
 } from '../../policy/store.js';
 import { loadRateLimits, saveRateLimits } from '../../ratelimit/store.js';
+import { isDecision, strictness } from '../../policy/lattice.js';
 import { policyContext, validatePolicyForm, type PolicyState } from './model.js';
 
 declare const game: any;
@@ -103,6 +104,27 @@ export function createPolicyApp(): any {
     static PARTS = { form: { template: `modules/${NS}/templates/policy/policy.hbs` } };
     async _prepareContext(): Promise<object> {
       return policyContext(currentPolicyState());
+    }
+    async _onRender(context: object, options: object): Promise<void> {
+      await super._onRender?.(context, options);
+      if (game.user?.isGM !== true) return;
+      for (const cls of AGENT_CLASSES)
+        for (const cat of CATEGORIES) {
+          const world = this.element.querySelector(`select[name="world_${cls}_${cat}"]`);
+          const owner = this.element.querySelector(`select[name="owner_${cls}_${cat}"]`);
+          if (!world || !owner) continue;
+          // Assignment keeps repeated renders idempotent on retained controls.
+          world.onchange = () => {
+            if (game.user?.isGM !== true || !isDecision(world.value)) return;
+            for (const option of owner.options)
+              option.disabled =
+                !isDecision(option.value) ||
+                strictness(option.value) < strictness(world.value) ||
+                (cat === 'code' && option.value === 'allow');
+            if (!isDecision(owner.value) || strictness(owner.value) < strictness(world.value))
+              owner.value = world.value;
+          };
+        }
     }
     static async onSubmit(
       this: any,
