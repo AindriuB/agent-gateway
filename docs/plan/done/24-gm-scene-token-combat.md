@@ -1,6 +1,6 @@
 # 24 — Add GM tools token_manage, combat_manage and scene_control
 
-**Status:** Verified implementation and bounded native v13/v14 acceptance; PR #65 awaiting merge. Remains active until merged.
+**Status:** Complete; merged in PR #65 at `a1504985a6563ae89fa0618de84541284bfc06c9`. Bounded native v13/v14 acceptance and coverage limits are recorded in HISTORY and testing.
 
 **Repo:** .
 **Depends on:** 23, 20d, 20e
