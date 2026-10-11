@@ -52,7 +52,8 @@ function gmWorld() {
   });
   const doc = (uuid: string, data: any, mod = 5, createdBy?: string) => {
     const d = store.add(writable(uuid, data, mod, store));
-    if (createdBy) d._stats.createdBy = createdBy;
+    Object.assign(d, { documentName: uuid.split('.').at(-2), parent: null });
+    if (createdBy) d._stats.lastModifiedBy = createdBy;
     return d;
   };
   return { store, witness, relay, emit, sent, written, doc };
@@ -229,14 +230,14 @@ describe('the GM witnesses a player agent change', () => {
     expect(created).toEqual([]);
   });
 
-  it('a created target is undoable only if the server-set user and _stats.createdBy are the sender and the call declared creation', async () => {
+  it('a created target is undoable only if the native server-set user matches the live call and the call declared creation', async () => {
     const w = gmWorld();
     const mine = w.doc('Item.new1', { name: 'Made' }, 7, 'p1');
     const theirs = w.doc('Item.new2', { name: 'Other' }, 7, 'p2');
     const spoof = w.doc('Item.new3', { name: 'Spoof' }, 7, 'p2');
     await w.relay.onMessage({ kind: 'audit.intent', callId: CALL, creates: true }, 'p1');
     w.emit('createItem', mine, opts(), 'p1');
-    w.emit('createItem', theirs, opts(), 'p1'); // hook user p1 but created by p2: not the sender's
+    w.emit('createItem', theirs, {}, 'p1'); // no correlated call ID
     w.emit('createItem', spoof, opts(), 'p2'); // a different user's hook with p1's call id
     await entry(w, {
       targets: [
@@ -257,6 +258,117 @@ describe('the GM witnesses a player agent change', () => {
     expect(mine.calls.deleted).toBe(1);
     expect(theirs.calls.deleted).toBe(0);
     expect(spoof.calls.deleted).toBe(0);
+  });
+
+  it.each([
+    'wrong user',
+    'wrong call',
+    'missing call',
+    'no intent',
+    'malformed uuid',
+    'oversized uuid',
+    'unsupported class',
+    'wrong class',
+    'wrong id',
+    'wrong parent',
+    'nonfinite version',
+    'audit target',
+    'audit parent',
+  ])('never authorizes a creation with %s', async (failure) => {
+    const w = gmWorld();
+    const parent = w.doc('JournalEntry.j1', {});
+    const doc = w.doc('JournalEntry.j1.JournalEntryPage.p1', {}, 7);
+    doc.parent = parent;
+    if (failure !== 'no intent') await w.witness.onIntent({ callId: CALL, creates: true }, 'p1');
+    if (failure === 'malformed uuid') doc.uuid = 'Actor..bad';
+    if (failure === 'oversized uuid') doc.uuid = `Actor.${'a'.repeat(500)}`;
+    if (failure === 'unsupported class')
+      Object.assign(doc, { uuid: 'User.p1', documentName: 'User', id: 'p1', parent: null });
+    if (failure === 'wrong class') doc.documentName = 'Actor';
+    if (failure === 'wrong id') doc.id = 'other';
+    if (failure === 'wrong parent') doc.parent = w.doc('JournalEntry.other', {});
+    if (failure === 'nonfinite version') doc._stats.modifiedTime = Infinity;
+    if (failure === 'audit target') doc.flags = { 'agent-gateway': { auditJournal: true } };
+    if (failure === 'audit parent') parent.flags = { 'agent-gateway': { auditJournal: true } };
+    const options =
+      failure === 'missing call' ? {} : opts(failure === 'wrong call' ? 'wrong-call-0001' : CALL);
+    w.witness.onCreate(doc, options, failure === 'wrong user' ? 'p2' : 'p1');
+    const out = await w.witness.assemble(
+      record({ entryId: CALL, targets: [target({ uuid: doc.uuid })] }),
+      'p1',
+    );
+    expect(out.targets.every((t) => !t.undoable)).toBe(true);
+  });
+
+  it.each([
+    'missing',
+    'replacement',
+    'changed version',
+    'missing version',
+    'changed parent',
+    'new audit flag',
+  ])('re-resolves native creations and rejects %s at assembly', async (failure) => {
+    const w = gmWorld();
+    const parent = w.doc('JournalEntry.j1', {});
+    const doc = w.doc('JournalEntry.j1.JournalEntryPage.p1', {}, 7);
+    doc.parent = parent;
+    await w.witness.onIntent({ callId: CALL, creates: true }, 'p1');
+    w.witness.onCreate(doc, opts(), 'p1');
+    if (failure === 'missing') w.store.docs.delete(doc.uuid);
+    if (failure === 'replacement') w.store.docs.set(doc.uuid, { ...doc });
+    if (failure === 'changed version') doc._stats.modifiedTime++;
+    if (failure === 'missing version') delete doc._stats.modifiedTime;
+    if (failure === 'changed parent') doc.parent = { ...parent };
+    if (failure === 'new audit flag') parent.flags = { 'agent-gateway': { auditJournal: true } };
+    const out = await w.witness.assemble(
+      record({ entryId: CALL, targets: [target({ uuid: doc.uuid })] }),
+      'p1',
+    );
+    expect(out.targets).toHaveLength(1);
+    expect(out.targets[0]).toMatchObject({ undoable: false, before: null });
+  });
+
+  it.each(['other user', 'sender outside call', 'delete'])(
+    'invalidates a created target after %s intervenes even with the same timestamp',
+    async (kind) => {
+      const w = gmWorld();
+      const doc = w.doc('ChatMessage.c1', {}, 7);
+      await w.witness.onIntent({ callId: CALL, creates: true }, 'p1');
+      w.witness.onCreate(doc, opts(), 'p1');
+      if (kind === 'delete') w.witness.onDelete(doc, {}, 'p2');
+      else
+        w.witness.onUpdate(doc, { content: 'human edit' }, {}, kind === 'other user' ? 'p2' : 'p1');
+      expect(doc._stats.modifiedTime).toBe(7);
+      const out = await w.witness.assemble(record({ entryId: CALL }), 'p1');
+      expect(out.targets[0]?.undoable).toBe(false);
+    },
+  );
+
+  it('accepts native embedded pages and chat without an OWNER requirement, deduplicating native hooks', async () => {
+    const w = gmWorld();
+    const parent = w.doc('JournalEntry.j1', {});
+    const page = w.doc('JournalEntry.j1.JournalEntryPage.p1', {}, 7);
+    page.parent = parent;
+    const chat = w.doc('ChatMessage.c1', {}, 8);
+    chat.testUserPermission = () => false;
+    await w.witness.onIntent({ callId: CALL, creates: true }, 'p1');
+    for (const doc of [page, chat, chat]) w.witness.onCreate(doc, opts(), 'p1');
+    const out = await w.witness.assemble(record({ entryId: CALL }), 'p1');
+    expect(out.targets).toHaveLength(2);
+    expect(out.targets.every((t) => t.undoable && !t.existed && t.before === null)).toBe(true);
+  });
+
+  it('rejects a distinct recreated document under the same UUID even when its version is identical', async () => {
+    const w = gmWorld();
+    await w.witness.onIntent({ callId: CALL, creates: true }, 'p1');
+    const original = w.doc('Item.n1', {}, 7);
+    w.witness.onCreate(original, opts(), 'p1');
+    w.store.docs.delete(original.uuid);
+    const replacement = w.doc(original.uuid, {}, 7);
+    w.witness.onCreate(replacement, opts(), 'p1');
+    const out = await w.witness.assemble(record({ entryId: CALL }), 'p1');
+    expect(out.targets).toHaveLength(1);
+    expect(out.targets[0]?.undoable).toBe(false);
   });
 
   it('a create with no declared intent to create is not recorded', async () => {
