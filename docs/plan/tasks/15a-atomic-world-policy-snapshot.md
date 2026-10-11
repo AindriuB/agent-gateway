@@ -19,6 +19,9 @@
 - module/test/ratelimit/stage.test.ts
 - module/test/apps/policy/policy.test.ts
 - module/test/tools/document-read.test.ts
+- module/test/approvals/execution-role.test.ts (fixture metadata/current Foundry GM and persisted storage setup only; preserve role assertions)
+- module/test/approvals/policy-recheck.test.ts (fixture metadata/current Foundry GM and persisted storage setup only; preserve policy recheck assertions)
+- module/test/settings/main.test.ts (registration count for the added migration latch only)
 - module/test/stubs/foundry.ts (narrow persisted world Setting collection/value/identity metadata needed by the storage regressions; preserve existing defaults and test interfaces)
 - lang/en.json (insertions under `AGENT_GATEWAY.PolicyApp.*` only, if a localized initialization/repair notification is needed)
 
