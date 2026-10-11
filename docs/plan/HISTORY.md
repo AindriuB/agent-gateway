@@ -17,6 +17,66 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — Token movement, targeting and combat tools validated on v13 and v14 (task 22)
+
+Task 22 is implemented and merged in PR #61. Source `c4ff5f0`, merged as
+`ba52acd`, passed `npm run verify` (2,751 fast / 2,227 slow tests), with 113
+independent focused tests. It adds owned-token movement, caller-only visible
+target selection, bounded hidden-safe combat status and owned-current-turn
+advancement bound to the expected combat UUID, combatant UUID, round and turn.
+Native v13 movement reports whether anything moved, so compatibility code also
+requires its post-update state to be completed; v14 retains its native completion
+result. Signed coordinates remain finite and bounded by the native scene
+rectangle and token footprint. Partial wall/cost movement is covered offline,
+not claimed as a native acceptance case.
+
+Human-approved fixture runs on Foundry v14.369 and v13.351 / module 0.1.0 used
+exact source `ba52acd` and the observed production bundle SHA-256
+`9ae039a7198c3136ea237b531cd5c38b1030465387592df3d9bb167a0d16124b`.
+The local native proof harness SHA-256 was
+`736ff57e2c80a35bcea0fe158e4793f53e608f95eae8d6cf41f5316f1ac1e90e`.
+The eight local harness files are committed as `013947c`; temporary browser
+asset routes served the exact production bundle and current native HBS approval
+template was preloaded. This is browser validation, not a core deployment.
+Each world passed hidden-current privacy, a full owned-token path ending at
+800/400 pixels, selection of two visible targets only for the caller, owned
+turn advancement to round 1 / turn 2, and three FORBIDDEN refusals: unowned
+movement, hidden targeting and ending an unowned turn. Six exact current-run
+user/agent/tool/arguments audit records persisted per world (three successes,
+three errors). The v14 run exercised cached-SDK pending approval results and
+polling; v13 approvals completed before that timeout. Real native approval
+controls remained human-operated.
+
+Each run removed its ten exact returned fixture UUIDs and retained all six
+matched audits. Personal scene/combat views and targets were restored and
+world time remained zero. Neither world had a pre-existing combat; the harness
+also checks original combat active/round/turn fields when any exist. Combat
+is an unsupported-class view-only audit target; movement snapshots were
+retained but correctly marked stale/view-only after GM/system intervention.
+Transient targets declare no fabricated undo target. This is not native Undo
+acceptance and does not close task 19's follow-ups. Private approval images
+were inspected locally; a player-configuration window partly obscured the
+board image, so board acceptance rests on native readbacks, not an unobstructed
+screenshot. No private image export is claimed.
+
+**Cost:** The first v14 attempt stopped before human approval because its
+harness still looked for `article.request`; the merged template uses
+`article[data-request]`. Its five approvals were verified expired without
+results and all ten fixture UUIDs were removed with views/time restored.
+The corrected shared readiness helper requires exactly five, then one visible
+request card with matching enabled approval controls; 25 independent harness
+tests and genuine native Handlebars compilation of the current template
+passed. Native Combat deletion activates the deleting user's viewed combat:
+clear the controlled viewed references before deletion, restore views only
+afterwards, and require other tabs using that same GM account to be closed.
+Keep the designated GM relay alive while all calls settle and a bounded exact
+current-run audit drain completes, including failed calls. Post-proof harness refinement `52565dd` skips clearing personal combat views
+when an early preflight failure created no fixture combat. All 26 independent
+harness tests passed; this is an offline-tested cleanup change, not the exact
+whole harness executed in the native runs. The
+harness and this record are a separate follow-up to the already merged
+production code.
+
 ## 2026-10-11 — Policy, approval and native player-write wave completed and contracts archived
 
 Tasks 15, 15a, 17, 21, 21a and 21b are complete and merged through PRs

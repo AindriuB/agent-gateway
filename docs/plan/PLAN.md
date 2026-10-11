@@ -17,13 +17,16 @@ Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs 
 Foundry v13.351 / PF2e 7.12.2 passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Those merged foundation checks remain separate from the new write acceptance below.
 
 ### Policy, approval and player-write wave complete
-Tasks 15, 15a, 17, 21, 21a and 21b are complete and merged through PRs #54–58 and #60; current main is `9b3b05b`. PR #59 records the final evidence and completed-contract archive. Completed contracts are in `docs/plan/done/`; `docs/plan/tasks/` contains only queued or blocked work. Earlier tasks 01–12 were already retired and remain recorded in HISTORY/its index. The completion inventory also includes merged tasks 13, 14, 16, 19, 20 and 20b–20f.
+Tasks 15, 15a, 17, 21, 21a and 21b are complete and merged through PRs #54–58 and #60; that wave was verified at `9b3b05b`. Merged PR #59 records that wave's final evidence and completed-contract archive. Completed contracts are in `docs/plan/done/`; `docs/plan/tasks/` contains only queued or blocked work. Earlier tasks 01–12 were already retired and remain recorded in HISTORY/its index. The completion inventory also includes merged tasks 13, 14, 16, 19, 20 and 20b–20f.
 
 The combined task 21 head `d0a11fb` passed `npm run verify` (2,562 fast / 2,227 slow tests). Exact production bundle SHA-256 `9151dcaece963660a3c93039613b4580ded558f9c9f0d5546f4e9f59cecb33c4` passed native GM and Player1 acceptance on Foundry v14.369 and v13.351: real owner approvals, cached-SDK pending results, chat/roll AI badges, five persisted audited calls per role, three safe created targets, append before-snapshots and zero no-chat targets. Exact fixture cleanup and retained audit UUIDs were checked; local visual evidence was independently reviewed. No public screenshot upload is claimed. See the matching history entry for scope and limits.
 
 Task 18 remains architecture-blocked: immediate gateway token invalidation for another owner, including while that owner is offline, lacks trusted cross-owner attestation. Preserve that acceptance requirement; hello role hints cannot authorize it. Design a trusted gateway-controlled observer prerequisite before implementing 18; this introduces a production browser/credential/configuration surface and needs a deliberate future contract. Do not add an 18 → 36 dependency cycle or silently substitute pending revocation.
 
 Task 15a's atomic world-policy snapshot replaced the multi-setting save sequence after cross-GM concurrency review. Candidate `ab6b67f` and its main reconciliation `f66de98` passed 2,607 fast / 2,227 slow tests; independent focused review passed 247 tests. The harness-only envelope preflight fix `c6421ee` passed 2,626 fast / 2,227 slow and 26 independent focused tests. These later offline gates do not establish a new native bundle proof: native acceptance above remains tied to `d0a11fb` / `9151…33c4`. Last complete world writer wins; participating clients must reload, duplicate initialization fails closed, and no immediate revocation or CAS is claimed.
+
+### Token and combat tools complete
+Task 22 is merged in PR #61 (`c4ff5f0`, main `ba52acd`) and its contract is archived in `docs/plan/done/`. Both Foundry v14.369 and v13.351 passed the human-approved native six-call acceptance: owned movement/targets/turn, hidden-current privacy and three permission refusals. Each world retained six matched audits and removed ten exact fixture UUIDs with personal views/targets restored and world time unchanged. Production bundle `9ae039…6124b` was observed in both browsers; source verification passed 2,751 fast / 2,227 slow tests plus 113 independent focused checks. The local harness/record follow-up remains separate from merged production code. Native partial wall/cost movement and actual Undo invocation are not claimed; view-only audit limits and the initial cleanly cancelled v14 harness attempt are recorded in HISTORY. Next implementation task is 23; task 18 stays blocked.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
@@ -105,7 +108,7 @@ Task 19's implementation is merged and archived, but PR #41 records only offline
 - LIMITED journals are "not found" for players, stricter than Foundry, which shows the title.
 - Players cannot get the active Scene without ownership, stricter than Foundry.
 - A same-millisecond duplicate can appear after a deleted paging anchor.
-- Players have no scene layout until task 22, which must apply vision.
+- A scene-layout/vision read API remains unimplemented; completed task 22 provides guarded movement, targeting and combat tools, not a scene-layout read API.
 - `gateway/src/mcp/server.ts` and `EmptyModuleConnections` are unused; remove them.
 - Name-collision denial of service on `--user <name>`: bind by id instead.
 - Task 36 must prove the claimed identity at pairing per spike 10b, and must add pairing revocation (11b already ignores revoked pairings).

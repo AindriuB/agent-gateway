@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-11 | 22 | Merged movement/target/combat tools; native v13/v14 six-call audits and exact cleanup passed; local harness follow-up | ## 2026-10-11 — Token movement, targeting and combat tools validated on v13 and v14 (task 22) |
 | 2026-10-11 | 13–17, 19–21b | Merged policy/approval/player writes; historical native v13/v14 proof retained, later offline policy fixes recorded; 16 completed contracts archived | ## 2026-10-11 — Policy, approval and native player-write wave completed and contracts archived |
 | 2026-10-11 | 12a, 12b, 20b–20f | v13 core/read/multi-user gate passed 34 tests; optional pack skipped; fresh-world prerequisites clarified | ## 2026-10-11 — Foundry v13 validation completed and fresh-world setup clarified |
 | 2026-10-11 | 20b–20f | All task20 PRs merged; open bridge fix #50 and synchronized pack pass enabled/disabled v14 lifecycle; v13 pending | ## 2026-10-11 — Tool-pack PRs merged and v14 lifecycle verified; v13 pending (tasks 20b–20f) |

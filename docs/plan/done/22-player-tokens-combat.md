@@ -1,5 +1,7 @@
 # 22 — Add token_move, target_set, combat_status and combat_end_turn
 
+**Status:** Complete and merged in PR #61 (`c4ff5f0`, main `ba52acd`); native v14.369 and v13.351 six-call acceptance and exact cleanup passed. See the task22 HISTORY entry for evidence and view-only audit limits.
+
 **Repo:** .
 **Depends on:** 21, 20d, 20e
 **Owns:**
