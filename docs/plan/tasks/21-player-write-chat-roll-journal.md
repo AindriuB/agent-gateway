@@ -1,6 +1,7 @@
 # 21 — Add player write tools chat_post, roll_formula and journal_write
 
 **Repo:** .
+**Status:** Implemented and independently verified in open PR #57 (`d0a11fb`); awaiting Andrew review/merge. Combined prerequisites include PR #58 (21a) and PR #60 (21b). Native GM/Player1 acceptance passed on v13.351 and v14.369 with exact fixture cleanup and retained audits.
 **Depends on:** 17, 19, 20d, 20e
 **Owns:**
 - protocol/src/tools/chat-post.ts

@@ -1,6 +1,7 @@
 # 21b — Use native provenance for audit journal designation and witnessed creates
 
 **Repo:** .
+**Status:** Implemented and independently verified in open PR #60 (`0d7a4b3`); awaiting Andrew review/merge. Its combined task 21 native acceptance passed on v13.351 and v14.369 using GM designation and attested creation observations.
 **Depends on:** 19
 **Owns:**
 - module/src/audit/journal.ts

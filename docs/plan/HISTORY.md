@@ -17,6 +17,67 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — Policy, approval and native player-write wave verified; PRs awaiting review
+
+Tasks 15, 17, 21, 21a and 21b are implemented and independently reviewed; PRs
+#55, #56, #57, #58 and #60 remain open for Andrew's review and merge. PR #54's
+planning head `42e54cd` is incorporated into this recording branch, together
+with the 21b contract. This records verified branch behavior, not a claim that
+these changes are on main; unmerged task contracts remain in `tasks/`.
+
+Task 15 (`c26b19c`) provides world ceilings, owner policy, folder allowlists and
+rate-limit controls with GM/player privacy on native v13/v14 UI. Its save path
+closes both agent gates before persisting restrictions and owner policy, then
+enables requested classes last. Failure attempts both disables independently;
+Foundry settings are not transactional and a backend that refuses rollback
+cannot be forced to close a gate. Independent policy tests passed 23/23 and
+its required gate passed 2,379 fast / 2,227 slow tests.
+
+Task 17 (`63edd37`) provides eligible native approval dialogs, escaped pack
+provenance and arguments, nested document diffs, full 500-line source review,
+denial reasons and grouped actions. Native v13.351/v14.369 proofs used actual
+MCP calls with no-op fixture handlers and a local no-op audit sink; actors and
+journals were unchanged. Full source DOM equality and zero rendered hostile
+HTML were asserted. Source diffs require target OWNER permission. Its required
+gate passed 2,392 fast / 2,227 slow tests; local screenshots passed independent
+visual review.
+
+Task 21a (`6e6f3d4`) projects normal outputs plus a strict pending-approval
+branch at the MCP boundary so SDK clients that first list tools accept delayed
+results. Canonical schemas and link announcements are unchanged. Task 21b
+(`0d7a4b3`) replaces nonexistent native creator metadata with GM designation
+proven by the persisted world Setting's server-managed current-GM writer,
+while retaining closed journal access. Creation undo targets use attested
+native hook identity, bounded declared intent and fresh identity/version
+checks; an intervening change remains safely view-only.
+
+The combined task 21 source `d0a11fb` passed the required gate with 2,562 fast /
+2,227 slow tests. Exact production bundle SHA-256
+`9151dcaece963660a3c93039613b4580ded558f9c9f0d5546f4e9f59cecb33c4`
+passed real default-policy owner approval for GM and Player1 on both
+v14.369 and v13.351. Each accepted role proof covers chat, chat roll, page
+creation, append and no-chat roll: five persisted audit entries, three safe
+created UUID targets, an undoable append before-snapshot and zero no-chat
+targets. Cached SDK pending responses and native chat/roll AI badges passed;
+all exact created fixture UUIDs were absent after cleanup, and the matched
+audit UUIDs remained. The successful role proofs span separate controlled
+runs; they are not a single uninterrupted full-suite run. Local native visual
+evidence was reviewed; no public PNG upload is claimed.
+
+**Cost:** Native validation exposed stale installed audit subtype metadata,
+a non-designated GM recipient, and two uses of a nonexistent `_stats.createdBy`
+field. A reviewed one-declaration v14 manifest repair and human world relaunch
+restored subtype availability; verified native Setting metadata and create
+hooks supplied the real trust anchors. Do not infer creator identity from a
+journal's last editor or weaken witness version checks. Relay persistence is
+asynchronous: wait for the first four audit records before append and all five
+before cleanup. Early assertions and `Promise.all` failure cleanup caused
+misleading failures; bounded read-only drains and all-settled tracking now
+protect the harness. Historical failed runs were reconciled and their exact
+fixtures removed. No campaign writes beyond the human-approved fixtures and
+cleanup were authorized. Task 18's immediate offline cross-owner revocation
+requirement remains architecture-blocked and unchanged.
+
 ## 2026-10-11 — Foundry v13 validation completed and fresh-world setup clarified
 
 Foundry v13.351 / PF2e 7.12.2 passed the full

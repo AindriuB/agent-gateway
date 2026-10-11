@@ -1,6 +1,7 @@
 # 17 — Add the approval diff dialog with batch approval
 
 **Repo:** .
+**Status:** Implemented and independently verified in open PR #56 (`63edd37`); awaiting Andrew review/merge. Native no-op MCP approval UI proof passed on v13/v14; campaign documents unchanged.
 **Depends on:** 16, 20c
 **Owns:**
 - module/src/apps/approval/**

@@ -77,6 +77,55 @@ Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_P
 
 The configured v13.351 / PF2e 7.12.2 instance passed the full core/read/multi-user gate: 34 tests passed, zero failed, and the optional Hello Pack test skipped (35 discovered). The v14.369 gate passed all 35 tests, and Hello Pack enabled/disabled lifecycle acceptance was also checked separately on v14. These results do not claim Hello Pack lifecycle validation on v13.
 
+## Native approved-write acceptance
+
+The task 21 native harness is separate from read-only `test:e2e`. Its exact
+fixture payloads, targets and cleanup require human approval. A harness opt-in
+is a guard, not authorization. The real default-policy approval dialog remains
+in the path; the human approves requests. Preserve each version's pairing
+profiles and keep the controlled GM session open while player audits drain.
+
+Before creating fixtures, check the installed and loaded module manifest
+includes `documentTypes.JournalEntryPage.audit` and the native allowed subtype
+includes `agent-gateway.audit`. A JavaScript route cannot repair server-loaded
+metadata. Metadata changes, service restarts and configuration writes require
+specific approval; Andrew performs admin world relaunches. Do not silently
+replace or adopt an untrusted audit journal.
+
+Read-only preflight must prove the controlled user is the designated active
+GM and no other GM is active. Verify the persisted native world Setting
+`agent-gateway.auditJournalId`: exact key, user:null, decoded value matching the
+selected journal and server-managed lastModifiedBy resolving a current GM.
+The selected journal must be flagged, default ownership NONE and inaccessible
+to every non-GM user. World scope alone is insufficient because setting-write
+permission can be delegated. Native v13/v14 documents have no createdBy field;
+a journal's last editor is not its creator.
+
+List tools through the real SDK before calling them. Record the exact observed
+production bundle hash, full Foundry version and module version. Track every
+started call immediately and await all settlements before deleting fixtures;
+an error or screenshot failure must not leave an untracked late creation.
+On failure invalidate pending requester continuations before cleanup, and
+report incomplete cleanup explicitly rather than declaring success.
+
+Audit relay success is asynchronous. Use a bounded read-only persistence wait
+for exact current-run user/agent/tool/arguments and unique entry IDs. Wait for
+the first four records and safe created targets **before submitting append**:
+the GM witness has a 1,500 ms grace window and correctly refuses undo if the
+created page changes before it assembles. Then wait for all five final records
+before assertions and cleanup. Check three safe created targets, the append's
+before-snapshot and zero no-chat targets. Successful tool responses or audit
+page counts alone are insufficient.
+
+Cleanup only the exact returned fixture UUIDs and verified fixture parent;
+never select campaign documents broadly by name. Read back exact absence and
+retention of matched audit UUIDs, close only the sessions/processes started by
+the run, and preserve audit records. Local screenshots can establish readable
+native approvals and AI badges without publishing campaign data or credentials.
+The verified task 21 evidence covers GM and Player1 on v14.369 and v13.351,
+using separate controlled runs and the same production bundle; its PRs remain
+open until Andrew reviews and merges them.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:

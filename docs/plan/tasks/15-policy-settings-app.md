@@ -1,6 +1,7 @@
 # 15 — Add the world and owner policy settings app
 
 **Repo:** .
+**Status:** Implemented and independently verified in open PR #55 (`c26b19c`); awaiting Andrew review/merge. Native policy UI inspected on v13/v14; failed-save access gating hardened.
 **Depends on:** 13, 14
 **Owns:**
 - module/src/apps/policy/**

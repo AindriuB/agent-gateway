@@ -1,6 +1,7 @@
 # 21a — Project delayed approval envelopes into MCP output schemas
 
 **Repo:** .
+**Status:** Implemented and independently verified in open PR #58 (`6e6f3d4`); awaiting Andrew review/merge. Cached-SDK pending output validation passed without changing canonical tool schemas.
 **Depends on:** 16, 20e
 **Owns:**
 - gateway/src/mcp/output-schema.ts (new shared MCP-only projection helper)

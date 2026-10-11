@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-11 | 15, 17, 21, 21a, 21b | Verified open PRs: policy/approval UI and native GM/player writes on v13/v14; audits retained and fixtures cleaned; awaiting review | ## 2026-10-11 — Policy, approval and native player-write wave verified; PRs awaiting review |
 | 2026-10-11 | 12a, 12b, 20b–20f | v13 core/read/multi-user gate passed 34 tests; optional pack skipped; fresh-world prerequisites clarified | ## 2026-10-11 — Foundry v13 validation completed and fresh-world setup clarified |
 | 2026-10-11 | 20b–20f | All task20 PRs merged; open bridge fix #50 and synchronized pack pass enabled/disabled v14 lifecycle; v13 pending | ## 2026-10-11 — Tool-pack PRs merged and v14 lifecycle verified; v13 pending (tasks 20b–20f) |
 | 2026-10-10 | 20b–20f | 20b–20e merged; later P1 guard and PR #47 under review; protocol-2 v14 passed; Hello Pack activation/relaunch and live evidence pending | ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f) |
