@@ -16,6 +16,9 @@ Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs 
 
 Foundry v13.351 / PF2e 7.12.2 now passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Harness selector PR #53 is a dependency of this record. The earlier deferral is superseded by this configured-instance evidence. Tasks 15 and 18 remain open.
 
+### Native audit provenance blocks player-write acceptance
+Task 21b replaces unavailable native creator metadata with verified GM designation of the audit journal and attested creation-hook observations. Native v13.351/v14.369 both lack `_stats.createdBy`; journal factory replacement alone cannot repair this. Task 21 remains incomplete until 21b passes independent verification and its approved native GM/player audit, UI and cleanup checks pass on both versions. Task 18 requirements remain unchanged.
+
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
 - The test-world users are dev-gm (GM), player1 and Player2. The harness matches user names case-insensitively on the join screen, preferring an exact match; set FOUNDRY_PLAYER2_USER=Player2 to match the world's spelling exactly. The test users have no password; the per-user `FOUNDRY_{GM,PLAYER,PLAYER2}_PASSWORD` variables are optional.
