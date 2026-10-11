@@ -3,7 +3,8 @@ import { passwordFor, profileDir, type E2eConfig, type E2ePaths } from './config
 
 /** The selectors the harness relies on. */
 export const SELECTORS = {
-  joinUser: 'select[name="userId"]',
+  // v13 uses `userid`; v14 uses `userId`. Accept both exact attribute names.
+  joinUser: 'select:is([name="userId"], [name="userid"])',
   joinPassword: 'input[name="password"]',
   joinButton: 'button[name="join"]',
   pairingApp: '#agent-gateway-pairing',
