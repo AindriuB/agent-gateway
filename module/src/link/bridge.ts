@@ -12,7 +12,8 @@ export interface BridgeDeps {
 }
 
 const defaults: BridgeDeps = {
-  dispatch: realDispatch,
+  // The registry/stages/runtime imports form a cycle; resolve the live binding at call time.
+  dispatch: (call, user) => realDispatch(call, user),
   getUser: () => (typeof game === 'undefined' ? undefined : game.user),
 };
 
