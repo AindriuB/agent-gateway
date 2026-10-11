@@ -8,11 +8,15 @@
 - protocol/src/tools/combat-status.ts
 - protocol/src/tools/combat-end-turn.ts
 - protocol/src/tools/index.ts (insertions only)
+- protocol/test/tools/rules/validate.test.ts (insertions for the four task22 canonical example arguments only)
 - module/src/tools/token-move.ts
 - module/src/tools/target-set.ts
 - module/src/tools/combat-status.ts
 - module/src/tools/combat-end-turn.ts
 - module/src/tools/index.ts (insertions only)
+- module/src/compat/index.ts (narrow token movement and audited native combat advancement helpers only)
+- module/test/compat/token-movement.test.ts (new)
+- module/test/compat/combat-turn.test.ts (new)
 - module/test/tools/player-tokens-combat/**
 - module/test/stubs/** (insertions only)
 
@@ -31,6 +35,15 @@ owned tokens, set targets, read combat state and end its own turn.
 - [ ] `combat_status` (player, read): round, turn, combatants (name, initiative, defeated, hidden ones excluded for non-GM), whose turn it is
 - [ ] `combat_end_turn` (player, write): only when the current combatant is owned by the user, else `FORBIDDEN`
 - [ ] Guards pass; manual check on foundry.local v14 in a pf2e combat; v13 pending if absent
+
+## Native compatibility and security details
+- Movement uses the canonical rendered Scene and TokenDocument, not an arbitrary document from a client payload. Coordinates are finite fractional multiples of `scene.grid.size` in the token x/y coordinate space, not hex row/column indices. Require a positive finite grid size and scene-bounded destination/footprint. Accept either both x/y or a nonempty path of at most 20 bounded x/y points, never both; do not forward additional waypoint or movement-bypass options.
+- Native v13/v14 TokenDocument.move accepts waypoints plus update options. The compat helper must preserve `ctx.callOptions`, normal movement constraints and the native completed/blocked result. Cover both native API shapes; a blocked or incomplete movement must not be reported as completed. Do not bypass walls, cost or system movement rules.
+- Every write uses the existing fail-closed audited write helper. Resolve the current authenticated Foundry user, canonical document and OWNER permission after awaited snapshots/resolution and immediately before mutation. A token/actor permission change or changed current combatant while approval is pending must refuse the stale action. Use current Foundry permissions, never supplied owner IDs, requester role hints or local `isOwner` cached for a different user.
+- Targeting uses the shared native canvas.tokens.setTargets API and only current game.user after verifying that identity matches the calling user. Resolve and validate all at-most-ten canonical rendered-scene targets before changing any targets; non-GMs may target only genuinely visible/renderable tokens. Map replace/add/clear to native replace/acquire/empty-replace. Target selection is transient state: retain its audit entry, but declare no fabricated document undo target or snapshot.
+- Combat status selects current game.combat. Bound enumeration/output; exclude hidden combatants for every non-GM even if native `visible` would allow their owner. Do not leak their names, initiative, UUIDs or hidden current-combatant identity through summary fields; whose-turn identity is null/omitted when hidden. Native round/turn values may remain as combat metadata.
+- Native v13/v14 Combat.nextTurn/nextRound do not accept update options, so simply passing callOptions loses audit correlation. Implement a narrow compatible advancement helper using the verified native algorithm and one normal Combat.update with callOptions: honor skipDefeated, next-turn scanning, wrap to the next round, native all-defeated behavior, getTimeDelta and combatTurn/combatRound hooks. Bound the scan and validate finite turn/round/time values; preserve native/system update lifecycle and permission checks. Do not monkeypatch methods, request GM impersonation or create a separate turn service. Recheck authenticated ownership and unchanged current combatant synchronously after hooks and immediately before update.
+- Tests must exercise actual shared compat helpers on native-shaped v13/v14 cases, including options/audit forwarding, movement blocked/completed, skip-defeated, wrap/all-defeated, native hook/time behavior and stale permissions/turns. Add real dispatcher/audit tests for target isolation and non-GM hidden-current privacy. No new native world writes are authorized by this contract amendment; manual acceptance needs the existing explicit test-world approval workflow.
 
 ## Out of scope
 - GM combat and token management (24)
