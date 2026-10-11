@@ -130,6 +130,47 @@ and harness-only preflight gates are offline verification, not new native
 acceptance. The preflight accepts valid legacy matrices or validated version1
 envelopes and refuses malformed data before fixture setup.
 
+## Native token and combat acceptance (task 22)
+
+Task 22 uses the separate test-only harness under
+`module/test/tools/player-tokens-combat/native-proof.mts`. It is not the read-only
+E2E suite. A fresh run requires explicit approval for its exact fixture payloads
+and cleanup on each target; `AGENT_GATEWAY_TASK22_APPROVED=exact-fixtures-and-cleanup`
+is an opt-in guard, not permission. Keep v13/v14 state directories separate.
+Read-only preflight checks the actual version, active module, audit metadata and
+GM-written private audit designation, unique stored user pairings, default
+owner-approval policy and zero-time native turn advancement prerequisites.
+Close other tabs using the controlled GM account: native Combat deletion can
+activate the viewed combat in every same-user tab, which active-user counts
+cannot detect.
+
+Per world the approved plan creates two minimal owned/unowned PF2e NPC actors,
+one private fixture scene, three tokens and one scene-specific combat with three
+combatants (ten returned UUIDs). It never activates the scene globally. After a
+hidden-current status read and a fixture-only GM turn setup, the human approves
+five requests, then the final unowned-turn request. The harness never clicks
+approval controls; its shared current-template selector waits for exactly five,
+then one visible card with matching enabled controls. Preserve the controlled
+GM relay while all calls settle and six exact current-run audits drain. Retain
+observed audit UUIDs even if another call fails or persistence times out.
+
+Before deleting exact flagged fixture parents, clear the controlled combat views;
+restore personal scene/combat views and targets only after deletion. Read back
+all ten returned UUIDs absent, matched audit UUIDs retained, original combat
+state unchanged and world time unchanged. Never broadly delete campaign records.
+The v14.369 and v13.351 runs passed three writes and three FORBIDDEN refusals
+per world using merged source `ba52acd` and observed production SHA-256
+`9ae039a7198c3136ea237b531cd5c38b1030465387592df3d9bb167a0d16124b`.
+Temporary browser asset routes served the exact local bundle, with the current
+HBS approval template preloaded; no production deployment is claimed.
+Only a full movement path without obstacles was tested natively; partial wall/cost paths and
+v13 completion normalization have offline regressions. Combat targets remain
+view-only, movement snapshots may be conservatively stale, and transient
+selection has no undo target. No native Undo or unobstructed board screenshot
+proof is claimed. The initial v14 selector failure expired all five unexecuted
+requests and removed all ten fixtures before the reviewed retry. Private images
+remain local. See `plan/done/22-player-tokens-combat.md` and its HISTORY entry.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
