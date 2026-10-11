@@ -4,6 +4,7 @@
 **Depends on:** 16, 20c
 **Owns:**
 - module/src/apps/approval/**
+- module/src/main.ts (insert the approval UI installer import and one call in the existing ready callback immediately before `installBridge`; no other changes)
 - templates/approval/**
 - module/test/apps/approval/**
 - styles/agent-gateway.css (approval section only)
@@ -23,6 +24,7 @@ session, and deny with a reason. Grouped requests can be approved together.
 
 ## Acceptance
 - [ ] Opens on `agentGateway.approvalRequested` for eligible approvers; shows agent label, owner, tool, category and requester
+- [ ] `installApprovalUi()` registers requested/resolved listeners idempotently, then presents `getApprovalManager().listPending()` so requests loaded or re-presented before the main ready callback are not missed; installation/repeated-install tests cover this. Look up the internal manager and tool registry lazily at runtime to avoid eager initialization-cycle captures
 - [ ] `computeDiff(before, after)` yields path/old/new rows for nested objects and arrays; unit tests with fixtures; for `document_update`-style args the dialog loads the current document via `fromUuid` to diff
 - [ ] Category `code` renders the entire source in a monospace block with no truncation (test with a 500-line fixture)
 - [ ] Requests from the same agent and session arriving within 2 s are grouped; "Approve all" and per-row actions both work

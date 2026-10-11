@@ -14,7 +14,11 @@ than no plan.
 ### Tool-pack foundation and v13/v14 acceptance complete
 Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs #42–51. Full v14 acceptance passed all 35 tests, including the disabled Hello Pack case; enabled and disabled v14 lifecycle checks also passed separately.
 
-Foundry v13.351 / PF2e 7.12.2 now passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Harness selector PR #53 is a dependency of this record. The earlier deferral is superseded by this configured-instance evidence. Tasks 15 and 18 remain open.
+Foundry v13.351 / PF2e 7.12.2 now passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Harness selector PR #53 is a dependency of this record. The earlier deferral is superseded by this configured-instance evidence. Tasks 15, 17 and 18 remain open; task 15 is in implementation and task 17 is ready next. Run 15 → 17 → 21 serially where runtime files overlap; task 21 follows the approval dialog and merged tool-pack foundation.
+
+Task 21 is implemented in draft PR #57 with offline verification; native world-write acceptance is not yet approved or run. Its delayed-approval SDK proof is blocked by task 21a: add the generic MCP-only output envelope projection so a client that first lists tools accepts legitimate pending approval results. Task 21a depends on 16/20e and can base on current main independently of task 21.
+
+Task 18 is architecture-blocked: immediate gateway token invalidation for another owner, including while that owner is offline, lacks trusted cross-owner attestation. Preserve that acceptance requirement; hello role hints cannot authorize it. Design a trusted gateway-controlled observer prerequisite before implementing 18; this introduces a production browser/credential/configuration surface and needs a deliberate future contract. Do not add an 18 → 36 dependency cycle or silently substitute pending revocation.
 
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
