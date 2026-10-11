@@ -1,7 +1,7 @@
 # 19 — Add the audit log journal and human-only undo
 
 **Repo:** .
-**Status:** Implementation merged in PR #41 and archived. Task23a's unmerged PR #63 source now has native human Audit UI Undo evidence on v13.351/v14.369 for grouped root deletion with embedded restoration, persisted completion and released reservation. Direct embedded-only Undo and native concurrent-reservation contention are not claimed; see the task23/23a HISTORY entry.
+**Status:** Complete and archived; implementation merged in PR #41. Merged task23a/PR #63 supplies the successful native human Audit UI Undo and local screenshot evidence on v13.351/v14.369 for grouped root deletion with embedded restoration, persisted completion and released reservation. Direct embedded-only Undo and native concurrent-reservation contention remain evidence limits, not additional task19 requirements; see the task23/23a HISTORY entries.
 **Depends on:** 13
 **Owns:**
 - module/src/audit/**

@@ -218,9 +218,12 @@ Temporary bundle routes and compiled native template-cache entries were used;
 no deployment is claimed. A later reusable harness preparation is offline-only
 unless separately run. Native coverage is one grouped three-root deletion with
 Effect/Page restoration per version, not direct embedded-only Undo, every
-class, concurrent reservations or partial-failure retries. PR #63 and both
-contracts remain awaiting merge; HISTORY preserves earlier failures and exact
-cleanup, including the optional native Page defaults repaired in task23a.
+class, concurrent reservations or partial-failure retries. PR #63 is merged at main `83d216d`, with head `0cf35c3` passing 3,042 fast /
+2,227 slow tests and 47 independent focused checks. The contracts are archived
+at `plan/done/23-gm-document-tools.md` and
+`plan/done/23a-native-undo-restoration.md`. HISTORY preserves earlier failures
+and exact cleanup, including the optional native Page defaults repaired in
+task23a. The combined reusable-harness gate is separate from the native runs.
 
 ## Permission rules on the Mac (auto mode)
 
