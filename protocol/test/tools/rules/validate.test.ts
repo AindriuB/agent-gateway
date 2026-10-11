@@ -123,6 +123,15 @@ describe('validateArgs', () => {
   it('rejects invalid schemas rather than ignoring unsupported rules', () =>
     expect(validateArgs({ ...schema, pattern: '.*' }, valid).ok).toBe(false));
   const examples: Record<string, unknown> = {
+    token_move: { tokenUuid: 'Scene.example.Token.example', x: 1, y: 1 },
+    target_set: { tokenUuids: [], mode: 'clear' },
+    combat_status: {},
+    combat_end_turn: {
+      combatUuid: 'Combat.example',
+      currentCombatantUuid: 'Combat.example.Combatant.example',
+      round: 1,
+      turn: 0,
+    },
     world_info: {},
     document_search: { type: 'Actor' },
     document_get: { uuid: 'Actor.example' },

@@ -1,3 +1,7 @@
+import { tokenMoveHandler } from './token-move.js';
+import { targetSetHandler } from './target-set.js';
+import { combatStatusHandler } from './combat-status.js';
+import { combatEndTurnHandler } from './combat-end-turn.js';
 import { chatPostHandler } from './chat-post.js';
 import { rollFormulaHandler } from './roll-formula.js';
 import { journalWriteHandler } from './journal-write.js';
@@ -22,4 +26,8 @@ export const HANDLERS: Record<string, OpHandler> = {
   chat_post: chatPostHandler,
   roll_formula: rollFormulaHandler,
   journal_write: journalWriteHandler,
+  token_move: tokenMoveHandler,
+  target_set: targetSetHandler,
+  combat_status: combatStatusHandler,
+  combat_end_turn: combatEndTurnHandler,
 };
