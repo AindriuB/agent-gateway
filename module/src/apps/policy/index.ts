@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getApplicationV2, getHandlebarsApplicationMixin } from '../../compat/index.js';
-import { AGENT_CLASSES } from '../../policy/matrix.js';
+import { AGENT_CLASSES, DENY_ALL_MATRIX } from '../../policy/matrix.js';
 import {
   folderAllowlist,
   headlessAgentsEnabled,
@@ -47,17 +47,19 @@ export async function savePolicyForm(values: Record<string, unknown>): Promise<b
     const validated = validatePolicyForm(values, currentPolicyState());
     if ('world' in validated) {
       savingWorld = true;
-      // Quiesce access before changing restrictions, including already-enabled agents.
-      // A rejected disable aborts the save before any restriction is changed.
+      // The matrix also closes interactive GM access, which the agent toggles do not gate.
+      // Abort on any quiescence failure before changing restrictions.
+      await saveWorldPolicy(DENY_ALL_MATRIX);
       await game.settings.set(NS, PLAYER_AGENTS_KEY, false);
       await game.settings.set(NS, HEADLESS_AGENTS_KEY, false);
-      await saveWorldPolicy(validated.world);
       await game.settings.set(NS, FOLDER_ALLOWLIST_KEY, JSON.stringify(validated.folders));
       await saveRateLimits(validated.limits);
       await saveOwnerPolicy(validated.owner);
       // All restrictions are persisted before either class can gain access.
       if (validated.playerEnabled) await game.settings.set(NS, PLAYER_AGENTS_KEY, true);
       if (validated.headlessEnabled) await game.settings.set(NS, HEADLESS_AGENTS_KEY, true);
+      // Publish the requested ceiling only after every restriction and toggle has persisted.
+      await saveWorldPolicy(validated.world);
     } else await saveOwnerPolicy(validated.owner);
     ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.PolicyApp.saved'));
     return true;
@@ -65,6 +67,11 @@ export async function savePolicyForm(values: Record<string, unknown>): Promise<b
     if (savingWorld) {
       // Settings are not transactional. Never restore broader access after a partial save;
       // attempt both disables even if one fails (an unavailable backend may reject rollback).
+      try {
+        await saveWorldPolicy(DENY_ALL_MATRIX);
+      } catch {
+        // An unavailable backend may refuse this too; still try both remaining gates.
+      }
       for (const key of [PLAYER_AGENTS_KEY, HEADLESS_AGENTS_KEY]) {
         try {
           await game.settings.set(NS, key, false);

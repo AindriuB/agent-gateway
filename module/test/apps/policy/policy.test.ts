@@ -1,6 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_OWNER_MATRIX, DEFAULT_WORLD_MATRIX } from '../../../src/policy/matrix.js';
+import {
+  DEFAULT_OWNER_MATRIX,
+  DEFAULT_WORLD_MATRIX,
+  DENY_ALL_MATRIX,
+} from '../../../src/policy/matrix.js';
+import { createPolicyStage } from '../../../src/policy/stage.js';
+import { evaluate } from '../../../src/policy/evaluate.js';
+import {
+  loadWorldPolicy,
+  loadOwnerPolicy,
+  playerAgentsEnabled,
+  headlessAgentsEnabled,
+} from '../../../src/policy/store.js';
 import { DEFAULT_LIMITS, resolveLimit } from '../../../src/ratelimit/config.js';
 import { loadRateLimits } from '../../../src/ratelimit/store.js';
 import {
@@ -142,13 +154,14 @@ it('saves all GM controls through registered policy and limit settings', async (
   };
   expect(await savePolicyForm(form)).toBe(true);
   expect(set.mock.calls.map((call) => call[1])).toEqual([
+    'worldPolicy',
     'playerAgentsEnabled',
     'headlessAgentsEnabled',
-    'worldPolicy',
     'folderAllowlist',
     'rateLimits',
     'ownerPolicy',
     'playerAgentsEnabled',
+    'worldPolicy',
   ]);
   expect(
     JSON.parse(set.mock.calls.find((call) => call[1] === 'folderAllowlist')![2] as string)
@@ -299,6 +312,8 @@ it.each(['worldPolicy', 'folderAllowlist', 'rateLimits', 'ownerPolicy'])(
       }),
     ).toBe(false);
     expect(set.mock.calls.some((call) => call[2] === true)).toBe(false);
+    if (failedKey !== 'worldPolicy')
+      expect(interactiveGMRead()).toMatchObject({ kind: 'decision', decision: 'deny' });
     expect(settings.get('agent-gateway', 'playerAgentsEnabled')).toBe(false);
     expect(settings.get('agent-gateway', 'headlessAgentsEnabled')).toBe(false);
   },
@@ -347,11 +362,119 @@ it('aborts restriction writes if quiescing fails and still attempts the other ga
   ).toBe(false);
   expect(
     set.mock.calls.every((call) =>
-      ['playerAgentsEnabled', 'headlessAgentsEnabled'].includes(call[1]),
+      ['worldPolicy', 'playerAgentsEnabled', 'headlessAgentsEnabled'].includes(call[1]),
     ),
   ).toBe(true);
   expect(settings.get('agent-gateway', 'headlessAgentsEnabled')).toBe(false);
   // The failed backend cannot be made transactional: preserve/report failure rather than enabling.
   expect(settings.get('agent-gateway', 'playerAgentsEnabled')).toBe(true);
   expect(error).toHaveBeenCalledWith('L:AGENT_GATEWAY.PolicyApp.invalid');
+});
+
+// Read current persisted settings as another interactive GM's resolver does.
+function interactiveGMRead() {
+  return evaluate(
+    {
+      world: loadWorldPolicy(),
+      owner: loadOwnerPolicy(),
+      playerAgentsEnabled: playerAgentsEnabled(),
+      headlessAgentsEnabled: headlessAgentsEnabled(),
+    },
+    { isGM: true, headless: false, category: 'read' },
+  );
+}
+
+it('denies interactive GM reads while a newly restrictive folder write is pending', async () => {
+  await persist('agent-gateway', 'worldPolicy', JSON.stringify(DENY_ALL_MATRIX));
+  const form = {
+    ...values(currentPolicyState()),
+    world_gmAgents_read: 'allow',
+    owner_gmAgents_read: 'allow',
+    folders_gmAgents: ['folder'],
+  };
+  let release!: () => void;
+  const waiting = new Promise<void>((done) => {
+    release = done;
+  });
+  set.mockImplementation(async (ns: string, key: string, value: unknown) => {
+    if (key === 'folderAllowlist') await waiting;
+    await persist(ns, key, value);
+  });
+  const saved = savePolicyForm(form);
+  await vi.waitFor(() =>
+    expect(set).toHaveBeenCalledWith('agent-gateway', 'folderAllowlist', expect.any(String)),
+  );
+  expect(interactiveGMRead()).toMatchObject({ kind: 'decision', decision: 'deny' });
+  const next = vi.fn();
+  const stage = createPolicyStage({ tools: [{ name: 'world_info', category: 'read' }] as any });
+  expect(
+    await stage.run(
+      { tool: 'world_info', user: { isGM: true }, agent: { headless: false } } as any,
+      next,
+    ),
+  ).toMatchObject({ error: { code: 'DENIED' } });
+  expect(next).not.toHaveBeenCalled();
+  release();
+  expect(await saved).toBe(true);
+  expect(interactiveGMRead()).toMatchObject({ kind: 'decision', decision: 'allow' });
+  expect(set.mock.calls.at(-1)?.[1]).toBe('worldPolicy');
+  expect(
+    JSON.parse((globalThis as any).game.settings.get('agent-gateway', 'folderAllowlist')).gmAgents,
+  ).toEqual(['folder']);
+});
+
+it('retains interactive GM denial when the restrictive folder write fails', async () => {
+  const form = {
+    ...values(currentPolicyState()),
+    world_gmAgents_read: 'allow',
+    owner_gmAgents_read: 'allow',
+    folders_gmAgents: ['folder'],
+  };
+  set.mockImplementation(async (ns: string, key: string, value: unknown) => {
+    if (key === 'folderAllowlist') throw new Error('Folder write failed');
+    await persist(ns, key, value);
+  });
+  expect(await savePolicyForm(form)).toBe(false);
+  expect(interactiveGMRead()).toMatchObject({ kind: 'decision', decision: 'deny' });
+  expect(loadWorldPolicy()).toEqual(DENY_ALL_MATRIX);
+});
+
+it('restores world denial when the final requested matrix applies then rejects', async () => {
+  const form = {
+    ...values(currentPolicyState()),
+    playerEnabled: true,
+    headlessEnabled: true,
+    world_gmAgents_read: 'allow',
+    owner_gmAgents_read: 'allow',
+    folders_gmAgents: ['folder'],
+  };
+  set.mockImplementation(async (ns: string, key: string, value: unknown) => {
+    await persist(ns, key, value);
+    if (key === 'worldPolicy' && JSON.parse(String(value)).gmAgents.read === 'allow')
+      throw new Error('Final matrix acknowledgement failed');
+  });
+  expect(await savePolicyForm(form)).toBe(false);
+  expect(interactiveGMRead()).toMatchObject({ kind: 'decision', decision: 'deny' });
+  expect(loadWorldPolicy()).toEqual(DENY_ALL_MATRIX);
+  expect(playerAgentsEnabled()).toBe(false);
+  expect(headlessAgentsEnabled()).toBe(false);
+});
+
+it('aborts restriction changes if the initial world denial cannot be persisted', async () => {
+  set.mockImplementation(async (ns: string, key: string, value: unknown) => {
+    if (key === 'worldPolicy') throw new Error('Backend refuses world denial');
+    await persist(ns, key, value);
+  });
+  expect(
+    await savePolicyForm({ ...values(currentPolicyState()), folders_gmAgents: ['folder'] }),
+  ).toBe(false);
+  expect(
+    set.mock.calls.some((call) =>
+      ['folderAllowlist', 'rateLimits', 'ownerPolicy'].includes(call[1]),
+    ),
+  ).toBe(false);
+  expect(playerAgentsEnabled()).toBe(false);
+  expect(headlessAgentsEnabled()).toBe(false);
+  // Persisted denial cannot be guaranteed when the backend rejects every world write.
+  expect(loadWorldPolicy()).toEqual(DEFAULT_WORLD_MATRIX);
 });
