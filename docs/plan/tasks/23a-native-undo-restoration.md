@@ -11,8 +11,10 @@
 - module/test/audit/undo-safety.test.ts
 - module/test/audit/undo-confirmation.test.ts
 - module/test/audit/undo-reservation.test.ts
+- module/test/audit/witness.test.ts (native recreation fixture identity/registration and retained-ID options only)
+- module/test/tools/gm-documents/fixtures.ts (shared native fixture canonical collection references, empty embedded collections and faithful embedded source serialization only)
 
-Existing test files may change fixtures and add restoration/security regressions; do not weaken their existing reservation, conflict or authorization assertions. Audit schemas, class allowlists, reservations, tool handlers, protocol definitions and UI are outside Owns. Report a concrete blocker before changing them.
+The two narrowly annotated fixture allowances preserve all witness/integration assertions and add no runtime authority; module/test/tools/gm-documents/integration.test.ts itself is unchanged. Existing Undo test files may change fixtures and add restoration/security regressions; do not weaken their existing reservation, conflict or authorization assertions. Audit schemas, class allowlists, reservations, tool handlers, protocol definitions and UI are outside Owns. Report a concrete blocker before changing them.
 
 ## Goal and evidence
 
