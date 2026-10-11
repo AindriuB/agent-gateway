@@ -16,6 +16,8 @@ Tasks 20b–20f, the P1 toolset follow-up and bridge fix are merged through PRs 
 
 Foundry v13.351 / PF2e 7.12.2 now passed all 34 core/read/multi-user tests with zero failures and zero leaks (20 player results × 21 hidden strings). The optional Hello Pack test skipped; no v13 pack lifecycle claim is made. Harness selector PR #53 is a dependency of this record. The earlier deferral is superseded by this configured-instance evidence. Tasks 15 and 18 remain open.
 
+Task 21 is implemented in draft PR #57 with offline verification; native world-write acceptance is not yet approved or run. Its delayed-approval SDK proof is blocked by task 21a: add the generic MCP-only output envelope projection so a client that first lists tools accepts legitimate pending approval results. Task 21a depends on 16/20e and can base on current main independently of task 21.
+
 ### Testing topology and prerequisites
 - Implementation happens on the homelab; client-side and browser tests run in Andrew's Mac test-bed Claude session (clone at `~/workspace/foundry-modules/agent-gateway`). Use `/usr/bin/curl` there, since Anaconda curl ignores the keychain.
 - The test-world users are dev-gm (GM), player1 and Player2. The harness matches user names case-insensitively on the join screen, preferring an exact match; set FOUNDRY_PLAYER2_USER=Player2 to match the world's spelling exactly. The test users have no password; the per-user `FOUNDRY_{GM,PLAYER,PLAYER2}_PASSWORD` variables are optional.
