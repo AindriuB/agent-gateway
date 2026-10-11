@@ -25,26 +25,43 @@ export function registerAuditSettings(): void {
   });
 }
 
-const storedId = (): string => {
+const storedId = (): string | null => {
   try {
-    return String(game.settings.get(AUDIT_NS, AUDIT_JOURNAL_ID_SETTING) ?? '');
+    const value = game.settings.get(AUDIT_NS, AUDIT_JOURNAL_ID_SETTING);
+    return typeof value === 'string' ? value : null;
   } catch {
-    return '';
+    return null;
   }
 };
 
 /** Why a journal is not the audit journal, or null when it is trustworthy. */
 function untrusted(j: any): string | null {
   if (j?.flags?.[AUDIT_NS]?.[AUDIT_JOURNAL_FLAG] !== true) return 'it is not flagged';
-  const by = j._stats?.createdBy;
-  if (!by || game.users?.get?.(by)?.isGM !== true) return 'it was not created by a GM';
+  const key = `${AUDIT_NS}.${AUDIT_JOURNAL_ID_SETTING}`;
+  const setting = game.settings?.storage?.get?.('world')?.getSetting?.(key);
+  if (
+    setting?.key !== key ||
+    setting.user !== null ||
+    typeof setting.value !== 'string' ||
+    setting.value !== j.id
+  ) {
+    return 'it has no matching persisted world designation';
+  }
+  const by = setting._stats?.lastModifiedBy;
+  if (typeof by !== 'string' || game.users?.get?.(by)?.isGM !== true) {
+    return 'its world designation was not written by a current GM';
+  }
+  if (!Array.isArray(game.users?.contents)) return 'its effective ownership is unavailable';
   for (const u of Array.from(game.users?.contents ?? [])) {
     if ((u as any).isGM) continue;
     const level = typeof j.getUserLevel === 'function' ? j.getUserLevel(u) : undefined;
-    const sees = level !== undefined ? level > NONE : j.testUserPermission?.(u, 'LIMITED') === true;
+    const permitted = j.testUserPermission?.(u, 'LIMITED');
+    if (level === undefined && typeof permitted !== 'boolean')
+      return 'its effective ownership is unavailable';
+    const sees = level !== undefined ? !Number.isFinite(level) || level > NONE : permitted;
     if (sees) return 'a non-GM user has access to it';
   }
-  if (typeof j.ownership?.default === 'number' && j.ownership.default > NONE) {
+  if (j.ownership?.default !== NONE) {
     return 'its default ownership is above None';
   }
   return null;
@@ -52,15 +69,20 @@ function untrusted(j: any): string | null {
 
 /**
  * The audit journal: the journal whose id is in the world setting, and only if it is flagged,
- * created by a GM and closed to every non-GM user. Any other journal carrying the flag is ignored,
+ * designated by a current GM and closed to every non-GM user. Any other journal carrying the flag is ignored,
  * so a player cannot plant one to receive or show entries.
  */
 export function findAuditJournal(): any | null {
   const id = storedId();
   if (!id) return null;
   const j = game.journal?.get?.(id) ?? null;
-  if (!j) return null;
-  const why = untrusted(j);
+  if (!j || j.id !== id) return null;
+  let why: string | null;
+  try {
+    why = untrusted(j);
+  } catch {
+    why = 'its provenance or ownership is inaccessible';
+  }
   if (why) {
     console.warn(`agent-gateway | ignoring the audit journal ${id}: ${why}`);
     return null;
@@ -68,20 +90,41 @@ export function findAuditJournal(): any | null {
   return j;
 }
 
+/** Only a readable, genuinely empty selection permits factory creation; never repair provenance. */
+function unconfigured(): boolean {
+  if (storedId() !== '') return false;
+  try {
+    const storage = game.settings.storage.get('world');
+    if (typeof storage?.getSetting !== 'function') return false;
+    const key = `${AUDIT_NS}.${AUDIT_JOURNAL_ID_SETTING}`;
+    const setting = storage.getSetting(key);
+    if (setting == null) return true;
+    return (
+      setting.key === key &&
+      setting.user === null &&
+      setting.value === '' &&
+      typeof setting._stats?.lastModifiedBy === 'string' &&
+      game.users?.get?.(setting._stats.lastModifiedBy)?.isGM === true
+    );
+  } catch {
+    return false;
+  }
+}
+
 let creating: Promise<any> | null = null;
 
 /**
- * The audit journal, created if the setting names none that exists. Only a GM client creates it,
+ * The audit journal, created only when its readable world selection is empty. Only a GM client creates it,
  * with default ownership NONE, and records its id in the world setting. A named journal that fails
  * the checks is never replaced silently: the problem is logged and no entries are written.
  */
 export async function ensureAuditJournal(): Promise<any | null> {
   const existing = findAuditJournal();
   if (existing) return existing;
-  const id = storedId();
-  if (id && game.journal?.get?.(id)) return null;
+  if (!unconfigured()) return null;
   // Only the designated active GM creates it, so two GM clients never make two journals.
   if (game.user?.isGM !== true || game.users?.activeGM?.id !== game.user.id) return null;
+  const creator = game.user.id;
   creating ??= (async () => {
     try {
       const levels = CONST?.DOCUMENT_OWNERSHIP_LEVELS;
@@ -90,8 +133,20 @@ export async function ensureAuditJournal(): Promise<any | null> {
         ownership: { default: levels?.NONE ?? NONE },
         flags: { [AUDIT_NS]: { [AUDIT_JOURNAL_FLAG]: true } },
       });
+      if (
+        game.user?.id !== creator ||
+        game.user?.isGM !== true ||
+        game.users?.get?.(creator)?.isGM !== true ||
+        game.users.activeGM?.id !== creator ||
+        !unconfigured()
+      ) {
+        throw new Error('The designated GM or empty audit selection changed before designation');
+      }
       await game.settings.set(AUDIT_NS, AUDIT_JOURNAL_ID_SETTING, j.id);
-      return j;
+      const trusted = findAuditJournal();
+      if (trusted !== j)
+        throw new Error('Foundry did not persist a trusted audit journal designation');
+      return trusted;
     } finally {
       creating = null;
     }

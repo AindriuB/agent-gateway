@@ -44,7 +44,8 @@ function world() {
   const emit = (n: string, ...a: any[]) => (handlers.get(n) ?? []).forEach((f) => f(...a));
   const doc = (uuid: string, data: any = {}, mod = 5, createdBy?: string) => {
     const d = store.add(writable(uuid, data, mod, store));
-    if (createdBy) d._stats.createdBy = createdBy;
+    Object.assign(d, { documentName: uuid.split('.').at(-2), parent: null });
+    if (createdBy) d._stats.lastModifiedBy = createdBy;
     return d;
   };
   return {

@@ -16,7 +16,7 @@ it('the live relay retains witnessed undo data through a journal failure and ret
   vi.useFakeTimers();
   vi.resetModules();
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  stub = installFoundry(14);
+  stub = installFoundry(14, { worldSettingWriter: () => 'gm1' });
   const g = globalThis as any;
   const store = makeStore();
   const doc = store.add(writable('Actor.a1', { name: 'Before', hp: 9 }, 1));
@@ -37,7 +37,7 @@ it('the live relay retains witnessed undo data through a journal failure and ret
     id: 'audit',
     flags: { 'agent-gateway': { auditJournal: true } },
     ownership: { default: 0 },
-    _stats: { createdBy: 'gm1' },
+    _stats: { lastModifiedBy: 'gm1' },
     testUserPermission: () => false,
     pages: { contents: pages },
     createEmbeddedDocuments: create,
@@ -53,6 +53,7 @@ it('the live relay retains witnessed undo data through a journal failure and ret
     journal: { contents: [journal], get: (id: string) => (id === 'audit' ? journal : null) },
     socket: { on: vi.fn(), emit },
   });
+  g.game.settings.register('agent-gateway', 'auditJournalId', { scope: 'world', default: '' });
   await g.game.settings.set('agent-gateway', 'auditJournalId', 'audit');
   const { AuditWitness } = await import('../../src/audit/witness.js');
   const complete = vi.spyOn(AuditWitness.prototype, 'complete');

@@ -34,7 +34,7 @@ type Observed =
       modifiedTime: number | null;
     }
   | { kind: 'delete'; uuid: string }
-  | { kind: 'create'; uuid: string; modifiedTime: number | null };
+  | { kind: 'create'; uuid: string; modifiedTime: number; identity: any[] };
 
 interface Call {
   sender: string;
@@ -115,6 +115,37 @@ export function changedKeyPaths(change: unknown, recursive = true): string[] {
     } else add(path);
   }
   return [...out];
+}
+
+/** Native identity, bounded to the same six-document chain protected by the audit guard. */
+function creationIdentity(
+  doc: any,
+): { uuid: string; modifiedTime: number; identity: any[] } | null {
+  const uuid = doc?.uuid;
+  if (typeof uuid !== 'string' || uuid.length > L.uuid || !UUID_OK.test(uuid)) return null;
+  const parts = uuid.split('.');
+  if (parts.length > 12 || !undoClasses(uuid)) return null;
+  if (parts.some((p) => !p || BAD_SEGMENT.has(p))) return null;
+  const identity: any[] = [];
+  let current = doc;
+  for (let i = parts.length - 2; i >= 0; i -= 2) {
+    const expected = parts.slice(0, i + 2).join('.');
+    if (
+      !current ||
+      current.uuid !== expected ||
+      current.id !== parts[i + 1] ||
+      current.documentName !== parts[i] ||
+      (i > 0 ? !UNDO_EMBEDDED.includes(parts[i]!) : !UNDO_CLASSES.includes(parts[i]!))
+    )
+      return null;
+    assertNotAudit(current);
+    identity.push(current);
+    current = current.parent;
+  }
+  if (current != null) return null;
+  const modifiedTime = doc._stats?.modifiedTime;
+  if (typeof modifiedTime !== 'number' || !Number.isFinite(modifiedTime)) return null;
+  return { uuid, modifiedTime, identity };
 }
 
 /**
@@ -275,7 +306,11 @@ export class AuditWitness {
    */
   private intervene(uuid: string, userId: unknown, options: any): void {
     for (const call of this.calls.values()) {
-      if (call.capped || this.expired(call) || !call.snaps.get(uuid)?.existed) continue;
+      if (call.capped || this.expired(call)) continue;
+      const tracked =
+        call.snaps.get(uuid)?.existed ||
+        call.observed.some((o) => o.kind === 'create' && o.uuid === uuid);
+      if (!tracked) continue;
       const mine = call.sender === userId && options?.agentGateway?.callId === call.callId;
       if (!mine && !call.stale.has(uuid)) call.stale.set(uuid, String(userId ?? 'unknown'));
     }
@@ -315,15 +350,16 @@ export class AuditWitness {
     this.push(call, { kind: 'delete', uuid });
   }
 
-  /** `createX(document, options, userId)`: counts only if the server-set creator is the sender too. */
+  /** `createX(document, options, userId)`: the native hook user must match a live creation intent. */
   onCreate(doc: any, options: any, userId: unknown): void {
     const call = this.live(userId, options);
     if (!call?.creates) return;
-    if (doc?._stats?.createdBy !== call.sender) return;
-    const uuid = String(doc?.uuid ?? '');
-    if (!uuid || !undoClasses(uuid)) return;
-    const mt = Number(doc?._stats?.modifiedTime);
-    this.push(call, { kind: 'create', uuid, modifiedTime: Number.isFinite(mt) ? mt : null });
+    try {
+      const observed = creationIdentity(doc);
+      if (observed) this.push(call, { kind: 'create', ...observed });
+    } catch {
+      // Malformed/protected native targets never grant undo authority.
+    }
   }
 
   /**
@@ -359,6 +395,25 @@ export class AuditWitness {
           // undo can safely swap back, so it is left alone.
           targets.push(viewOnly({ ...blankTarget(uuid) }, RECREATED_NOTE));
         } else {
+          let fresh: ReturnType<typeof creationIdentity> = null;
+          try {
+            fresh = creationIdentity(await this.deps.fromUuid(uuid));
+          } catch {
+            /* fail closed */
+          }
+          const same =
+            !call.stale.has(uuid) &&
+            !this.expired(call) &&
+            !call.capped &&
+            fresh &&
+            fresh.modifiedTime === created.modifiedTime &&
+            fresh.identity.length === created.identity.length &&
+            fresh.identity.every((doc, index) => doc === created.identity[index]);
+          if (!same) {
+            targets.push(viewOnly(blankTarget(uuid), NOT_OBSERVED_NOTE));
+            done.add(uuid);
+            continue;
+          }
           targets.push({
             uuid,
             existed: false,
