@@ -28,14 +28,16 @@ const plain = (v: any): boolean => {
 };
 
 /** Validate before serialization/construction, including ordinary system data. */
-function bounded(value: unknown): void {
+function bounded(value: unknown, nativeObjectDefaults = false): void {
   const seen = new Set<object>();
-  const pending = [{ value, depth: 0 }];
+  const pending = [{ value, depth: 0, objectProperty: false }];
   let count = 0;
   while (pending.length) {
-    const { value: v, depth } = pending.pop()!;
+    const { value: v, depth, objectProperty } = pending.pop()!;
     if (++count > 20_000 || depth > 32)
       throw Error('restoration snapshot exceeds traversal bounds');
+    // Native optional object fields are omitted from stored JSON snapshots.
+    if (nativeObjectDefaults && objectProperty && v === undefined) continue;
     if (v === null || typeof v === 'string' || typeof v === 'boolean') continue;
     if (typeof v === 'number' && Number.isFinite(v)) continue;
     if (!v || typeof v !== 'object' || (!Array.isArray(v) && !plain(v)))
@@ -46,7 +48,11 @@ function bounded(value: unknown): void {
       if (!Object.hasOwn(v, key) || ['__proto__', 'constructor', 'prototype'].includes(key))
         throw Error('unsafe restoration snapshot key');
       if (pending.length + count >= 20_000) throw Error('restoration snapshot exceeds node bound');
-      pending.push({ value: (v as any)[key], depth: depth + 1 });
+      pending.push({
+        value: (v as any)[key],
+        depth: depth + 1,
+        objectProperty: !Array.isArray(v),
+      });
     }
   }
   if (JSON.stringify(value).length > AUDIT_LIMITS.beforeChars)
@@ -102,6 +108,7 @@ function ordinary(node: Node, source: any): unknown {
     if (!plain(value)) return value;
     return Object.fromEntries(
       Object.keys(value)
+        .filter((k) => value[k] !== undefined)
         .sort()
         .map((k) => [k, clean(value[k])]),
     );
@@ -150,7 +157,7 @@ export async function restoreDeletedSubtree(
     if (doc.documentName !== node.name) throw Error('restoration native class changed');
     if (!deps.canModify(doc, 'update')) throw Error('not permitted to restore document');
     const source = doc.toObject();
-    bounded(source);
+    bounded(source, true);
     if (!equal(ordinary(node, source), ordinary(node, node.data)))
       throw Error('restored ordinary document data differs from saved snapshot');
   };

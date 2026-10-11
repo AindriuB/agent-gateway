@@ -21,6 +21,10 @@ function nativeRig() {
     wrongReturn: false,
     transform: false,
     afterCreate: () => {},
+    source: (data: any, name: string): any => {
+      void name;
+      return data;
+    },
   };
   const metadata: Record<string, any> = {
     Actor: { Item: 'items', ActiveEffect: 'effects' },
@@ -92,7 +96,7 @@ function nativeRig() {
           if (collection in this.data || (this as any)[collection].contents.length)
             data[collection] = (this as any)[collection].contents.map((v: any) => v.toObject());
         }
-        return data;
+        return state.source(data, name);
       }
       async createEmbeddedDocuments(childName: string, data: any[], options: any) {
         return Promise.all(data.map((value) => create(childName, value, this, options)));
@@ -189,6 +193,79 @@ describe('native deleted-subtree restoration', () => {
       r.deps,
     );
     expect(r.writes.filter((v) => v === 'JournalEntryPage.p1')).toHaveLength(1);
+  });
+  it('compares native Journal page optional undefined fields as their saved JSON representation', async () => {
+    const r = nativeRig();
+    r.state.source = (data, name) => {
+      if (name === 'JournalEntryPage') {
+        data.text.markdown = undefined;
+        data.image = { caption: undefined };
+        data.video = {
+          loop: undefined,
+          autoplay: undefined,
+          timestamp: undefined,
+          width: undefined,
+          height: undefined,
+        };
+      }
+      return data;
+    };
+    const before = {
+      _id: 'j1',
+      name: 'Journal',
+      pages: [
+        { _id: 'p1', name: 'Page', type: 'text', text: { content: 'saved' }, image: {}, video: {} },
+      ],
+    };
+    const p = pageFor(before, 'JournalEntry.j1');
+    expect(
+      await undoEntry(p, async () => true, {
+        ...r.deps,
+        reserve: async () => ({ page: p, isHeld: () => true, release: async () => {} }),
+      }),
+    ).toMatchObject({ status: 'done', restored: 1 });
+    expect(p.system.undoCompleted).toEqual(['JournalEntry.j1']);
+    expect(r.docs.get('JournalEntry.j1.JournalEntryPage.p1').toObject().text).toEqual({
+      content: 'saved',
+      markdown: undefined,
+    });
+    expect(r.writes).toEqual(['JournalEntry.j1', 'JournalEntryPage.p1']);
+  });
+  it.each([
+    ['undefined array element', [undefined]],
+    ['NaN', NaN],
+    ['Infinity', Infinity],
+    ['function', () => {}],
+    ['symbol', Symbol('unsafe')],
+    ['nonplain', new Date()],
+    [
+      'cycle',
+      (() => {
+        const value: any = {};
+        value.self = value;
+        return value;
+      })(),
+    ],
+    ['unsafe key', JSON.parse('{"__proto__":1}')],
+  ])('refuses unsafe native %s instead of completing restoration', async (_label, value) => {
+    const r = nativeRig();
+    r.state.source = (data) => ({ ...data, unsafe: value });
+    const p = pageFor(actor);
+    expect(
+      await undoEntry(p, async () => true, {
+        ...r.deps,
+        reserve: async () => ({ page: p, isHeld: () => true, release: async () => {} }),
+      }),
+    ).toMatchObject({ status: 'failed', restored: 0 });
+    expect(p.system.undoCompleted).toEqual([]);
+    expect(p.system.undoneAt).toBeNull();
+  });
+  it('keeps undefined saved object properties invalid before any native creation', async () => {
+    const r = nativeRig();
+    await expect(
+      restoreDeletedSubtree('Actor.a1', { ...actor, optional: undefined }, null, r.deps),
+    ).rejects.toThrow('invalid restoration snapshot value');
+    expect(r.writes).toEqual([]);
   });
   it.each(['JournalEntryPage', 'ActiveEffect'])(
     'uses saved required-name native candidate and canonical parent permission for %s',
