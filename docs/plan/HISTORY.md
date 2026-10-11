@@ -17,6 +17,18 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — GM document and Undo tasks merged and archived (tasks 23, 23a)
+
+Andrew merged PR #63 on 2026-10-11, exact head `0cf35c3fd87f270f272575e4521a3bc3228b4656`, as main `83d216d595f6145fae0ad059347b4fc4de5f6fa5`. Tasks 23 and 23a are complete and their unchanged contracts, apart from status, move to `docs/plan/done/`. The archive now contains 19 contracts. The active-task audit found no other completed contract left to move: task 18 remains architecture-blocked, and tasks 24–43 including 35b remain queued. Task 24 is next. Earlier retired tasks 01–12 remain historical records rather than invented archival copies.
+
+Merged head `0cf35c3` passed the combined required build/lint/full gate (3,042 fast / 2,227 slow tests), 47 independent focused harness checks, standalone TypeScript and ESLint. The first full run had one existing toolset-notification timing failure; the unchanged isolated file passed 13 checks, and the one authorized quiet full retry passed. No test or runtime was weakened. The later reusable harness differs from the private native-executed script; it has offline validation, not an additional native-run claim.
+
+The prior validation entry remains the historical source of native details: source `a45541a`, production SHA-256 `4a35b9e697c17ba92d4f35efb128b0ebf665c144637657c67acec083aef04b32`, private executed harness SHA-256 `8ede52416c640d127472b2e3375846b12c7b65e14013fab42588c1a22f78a235`, Foundry v14.369 and v13.351, eight successful audited MCP calls per world and one human grouped-delete Undo restoring all five root/child UUIDs and saved content. Raw response and fresh server-read completion, zero reservation, unchanged source compendium, eight retained audits, five exact fixture absences and unchanged personal views/world time were independently reviewed. Private images remain local. Earlier failed attempts and cleanup remain recorded, not overwritten by this merge record.
+
+Task 19's successful native Undo UI/screenshot criterion is now evidenced within that grouped-root scope by merged task23a. Direct embedded-only Undo, every class, native partial-failure retries and concurrent reservation contention remain coverage limits; they are not newly invented task19 blockers or reasons to keep completed coding tasks queued. Task 18's cross-owner revocation blocker remains unchanged. Historical native proof for earlier task waves is unchanged.
+
+**Cost:** Completion recording waited for the actual merge. It updates live status and references while preserving the earlier merge-pending history entry, original acceptance wording and all native failure/evidence bounds. No production source, live world, credentials, private evidence or screenshot export changes are part of this archive cleanup.
+
 ## 2026-10-11 — GM document tools and native subtree Undo validated; merge pending (tasks 23, 23a)
 
 Task 23 adds bounded GM document create/update/delete/import through the real approval and audit path. Supported roots are Actor, Item and JournalEntry; supported embedded relationships are defined by its contract. PR #63 remains unmerged. Task23a repairs native Undo that recreated a root while losing system-stripped embedded effects, and verifies the complete canonical saved subtree before marking a target complete. Saved snapshots stay strict; native optional undefined object properties compare as their stored JSON representation. Unsafe values, identities, permissions, reservations and traversal limits remain enforced. Both contracts stay active until merge; the completed-contract archive remains at 17.

@@ -1,7 +1,7 @@
 # 23 — Add GM tools document_create, document_update, document_delete and compendium_import
 
 **Repo:** .
-**Status:** Implementation and specified native v13/v14 acceptance verified at a45541a; PR #63 awaiting merge. Contract remains active until merge; see PLAN and the task23/23a HISTORY entry for evidence and limits.
+**Status:** Complete and merged in PR #63 (head 0cf35c3, main 83d216d). Specified native v13.351/v14.369 acceptance passed on source a45541a; archived after merge. See PLAN and HISTORY for evidence and limits.
 **Depends on:** 21, 20d, 20e
 **Owns:**
 - protocol/src/tools/document-create.ts
