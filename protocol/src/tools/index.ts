@@ -1,3 +1,7 @@
+import { documentCreate } from './document-create.js';
+import { documentUpdate } from './document-update.js';
+import { documentDelete } from './document-delete.js';
+import { compendiumImport } from './compendium-import.js';
 import { tokenMove } from './token-move.js';
 import { targetSet } from './target-set.js';
 import { combatStatus } from './combat-status.js';
@@ -21,6 +25,10 @@ export * from './token-move.js';
 export * from './target-set.js';
 export * from './combat-status.js';
 export * from './combat-end-turn.js';
+export * from './document-create.js';
+export * from './document-update.js';
+export * from './document-delete.js';
+export * from './compendium-import.js';
 export * from './define.js';
 export * from './json-schema.js';
 export * from './document-get.js';
@@ -47,6 +55,10 @@ export const TOOLS: readonly ToolDefinition[] = [
   targetSet,
   combatStatus,
   combatEndTurn,
+  documentCreate,
+  documentUpdate,
+  documentDelete,
+  compendiumImport,
 ];
 
 export function toolsForRole(isGM: boolean): readonly ToolDefinition[] {
