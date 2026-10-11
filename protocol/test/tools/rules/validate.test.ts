@@ -130,6 +130,9 @@ describe('validateArgs', () => {
     compendium_get: { uuid: 'Compendium.test.abc' },
     chat_read: {},
     approval_status: { id: 'abc' },
+    chat_post: { content: 'Hello' },
+    roll_formula: { formula: '1d6' },
+    journal_write: { journalUuid: 'JournalEntry.example', title: 'Test', markdown: 'Hello' },
   };
   it.each(TOOLS.map((t) => [t.name, t] as const))('agrees with zod for %s', (name, tool) => {
     const value = examples[name];

@@ -43,7 +43,8 @@ const player = { id: 'u', isGM: false };
 const gm = { id: 'g', isGM: true };
 
 function setup() {
-  stub = installFoundry(14);
+  stub = installFoundry(14, { persistedWorldSettings: true });
+  (globalThis as any).game.user = { id: 'gm', isGM: true };
   (globalThis as any).game.i18n = englishI18n;
   registerPolicySettings();
   handler.mockClear();
@@ -275,7 +276,7 @@ describe('owner policy against the world ceiling', () => {
       error: { code: 'DENIED', message: expect.stringContaining('denies write') },
     });
     // Destructive stays at the world's ask_gm, code stays an ask.
-    await setSetting('worldPolicy', JSON.stringify(DEFAULT_WORLD_MATRIX));
+    await saveWorldPolicy(DEFAULT_WORLD_MATRIX);
     expect(await asked(d, 'destructive')).toBe('gm');
     expect(await asked(d, 'code')).toBe('gm');
   });

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { folderAllowlist } from './store.js';
+import { readWorldSnapshot, type AdmittedSnapshot } from './snapshot.js';
 
 /**
  * May the agent see this world document, given the GM's folder allowlist for its class? An empty
@@ -8,8 +8,12 @@ import { folderAllowlist } from './store.js';
  * allowlist never reveals what is excluded. Apply it to the top-level world document: embedded
  * documents follow their root.
  */
-export function folderAllowed(doc: any, isGM: boolean): boolean {
-  const allowed = folderAllowlist(isGM ? 'gmAgents' : 'playerAgents');
+export function folderAllowed(
+  doc: any,
+  isGM: boolean,
+  snapshot: AdmittedSnapshot = readWorldSnapshot(),
+): boolean {
+  const allowed = snapshot.folders[isGM ? 'gmAgents' : 'playerAgents'];
   if (allowed.length === 0) return true;
   const seen = new Set<unknown>();
   for (let f = doc?.folder; f && !seen.has(f) && seen.size < 100; f = f.folder) {

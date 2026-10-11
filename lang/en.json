@@ -1,5 +1,6 @@
 {
   "AGENT_GATEWAY": {
+    "Tools": { "aiMarker": "AI-authored" },
     "PolicyApp": {
       "title": "Agent policies",
       "open": "Configure policies",

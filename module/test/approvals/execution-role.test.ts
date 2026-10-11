@@ -29,7 +29,8 @@ let stub: FoundryStub;
 afterEach(() => stub?.uninstall());
 
 async function setup() {
-  stub = installFoundry(14);
+  stub = installFoundry(14, { persistedWorldSettings: true });
+  (globalThis as any).game.user = { id: 'settings-gm', isGM: true };
   const hub = world();
   const tools = [chatRead, gmRead];
   hub.tools = tools;

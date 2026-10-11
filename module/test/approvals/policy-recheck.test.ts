@@ -111,7 +111,8 @@ describe('the live policy lookup (real evaluate, settings and users)', () => {
   let stub: FoundryStub;
   afterEach(() => stub?.uninstall());
   const live = async (isGM = false) => {
-    stub = installFoundry(14);
+    stub = installFoundry(14, { persistedWorldSettings: true });
+    (globalThis as any).game.user = { id: 'settings-gm', isGM: true };
     (globalThis as any).game.i18n = englishI18n;
     (globalThis as any).game.users = {
       get: (id: string) => (id === 'u' ? { id, name: 'U', isGM } : undefined),

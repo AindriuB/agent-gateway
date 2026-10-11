@@ -2,12 +2,13 @@
 import {
   DEFAULT_OWNER_MATRIX,
   DEFAULT_WORLD_MATRIX,
-  DENY_ALL_MATRIX,
   loadMatrix,
   validateMatrix,
   type AgentClass,
   type PolicyMatrix,
 } from './matrix.js';
+
+import { readWorldSnapshot, publishWorldSnapshot, MIGRATION_KEY } from './snapshot.js';
 
 declare const game: any;
 
@@ -40,48 +41,38 @@ const read = (key: string): unknown => {
  * The world ceiling. An unset setting holds the registered default matrix; anything unparseable,
  * not an object, or missing or invalid in a cell is deny (fail strict), never a default.
  */
-export const loadWorldPolicy = (): PolicyMatrix =>
-  loadMatrix(read(WORLD_POLICY_KEY), DENY_ALL_MATRIX);
+export const loadWorldPolicy = (): PolicyMatrix => readWorldSnapshot().world;
 
 /** This client's owner policy; missing, unreadable or invalid cells apply no extra restriction. */
 export const loadOwnerPolicy = (): PolicyMatrix =>
   loadMatrix(read(OWNER_POLICY_KEY), DEFAULT_OWNER_MATRIX);
 
 /** Only a stored `true` enables; anything else, including a read failure, is off. */
-export const playerAgentsEnabled = (): boolean => read(PLAYER_AGENTS_KEY) === true;
-export const headlessAgentsEnabled = (): boolean => read(HEADLESS_AGENTS_KEY) === true;
+export const playerAgentsEnabled = (): boolean => readWorldSnapshot().playerEnabled;
+export const headlessAgentsEnabled = (): boolean => readWorldSnapshot().headlessEnabled;
 
 /** Rejects an invalid matrix (including code `allow`) before it reaches storage. */
 export async function saveWorldPolicy(matrix: unknown): Promise<void> {
-  await game.settings.set(NS, WORLD_POLICY_KEY, JSON.stringify(validateMatrix(matrix)));
+  const validated = validateMatrix(matrix);
+  const current = readWorldSnapshot();
+  if (!current.valid) throw Error('Policy initialization or repair required');
+  await publishWorldSnapshot({
+    version: 1,
+    world: validated,
+    playerEnabled: current.playerEnabled,
+    headlessEnabled: current.headlessEnabled,
+    folders: current.folders,
+    limits: current.limits,
+  });
 }
 
 export async function saveOwnerPolicy(matrix: unknown): Promise<void> {
   await game.settings.set(NS, OWNER_POLICY_KEY, JSON.stringify(validateMatrix(matrix)));
 }
 
-/** A folder id no folder has: an unreadable allowlist then matches nothing (fail closed). */
-const MATCH_NOTHING = '\u0000invalid-allowlist';
-
-/** Allowed folder ids for an agent class; empty means no restriction. */
+/** Allowed folder IDs from one complete world snapshot. */
 export function folderAllowlist(cls: AgentClass): string[] {
-  let raw = read(FOLDER_ALLOWLIST_KEY);
-  if (raw === undefined || raw === null || raw === '') return [];
-  if (typeof raw === 'string') {
-    try {
-      raw = JSON.parse(raw);
-    } catch {
-      return [MATCH_NOTHING];
-    }
-  }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [MATCH_NOTHING];
-  const list = (raw as Record<string, unknown>)[cls];
-  if (list === undefined) return [];
-  if (!Array.isArray(list)) return [MATCH_NOTHING];
-  const ids = list
-    .filter((v): v is string => typeof v === 'string' && v !== '')
-    .map((v) => v.replace(/^Folder\./, ''));
-  return list.length > 0 && ids.length === 0 ? [MATCH_NOTHING] : ids;
+  return readWorldSnapshot().folders[cls];
 }
 
 export const DEFAULT_FOLDER_ALLOWLIST = JSON.stringify({ playerAgents: [], gmAgents: [] });
@@ -98,11 +89,21 @@ const policyChanged = (): void => {
 };
 
 export function registerPolicySettings(): void {
+  game.settings.register(NS, MIGRATION_KEY, {
+    name: 'AGENT_GATEWAY.Settings.worldPolicy.name',
+    hint: 'AGENT_GATEWAY.Settings.worldPolicy.hint',
+    scope: 'world',
+    config: false,
+    type: Boolean,
+    default: false,
+    restricted: true,
+    onChange: policyChanged,
+  });
   game.settings.register(NS, PLAYER_AGENTS_KEY, {
     name: 'AGENT_GATEWAY.Settings.playerAgentsEnabled.name',
     hint: 'AGENT_GATEWAY.Settings.playerAgentsEnabled.hint',
     scope: 'world',
-    config: true,
+    config: false,
     type: Boolean,
     default: false,
     onChange: policyChanged,
@@ -112,7 +113,7 @@ export function registerPolicySettings(): void {
     name: 'AGENT_GATEWAY.Settings.headlessAgentsEnabled.name',
     hint: 'AGENT_GATEWAY.Settings.headlessAgentsEnabled.hint',
     scope: 'world',
-    config: true,
+    config: false,
     type: Boolean,
     default: false,
     onChange: policyChanged,
