@@ -294,9 +294,11 @@ These are the core tools. Pack tools come on top, always named
   a major protocol mismatch with an actionable message.
 - GitHub Actions is blocked by billing, so `npm run release` runs locally from
   the homelab (build, test on v13 and v14, upload with `gh`).
-- Foundry submission checklist: "AI Tools" tag; AI-assisted code attestation;
-  no AI-generated content in the package; no other-module context without
-  opt-in; code confirmation; listing states what data goes where.
+- Project submission checklist: confirm the "AI Tools" category with Foundry;
+  AI-assisted code attestation; human-authored prepared content and listing;
+  no other-module context without rights and opt-in; code confirmation; listing
+  states what data goes where. Category and context requirements here include
+  project rules and questions, not all verified quotations of Foundry policy.
 - Docs: README quick start; per-client setup guides (Claude Desktop, Claude
   Code, ChatGPT with tunnel, Gemini CLI, Gemini app); headless and server-mode
   guide; security model; privacy statement.
@@ -316,14 +318,16 @@ From research on Foundry's rules, 2026-10-10:
     access;
   - the Premium Content Partnership: a `protected: true` manifest and
     account-bound content keys (sold through DriveThruRPG, Itch, the author's
-    store or a Patreon mapping), for a quarterly fee that is not published.
-- **The AI policy applies to paid packs equally**
-  (https://foundryvtt.com/article/ai-policy, revised 18 March 2026): the "AI
-  Tools" category for runtime AI; prepared content and listing copy made by
-  humans; an attestation that the author understands any AI-assisted code (the
-  burden of proof is on the author); runtime-generated code shown and consented
-  to before it runs; no automatic collection of context from sources the author
-  lacks rights to, such as other installed modules.
+    store or a Patreon mapping). The handbook asks authors to contact Foundry
+    for the agreement and fee; neither amount nor cadence is published there.
+- **The AI policy covers paid packs, with a transition for older premium
+  agreements** (https://foundryvtt.com/article/ai-policy/, revised 18 March
+  2026; checked 2026-10-10): prepared content and listing copy are human-made;
+  authors must understand and maintain AI-assisted code; runtime-generated code
+  must be shown and explicitly consented to before execution. The project also
+  requires rights and opt-in before other-module content becomes AI context.
+  Confirm category tagging and the application of context rules with Foundry;
+  the checked policy does not establish those specific claims.
 - **Dependencies**: a pack declares the core in `relationships.requires`. The
   core never requires, recommends by manifest or bundles a paid pack.
 - **No DRM in the core.** A pack that does licensing does it itself and must

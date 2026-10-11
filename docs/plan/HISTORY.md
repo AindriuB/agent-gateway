@@ -17,6 +17,156 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
+
+The tool-pack foundation is implemented on local branches and integrated in the
+20f tree. This entry records implementation and verification, **not completion of every review or live acceptance check**. Andrew subsequently approved the source uploads, live
+v14 checks and Hello Pack installation. The task PRs are published for review;
+installation is now verified, while live pack acceptance remains open. Preserve the task files and worktrees;
+do not archive them while acceptance, publication and review remain open.
+
+| Task | Verified local commit | Independent verification | Review / live evidence |
+| --- | --- | --- | --- |
+| 20b | `5790043` | PASS: 2,226 fast + 2,227 slow | Code review PASS; runtime schema/name/plain-text rules, bounded argument validator and vendor naming documentation |
+| 20c | `ca82e63` | PASS: 2,253 fast + 2,227 slow | Code review PASS; v14 final read suite 21 passed, zero leaks; unified registry with private handlers and synchronous core parity |
+| 20d | `669672e` | PASS: 2,295 fast + 2,227 slow | Code review PASS; frozen registration API, lifecycle seal, isolated context and validated pack results |
+| 20e | `438e447` | PASS: 2,281 fast + 2,227 slow | Code review PASS; dynamic definitions/provenance and gateway argument checks; exact-bundle v14.369 read/role suite PASS (21 tests, zero leaks) |
+| 20f | `dfd8a04` | Integrated independent verify PASS: 2,335 fast + 2,227 slow | Code review PASS; free Hello Pack and reconciled author docs; enabled/disabled live evidence pending |
+
+20f's integrated verification covers the assembled predecessors; its final docs
+reconciliation passed formatting, local link, public PackError-code coverage
+and diff checks. Final independent example ESLint and e2e TypeScript checks passed at the clean
+`dfd8a04` head; the default opt-in pack suite skipped its one test as expected.
+No live pack test was run. A default opt-in skip does not prove the pack's
+enabled or disabled behavior. The example restricts dice target to 1–2001 and
+journal stamping to HTML text pages (`text.format === 1`), requires ownership
+of both page and journal, escapes appended text, awaits snapshots and forwards
+audit mutation options.
+
+Publication state: contract PR #42 (`08c8325`) and runtime-rules PR #43
+(`5790043`) are now merged. Local
+20c incorporates its contract corrections and necessary cycle-breaking scope
+amendments. After Andrew explicitly approved the upload, runtime-rules PR #43
+was updated and its remote head verified as
+`57900438e3777d120903fde309cd0c490bc96795`; it was subsequently merged. Andrew then explicitly approved the remaining publication: 20c is PR #44
+(`ca82e63`), 20d PR #45 (`669672e`), 20e PR #46 (`438e447`) and 20f PR #47
+(verified head `dfd8a04481780afa885d3b9317cb82625d7a4105`). All are attached
+and PRs #44–46 subsequently merged: 20c at `2c87d9e`, 20d at
+`09b6444` (including the strict-code fix), and 20e at `871bf5` (protocol 2).
+PR #47 and record PR #48 remain open. The P1 guard described below was
+developed after the PR #46 merged head and is not yet landed through that PR. Every implementation still lands through
+its own PR to `main`, reviewed by Andrew; predecessor commits identify the
+per-task review boundary.
+
+After Andrew approved live v14 checks, task 20e's exact bundle passed on
+Foundry v14.369: three files, 21 tests (GM 6, player 11, roles 4), seven tools
+for GM and player; 20 results × 21 hidden strings yielded zero leaks. Bundle
+SHA-256: `282e5bff8cc0b4a3adf0b39e0f97cf33f85f64b9e8ceaa1e7459de045da989e5`.
+This supersedes the earlier delivery-approval block and older deployed bundle's
+`WORLD_OFFLINE`; neither is a remaining blocker or evidence against this bundle.
+
+Before installation, the genuine Foundry v14.369 browser runtime `game.modules` probe confirmed
+`agent-gateway-hello-pack`: installed `false`, active `false`, version `null`.
+The manifest URL also returned 404. No enabled/disabled pack acceptance run is
+claimed; absence alone is not an enabled-to-disabled lifecycle test.
+
+After Andrew approved installation, the Mac delivery initially failed configured
+homelab SSH hostname resolution, including an escalated attempt. A remote chat
+subsequently installed Hello Pack at
+`/srv/data/foundry/data/Data/modules/agent-gateway-hello-pack` from commit
+`dfd8a04481780afa885d3b9317cb82625d7a4105`: all four files were byte-exact and
+the manifest returned HTTP 200 with the expected content. No core, world or
+admin settings were changed. This supersedes the installation/DNS blocker;
+it does not establish discovery or activation in Foundry's current runtime.
+
+Conflict reconciliation incorporated updated main `e29a823` and predecessor
+merge heads 20c `2c87d9e`, 20d `414b6c2`, 20e `fd41b8e`, 20f `5f63eba`.
+Original test evidence above belongs to the original source heads. The final
+20f post-merge gate passed at `5f63eba463800919369cee9a066144b099089d1b`:
+2,335 fast and 2,227 slow tests; its runtime source is byte-identical to the
+previously reviewed `dfd8a04`. No runtime code was changed by
+the recording branch's reconciliation. Its final full `npm run verify` passed
+with 2,335 fast and 2,227 slow tests after all predecessor gates.
+
+Pending live pack work: Andrew must relaunch through setup so Foundry discovers
+the installed module, enable it and run `AGENT_GATEWAY_E2E_HELLO_PACK=1`, then
+disable it and relaunch for `AGENT_GATEWAY_E2E_HELLO_PACK=disabled`. No real
+enabled/disabled live pack pass is claimed. Foundry v13 evidence remains pending
+its instance.
+No task files were moved and no worktrees were removed.
+
+Subsequent security review fix (2026-10-10): PR #45 commit `09b6444`
+requires an actual string for a pack's returned error code. Malformed array
+codes `['FORBIDDEN']` and `['INVALID_ARGS']` now return `INTERNAL` for that call;
+following core and pack calls still succeed. The fix passed 44 focused tests,
+full verification (2,297 fast + 2,227 slow) and independent review. These are
+new post-review counts, not replacements for the earlier source-head evidence.
+PR #47 propagated the fix at `7a390f46451de3fd2677552c13dce857015136f7`,
+and PR #48 incorporated that predecessor through a clean merge with no direct
+runtime edits. The subsequent integrated gates passed at PR #47 and the
+record branch: 2,337 fast + 2,227 slow tests each, after the security fix.
+
+Subsequent protocol compatibility review fix (2026-10-10): PR #46 commit
+`871bf5` bumps `PROTOCOL_VERSION` to `2.0.0` because full tool-definition objects
+are incompatible with protocol 1.x tool-name arrays. A 1.x peer is rejected
+before welcome or credential consumption, with an upgrade diagnostic. The
+module's existing fatal mismatch path stops automatic reconnect and preserves
+its token. Old/new handshake regression tests passed; task20e verification
+passed 2,287 fast + 2,227 slow tests and independent review. These are new
+post-review results, not replacements for the earlier source-head evidence.
+PR #47 propagated the fix at `8679c7280f588b558565f3c3934f24bf0b85ce11`,
+and the recording branch incorporated it through a clean merge with no direct
+runtime edits. The exact protocol-2 bundle from `871bf5` subsequently passed
+on Foundry v14.369: 21 read/role tests (GM 6, player 11, roles 4), seven tools
+for each role, and 20 results × 21 hidden strings with zero leaks. Bundle
+SHA-256: `0856561e7690dcc9870d3e71f0f407c331165fee50a08e5cacfc3fe9ec9d22de`.
+This is the current live compatibility evidence; the earlier protocol-1 result
+remains historical. Subsequent integrated verification at PR #47 head
+`8679c7280f588b558565f3c3934f24bf0b85ce11` and this recording branch each
+passed 2,343 fast + 2,227 slow tests after the exact protocol-2 live gate.
+
+Subsequent P1 untrusted-toolset review fix (2026-10-10): PR #46 commit
+`d7cb64b`, published in open follow-up PR #49 to the already merged PR #46,
+guards toolset representations with an iterative JSON snapshot,
+bounded at depth 32 with explicit work and size caps, before recursive schema
+parsing, stringify or cloning. Invalid depth is not eligible for count/byte-only
+recovery. A deeply nested pre-authentication frame is safely rejected and a
+following healthy connection can call a core tool; direct hostile store input
+is refused without throwing or replacing its prior listing. Independent
+verification passed 32 focused tests, review PASS and full task20e verification
+of 2,295 fast + 2,227 slow tests. Earlier counts above remain historical.
+
+Subsequent Hello Pack concurrency fix (2026-10-10): commit `791994a` queues a
+canonical page UUID's fresh read, permission check, snapshot and update within
+one browser instance. The instance caps all outstanding stamps at 64, including
+identity lookups; overflow returns `FORBIDDEN`. Failures release turns and idle
+entries, while different pages can run in parallel. This does not make other
+browsers' or manual edits atomic. Sixteen example tests and 60 focused combined
+checks passed with independent review PASS. Documentation commit `c97d298`
+records these limits. Combined PR #47 predecessor
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4` carries both fixes, retaining strict
+error-code validation and protocol 2. This record branch merges that source
+without direct runtime edits. On 2026-10-11, PR #47 and this recording branch
+passed the combined gate with 2,355 fast + 2,227 slow tests. Subsequent
+reconciliation merged main `4aa8ce63` through PR #47 head
+`87d050e47340b536131c2161019762bff79c32af` without file changes. That final
+PR #47 head and the final reconciled record branch each passed 2,355 fast +
+2,227 slow tests. PR #47 was confirmed open, mergeable and clean.
+
+The remote Hello Pack installation last confirmed above is from `dfd8a04`,
+before the journal queue fix. Synchronization of the four pack files from
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4` was dispatched to the remote chat;
+confirmation is still pending. No updated installation or live enabled/disabled
+pass is claimed.
+
+Author docs distinguish project publishing requirements from primary-source
+facts checked 2026-10-10: the Publisher Handbook names a fee without a public
+amount or cadence; the AI policy has an older-premium-agreement transition and
+does not establish the claimed AI Tools category or blanket other-module
+context wording. The project still requires rights and opt-in for such context.
+The release builder is not implemented, so example ZIP exclusion remains the
+release packaging contract, not verified release-artifact evidence.
+
 ## 2026-10-10 — E2E multi-user isolation, binding and resilience suites (task 12b)
 The suites in `e2e/multi` prove live what the unit tests only simulated. Bound isolation counts call frames per page through Playwright websocket events (4/0 both ways between dev-gm and player1). Cross-player: Player2 never sees player1's whisper or secret (1/0). A no-`--user` session with several paired users answers INVALID_ARGS on all 6 tools, naming the users, with 0/0 frames, which proves the 11b fix live. A tab reload recovers in 3.3 s and a gateway restart in 1.3 s with the pairing ids unchanged. A stale token, run against a scratch `AGENT_GATEWAY_E2E_STATE_DIR` holding a copied profile, gets PAIRING_INVALID (10.2 s). Approved extensions to 12a files: the vitest include, a `multi` summary record kind (unknown kinds no longer corrupt the leak line), an optional `--user` in GatewayProcess, the state-dir override (empty is an error) and `otherPlayerChatProblems`. Final run (PR #31): 32/32 in 173 s, and the real pairing rows were identical before and after.
 **Cost:** The review found the cross-player suite using player1's expectations and a stale-token test that did not prove a rejection. The first live run was 30/32: Playwright does not fire a WebSocket close event on reload, so the reload probe now polls from the reload. Andrew's reviewer then found two more, fixed as plain commits on the same PR: reload probes are judged by when they were sent, and the restart budget now runs from before the stop, with waitFor rejecting late successes. Do not wait for a close event on reload.
