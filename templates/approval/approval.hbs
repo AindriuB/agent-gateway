@@ -1,0 +1,37 @@
+<section class="ag-approval">
+  <nav>{{#if previous}}<button type="button" data-action="previous">{{localize "AGENT_GATEWAY.ApprovalDialog.previous"}}</button>{{/if}}{{#if next}}<button type="button" data-action="next">{{localize "AGENT_GATEWAY.ApprovalDialog.next"}}</button>{{/if}}</nav>
+  {{#each groups}}
+  <section class="ag-approval-group">
+    <button type="button" data-action="approveAll" data-group-id="{{id}}">{{localize "AGENT_GATEWAY.ApprovalDialog.approveAll"}}</button>
+    {{#each requests}}
+    <article data-request="{{id}}">
+      <h3>{{tool}}</h3>
+      <dl>
+        <dt>{{localize "AGENT_GATEWAY.ApprovalDialog.agent"}}</dt><dd>{{agent}}</dd>
+        <dt>{{localize "AGENT_GATEWAY.ApprovalDialog.owner"}}</dt><dd>{{owner}}</dd>
+        <dt>{{localize "AGENT_GATEWAY.ApprovalDialog.requester"}}</dt><dd>{{requester}}</dd>
+        <dt>{{localize "AGENT_GATEWAY.ApprovalDialog.category"}}</dt><dd>{{category}}</dd>
+      </dl>
+      {{#if pack}}<p class="ag-approval-pack">{{localize "AGENT_GATEWAY.ApprovalDialog.thirdParty"}}: {{pack.id}} · {{pack.version}}</p>{{/if}}
+      {{#if unavailable}}<p>{{localize "AGENT_GATEWAY.ApprovalDialog.unavailable"}}</p>{{/if}}
+      {{#if diff}}
+      <table><thead><tr><th>{{localize "AGENT_GATEWAY.ApprovalDialog.path"}}</th><th>{{localize "AGENT_GATEWAY.ApprovalDialog.before"}}</th><th>{{localize "AGENT_GATEWAY.ApprovalDialog.after"}}</th></tr></thead>
+      <tbody>{{#each diff}}<tr><td>{{path}}</td><td><pre>{{old}}</pre></td><td><pre>{{new}}</pre></td></tr>{{/each}}</tbody></table>
+      {{/if}}
+      {{#if isCode}}
+      <h4>{{localize "AGENT_GATEWAY.ApprovalDialog.source"}}</h4><pre class="ag-approval-code">{{code}}</pre>
+      <details><summary>{{localize "AGENT_GATEWAY.ApprovalDialog.arguments"}}</summary><pre class="ag-approval-payload">{{args}}</pre></details>
+      {{else}}
+      <h4>{{localize "AGENT_GATEWAY.ApprovalDialog.arguments"}}</h4><pre class="ag-approval-payload">{{args}}</pre>
+      {{/if}}
+      <label>{{localize "AGENT_GATEWAY.ApprovalDialog.reason"}}<textarea name="reason" maxlength="500" rows="2"></textarea></label>
+      <div class="ag-approval-actions">
+        {{#if reviewable}}<button type="button" data-action="approve" data-request-id="{{id}}">{{localize "AGENT_GATEWAY.ApprovalDialog.approve"}}</button>
+        {{#if sessionAllowed}}<button type="button" data-action="session" data-request-id="{{id}}">{{localize "AGENT_GATEWAY.ApprovalDialog.session"}}</button>{{/if}}{{/if}}
+        <button type="button" data-action="deny" data-request-id="{{id}}">{{localize "AGENT_GATEWAY.ApprovalDialog.deny"}}</button>
+      </div>
+    </article>
+    {{/each}}
+  </section>
+  {{/each}}
+</section>

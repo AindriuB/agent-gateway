@@ -79,3 +79,58 @@
   font-size: 1em;
   margin: 0.5rem 0;
 }
+
+/* Approval dialog */
+.ag-approval {
+  overflow: auto;
+  padding: 0.5rem;
+}
+.ag-approval article {
+  border: 1px solid var(--color-border-light-primary);
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+.ag-approval dl {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.25rem 0.75rem;
+}
+.ag-approval dt {
+  font-weight: bold;
+}
+.ag-approval dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ag-approval pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  user-select: text;
+}
+.ag-approval th,
+.ag-approval td {
+  vertical-align: top;
+  padding: 0.35rem;
+}
+.ag-approval td {
+  max-width: 18rem;
+  overflow-wrap: anywhere;
+}
+.ag-approval label {
+  display: block;
+}
+.ag-approval textarea {
+  width: 100%;
+}
+.ag-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.ag-approval-actions button {
+  flex: 1;
+  min-width: 8rem;
+}

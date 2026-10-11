@@ -157,5 +157,26 @@
         "deleted": "was deleted since"
       }
     }
-  }
+  },
+  "AGENT_GATEWAY.ApprovalDialog.title": "Agent approval requests",
+  "AGENT_GATEWAY.ApprovalDialog.approveAll": "Approve all shown in group",
+  "AGENT_GATEWAY.ApprovalDialog.agent": "Agent",
+  "AGENT_GATEWAY.ApprovalDialog.owner": "Owner",
+  "AGENT_GATEWAY.ApprovalDialog.requester": "Requester",
+  "AGENT_GATEWAY.ApprovalDialog.category": "Category",
+  "AGENT_GATEWAY.ApprovalDialog.thirdParty": "Third-party tool pack",
+  "AGENT_GATEWAY.ApprovalDialog.unavailable": "Current document unavailable or not visible. Review the full arguments below.",
+  "AGENT_GATEWAY.ApprovalDialog.path": "Field",
+  "AGENT_GATEWAY.ApprovalDialog.before": "Before",
+  "AGENT_GATEWAY.ApprovalDialog.after": "After",
+  "AGENT_GATEWAY.ApprovalDialog.arguments": "Arguments",
+  "AGENT_GATEWAY.ApprovalDialog.source": "Full source",
+  "AGENT_GATEWAY.ApprovalDialog.reason": "Reason for denial",
+  "AGENT_GATEWAY.ApprovalDialog.reasonRequired": "Enter a reason before denying this request.",
+  "AGENT_GATEWAY.ApprovalDialog.approve": "Approve once",
+  "AGENT_GATEWAY.ApprovalDialog.session": "Approve for this session",
+  "AGENT_GATEWAY.ApprovalDialog.deny": "Deny",
+  "AGENT_GATEWAY.ApprovalDialog.tooLarge": "Request exceeds safe review limits. Deny it and ask the agent for a smaller request.",
+  "AGENT_GATEWAY.ApprovalDialog.previous": "Previous requests",
+  "AGENT_GATEWAY.ApprovalDialog.next": "Next requests"
 }
