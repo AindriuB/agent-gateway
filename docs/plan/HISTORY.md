@@ -17,6 +17,93 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-11 — Tool-pack PRs merged and v14 lifecycle verified; v13 pending (tasks 20b–20f)
+
+PR #47 merged head `87d050e47340b536131c2161019762bff79c32af` at
+2026-10-10 23:21:46 UTC, followed by P1 security PR #49 head
+`d7cb64bdb3dc2923ceb8e686040bdb6b7b98542c` at 23:21:47 UTC. Both are
+2026-10-11 in Europe/Dublin. Record PR #48 merged head
+`4f7ec6f12e50603e9590c3d6379d372baab5c08a` at 2026-10-11 06:30:53 UTC.
+Together with already merged PRs #42–46, the task20 implementation, reviewed
+security fixes and prior record are now on main (`1283470`). This supersedes
+older open-PR and pending-P1 statements in the preceding historical entry.
+
+The remote chat confirmed synchronization of all four Hello Pack files from
+`14b6c3bb08fbb2a5d050bf6054290aef2d29a1b4`, byte for byte, at
+`/srv/data/foundry/data/Data/modules/agent-gateway-hello-pack`. The prior
+`dfd8a04` installation was unmodified before replacement; README and main
+script were updated. The prior directory was backed up at
+`/tmp/hello-pack-backup-ovppwkva/agent-gateway-hello-pack`. Manifest and script
+both returned HTTP 200 with exact expected content. This supersedes the
+pending-synchronization statement; it establishes installation, not runtime
+activation or a live test pass.
+
+The combined implementation previously passed 2,355 fast and 2,227 slow tests;
+the reviewed protocol-2 exact bundle passed 21 v14.369 read/role tests with zero
+leaks. A subsequent enabled-mode attempt on actual Foundry v14.369 confirmed
+that the genuine runtime still reports Hello Pack installed `false`, active
+`false`, version `null`, despite the installed server files. Suite setup failed
+while waiting for the core `world_info` call, which returned `INTERNAL` with
+`n is not a function`; its one pack test skipped after the failed setup.
+Sessions were cleaned up. This was a blocked attempt, not an enabled-mode pass.
+The subsequent diagnosis found an eager dispatcher binding in the bridge
+initialization cycle, which captured `undefined` in the production bundle.
+
+Bridge fix PR #50 (`43cea16b25837f1b67485d4d0065b1351547c8ca`) is published,
+open, mergeable and clean, with independent review PASS. Its production-bundle
+regression reproduces the old failure and passes with the fix; full verification
+passed 2,356 fast + 2,227 slow tests. A player probe using the exact fixed local
+bundle on Foundry v14.369 then returned successful `world_info` for `test-world`
+(`isError: false`). Bundle SHA-256:
+`27efa51c11498137fd6de60b73bb5e88408db2ebb3a6a6fe240ff9f2c94add2a`.
+This confirms recovery for that fixed-bundle probe; PR #50 is not claimed merged
+or deployed as the core's server files. The final recording branch includes the
+fix as a dependency and introduces no direct runtime edits.
+
+The genuine runtime still reports Hello Pack absent/inactive and lists no
+`hello-` tools. Real enabled/disabled acceptance remains pending owner-driven
+setup relaunch for discovery, activation/deactivation and the required world
+relaunches. Foundry v13 remains pending its instance.
+Task files and worktrees remain for that acceptance work. The docs-only final
+record on main `1283470` passed the required full verification: 2,355 fast +
+2,227 slow tests. After incorporating PR #50, the final record branch passed
+2,356 fast + 2,227 slow tests.
+
+Subsequent v14 lifecycle acceptance (2026-10-11): after Andrew confirmed
+activation and reload, `AGENT_GATEWAY_E2E_HELLO_PACK=1` passed its existing
+filtered suite (one file, one test). An independent read-only player1 session
+on Foundry v14.369 `test-world` confirmed the genuine runtime module installed
+`true`, active `true`, version `0.1.0`; both hello tools carried
+`[Third-party tool pack hello: agent-gateway-hello-pack 0.1.0]`, and dice odds
+returned `0.5833333333333334` (`21/36`) without error. Core `world_info` passed.
+After Andrew confirmed deactivation and reload, the existing disabled-mode
+suite also passed (one file, one test); an independent session confirmed
+installed `true`, active `false`, version `0.1.0`, no `hello-` tools, and
+successful core `world_info`.
+
+Both states used the exact fixed PR #50 bundle `43cea16`, SHA-256
+`27efa51c11498137fd6de60b73bb5e88408db2ebb3a6a6fe240ff9f2c94add2a`.
+Sessions were closed; tests made no journal or admin writes. These passes
+supersede the earlier runtime-discovery and enabled/disabled acceptance gaps,
+while preserving the original failed attempt as history. Actual journal
+mutation was not exercised live; its permission, escaping, audit and queue
+behavior is covered by automated tests. Foundry v13 remains pending its
+instance. PRs #50 and #51 were still open when this evidence was recorded.
+
+Final full corrected-bundle v14 gate (2026-10-11): unfiltered
+`npm run test:e2e -- --foundry v14` from `43cea16` passed on Foundry v14.369:
+eight files, 35 tests, zero failed and zero skipped (read 21, ambiguity 7,
+isolation 3, resilience 2, stale token 1, disabled pack 1). GM and player each
+listed seven tools. Twenty player results × 21 hidden strings yielded zero
+leaks; cross-player isolation passed. Reload recovered in 4.5 seconds and
+gateway restart in 1.2 seconds, with pairing count unchanged at three. The
+fixed bundle SHA above was explicitly routed and confirmed in preflight, all
+workers and after reload. Sessions closed, and the temporary harness routing
+was restored byte-exact with a clean checkout. The explicit v13 command skipped
+because no instance is configured; it is pending, not a pass or provisioned
+instance. The final record's required verify passed again with 2,356 fast +
+2,227 slow tests; subsequent changes only append this confirmed evidence.
+
 ## 2026-10-10 — Tool-pack foundation implemented locally; review and live evidence pending (tasks 20b–20f)
 
 The tool-pack foundation is implemented on local branches and integrated in the
