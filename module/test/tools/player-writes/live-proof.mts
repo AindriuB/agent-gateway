@@ -10,6 +10,7 @@ import {
   readNativeAuditRows,
   liveAuditKey,
 } from './live-settlement.js';
+import { readNativeWritePolicy } from './live-policy.js';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -175,12 +176,11 @@ async function open(user: string) {
     });
   await joinWorld(asJoinPage(browser.page), config, user);
   if (!servedBundle) throw Error('Verified production bundle was not served to the actual browser');
-  const policy = await browser.page.evaluate(() => {
-    const game = (globalThis as any).game;
-    const raw = game.settings.get('agent-gateway', 'worldPolicy');
-    const matrix = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return { gm: matrix.gmAgents.write, player: matrix.playerAgents.write };
-  });
+  const policy = readNativeWritePolicy(
+    await browser.page.evaluate(() =>
+      (globalThis as any).game.settings.get('agent-gateway', 'worldPolicy'),
+    ),
+  );
   if (policy.gm !== 'ask_owner' || policy.player !== 'ask_owner')
     throw Error('World policy differs from the approved default owner-approval test plan');
   await browser.page.evaluate(
