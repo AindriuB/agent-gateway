@@ -267,6 +267,8 @@ initiative is expected to refuse, v13 Levels are unsupported, and this evidence
 does not cover Undo, every combat action, concurrent GM calls or clock-changing
 progression. PR #65 remains merge pending and its contract stays in `plan/tasks/`.
 
+Reusable harness/documentation head `b669465671ed67baaadc507c63b85cf7f8bbd7c7` passed the combined required build/lint/full gate (3,158 fast / 2,227 slow tests), with 15 focused harness checks, standalone TypeScript, ESLint and actual-transpiled browser serialization checks. Production bundle remained unchanged. This is offline tooling verification, separate from the native-executed harnesses and the 3,143-test source gate.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
