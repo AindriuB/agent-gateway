@@ -8,6 +8,12 @@ import { createAgentMessage } from './chat-post.js';
 declare const Roll: any;
 declare const game: any;
 declare const foundry: any;
+/** Template contents stay in an inert document: no resource loads, scripts or custom-element upgrades. */
+export function inertTableText(html: string): string {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  return template.content.textContent ?? '';
+}
 export const tableRollHandler = defineWriteHandler({
   targets: () => [],
   async run(ctx) {
@@ -41,8 +47,7 @@ export const tableRollHandler = defineWriteHandler({
       )
         invalid('Result reference is unavailable');
       // Parse HTML only into a detached document; never enrich or execute references.
-      const description =
-        new DOMParser().parseFromString(row.description, 'text/html').body.textContent ?? '';
+      const description = inertTableText(row.description);
       const text = description || row.name;
       if (text.length > 4000) invalid('Result text exceeds supported bounds');
       return { row, text, documentUuid };

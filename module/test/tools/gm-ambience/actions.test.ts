@@ -48,14 +48,17 @@ function setup(type: 'Playlist' | 'RollTable', args: any) {
     },
   });
   global('CONST', { PLAYLIST_MODES: { DISABLED: -1, SEQUENTIAL: 0, SHUFFLE: 1, SIMULTANEOUS: 2 } });
-  global(
-    'DOMParser',
-    class {
-      parseFromString(s: string) {
-        return { body: { textContent: s.replace(/<[^>]*>/g, '') } };
-      }
+  global('document', {
+    createElement: () => {
+      const template: any = { content: { textContent: '' } };
+      Object.defineProperty(template, 'innerHTML', {
+        set: (value: string) => {
+          template.content.textContent = value.replace(/<[^>]*>/g, '');
+        },
+      });
+      return template;
     },
-  );
+  });
   const evaluate = vi.fn(async () => ({ total: 2, terms: [] }));
   global(
     'Roll',
