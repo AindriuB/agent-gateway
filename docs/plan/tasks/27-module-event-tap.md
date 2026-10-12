@@ -65,7 +65,14 @@ updates to one document are coalesced.
   Hidden whispers and blind rolls yield no event/reference/name/roll metadata
   for nonrecipients. Token visibility must respect the actual client's rendered
   token visibility, hidden state, scene and current user; permission alone is
-  insufficient. Other documents require native observer visibility and visible
+  insufficient. Register `deleteToken`, but suppress it when native deletion has
+  already destroyed the rendered view and current visibility cannot be established
+  (notably v13); no historical visibility cache or complete-change-log claim.
+  Test the genuine destroyed v13 shape and still-visible v14 delete shape.
+  Combat uses native `visible === true` rather than inherited ownership, with a
+  constant `Combat` reference name and constant lifecycle summary; no hidden
+  actor, encounter-name, counter or turn details. Other documents require native
+  observer visibility and visible
   ancestry; exclude protected audit documents. Combat summaries do not reveal
   hidden combatant identities. Scene names use the requesting user's visible
   navigation name. Missing/throwing visibility checks fail closed.
