@@ -269,6 +269,47 @@ describe('five adapter tools through the dispatcher', () => {
     });
     expect(invoke).not.toHaveBeenCalled();
   });
+  it.each(['ownership', 'folder'])(
+    'refuses a write after %s is revoked while approval waits',
+    async (mode) => {
+      const invoke = vi.fn(() => ({ completed: true, message: 'done' }));
+      selection.adapter = { ...genericAdapter, performAction: invoke };
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const approval: Stage = {
+        name: 'deferred-approval',
+        order: 31,
+        async run(ctx, next) {
+          entered();
+          await held;
+          ctx.approved = true;
+          return next();
+        },
+      };
+      const result = dispatcher([approval])(
+        call('action_perform', { actorUuid: actor.uuid, actionId: 'attack' }),
+        user,
+      );
+      await waiting;
+      if (mode === 'ownership') actor.owned = false;
+      else
+        await g.game.settings.set('agent-gateway', 'folderAllowlist', {
+          playerAgents: ['private'],
+          gmAgents: [],
+        });
+      release();
+      expect(await result).toMatchObject({ error: { code: 'FORBIDDEN' } });
+      expect(invoke).not.toHaveBeenCalled();
+      expect(records).toHaveLength(1);
+      expect(records[0].targets).toEqual([]);
+    },
+  );
   it.each(['throw', 'deep', 'cycle', 'getter', 'extra', 'oversize', 'wrong-type'])(
     'isolates %s adapter output and leaves subsequent calls usable',
     async (mode) => {

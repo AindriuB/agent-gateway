@@ -132,6 +132,11 @@ describe('validateArgs', () => {
   it('rejects invalid schemas rather than ignoring unsupported rules', () =>
     expect(validateArgs({ ...schema, pattern: '.*' }, valid).ok).toBe(false));
   const examples: Record<string, unknown> = {
+    actor_summary: { actorUuid: 'Actor.example' },
+    actions_list: { actorUuid: 'Actor.example' },
+    action_perform: { actorUuid: 'Actor.example', actionId: 'attack' },
+    inventory: { actorUuid: 'Actor.example' },
+    conditions: { actorUuid: 'Actor.example' },
     macro_run: { macroUuid: 'Macro.example' },
     script_run: { source: 'return 1;' },
     table_roll: { tableUuid: 'RollTable.example' },
