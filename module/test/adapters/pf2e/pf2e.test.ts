@@ -423,33 +423,25 @@ describe('pf2e adapter', () => {
       pf2eAdapter.conditions(actor, { id: 'sickened', active: true, value: 3 }),
     ).rejects.toThrow(/Audit context/);
   });
-  const NOTICE = /cannot be undone/;
-  const noticeOf = (r: any) => r.conditions.filter((c: any) => c.id === 'audit-notice');
-  it('creates a missing condition through increaseCondition and says it cannot be undone', async () => {
+  it('creates a missing condition through increaseCondition', async () => {
     const increase = vi.fn(async () => ({}));
-    const r = (await pf2eAdapter.conditions(
+    await pf2eAdapter.conditions(
       { ...actor, increaseCondition: increase },
       { id: 'sickened', active: true, value: 3 },
       ctx,
-    )) as any;
+    );
     expect(increase).toHaveBeenCalledWith('sickened', { value: 3 });
     expect(actor.createEmbeddedDocuments).not.toHaveBeenCalled();
     expect(intendCreate).not.toHaveBeenCalled();
-    expect(noticeOf(r)[0].name).toMatch(NOTICE);
   });
   it('updates a valued condition natively after snapshotting it', async () => {
     const update = vi.fn(async () => {});
     (globalThis as any).game.pf2e.ConditionManager.updateConditionValue = update;
-    const r = (await pf2eAdapter.conditions(
-      actor,
-      { id: 'frightened', active: true, value: 1 },
-      ctx,
-    )) as any;
+    await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 1 }, ctx);
     expect(snapshot).toHaveBeenCalledExactlyOnceWith('Actor.a.Item.c1');
     expect(update).toHaveBeenCalledWith('c1', actor, 1);
     expect(condUpdate).not.toHaveBeenCalled();
     expect(intendCreate).not.toHaveBeenCalled();
-    expect(noticeOf(r)[0].name).toMatch(NOTICE);
   });
   it('removes a condition natively, snapshotting it and its cascade-deleted grants', async () => {
     const decrease = vi.fn(async () => {});
@@ -474,23 +466,16 @@ describe('pf2e adapter', () => {
       items: { get: (id: string) => byId[id] },
       decreaseCondition: decrease,
     };
-    const r = (await pf2eAdapter.conditions(a2, { id: 'frightened', active: false }, ctx)) as any;
+    await pf2eAdapter.conditions(a2, { id: 'frightened', active: false }, ctx);
     expect(snapshot.mock.calls.map((c: any[]) => c[0]).sort()).toEqual([
       'Actor.a.Item.c1',
       'Actor.a.Item.g1',
     ]);
     expect(decrease).toHaveBeenCalledWith('frightened', { forceRemove: true });
     expect(actor.deleteEmbeddedDocuments).not.toHaveBeenCalled();
-    expect(noticeOf(r)[0].name).toMatch(NOTICE);
   });
-  it('adds no notice when a read or a no-op change changed nothing', async () => {
-    expect(noticeOf(await pf2eAdapter.conditions(actor))).toHaveLength(0);
-    const r = await pf2eAdapter.conditions(
-      actor,
-      { id: 'frightened', active: true, value: 2 },
-      ctx,
-    );
-    expect(noticeOf(r)).toHaveLength(0);
+  it('makes no snapshot for a no-op change', async () => {
+    await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 2 }, ctx);
     expect(snapshot).not.toHaveBeenCalled();
   });
   it('tells the caller a spent slot, innate use or focus point cannot be undone', async () => {

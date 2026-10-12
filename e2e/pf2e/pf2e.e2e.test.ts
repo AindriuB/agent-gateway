@@ -138,13 +138,6 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     expect(r.structured?.supported).toBe(true);
   });
 
-  const expectUndoDisclosure = (result: { structured?: Record<string, unknown>; text: string }) => {
-    const notice = ((result.structured?.conditions ?? []) as Row[]).find(
-      (c) => c.id === 'audit-notice',
-    );
-    expect(String(notice?.name), result.text).toMatch(/cannot be undone/);
-  };
-
   it(
     'applies frightened 2 via the system condition API and restores it',
     async (ctx) => {
@@ -162,10 +155,6 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         );
         expect(on.result.isError, on.result.text).toBe(false);
         expect((await frightened())?.value).toBe(2);
-        // pf2e's condition API takes no document options, so the change is not undoable and the
-        // result says so.
-        // A no-op (already frightened 2) changes nothing and carries no notice.
-        if (prior?.value !== 2) expectUndoDisclosure(on.result);
       } finally {
         const restore = await settle(
           session,
@@ -178,7 +167,6 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         expect(restore.result.isError, restore.result.text).toBe(false);
         // Assert against an actual read after the restore has completed.
         expect((await frightened())?.value).toBe(prior?.value);
-        if (prior?.value !== 2) expectUndoDisclosure(restore.result);
       }
     },
     humanTimeout(2),

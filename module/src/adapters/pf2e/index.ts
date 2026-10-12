@@ -465,11 +465,6 @@ function activeConditions(actor: any) {
     });
 }
 
-const CONDITION_NOTICE = {
-  id: 'audit-notice',
-  name: 'Notice: this condition change cannot be undone through the audit log',
-};
-
 /**
  * The condition Item plus every Item pf2e will cascade-delete with it: items it granted and its
  * granter when that grant cascades (processGrantDeletions, pf2e.mjs:45773-45789, :45387-45412).
@@ -498,7 +493,6 @@ function cascadeTargets(actor: any, condition: any): string[] {
 }
 
 async function conditions(actor: any, change?: ConditionChange, context?: AdapterExecutionContext) {
-  let changed = false;
   if (change !== undefined) {
     if (!SLUG.test(change.id)) return invalid('Unknown condition');
     if (change.id === 'persistent-damage')
@@ -513,7 +507,7 @@ async function conditions(actor: any, change?: ConditionChange, context?: Adapte
     // pf2e's condition API (increaseCondition, decreaseCondition, updateConditionValue;
     // pf2e.mjs:33531-33561, :48967) accepts no document options, so callOptions cannot reach its
     // writes and the change is not undoable. Enrol the Items it may change or cascade-delete so
-    // they go stale and Undo refuses them instead of half-restoring; the result says so.
+    // they go stale and Undo refuses them instead of half-restoring.
     const enrol = async () => {
       for (const uuid of cascadeTargets(actor, existing)) await context.snapshot(uuid);
     };
@@ -521,24 +515,17 @@ async function conditions(actor: any, change?: ConditionChange, context?: Adapte
       if (existing) {
         await enrol();
         await actor.decreaseCondition(change.id, { forceRemove: true });
-        changed = true;
       }
     } else if (!existing) {
       await actor.increaseCondition(change.id, value ? { value } : {});
-      changed = true;
     } else if (value !== undefined && num(existing.system?.value?.value) !== undefined) {
       if (existing.system.value.value !== value) {
         await enrol();
         await game.pf2e.ConditionManager.updateConditionValue(existing.id, actor, value);
-        changed = true;
       }
     }
   }
-  const active = activeConditions(actor);
-  return {
-    supported: true,
-    conditions: changed ? [...active.slice(0, 127), CONDITION_NOTICE] : active,
-  };
+  return { supported: true, conditions: activeConditions(actor) };
 }
 
 export const pf2eAdapter: SystemAdapter = Object.freeze({
