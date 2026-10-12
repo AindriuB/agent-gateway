@@ -115,12 +115,6 @@ const updateConditionValue = vi.fn();
 const intendCreate = vi.fn(async () => {});
 const created = vi.fn(async () => {});
 const ctx = { intendCreate, created } as unknown as AdapterExecutionContext;
-const strikeFlags = () => ({
-  pf2e: {
-    origin: { uuid: 'Actor.a.Item.w1' },
-    context: { type: 'attack-roll', identifier: 'w1.longsword.melee' },
-  },
-});
 let createHooks: ((m: any) => void)[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
@@ -129,7 +123,7 @@ beforeEach(() => {
   spellMessage.mockResolvedValue({ uuid: 'ChatMessage.spell' });
   toMessage.mockResolvedValue({ uuid: 'ChatMessage.action' });
   roll.mockImplementation(async (p: any) => {
-    p.callback?.({}, 'success', { uuid: 'ChatMessage.m1' }, p.event);
+    p.callback?.({}, 'success', { id: 'm1', uuid: 'ChatMessage.m1' }, p.event);
     return { total: 15 };
   });
   (globalThis as any).Hooks = {
@@ -229,19 +223,41 @@ describe('pf2e adapter', () => {
       /No spell slots left/,
     );
   });
-  it('records only the message handed to this strike call, never an overlapping one', async () => {
+  it('records only the message handed to each of two concurrent same-weapon strikes', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let n = 0;
     roll.mockImplementation(async (p: any) => {
-      // A second same-user, same-weapon strike lands while this one is in flight.
-      const other = { uuid: 'ChatMessage.other', author: { id: 'u1' }, flags: strikeFlags() };
-      createHooks.forEach((h) => h(other));
-      p.callback({}, 'success', { uuid: 'ChatMessage.mine' }, p.event);
+      const mine = `ChatMessage.mine${++n}`;
+      await gate;
+      p.callback({}, 'success', { id: `id${n}`, uuid: mine }, p.event);
       return { total: 15 };
     });
-    await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
-    expect(created).toHaveBeenCalledTimes(1);
-    expect(created).toHaveBeenCalledWith('ChatMessage.mine');
-    expect(created).not.toHaveBeenCalledWith('ChatMessage.other');
+    const first = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    const second = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await Promise.all([first, second]);
+    expect(created).toHaveBeenCalledTimes(2);
+    expect(created).toHaveBeenCalledWith('ChatMessage.mine1');
+    expect(created).toHaveBeenCalledWith('ChatMessage.mine2');
     expect(createHooks).toHaveLength(0);
+  });
+  it('says an unaudited strike cannot be undone when the callback never fires', async () => {
+    roll.mockImplementation(async () => ({ total: 15 }));
+    const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
+    expect(r.completed).toBe(true);
+    expect(r.message).toMatch(/not audited and cannot be undone/);
+    expect(created).not.toHaveBeenCalled();
+  });
+  it('ignores a callback message without an id (cancelled create)', async () => {
+    roll.mockImplementation(async (p: any) => {
+      p.callback({}, 'success', { uuid: 'ChatMessage.ghost' }, p.event);
+      return { total: 15 };
+    });
+    const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
+    expect(created).not.toHaveBeenCalled();
+    expect(r.message).toMatch(/not audited/);
   });
   it.each([true, false])(
     'never opens a check dialog when showCheckDialogs is %s',

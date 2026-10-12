@@ -179,10 +179,18 @@ async function performAction(
     // this very roll created (:19525-19535, :19540-19541); the strike variant forwards
     // `callback` (:36064). Record only that message: overlapping strikes by the same user with the
     // same weapon share author, origin and identifier, so no hook predicate can tell them apart.
+    // A cancelled create hands the callback `new ChatMessagePF2e(undefined)` (:19528), which has
+    // no id: record only a persisted message. NPC and hazard strikes (pf2e.mjs:39073, :20403) call
+    // `Check.roll` without a callback (:20499), so nothing identifies their message.
+    let attributed = false;
     const rolled = await auditedChat(context, async (record) =>
       variant.roll({
         event,
-        callback: (_check: unknown, _outcome: unknown, message: any) => record(message),
+        callback: (_check: unknown, _outcome: unknown, message: any) => {
+          if (!message?.id) return;
+          attributed = true;
+          record(message);
+        },
       }),
     );
     // pf2e resolves null when nothing was rolled: no ammo, out of range, no origin, cancelled.
@@ -192,7 +200,12 @@ async function performAction(
         message:
           `${text(strike.label, 200)} ${text(variant.label, 100)} was not rolled (no ammunition, out of range or no valid target)`.trim(),
       };
-    return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
+    const rolledLabel = `Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim();
+    if (!attributed)
+      return done(
+        `${rolledLabel}. The attack message was posted but not audited and cannot be undone`,
+      );
+    return done(rolledLabel);
   }
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
