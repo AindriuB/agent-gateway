@@ -400,7 +400,7 @@ The PR #73 event-read revocation repair `ac9b93e5e6c00df32947fd548a1a22180667502
 
 ## Task 29 bounded native offline-reading acceptance
 
-PR #76 source `88b27ca2b273d1f9778cc78a6e22967c2be2c9a8` was served with exact production SHA-256 `d19791ab8a7e38e365c4e84a76f4615fe80b99ec64f576b34bc331bff3b99101`; source `e28f836` passed build/lint and 3,427 fast / 2,227 slow tests, with 74 independent focused checks. This source gate remains separate from the pending combined reusable-harness/publication gate.
+PR #76 source `88b27ca2b273d1f9778cc78a6e22967c2be2c9a8` was served with exact production SHA-256 `d19791ab8a7e38e365c4e84a76f4615fe80b99ec64f576b34bc331bff3b99101`; source `e28f836` passed build/lint and 3,427 fast / 2,227 slow tests, with 74 independent focused checks. This source gate remains separate from the combined reusable-harness/publication gate recorded below.
 
 Human-consented bounded native acceptance passed on Foundry v14.369 and v13.351. Each world used one GM browser, one temporary GM-private NPC, two exact renames, an isolated gateway database and read-only pairing import. Three actual policy-app saves enabled 14-day offline reading, disabled it, then enabled it again; one actual UI purge deleted five isolated buffered events and displayed the correlated localized count. Nine gateway reads and all four UI operations settled per world: enabled offline poll/history returned already-buffered rows immediately and nonconsumingly, disabled history was hidden and both offline reads returned WORLD_OFFLINE, and explicit post-purge cursor zero returned an empty payload with high-water five and first-available six.
 
@@ -411,6 +411,8 @@ Executed proof SHA-256 was `a3ef5e44ed5460300e4bd65168e8b88372e4d0d4b3c39e08169d
 Two earlier v14 attempts remain failed-and-cleaned: the first stopped before any fixture, UI operation or read because native socket template loading bypassed the HTTP route; the reviewed fix preloaded only the pinned policy template into the owned browser cache. The second completed nine reads and four UI operations but failed a harness cursor assertion after omitting `after`; its one Actor was removed and original setting/baselines restored. A real-repository regression now distinguishes omitted cursor from explicit zero and preserves the next cursor after purge. Neither failure is retroactively a pass.
 
 This is GM-only native evidence. Player/offline pairing isolation, revoke/ask/deny/disabled authorization, startup/hourly retention and restart boundaries remain covered by offline tests, not this native run. Cooperative last-known-policy enforcement is not cryptographic policy or independent GM attestation and does not unblock Task18. Browser-only source/template/localization routes and native template-cache preload are not installed deployment. Private images and raw artifacts stay local. Task29 remains active until validation publication merges. Further native mutations require fresh scoped consent.
+
+Combined publication candidate `23a4f573fa1c11b6d9761a531b4e799ee86a3a76` passed the single required `npm run verify` on its first run: build/lint, 3,437 fast / 2,227 slow tests. Ten focused harness checks, standalone TypeScript, ESLint and actual-transpiled VM serialization also passed. Production remains the native-tested `88b27ca` / `d19791ab`; this offline combined gate is distinct from the 3,427-fast source gate and adds no new native execution.
 
 ## Permission rules on the Mac (auto mode)
 
