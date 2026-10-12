@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Validate generic adapter plumbing before PF2e; dnd5e deferred (tasks 31–33)
+
+Andrew prioritized native Task31 validation first, then Task33 — Add the pf2e system adapter — as the first concrete adapter. Task32 — Add the dnd5e system adapter — remains planned and deferred, not completed. PR #83 merged at 19:14:35 UTC (head `90b797f`, main `c07d8be`); Task31 source verification remains 3,580 fast / 2,227 slow tests, with native acceptance pending. The inventory remains 27 done / 15 active and Task18 stays blocked.
+
+**Cost:** The proposed Task31 scope is generic native plumbing only: one GM-private NPC, four reads and two once-approved unsupported write requests per world, retaining two error audits and deleting the exact fixture after safe settlement. Existing generic-test ownership covers the harness; no source scope expansion is needed. Fresh fixture/action/audit/cleanup consent remains required. Neither concrete adapter implementation nor Task33 native writes are authorized by this planning record.
+
 ## 2026-10-12 — System adapter source merged; native acceptance pending (task 31)
 
 PR #82 merged at 2026-10-12T19:06:44Z, reviewed head `1d4743be65b6dbcdccd111c77af8f0ff44fccbab`, main `783ba3a512c81d654cc98d0b378498b99b3929ad`. Five fixed core tools and their internal generic fallback are now on main. Source verification remains pinned to combined `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests, both independent reviews and 113 independent focused tests across five files passed. The final merged head adds reviewed result documentation only.
