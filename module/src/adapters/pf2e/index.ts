@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { SystemAdapter, ConditionChange } from '../types.js';
+import type { SystemAdapter, ConditionChange, AdapterExecutionContext } from '../types.js';
 import { invalid } from '../../tools/_write.js';
 
 declare const game: any;
+declare const Hooks: any;
 
 const MAX_ACTIONS = 128;
 const MAX_ITEMS = 256;
@@ -31,6 +32,47 @@ function costLabel(cost: unknown): string | undefined {
     return n === 1 ? '1 action' : `${n} actions`;
   }
   return undefined;
+}
+
+function spellCost(v: unknown): string | undefined {
+  const t = text(v, 200).trim();
+  if (!t) return undefined;
+  if (/^[123]$/.test(t)) return t === '1' ? '1 action' : `${t} actions`;
+  if (/^free$/i.test(t)) return 'free action';
+  if (/^reaction$/i.test(t)) return 'reaction';
+  return t;
+}
+
+/**
+ * Run a native operation that creates ChatMessages, declaring the creation first and recording
+ * every message this user creates meanwhile, so the audit trail covers them.
+ */
+async function auditedChat<T>(context: AdapterExecutionContext, run: () => Promise<T>): Promise<T> {
+  if (
+    typeof context?.intendCreate !== 'function' ||
+    typeof context.created !== 'function' ||
+    typeof Hooks?.on !== 'function' ||
+    typeof Hooks.off !== 'function'
+  )
+    throw new Error('Audit context unavailable');
+  await context.intendCreate();
+  const uuids: string[] = [];
+  const userId = game.user?.id;
+  const hook = (message: any) => {
+    if (
+      typeof message?.uuid === 'string' &&
+      message.uuid &&
+      (message.author?.id ?? message.user?.id) === userId
+    )
+      uuids.push(message.uuid);
+  };
+  const id = Hooks.on('createChatMessage', hook);
+  try {
+    return await run();
+  } finally {
+    Hooks.off('createChatMessage', id);
+    for (const uuid of uuids) await context.created(uuid);
+  }
 }
 
 function strikes(actor: any): any[] {
@@ -113,7 +155,7 @@ function listActions(actor: any) {
       id: `spell:${spellEntryId(spell)}:${text(spell.id, 64)}`,
       name: text(spell.name, 1000),
       group: cantrip ? 'Cantrips' : `Rank ${rank} spells`,
-      cost: text(spell.system?.time?.value, 200) || undefined,
+      cost: spellCost(spell.system?.time?.value),
     });
   }
   const trimmed = actions.slice(0, MAX_ACTIONS).map((a) => {
@@ -127,6 +169,7 @@ async function performAction(
   actor: any,
   actionId: string,
   options: Readonly<Record<string, unknown>>,
+  context: AdapterExecutionContext,
 ) {
   const parts = actionId.split(':');
   const done = (message: string) => ({ completed: true, message: message.slice(0, 2000) });
@@ -136,27 +179,47 @@ async function performAction(
     );
     const variant = strike ? list(strike.variants)[Number(parts[3])] : undefined;
     if (!variant || typeof variant.roll !== 'function') return invalid('Unknown strike action');
-    await variant.roll({});
+    await auditedChat(context, () => variant.roll({}));
     return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
   }
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
-    await item.toMessage();
+    await auditedChat(context, () => item.toMessage());
     return done(`Performed ${text(item.name, 200)}`);
   }
   if (parts[0] === 'spell' && parts.length === 3) {
     const spell = list(actor.itemTypes?.spell).find((i) => i.id === parts[2]);
     const entry = spell && actor.items?.get?.(parts[1]);
-    if (!spell || !entry || typeof entry.cast !== 'function')
+    if (!spell || !entry || typeof entry.cast !== 'function' || typeof entry.consume !== 'function')
       return invalid('Unknown spell action');
+    if (spellEntryId(spell) !== parts[1]) return invalid('Unknown spell action');
     const rank = options.rank;
     if (
       rank !== undefined &&
       (typeof rank !== 'number' || !Number.isInteger(rank) || rank < 1 || rank > 10)
     )
       return invalid('Spell rank must be an integer from 1 to 10');
-    await entry.cast(spell, rank === undefined ? {} : { rank });
+    const fixed = spell.isCantrip === true || spell.isFocusSpell === true;
+    const baseRank = num(spell.baseRank) ?? num(spell.rank) ?? 1;
+    if (rank !== undefined && (fixed ? rank !== num(spell.rank) : rank < baseRank))
+      return invalid(`Spell rank must be ${fixed ? 'the spell rank' : `at least ${baseRank}`}`);
+    const castRank = rank ?? num(spell.rank);
+    const cast = await auditedChat(context, async () => {
+      // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
+      const paid = spell.atWill === true || (await entry.consume(spell, castRank));
+      if (!paid) return false;
+      await entry.cast(spell, {
+        consume: false,
+        ...(castRank === undefined ? {} : { rank: castRank }),
+      });
+      return true;
+    });
+    if (!cast)
+      return {
+        completed: false,
+        message: `Could not cast ${text(spell.name, 200)}: no slot or focus point available`,
+      };
     return done(`Cast ${text(spell.name, 200)}`);
   }
   return invalid('Unknown action ID');
@@ -231,6 +294,8 @@ function activeConditions(actor: any) {
 async function conditions(actor: any, change?: ConditionChange) {
   if (change !== undefined) {
     if (!SLUG.test(change.id)) return invalid('Unknown condition');
+    if (change.id === 'persistent-damage')
+      return invalid('Persistent damage cannot be changed through this tool');
     const known = game.pf2e?.ConditionManager?.getCondition?.(change.id);
     if (!known) return invalid('Unknown condition');
     const existing = list(actor.itemTypes?.condition).find(

@@ -27,7 +27,12 @@ export default defineConfig({
           ...shared,
           name: 'e2e-live',
           root: import.meta.dirname,
-          include: ['read/**/*.e2e.test.ts', 'multi/**/*.e2e.test.ts', 'packs/**/*.e2e.test.ts'],
+          include: [
+            'read/**/*.e2e.test.ts',
+            'multi/**/*.e2e.test.ts',
+            'packs/**/*.e2e.test.ts',
+            'pf2e/**/*.e2e.test.ts',
+          ],
           testTimeout: 120_000,
           hookTimeout: 240_000,
         },

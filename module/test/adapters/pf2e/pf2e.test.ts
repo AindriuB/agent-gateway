@@ -7,11 +7,13 @@ import { adapterContract } from '../contract.js';
 
 const roll = vi.fn();
 const cast = vi.fn();
+const consume = vi.fn();
 const toMessage = vi.fn();
 const spell = {
   id: 's1',
   name: 'Fireball',
   rank: 3,
+  baseRank: 3,
   system: { location: { value: 'e1' }, time: { value: '2' } },
 };
 const cantrip = {
@@ -72,7 +74,7 @@ const actor: any = {
       },
     ],
   },
-  items: { get: (id: string) => (id === 'e1' ? { cast } : undefined) },
+  items: { get: (id: string) => (id === 'e1' ? { cast, consume } : undefined) },
   inventory: Object.assign(
     [
       {
@@ -104,10 +106,23 @@ const actor: any = {
   decreaseCondition: vi.fn(),
 };
 const updateConditionValue = vi.fn();
-const ctx = {} as AdapterExecutionContext;
+const intendCreate = vi.fn(async () => {});
+const created = vi.fn(async () => {});
+const ctx = { intendCreate, created } as unknown as AdapterExecutionContext;
+let createHooks: ((m: any) => void)[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
+  createHooks = [];
+  consume.mockResolvedValue(true);
+  roll.mockImplementation(async () =>
+    createHooks.forEach((h) => h({ uuid: 'ChatMessage.m1', author: { id: 'u1' } })),
+  );
+  (globalThis as any).Hooks = {
+    on: (_n: string, h: (m: any) => void) => createHooks.push(h),
+    off: vi.fn(),
+  };
   (globalThis as any).game = {
+    user: { id: 'u1' },
     pf2e: {
       ConditionManager: {
         getCondition: (s: string) =>
@@ -157,7 +172,8 @@ describe('pf2e adapter', () => {
     await pf2eAdapter.performAction(actor, 'action:a2', {}, ctx);
     expect(toMessage).toHaveBeenCalledTimes(1);
     await pf2eAdapter.performAction(actor, 'spell:e1:s1', { rank: 4 }, ctx);
-    expect(cast).toHaveBeenCalledWith(spell, { rank: 4 });
+    expect(consume).toHaveBeenCalledWith(spell, 4);
+    expect(cast).toHaveBeenCalledWith(spell, { consume: false, rank: 4 });
   });
   it('rejects unknown ids and bad ranks without side effects', async () => {
     await expect(pf2eAdapter.performAction(actor, 'strike:x:y:0', {}, ctx)).rejects.toThrow();
@@ -165,7 +181,28 @@ describe('pf2e adapter', () => {
       pf2eAdapter.performAction(actor, 'spell:e1:s1', { rank: 99 }, ctx),
     ).rejects.toThrow();
     await expect(pf2eAdapter.performAction(actor, 'nope', {}, ctx)).rejects.toThrow();
+    await expect(
+      pf2eAdapter.performAction(actor, 'spell:e1:s1', { rank: 2 }, ctx),
+    ).rejects.toThrow();
+    await expect(pf2eAdapter.performAction(actor, 'spell:other:s1', {}, ctx)).rejects.toThrow();
     expect(cast).not.toHaveBeenCalled();
+    expect(consume).not.toHaveBeenCalled();
+  });
+  it('declares and records created chat messages', async () => {
+    await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    expect(intendCreate).toHaveBeenCalledTimes(1);
+    expect(created).toHaveBeenCalledWith('ChatMessage.m1');
+  });
+  it('reports a failed spell consumption as not completed', async () => {
+    consume.mockResolvedValue(false);
+    const r = (await pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)) as any;
+    expect(r.completed).toBe(false);
+    expect(cast).not.toHaveBeenCalled();
+  });
+  it('rejects persistent damage changes', async () => {
+    await expect(
+      pf2eAdapter.conditions(actor, { id: 'persistent-damage', active: true }),
+    ).rejects.toThrow();
   });
   it('reports bulk, equipped and invested state', async () => {
     const r = (await pf2eAdapter.inventorySemantics(actor)) as any;
