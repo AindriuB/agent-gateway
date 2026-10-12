@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 31
-**Status:** Planned; deferred by Andrew's priority change. Validate Task31 first, then implement Task33 before this task. Not complete.
+**Status:** Next; starting 2026-10-13. Dependency 31 is done and the pf2e adapter (33) is merged. Not complete.
 **Owns:**
 - module/src/adapters/dnd5e/**
 - module/test/adapters/dnd5e/**
