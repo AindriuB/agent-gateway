@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — GM table, playlist and notification task merged and archived (task 25)
+
+PR #67 merged on 2026-10-12 at 08:09:32 UTC, head `aec6db346df1da208af9ff04405eef931c0ac9b3`, main `6ec99ff3d8d526e232b7b48e6cefb78e76f597ee`. Task 25 is complete and its contract moved to `docs/plan/done/25-gm-table-playlist-notify.md` with only its status changed. The archive now contains 21 contracts; 20 active contract files remain, including blocked task 18. Task 26 is next.
+
+The combined reusable harness/documentation gate passed 3,222 fast / 2,227 slow tests plus build/lint at `4129902`; the final head added only that result to three docs. Native proof remains source `4d8b9d1`, bundle `ad5438ea93336082f34d9b0e4b962eef6c97eb94370aa7db437947993eb21ae6`, executed harness `813ed9591f7f4cb20ad1f2a62a3a8a7c300056a0c7c0e4dae0bf4f5670c6f456`. Both v13.351 and v14.369 passed seven immediate human once-approved calls, seven exact persisted audits and seven-fixture cleanup with sources, views and world time restored. Historical failed harness attempts and privacy/quiet-playback/coverage limits remain in the preceding validation entry; archival does not create a new native run or broaden those claims.
+
 ## 2026-10-12 — GM table, playlist and notification tools validated; merge pending (task 25)
 
 Task 25 implementation is verified in open draft PR #67, source `4d8b9d1f4520ff3d0a39fbd7f3cc9b045cd0b6b5`. The contract stays active until Andrew merges it; the completed archive remains at 20 contracts, task 26 is next after merge, and task 18 remains architecture-blocked. The source gate passed build/lint and 3,211 fast / 2,227 slow tests, with 90 independent focused checks. A separate actual Chromium probe exercised the production inert table-text helper: decoded entities remained, with zero resource requests or script/event/custom-element execution.
