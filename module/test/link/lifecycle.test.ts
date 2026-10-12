@@ -22,7 +22,11 @@ beforeEach(async () => {
     resumeLink,
     isLinkActive,
     refreshToolset: () => {},
-    getLinkClient: () => ({}),
+    getLinkClient: () => ({
+      state: { kind: 'idle' },
+      onState: () => () => {},
+      sendMessage: () => {},
+    }),
   }));
   stub = installFoundry(14);
   listeners = new Map();

@@ -224,8 +224,8 @@ it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async
   expect(sockets).toHaveLength(1);
 });
 
-it.each(['1.0.0', '1.99.7'])(
-  'stops after an older gateway %s rejects the v2 hello, without welcome or retrying',
+it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
+  'stops after an older gateway %s rejects the v3 hello, without welcome or retrying',
   async (legacy) => {
     token = 'tok';
     const states: string[] = [];
@@ -234,10 +234,10 @@ it.each(['1.0.0', '1.99.7'])(
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '2.0.0' });
-    // A v1 gateway uses the same major check before authentication or welcome.
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '3.0.0' });
+    // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
-    if (compatibility.ok) throw new Error('Legacy gateway must reject v2');
+    if (compatibility.ok) throw new Error('Legacy gateway must reject v3');
     expect(compatibility.message).toContain(`local ${legacy}, remote ${PROTOCOL_VERSION}`);
     expect(compatibility.message).toMatch(/upgrade the local side/i);
     socket.recv({ type: 'reject', code: compatibility.code, message: compatibility.message });
