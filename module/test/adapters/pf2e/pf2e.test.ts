@@ -233,14 +233,26 @@ describe('pf2e adapter', () => {
       p.callback({}, 'success', { id: `id${n}`, uuid: mine }, p.event);
       return { total: 15 };
     });
-    const first = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
-    const second = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    const mk = () => {
+      const c = vi.fn(async () => {});
+      return {
+        c,
+        context: {
+          intendCreate: vi.fn(async () => {}),
+          created: c,
+        } as unknown as AdapterExecutionContext,
+      };
+    };
+    const one = mk();
+    const two = mk();
+    const first = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, one.context);
+    await new Promise((r) => setTimeout(r, 0));
+    const second = pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, two.context);
     await new Promise((r) => setTimeout(r, 0));
     release();
     await Promise.all([first, second]);
-    expect(created).toHaveBeenCalledTimes(2);
-    expect(created).toHaveBeenCalledWith('ChatMessage.mine1');
-    expect(created).toHaveBeenCalledWith('ChatMessage.mine2');
+    expect(one.c.mock.calls.map((x: any[]) => x[0])).toEqual(['ChatMessage.mine1']);
+    expect(two.c.mock.calls.map((x: any[]) => x[0])).toEqual(['ChatMessage.mine2']);
     expect(createHooks).toHaveLength(0);
   });
   it('says an unaudited strike cannot be undone when the callback never fires', async () => {
@@ -257,7 +269,8 @@ describe('pf2e adapter', () => {
     });
     const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
     expect(created).not.toHaveBeenCalled();
-    expect(r.message).toMatch(/not audited/);
+    expect(r.message).toMatch(/No attack message was created/);
+    expect(r.message).not.toMatch(/posted/);
   });
   it.each([true, false])(
     'never opens a check dialog when showCheckDialogs is %s',

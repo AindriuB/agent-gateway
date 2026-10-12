@@ -176,18 +176,22 @@ async function performAction(
     const showDialogs = Boolean((globalThis as any).game?.user?.settings?.showCheckDialogs);
     const event = { shiftKey: showDialogs, ctrlKey: false, metaKey: false };
     // Check.roll (pf2e.mjs:19374) calls `callback(check, outcome, message, event)` with the message
-    // this very roll created (:19525-19535, :19540-19541); the strike variant forwards
+    // this very roll created (:19535-19537, :19540-19541); the strike variant forwards
     // `callback` (:36064). Record only that message: overlapping strikes by the same user with the
     // same weapon share author, origin and identifier, so no hook predicate can tell them apart.
-    // A cancelled create hands the callback `new ChatMessagePF2e(undefined)` (:19528), which has
+    // A cancelled create hands the callback `new ChatMessagePF2e(undefined)` (pf2e.mjs:19536), which has
     // no id: record only a persisted message. NPC and hazard strikes (pf2e.mjs:39073, :20403) call
     // `Check.roll` without a callback (:20499), so nothing identifies their message.
     let attributed = false;
+    let cancelled = false;
     const rolled = await auditedChat(context, async (record) =>
       variant.roll({
         event,
         callback: (_check: unknown, _outcome: unknown, message: any) => {
-          if (!message?.id) return;
+          if (!message?.id) {
+            cancelled = true;
+            return;
+          }
           attributed = true;
           record(message);
         },
@@ -201,6 +205,7 @@ async function performAction(
           `${text(strike.label, 200)} ${text(variant.label, 100)} was not rolled (no ammunition, out of range or no valid target)`.trim(),
       };
     const rolledLabel = `Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim();
+    if (!attributed && cancelled) return done(`${rolledLabel}. No attack message was created`);
     if (!attributed)
       return done(
         `${rolledLabel}. The attack message was posted but not audited and cannot be undone`,
