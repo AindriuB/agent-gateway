@@ -1,7 +1,7 @@
 # 27 — Add the module event tap and event protocol
 
 **Repo:** .
-**Status:** Source and bounded native v13/v14 acceptance verified in PR #71; awaiting merge. Keep active until merge; native coverage and historical cleanup limits are recorded in HISTORY/testing.
+**Status:** Complete and merged in PR #71; archived. Native proof is historical and bounded; later Scene/Token privacy fixes are offline-verified as recorded in HISTORY/testing.
 **Depends on:** 16
 **Owns:**
 - protocol/src/events/**
