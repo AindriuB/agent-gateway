@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { AgentEvent, EVENT_CONFIG, type LinkMessage } from '@agent-gateway/protocol/link';
 import { isAuditDocument } from '../audit/guard.js';
+import { rootVisible } from '../tools/visibility.js';
 
 interface Client {
   state: { kind: string };
@@ -93,6 +94,7 @@ export function installEventTap(client: Client, overrides?: EventTapDeps): { dis
       if (
         seen.size === 8 ||
         seen.has(current) ||
+        (current.documentName === 'Scene' && !rootVisible(current, user)) ||
         current.testUserPermission?.(user, 'OBSERVER') !== true
       )
         return false;

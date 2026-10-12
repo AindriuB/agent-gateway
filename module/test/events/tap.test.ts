@@ -18,7 +18,7 @@ function setup(connected = true) {
       callbacks.get(name)?.delete(id);
     },
   };
-  let user: any = { id: 'observer', isGM: false };
+  let user: any = { id: 'observer', isGM: false, viewedScene: 's' };
   const scene: any = {
     id: 's',
     uuid: 'Scene.s',
@@ -287,3 +287,54 @@ it('drops v13 destroyed Token deletes and emits only the still-rendered v14-visi
   s.hook('deleteToken', token, {});
   expect(s.frames).toHaveLength(1);
 });
+
+it.each(['createScene', 'updateScene', 'deleteScene'])(
+  'suppresses hidden %s despite OBSERVER permission',
+  (hook) => {
+    const s = setup();
+    s.user().viewedScene = 'another-scene';
+    s.scene.active = false;
+    s.scene.navigation = false;
+    // Client-local isView does not establish this requesting user's visibility.
+    s.scene.isView = true;
+    s.hook(hook, s.scene, {}, {});
+    vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+    expect(s.frames).toEqual([]);
+  },
+);
+it.each(['active', 'navigation', 'viewed', 'GM'])(
+  'allows Scene lifecycle events visible through %s',
+  (access) => {
+    const s = setup();
+    s.user().viewedScene = access === 'viewed' ? s.scene.id : 'another-scene';
+    s.user().isGM = access === 'GM';
+    s.scene.active = access === 'active';
+    s.scene.navigation = access === 'navigation';
+    s.hook('createScene', s.scene, {});
+    s.hook('updateScene', s.scene, {}, {});
+    vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+    s.hook('deleteScene', s.scene, {});
+    expect(s.frames.map((f) => f.event.type)).toEqual([
+      'scene_create',
+      'scene_update',
+      'scene_delete',
+    ]);
+    expect(s.frames.every((f) => f.event.doc.uuid === s.scene.uuid)).toBe(true);
+    expect(s.frames[0].event.doc.name).toBe(access === 'GM' ? s.scene.name : s.scene.navName);
+  },
+);
+it.each(['active', 'navigation', 'viewed'])(
+  'rechecks Scene %s visibility at delayed flush',
+  (access) => {
+    const s = setup();
+    s.user().viewedScene = access === 'viewed' ? s.scene.id : 'another-scene';
+    s.scene.active = access === 'active';
+    s.scene.navigation = access === 'navigation';
+    s.hook('updateScene', s.scene, {}, {});
+    s.scene.active = false;
+    s.scene.navigation = false;
+    s.user().viewedScene = 'another-scene';
+    vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+    expect(s.frames).toEqual([]);
+  },
+);
