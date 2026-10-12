@@ -56,3 +56,9 @@ Head `f52d159`. Tester PASS (`npm run verify`: 3,612 fast / 2,227 slow; e2e-unit
   - Add a unit test: a same-actor, same-author message without pf2e origin flags created during the call is not recorded.
 - Pass `skipDialog: true` to `variant.roll` so a strike never blocks on a GM check dialog (:19383).
 - Replace the bare `catch { return false }` around `consume` (index.ts:221-224) with INVALID_ARGS asking for `rank` on "Slot not given", or the native error text otherwise.
+
+## Attempt 4 — failed
+Head `9a565c3`. Tester PASS (`npm run verify`: 3,614 fast / 2,227 slow; e2e-unit 163). Reviewer REQUEST CHANGES; action and spell attribution, consume errors and the same-actor test are fixed, scope clean. The Attempt 3 note's strike identifier format was wrong; this corrects it.
+- `module/src/adapters/pf2e/index.ts:186` — strike `context.identifier` is `${item.id}.${slug}.${melee|ranged}` (from `item.isMelee`), the same for all three MAP variants; the MAP index is only in `mapIncreases` (pf2e.mjs:36042 with :35845/:35920 for characters; :20373/:20480 for NPCs). Fix the identifier and the unit fixture at `module/test/adapters/pf2e/pf2e.test.ts:120`, which copied the wrong format.
+- `index.ts:198` — `variant.roll({skipDialog: true})` is ignored: character/NPC `roll` never copy it into the check context, and `Check.roll` sets `skipDialog ??= !showCheckDialogs` (:19383, :36041-36063, :20478-20497). The only caller control that reaches it is `event` through `eventToRollParams` (:13768-13773), where Shift inverts the user setting. Make the strike never open the dialog regardless of the user's setting (verify the mechanism in source), and test the behaviour, not the argument shape.
+- Add one live strike to `e2e/pf2e/pf2e.e2e.test.ts` on the temporary fixture (behind `AGENT_GATEWAY_E2E_PF2E_WRITE`) that asserts the strike completes without a dialog and its ChatMessage is recorded as a created audit target; clean that message up with the fixture.
