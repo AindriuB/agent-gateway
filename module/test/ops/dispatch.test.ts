@@ -139,3 +139,163 @@ describe('stages', () => {
     expect(await d2(call('read_thing'), player)).toBe(error);
   });
 });
+
+describe('trusted core read-only admission', () => {
+  it('awaits admission before any stage and exposes no approval/category capability', async () => {
+    const native = { id: 'u2', isGM: true };
+    vi.stubGlobal('game', { user: native, users: { get: () => native } });
+    const events: string[] = [];
+    const admitting = Object.assign(
+      async (ctx: OpContext) => ({ text: 'done', structured: { args: ctx.args } }),
+      {
+        admit: async (ctx: import('../../src/ops/types.js').AdmissionContext) => {
+          expect(Object.isFrozen(ctx)).toBe(true);
+          expect(ctx).not.toHaveProperty('approved');
+          expect(ctx).not.toHaveProperty('escalate');
+          events.push('admission');
+          await Promise.resolve();
+          return Object.freeze({ id: 'x', source: 'full' });
+        },
+      },
+    );
+    const d = createDispatcher({
+      tools,
+      handlers: { gm_thing: admitting },
+      stages: [
+        {
+          name: 'first',
+          order: 1,
+          async run(ctx, next) {
+            events.push('stage');
+            expect(ctx.args).toMatchObject({ source: 'full' });
+            return next();
+          },
+        },
+      ],
+    });
+    const input = { id: 'x' };
+    expect(await d(call('gm_thing', input), gm)).not.toHaveProperty('error');
+    expect(input).toEqual({ id: 'x' });
+    expect(events).toEqual(['admission', 'stage']);
+    vi.unstubAllGlobals();
+  });
+  it('demotion while awaiting admission never enters stages', async () => {
+    const native = { id: 'u2', isGM: true };
+    vi.stubGlobal('game', { user: native, users: { get: () => native } });
+    const ran = vi.fn();
+    const admitting = Object.assign(async () => ok, {
+      admit: async () => {
+        native.isGM = false;
+        return {};
+      },
+    });
+    const d = createDispatcher({
+      tools,
+      handlers: { gm_thing: admitting },
+      stages: [
+        {
+          name: 'first',
+          order: 1,
+          async run(_ctx, next) {
+            ran();
+            return next();
+          },
+        },
+      ],
+    });
+    expect(await d(call('gm_thing'), gm)).toMatchObject({ error: { code: 'FORBIDDEN' } });
+    expect(ran).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+  it('admission rejection prevents all stages and execution', async () => {
+    const { OpAdmissionError } = await import('../../src/ops/types.js');
+    const handler = Object.assign(
+      vi.fn(async () => ok),
+      {
+        admit: async () => {
+          throw new OpAdmissionError('INVALID_ARGS', 'invalid macro');
+        },
+      },
+    );
+    const ran = vi.fn();
+    const d = createDispatcher({
+      tools,
+      handlers: { gm_thing: handler },
+      stages: [
+        {
+          name: 'first',
+          order: 1,
+          async run(_ctx, next) {
+            ran();
+            return next();
+          },
+        },
+      ],
+    });
+    expect(await d(call('gm_thing'), gm)).toEqual({
+      error: { code: 'INVALID_ARGS', message: 'invalid macro' },
+    });
+    expect(ran).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+  });
+  it('pack admission is rejected before its callback', async () => {
+    const { ToolRegistry } = await import('../../src/ops/registry-class.js');
+    const { coreEntry } = await import('../../src/ops/core-tools.js');
+    const { createRegistryDispatcher } = await import('../../src/ops/dispatch.js');
+    let lookup!: import('../../src/ops/registry-class.js').RegistryLookup;
+    const registry = new ToolRegistry((value) => {
+      lookup = value;
+    });
+    const definition = mk('fixture_admit', 'gm');
+    const admit = vi.fn(async () => ({}));
+    const entry = coreEntry(
+      definition,
+      Object.assign(async () => ok, { admit }),
+    );
+    entry.name = 'fixture-admit';
+    entry.inputSchema = {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'ID' } },
+      required: ['id'],
+      additionalProperties: false,
+    };
+    entry.origin = { packId: 'fixture-pack', version: '1.0.0', prefix: 'fixture' };
+    registry.register(entry);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(
+      await createRegistryDispatcher(registry, lookup, [])(call('fixture-admit'), gm),
+    ).toMatchObject({ error: { code: 'INTERNAL' } });
+    expect(admit).not.toHaveBeenCalled();
+  });
+});
+
+it('admission cannot change the closed destructive action classification', async () => {
+  const { tokenManage } = await import('@agent-gateway/protocol');
+  const native = { id: 'u2', isGM: true };
+  vi.stubGlobal('game', { user: native, users: { get: () => native } });
+  const handler = Object.assign(
+    vi.fn(async () => ok),
+    { admit: async () => ({ action: 'remove', tokenUuid: 'Scene.s.Token.t' }) },
+  );
+  const stage = vi.fn();
+  const d = createDispatcher({
+    tools: [tokenManage],
+    handlers: { token_manage: handler },
+    stages: [
+      {
+        name: 'first',
+        order: 1,
+        async run(_ctx, next) {
+          stage();
+          return next();
+        },
+      },
+    ],
+  });
+  expect(
+    await d(call('token_manage', { action: 'hide', tokenUuid: 'Scene.s.Token.t' }), gm),
+  ).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  expect(stage).not.toHaveBeenCalled();
+  expect(handler).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
+});

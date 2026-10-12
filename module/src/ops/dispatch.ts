@@ -1,4 +1,5 @@
-import { prepareContext } from './context.js';
+import { OpAdmissionError } from './types.js';
+import { actionCategory, effectiveCategory, prepareContext } from './context.js';
 import { checkToolDefinition, type ToolDefinition } from '@agent-gateway/protocol';
 import { coreEntry, registerCoreTools } from './core-tools.js';
 import { ToolRegistry, installToolRegistry, type RegistryLookup } from './registry-class.js';
@@ -61,8 +62,41 @@ export function createRegistryDispatcher(
     };
     try {
       prepareContext(ctx, def.category, def.origin === 'core', handler);
+      if (handler.admit) {
+        if (def.origin !== 'core') throw Error('Pack admission is not authorized');
+        const review = await handler.admit(
+          Object.freeze({
+            user: Object.freeze({ ...ctx.user }),
+            agent: Object.freeze({ ...ctx.agent }),
+            sessionId: ctx.sessionId,
+            tool: ctx.tool,
+            args: ctx.args,
+          }),
+        );
+        if (registry.info(call.tool) !== def || lookup(call.tool) !== implementation)
+          return fail('FORBIDDEN', 'Canonical tool binding changed during admission');
+        const native = (
+          globalThis as {
+            game?: { user?: { id: string; isGM: boolean }; users?: { get(id: string): unknown } };
+          }
+        ).game;
+        if (
+          !native?.user ||
+          native.user.id !== ctx.user.id ||
+          native.users?.get(ctx.user.id) !== native.user ||
+          native.user.isGM !== true
+        )
+          return fail('FORBIDDEN', 'A current native GM is required after admission');
+        ctx.args = review;
+        if (
+          actionCategory(ctx.tool, ctx.args, def.category, true) !==
+          effectiveCategory(ctx, def.category)
+        )
+          return fail('FORBIDDEN', 'Admission cannot change the prepared category');
+      }
       return await run(0);
     } catch (err) {
+      if (err instanceof OpAdmissionError) return fail(err.code, err.message);
       console.error(`agent-gateway | tool "${def.name}" failed`, err);
       return fail('INTERNAL', `Tool "${def.name}" failed unexpectedly`);
     }

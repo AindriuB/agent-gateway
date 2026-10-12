@@ -1,3 +1,7 @@
+import { macroRun } from './macro-run.js';
+import { scriptRun } from './script-run.js';
+export * from './macro-run.js';
+export * from './script-run.js';
 import { tableRoll } from './table-roll.js';
 import { playlistControl } from './playlist-control.js';
 import { notify } from './notify.js';
@@ -53,6 +57,8 @@ export * from './approval-status.js';
 
 /** Registry of all tools. Later tasks only append entries. */
 export const TOOLS: readonly ToolDefinition[] = [
+  macroRun,
+  scriptRun,
   tableRoll,
   playlistControl,
   notify,

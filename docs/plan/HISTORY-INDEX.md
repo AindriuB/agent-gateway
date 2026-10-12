@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 26 | Full-source once-only code approval, native v13/v14 pending text results and exact cleanup passed; PR #69 merge pending | ## 2026-10-12 — Source-bound GM code tools validated on v13 and v14; merge pending (task 26) |
 | 2026-10-12 | 25 | PR #67 merged; Task25 archived, 21 completed contracts, task26 next and18 blocked; bounded native history preserved | ## 2026-10-12 — GM table, playlist and notification task merged and archived (task 25) |
 | 2026-10-12 | 25 | Table/playlist/targeted notifications passed bounded native v13/v14 acceptance and exact cleanup; PR #67 merge pending, historical harness limits retained | ## 2026-10-12 — GM table, playlist and notification tools validated; merge pending (task 25) |
 | 2026-10-11 | 24 | PR #65 merged; Task24 archived, 20 completed contracts, task25 next and18 blocked; bounded native history preserved | ## 2026-10-11 — GM scene, token and combat task merged and archived (task 24) |
