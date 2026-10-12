@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Source-bound GM code task merged and archived (task 26)
+
+PR #69 merged on 2026-10-12 at 09:33:14 UTC, head `4f00ed1dff5aefdae7d4a0c2593e7b452ed1a4c2`, main `b8eb171a8afb2e181f37840c7f900ffabd289693`. Task 26 is complete and its contract moved to `docs/plan/done/26-code-tools.md` with only its status changed. The archive now contains 22 contracts; 19 active contract files remain, including blocked task 18. Task 27 is next.
+
+The combined reusable harness/documentation gate passed 3,268 fast / 2,227 slow tests plus build/lint at `260a158`; the final head changed only result documentation. Native proof remains source `7e626eb`, bundle `deadc3daef7d9c4a265f474b2155ca8a4558de51315e9ca5803c0f30ec261aa7`, executed harness `b4646e96f7944f997075ed75871f2e73c9782a4f5df0a3bd9348dc1e13df6875`. Both v13.351 and v14.369 passed two full-source human once-approved calls with actual pending text-only JSON completion, two exact code audits with zero targets and one-Macro cleanup. Original root sets, Macro sources, views and world time were unchanged. The preceding validation entry preserves coverage limits; archival creates no new native execution, deployment, native chat/compendium, arbitrary-effect, Undo or sandbox claim.
+
 ## 2026-10-12 — Source-bound GM code tools validated on v13 and v14; merge pending (task 26)
 
 Task 26 is verified in open draft PR #69 at source `7e626ebe04e5547e1ae5a4491d001e400d61fa8c`. The contract remains active until merge; the archive stays at 21 contracts, task 27 is next after merge, and task 18 remains blocked. Source build/lint/full verification passed on its first run (3,264 fast / 2,227 slow tests), plus 46 independent focused checks. Full macro source is captured before approval and rechecked against canonical native identity/type/command/version/permissions before execution. Core and genuinely registered pack code still require approval under tampered allow policy; code remains once-only. Bounded fixed JSON arguments, descriptor-safe returns, native chat ChatMessage UUID representation and message-only errors have offline regression coverage.

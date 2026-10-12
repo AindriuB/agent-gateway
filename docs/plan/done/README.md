@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 21 contracts have merged implementations and recorded evidence. Task 19's
+These 22 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -21,6 +21,7 @@ over unchecked historical boxes.
 | 23, 23a | Complete; native v13/v14 eight-call GM document and grouped subtree Undo acceptance passed | PR #63 (`0cf35c3`, merged `83d216d`); combined gate 3,042 fast / 2,227 slow |
 | 24 | Complete; native v13/v14 bounded scene/token/combat acceptance passed; PF2e initiative unsupported | PR #65 (`377ae79`, merged `a150498`); combined gate 3,158 fast / 2,227 slow |
 | 25 | Complete; bounded native v13/v14 table, muted playlist and targeted notification acceptance passed; final calls immediate | PR #67 (`aec6db3`, merged `6ec99ff`); combined gate 3,222 fast / 2,227 slow |
+| 26 | Complete; bounded native v13/v14 full-source once-only code approval and pending text completion passed | PR #69 (`4f00ed1`, merged `b8eb171`); combined gate 3,268 fast / 2,227 slow |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains
