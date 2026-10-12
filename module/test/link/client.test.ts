@@ -224,7 +224,18 @@ it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async
   expect(sockets).toHaveLength(1);
 });
 
-it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7', '4.0.0', '4.99.7'])(
+it.each([
+  '1.0.0',
+  '1.99.7',
+  '2.0.0',
+  '2.99.7',
+  '3.0.0',
+  '3.99.7',
+  '4.0.0',
+  '4.99.7',
+  '5.0.0',
+  '5.99.7',
+])(
   'stops after an older gateway %s rejects the v5 hello, without welcome or retrying',
   async (legacy) => {
     token = 'tok';
@@ -234,7 +245,7 @@ it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7', '4.0.0', '4.99
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '5.0.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '6.0.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
     if (compatibility.ok) throw new Error('Legacy gateway must reject v5');

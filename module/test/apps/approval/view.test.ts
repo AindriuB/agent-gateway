@@ -45,6 +45,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('approval presentation', () => {
+  it('hides session approval for replay while preserving ordinary writes', async () => {
+    expect(await requestView(request({ replay: true }))).toMatchObject({ sessionAllowed: false });
+    expect(await requestView(request())).toMatchObject({ sessionAllowed: true });
+  });
   it('loads the visible current document to diff partial update arguments', async () => {
     const load = vi.fn(async () => ({
       testUserPermission: () => true,

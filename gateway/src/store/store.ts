@@ -1,4 +1,5 @@
 import { createEventRepository, type EventRepository } from '../events/repository.js';
+import { createQueueRepository, type QueueRepository } from '../offline-queue/repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
 import { MIGRATIONS } from './migrations/index.js';
@@ -25,6 +26,7 @@ export interface NewPairing {
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
 export interface Store {
   readonly events: EventRepository;
+  readonly queue: QueueRepository;
   isPairingActive(id: string, worldId: string, userId: string): boolean;
   onPairingRevoked(listener: () => void): () => void;
   createPairing(p: NewPairing): PairingRow;
@@ -73,6 +75,7 @@ export function openStore(path: string, now: () => number = Date.now): Store {
   );
   return {
     events: createEventRepository(db),
+    queue: createQueueRepository(db),
     onPairingRevoked(listener) {
       revokedListeners.add(listener);
       return () => {

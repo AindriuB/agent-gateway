@@ -119,9 +119,9 @@ describe('error codes', () => {
 
 describe('checkCompat', () => {
   it('accepts identical and minor/patch differences', () => {
-    expect(PROTOCOL_VERSION).toBe('5.0.0');
-    expect(checkCompat(PROTOCOL_VERSION, '5.0.0')).toEqual({ ok: true });
-    expect(checkCompat(PROTOCOL_VERSION, '5.5.3')).toEqual({ ok: true });
+    expect(PROTOCOL_VERSION).toBe('6.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '6.0.0')).toEqual({ ok: true });
+    expect(checkCompat(PROTOCOL_VERSION, '6.5.3')).toEqual({ ok: true });
   });
 
   it('refuses a major mismatch naming both versions and the side to upgrade', () => {
@@ -137,19 +137,27 @@ describe('checkCompat', () => {
     if (!r2.ok) expect(r2.message).toMatch(/upgrade the remote side/i);
   });
 
-  it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7', '4.0.0', '4.99.7'])(
-    'refuses older protocol %s in either direction',
-    (legacy) => {
-      expect(checkCompat(PROTOCOL_VERSION, legacy)).toMatchObject({
-        ok: false,
-        code: 'PROTOCOL_MAJOR_MISMATCH',
-      });
-      expect(checkCompat(legacy, PROTOCOL_VERSION)).toMatchObject({
-        ok: false,
-        code: 'PROTOCOL_MAJOR_MISMATCH',
-      });
-    },
-  );
+  it.each([
+    '1.0.0',
+    '1.99.7',
+    '2.0.0',
+    '2.99.7',
+    '3.0.0',
+    '3.99.7',
+    '4.0.0',
+    '4.99.7',
+    '5.0.0',
+    '5.99.7',
+  ])('refuses older protocol %s in either direction', (legacy) => {
+    expect(checkCompat(PROTOCOL_VERSION, legacy)).toMatchObject({
+      ok: false,
+      code: 'PROTOCOL_MAJOR_MISMATCH',
+    });
+    expect(checkCompat(legacy, PROTOCOL_VERSION)).toMatchObject({
+      ok: false,
+      code: 'PROTOCOL_MAJOR_MISMATCH',
+    });
+  });
 
   it('refuses unparseable versions', () => {
     expect(checkCompat('1.0.0', 'abc').ok).toBe(false);
@@ -204,4 +212,93 @@ it('strictly bounds offline policy and derives purge identity from the connectio
     { type: 'purgeEventsResult', requestId: 'r', count: -1 },
   ])
     expect(parseLinkMessage(JSON.stringify(frame)).ok).toBe(false);
+});
+
+describe('protocol6 queued replay boundaries', () => {
+  const tool = TOOLS.find((t) => t.name === 'chat_post')!;
+  const definition = {
+    name: tool.name,
+    description: tool.description,
+    category: tool.category,
+    minRole: tool.minRole,
+    ...toJsonSchema(tool),
+  };
+  const call = {
+    id: 'r'.repeat(32),
+    sessionId: 'session',
+    tool: tool.name,
+    args: { content: 'fixture' },
+    expiresAt: 1000,
+    definition,
+  };
+  it('parses bounded replay and correlated status, preserving ordinary calls', () => {
+    for (const frame of [
+      { type: 'queuedCalls', calls: [call] },
+      { type: 'queuedStatus', id: call.id, status: 'pending', text: 'waiting' },
+    ])
+      expect(parseLinkMessage(JSON.stringify(frame)).ok).toBe(true);
+    expect(PROTOCOL_VERSION).toBe('6.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '5.0.0').ok).toBe(false);
+  });
+  it.each([
+    { ...call, id: 'wrong' },
+    { ...call, approved: true },
+    { ...call, userId: 'forged' },
+    { ...call, expiresAt: 0 },
+  ])('rejects forged or invalid replay fields', (bad) => {
+    expect(parseLinkMessage(JSON.stringify({ type: 'queuedCalls', calls: [bad] })).ok).toBe(false);
+  });
+  it('rejects oversized batches and structured replay results', () => {
+    expect(
+      parseLinkMessage(JSON.stringify({ type: 'queuedCalls', calls: Array(6).fill(call) })).ok,
+    ).toBe(false);
+    expect(
+      parseLinkMessage(
+        JSON.stringify({
+          type: 'queuedStatus',
+          id: call.id,
+          status: 'approved',
+          text: 'ok',
+          structured: { secret: true },
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+  it('preserves only literal approved execution failure flags', () => {
+    for (const resultFailed of [true, false])
+      expect(
+        parseLinkMessage(
+          JSON.stringify({
+            type: 'queuedStatus',
+            id: call.id,
+            status: 'approved',
+            text: 'result',
+            resultFailed,
+          }),
+        ),
+      ).toMatchObject({ ok: true, message: { resultFailed } });
+    for (const resultFailed of ['true', 1, [], null])
+      expect(
+        parseLinkMessage(
+          JSON.stringify({
+            type: 'queuedStatus',
+            id: call.id,
+            status: 'approved',
+            text: 'result',
+            resultFailed,
+          }),
+        ).ok,
+      ).toBe(false);
+    expect(
+      parseLinkMessage(
+        JSON.stringify({
+          type: 'queuedStatus',
+          id: call.id,
+          status: 'pending',
+          text: 'waiting',
+          resultFailed: true,
+        }),
+      ).ok,
+    ).toBe(false);
+  });
 });

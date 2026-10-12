@@ -1,3 +1,5 @@
+import type { OfflineQueue } from '../offline-queue/service.js';
+import type { QueueOwner } from '../offline-queue/repository.js';
 import type { EventBuffer } from '../events/index.js';
 import { projectOutputSchema } from './output-schema.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -22,6 +24,7 @@ export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 export interface SessionServerOptions {
   version: string;
   events?: EventBuffer;
+  queue?: OfflineQueue;
   registry: LinkRegistry;
   selector?: UserSelector;
   /** Defaults to the protocol registry; injectable for tests. */
@@ -58,6 +61,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       `Bound MCP session to ${safeText(who.userName || who.userId)} in ${safeText(who.worldId)}; start with --user to choose.`,
     ),
   );
+  let queueOwner: QueueOwner | undefined;
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
   const server = new Server(
     { name: 'foundry-agent-gateway', version: opts.version },
@@ -186,7 +190,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     if (!req.params.name.includes('-') && !all.some((t) => t.name === req.params.name))
       return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
     const gatewayTool = all.find((t) => t.name === req.params.name && t.handledBy === 'gateway');
-    const r = binding.resolve(true, !!gatewayTool);
+    const r = binding.resolve(true, !!gatewayTool || !!opts.queue);
     if (r.kind === 'ambiguous') {
       return failure(
         'INVALID_ARGS',
@@ -223,6 +227,71 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       } catch (e) {
         if (e instanceof LinkCallError) return failure(e.code, e.message);
         return failure('INTERNAL', 'Event read failed');
+      }
+    }
+    if (opts.queue) {
+      try {
+        if (r.conn || binding.offlineEventReady) queueOwner = opts.queue.owner(r.pair, queueOwner);
+        if (req.params.name === 'approval_status' && queueOwner) {
+          const id = all
+            .find((t) => t.name === 'approval_status')!
+            .input.safeParse(req.params.arguments ?? {});
+          if (!id.success) return failure('INVALID_ARGS', 'Invalid approval id');
+          const row = opts.queue.status(queueOwner, (id.data as { id: string }).id);
+          if (row) {
+            const status = row.state === 'claimed' ? 'unknown' : row.state;
+            const result = {
+              id: row.id,
+              status,
+              ...(row.result ? { result: row.result } : {}),
+              ...(status === 'approved' && row.result_failed !== null
+                ? { resultFailed: row.result_failed === 1 }
+                : {}),
+            };
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text:
+                    status === 'queued'
+                      ? 'World offline: queued intent; no approval or execution yet.'
+                      : status === 'unknown'
+                        ? 'Execution outcome unknown; reconcile before any new request.'
+                        : JSON.stringify(result),
+                },
+              ],
+              structuredContent: result,
+            };
+          }
+        }
+        if (
+          !r.conn &&
+          queueOwner &&
+          req.params.name !== 'approval_status' &&
+          all.find((t) => t.name === req.params.name)?.category !== 'read' &&
+          !opts.queue.isRead(queueOwner, req.params.name)
+        ) {
+          const row = opts.queue.enqueue(
+            queueOwner,
+            sessionId,
+            req.params.name,
+            req.params.arguments,
+            extra.signal,
+          );
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: 'World offline: intent queued; no human approval or execution has occurred.',
+              },
+            ],
+            structuredContent: { status: 'pending_approval', id: row.id },
+          };
+        }
+      } catch (e) {
+        return e instanceof LinkCallError
+          ? failure(e.code, e.message)
+          : failure('INTERNAL', 'Offline queue storage failed');
       }
     }
     if (!r.conn) return offline();

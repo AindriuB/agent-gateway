@@ -149,6 +149,31 @@ export const PurgeEventsResultMessage = z.strictObject({
   count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
 });
 
+/** Gateway-generated receipt identity; transport calls and public arguments cannot carry it. */
+export const QueuedCall = z.strictObject({
+  id: z.string().regex(/^[A-Za-z0-9_-]{32}$/),
+  sessionId: z.string().min(1).max(100),
+  definition: ToolsetMessage.shape.tools.element,
+  tool: z.string().min(1).max(100),
+  args: z.record(z.string(), z.unknown()),
+  expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export const QueuedCallsMessage = z.strictObject({
+  type: z.literal('queuedCalls'),
+  calls: z.array(QueuedCall).min(1).max(5),
+});
+export const QueuedStatusMessage = z
+  .strictObject({
+    type: z.literal('queuedStatus'),
+    id: QueuedCall.shape.id,
+    status: z.enum(['pending', 'approved', 'denied', 'expired', 'unknown']),
+    text: z.string().max(4000),
+    resultFailed: z.boolean().optional(),
+  })
+  .refine((r) => r.resultFailed === undefined || r.status === 'approved', {
+    message: 'Only approved execution results carry resultFailed',
+  });
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -164,6 +189,8 @@ export const LinkMessage = z.discriminatedUnion('type', [
   EventPolicyMessage,
   PurgeEventsMessage,
   PurgeEventsResultMessage,
+  QueuedCallsMessage,
+  QueuedStatusMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

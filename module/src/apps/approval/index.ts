@@ -75,7 +75,7 @@ export async function requestView(request: PendingApproval): Promise<object> {
     isCode: request.category === 'code' && safe,
     pack: origin && origin !== 'core' ? { id: origin.packId, version: origin.version } : undefined,
     // Task 16 intentionally refuses session grants for code.
-    sessionAllowed: request.category !== 'code',
+    sessionAllowed: request.category !== 'code' && !request.replay,
   };
 }
 

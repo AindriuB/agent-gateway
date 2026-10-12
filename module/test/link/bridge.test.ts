@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
+import { PROTOCOL_VERSION, chatPost, toJsonSchema } from '@agent-gateway/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installBridge } from '../../src/link/bridge.js';
 import { LinkClient, type SocketLike } from '../../src/link/client.js';
-import type { DispatchResult, OpCall, OpUser } from '../../src/ops/types.js';
+import { replayOf, type DispatchResult, type OpCall, type OpUser } from '../../src/ops/types.js';
 
 class FakeSocket implements SocketLike {
   onopen: SocketLike['onopen'] = null;
@@ -119,5 +119,118 @@ describe('bridge', () => {
     installBridge(client, { dispatch, getUser: () => undefined });
     expect(await (client.onCall as any)(call())).toMatchObject({ ok: false, code: 'INTERNAL' });
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('authenticated queued bridge', () => {
+  const definition = {
+    name: chatPost.name,
+    description: chatPost.description,
+    category: chatPost.category,
+    minRole: chatPost.minRole,
+    ...toJsonSchema(chatPost),
+  };
+  const frame = () => ({
+    type: 'queuedCalls',
+    calls: [
+      {
+        id: 'r'.repeat(32),
+        tool: chatPost.name,
+        args: { content: 'fixture' },
+        sessionId: 's',
+        expiresAt: Date.now() + 60000,
+        definition: structuredClone(definition),
+      },
+    ],
+  });
+  function setupStorage() {
+    const rows = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => rows.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        rows.set(k, v);
+      },
+    };
+    installBridge(client, { dispatch, getUser: () => gameUser, storage: () => storage });
+    return storage;
+  }
+  it('dispatches one immutable receipt with current native identity and trusted provenance', async () => {
+    setupStorage();
+    const f = frame();
+    socket.recv(f);
+    await flush();
+    socket.recv(f);
+    await flush();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const [call, user] = dispatch.mock.calls[0]!;
+    expect(user.id).toBe('player-1');
+    expect(replayOf(call)?.id).toBe(f.calls[0]!.id);
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'queuedStatus', status: 'approved' });
+  });
+  it('fails closed before dispatch on storage failure or changed definition', async () => {
+    setupStorage();
+    const f = frame();
+    f.calls[0]!.definition.description = 'changed';
+    socket.recv(f);
+    await flush();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'queuedStatus', status: 'denied' });
+    installBridge(client, {
+      dispatch,
+      getUser: () => gameUser,
+      storage: () => {
+        throw Error('quota');
+      },
+    });
+    socket.recv(frame());
+    await flush();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+  it('invalidates replay provenance on disconnect and never reexecutes after guard reload', async () => {
+    const storage = setupStorage();
+    let release!: () => void;
+    dispatch.mockImplementation(async () => {
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return { text: 'done', structured: {} };
+    });
+    const f = frame();
+    socket.recv(f);
+    await flush();
+    const call = dispatch.mock.calls[0]![0];
+    expect(replayOf(call)?.current()).toBe(true);
+    client.stop();
+    expect(replayOf(call)?.current()).toBe(false);
+    release();
+    await flush();
+    installBridge(client, { dispatch, getUser: () => gameUser, storage: () => storage });
+  });
+  it('keeps failed approved continuation honest through duplicate ingress and bridge reinstall', async () => {
+    const storage = setupStorage();
+    dispatch.mockImplementation(async (call) => {
+      replayOf(call)!.report('approved', 'FORBIDDEN: reviewed macro source changed', true);
+      return { error: { code: 'FORBIDDEN', message: 'reviewed macro source changed' } };
+    });
+    const f = frame();
+    socket.recv(f);
+    await flush();
+    expect(socket.sent.at(-1)).toMatchObject({
+      type: 'queuedStatus',
+      status: 'approved',
+      resultFailed: true,
+    });
+    socket.recv(f);
+    await flush();
+    installBridge(client, { dispatch, getUser: () => gameUser, storage: () => storage });
+    socket.recv(f);
+    await flush();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(socket.sent.at(-1)).toMatchObject({
+      type: 'queuedStatus',
+      status: 'approved',
+      resultFailed: true,
+      text: 'FORBIDDEN: reviewed macro source changed',
+    });
   });
 });

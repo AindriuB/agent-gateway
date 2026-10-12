@@ -3,7 +3,7 @@ import { policyCategories } from '../ops/context.js';
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import type { Stage } from '../ops/stages.js';
-import type { DispatchResult } from '../ops/types.js';
+import { replayOf, type DispatchResult } from '../ops/types.js';
 import { evaluate, type PolicyInputs } from './evaluate.js';
 import { CATEGORIES, type Category } from './matrix.js';
 import { loadOwnerPolicy } from './store.js';
@@ -74,7 +74,7 @@ export function createPolicyStage(
         if (rank[verdict.decision] > rank[decision]) decision = verdict.decision;
       }
       if (decision === 'deny') return denied(t('AGENT_GATEWAY.Policy.denied', { category }));
-      if (decision === 'allow') return next();
+      if (decision === 'allow' && !replayOf(ctx)) return next();
       const approver = decision === 'ask_gm' ? 'gm' : 'owner';
       ctx.approval = { approver };
       // The approval stage (30) takes it from here; the dispatcher refuses an unapproved call.

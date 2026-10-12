@@ -1,7 +1,7 @@
 import type { ErrorCode } from './errors.js';
 
-/** v4 adds authenticated event-read metadata and connection-bound resume hints. */
-export const PROTOCOL_VERSION = '5.0.0';
+/** v6 adds owner-bound offline intent replay and correlated receipts. */
+export const PROTOCOL_VERSION = '6.0.0';
 
 export type CompatResult = { ok: true } | { ok: false; code: ErrorCode; message: string };
 

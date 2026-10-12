@@ -68,3 +68,24 @@ export type DispatchResult = OpResult | OpError;
 export function isOpError(r: DispatchResult): r is OpError {
   return 'error' in r;
 }
+
+/** Trusted link provenance lives outside caller arguments and mutable handler contexts. */
+export interface ReplayContext {
+  readonly id: string;
+  readonly expiresAt: number;
+  current(): boolean;
+  markApproved?(gm: boolean): void;
+  gmApproved?(): boolean;
+  report(
+    status: 'pending' | 'approved' | 'denied' | 'expired' | 'unknown',
+    text: string,
+    resultFailed?: boolean,
+  ): void;
+}
+const replayContexts = new WeakMap<object, ReplayContext>();
+export function bindReplay(value: object, replay: ReplayContext): void {
+  replayContexts.set(value, Object.freeze(replay));
+}
+export function replayOf(value: object): ReplayContext | undefined {
+  return replayContexts.get(value);
+}

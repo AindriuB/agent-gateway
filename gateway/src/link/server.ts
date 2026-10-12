@@ -1,3 +1,4 @@
+import type { OfflineQueue } from '../offline-queue/service.js';
 import type { EventBuffer } from '../events/index.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -34,6 +35,7 @@ export interface LinkServerOptions {
   /** Time a socket may stay silent before sending `hello`. */
   helloTimeoutMs?: number;
   events?: EventBuffer;
+  queue?: OfflineQueue;
 }
 
 export const hashToken = (token: string): string =>
@@ -216,6 +218,14 @@ export class LinkServer {
               });
           } catch {
             ws.close(1008, 'invalid event policy');
+          }
+          break;
+        case 'queuedStatus':
+          try {
+            this.opts.queue?.accept(conn, msg);
+          } catch {
+            this.opts.registry.remove(conn);
+            ws.close(1008, 'invalid queued receipt');
           }
           break;
         case 'toolset':
