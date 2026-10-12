@@ -105,7 +105,7 @@ The PR #73 event-read revocation repair `ac9b93e5e6c00df32947fd548a1a22180667502
 ## Next
 
 ### Offline event reading, retention and purge
-Task 29 — Add offline event reading with retention and purge — is next, following merged Task28. Online polling is available; offline history remains hidden/refused until Task29 implements its policy, retention and purge requirements. Task18 remains architecture-blocked.
+Task 29 — Add offline event reading with retention and purge — is in local implementation, following merged Task28. Its reviewed contract requires protocol5, explicit cooperative offline authorization, bounded receipt-time retention and world-scoped purge; final source verification and native acceptance remain pending. It is currently stacked on the separate deterministic test repair in open PR #75 (`1eb9b08`), which has not merged. Online Task28 polling is available; Task29 offline history is not yet claimed. See `docs/security.md` for last-known policy and software-enforcement limits. Task18 remains architecture-blocked; no new contract is archived.
 
 ### Audit Undo validation scope
 Task 19's original PR #41 evidence remains offline verification and v14 backend reservation inspection. Task 23a now supplies human Audit UI Undo and local screenshot evidence on v13.351/v14.369 for one grouped three-root deletion with exact embedded restoration, plus fresh persisted completion and reservation-release checks. The repair is now merged through PR #63; this supplies task 19's requested successful native Undo UI/screenshot evidence. Direct embedded-only Undo and native concurrent-reservation contention are evidence limits, not invented unfinished task19 requirements. Do not infer those cases from task 21's snapshots or the task23a stub regressions.
