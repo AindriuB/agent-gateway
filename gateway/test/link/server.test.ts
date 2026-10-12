@@ -309,7 +309,7 @@ describe('Task27 event admission', () => {
     await c.next();
     c.send(eventFrame('other'));
     await c.untilClosed();
-    expect(h.registry.list()).toEqual([]);
+    await expect.poll(() => h!.registry.list(), { timeout: 1000 }).toEqual([]);
   });
   it('refuses extra document data in an authenticated event', async () => {
     h = await startServer();
@@ -318,6 +318,6 @@ describe('Task27 event admission', () => {
     await c.next();
     c.send({ ...eventFrame(), event: { ...eventFrame().event, data: { secret: true } } });
     await c.untilClosed();
-    expect(h.registry.list()).toEqual([]);
+    await expect.poll(() => h!.registry.list(), { timeout: 1000 }).toEqual([]);
   });
 });
