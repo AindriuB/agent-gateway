@@ -474,6 +474,62 @@ describe('pf2e adapter', () => {
     expect(decrease).toHaveBeenCalledWith('frightened', { forceRemove: true });
     expect(actor.deleteEmbeddedDocuments).not.toHaveBeenCalled();
   });
+  it('snapshots only the condition Item when updating its value, even with grants', async () => {
+    const update = vi.fn(async () => {});
+    (globalThis as any).game.pf2e.ConditionManager.updateConditionValue = update;
+    const child = {
+      id: 'g1',
+      uuid: 'Actor.a.Item.g1',
+      flags: { pf2e: { grantedBy: { id: 'c1', onDelete: 'cascade' }, itemGrants: {} } },
+    };
+    const cond: any = { ...frightened, flags: { pf2e: { itemGrants: { a: { id: 'g1' } } } } };
+    const a2 = {
+      ...actor,
+      itemTypes: { ...actor.itemTypes, condition: [cond] },
+      items: { get: (id: string) => ({ g1: child, c1: cond })[id] },
+    };
+    await pf2eAdapter.conditions(a2, { id: 'frightened', active: true, value: 1 }, ctx);
+    expect(snapshot.mock.calls.map((c: any[]) => c[0])).toEqual(['Actor.a.Item.c1']);
+  });
+  it.each([
+    ['a child it granted', 'child'],
+    ['its granter', 'granter'],
+  ])('stops without snapshots or removal when a restrict grant covers %s', async (_n, which) => {
+    const decrease = vi.fn(async () => {});
+    const other: any = {
+      id: 'o1',
+      uuid: 'Actor.a.Item.o1',
+      flags: { pf2e: { grantedBy: { id: 'c1', onDelete: 'restrict' }, itemGrants: {} } },
+    };
+    const cond: any = {
+      ...frightened,
+      flags: {
+        pf2e: {
+          itemGrants: which === 'child' ? { a: { id: 'o1', onDelete: 'restrict' } } : {},
+          grantedBy: which === 'granter' ? { id: 'o1' } : undefined,
+        },
+      },
+    };
+    if (which === 'granter') {
+      other.flags.pf2e = { itemGrants: { a: { id: 'c1', onDelete: 'restrict' } } };
+    }
+    const a2 = {
+      ...actor,
+      itemTypes: { ...actor.itemTypes, condition: [cond] },
+      items: { get: (id: string) => ({ o1: other, c1: cond })[id] },
+      decreaseCondition: decrease,
+    };
+    const r = (await pf2eAdapter.conditions(a2, { id: 'frightened', active: false }, ctx)) as any;
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(decrease).not.toHaveBeenCalled();
+    expect(r.conditions.map((c: any) => c.id)).toContain('frightened');
+  });
+  it('does not claim a spend when a cantrip cast fails', async () => {
+    spellMessage.mockRejectedValueOnce(new Error('boom'));
+    await expect(pf2eAdapter.performAction(actor, 'spell:e1:s2', {}, ctx)).rejects.toThrow(
+      /^(?!.*was spent).*boom/,
+    );
+  });
   it('makes no snapshot for a no-op change', async () => {
     await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 2 }, ctx);
     expect(snapshot).not.toHaveBeenCalled();

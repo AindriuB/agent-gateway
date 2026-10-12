@@ -381,10 +381,9 @@ async function performAction(
         if (!made) throw new Error('no chat message was created');
       } catch (e) {
         throw new Error(
-          `Casting ${text(spell.name, 200)} failed after its slot or focus point was spent: ${text(
-            (e as Error)?.message,
-            300,
-          )}${spentNote}`,
+          `Casting ${text(spell.name, 200)} failed${
+            spends ? ' after its slot or focus point was spent' : ''
+          }: ${text((e as Error)?.message, 300)}${spentNote}`,
         );
       }
       return true;
@@ -466,30 +465,47 @@ function activeConditions(actor: any) {
 }
 
 /**
- * The condition Item plus every Item pf2e will cascade-delete with it: items it granted and its
- * granter when that grant cascades (processGrantDeletions, pf2e.mjs:45773-45789, :45387-45412).
+ * What pf2e's deletion of a condition would do (processGrantDeletions, pf2e.mjs:45387-45412,
+ * called from :45773-45789): the Items it cascade-deletes with it (items it granted, and its
+ * granter when that grant cascades), or a refusal when a `restrict` grant forbids the removal
+ * (:45389-45403). A refused removal deletes nothing.
  */
-function cascadeTargets(actor: any, condition: any): string[] {
-  const seen = new Set<any>();
+function deletionPlan(actor: any, condition: any): { targets: string[]; refused: boolean } {
+  const pending: any[] = [condition];
+  let refused = false;
   const visit = (item: any) => {
-    if (!item || seen.has(item) || seen.size >= 64) return;
-    seen.add(item);
-    const granter = actor.items?.get?.(item.flags?.pf2e?.grantedBy?.id ?? '');
+    if (refused) return;
+    const get = (id: unknown) => actor.items?.get?.(id ?? '');
+    const granter = get(item.flags?.pf2e?.grantedBy?.id);
     const grant = Object.values(granter?.flags?.pf2e?.itemGrants ?? {}).find(
       (g: any) => g?.id === item.id,
     ) as any;
-    if (granter && grant?.onDelete === 'cascade') visit(granter);
-    for (const g of Object.values(item.flags?.pf2e?.itemGrants ?? {}) as any[]) {
-      const child = actor.items?.get?.(g?.id);
-      if (
-        child?.flags?.pf2e?.grantedBy?.id === item.id &&
-        child.flags.pf2e.grantedBy.onDelete === 'cascade'
-      )
-        visit(child);
+    const children = (Object.values(item.flags?.pf2e?.itemGrants ?? {}) as any[])
+      .map((g) => get(g?.id))
+      .filter((c) => c?.flags?.pf2e?.grantedBy?.id === item.id);
+    if (granter && grant?.onDelete === 'restrict' && !pending.includes(granter)) refused = true;
+    if (
+      children.some((c) => c.flags.pf2e.grantedBy.onDelete === 'restrict' && !pending.includes(c))
+    )
+      refused = true;
+    if (refused || pending.length >= 64) return;
+    if (granter && grant?.onDelete === 'cascade' && !pending.includes(granter)) {
+      pending.push(granter);
+      visit(granter);
     }
+    for (const c of children)
+      if (c.flags.pf2e.grantedBy.onDelete === 'cascade' && !pending.includes(c)) {
+        pending.push(c);
+        visit(c);
+      }
   };
   visit(condition);
-  return [...seen].map((i) => i.uuid).filter((u): u is string => typeof u === 'string' && !!u);
+  return {
+    refused,
+    targets: refused
+      ? []
+      : pending.map((i) => i.uuid).filter((u): u is string => typeof u === 'string' && !!u),
+  };
 }
 
 async function conditions(actor: any, change?: ConditionChange, context?: AdapterExecutionContext) {
@@ -506,21 +522,26 @@ async function conditions(actor: any, change?: ConditionChange, context?: Adapte
     const value = change.value;
     // pf2e's condition API (increaseCondition, decreaseCondition, updateConditionValue;
     // pf2e.mjs:33531-33561, :48967) accepts no document options, so callOptions cannot reach its
-    // writes and the change is not undoable. Enrol the Items it may change or cascade-delete so
+    // writes and the change is not undoable. Enrol the Items it changes or cascade-deletes so
     // they go stale and Undo refuses them instead of half-restoring.
-    const enrol = async () => {
-      for (const uuid of cascadeTargets(actor, existing)) await context.snapshot(uuid);
-    };
     if (!change.active || value === 0) {
       if (existing) {
-        await enrol();
-        await actor.decreaseCondition(change.id, { forceRemove: true });
+        const plan = deletionPlan(actor, existing);
+        // pf2e would cancel the deletion (a restrict grant), so nothing changes: report the
+        // unchanged conditions without snapshotting or calling it.
+        if (!plan.refused) {
+          for (const uuid of plan.targets) await context.snapshot(uuid);
+          await actor.decreaseCondition(change.id, { forceRemove: true });
+        }
       }
     } else if (!existing) {
+      // Native increaseCondition reuses an inactive unlocked same-slug condition when a value is
+      // given (pf2e.mjs:33547-33549), so this may update an Item rather than create one.
       await actor.increaseCondition(change.id, value ? { value } : {});
     } else if (value !== undefined && num(existing.system?.value?.value) !== undefined) {
       if (existing.system.value.value !== value) {
-        await enrol();
+        // updateConditionValue (pf2e.mjs:48967-48975) touches only the condition Item.
+        if (typeof existing.uuid === 'string') await context.snapshot(existing.uuid);
         await game.pf2e.ConditionManager.updateConditionValue(existing.id, actor, value);
       }
     }
