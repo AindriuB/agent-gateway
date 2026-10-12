@@ -77,3 +77,7 @@ Head `16176a2`. Tester PASS (`npm run verify` first run: 3,617 fast / 2,227 slow
 - `e2e/pf2e/pf2e.e2e.test.ts:148` — give tests that wait on human approval a per-test timeout that does not bound the human's decision (strike needs two approvals; each call waits 25 s before pending).
 - `e2e/pf2e/pf2e.e2e.test.ts:33-34, :75` — treat an error result from `approval_status` as terminal (throw with its text) instead of polling silently; on the delete path include `actorUuid` in the thrown message so residue is named.
 - Make cleanup robust to a timed-out or thrown `settle()`: `session.close()` and the actor delete attempt must still run (or report the residue UUID loudly).
+
+## Attempt 7 — failed
+Head `c54debb`. Tester PASS (`npm run verify`: 3,617 fast / 2,227 slow; e2e-unit 163). Reviewer REQUEST CHANGES; all other Attempt 6 items fixed, scope clean.
+- `e2e/pf2e/pf2e.e2e.test.ts:16` — `HUMAN_TIMEOUT_MS` (10 min) is below the gateway approval TTL (60 min, module/src/approvals/config.ts:7). An approval between 10 and 60 min creates an unreported actor or chat message after the test gave up. Derive each human-waiting timeout from the TTL (import or mirror the constant) times the number of sequential approvals that test waits on, plus margin, and fix the comment at :14-15 to say the vitest timeout is what bounds the wait.
