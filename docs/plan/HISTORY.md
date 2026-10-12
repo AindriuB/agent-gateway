@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Task 31 validation merged and archived; pf2e adapter started (tasks 31, 33)
+
+PR #84 merged bounded generic native validation into main at `3868bfe`, so Task31 is complete and its contract moves to `docs/plan/done/31-adapter-interface.md` with only Status changed. The inventory is 28 done / 14 active. Task33 (pf2e adapter) is in progress with implementation on the Mac; Task32 (dnd5e) stays deferred until after 33. Operating topology also changed: agent sessions run on the Mac, and the homelab is only the deploy target (fetch, fast-forward, `npm run build` over ssh). The homelab checkout was fast-forwarded to `3868bfe` and built; served bundle SHA-256 `cde74e8bd0252019a53cdfad410fe08ebc3ce041b67460e55430379bbe48e945`.
+
+**Cost:** `npm run build -w module` alone fails on the homelab because the protocol package must build first, so deploy with the all-workspace build. Node/npm are only on the login-shell path, hence `bash -lc`.
+
 ## 2026-10-12 — Generic adapter native validation accepted with v14 reconciliation (task 31)
 
 Bounded generic native validation is accepted on Foundry 13.351 and 14.369. V13 completed the automated proof; v14 retained an automated audit-encoding failure and was accepted from separately reviewed read-only reconciliation. Each world completed six SDK calls (four reads and two human once-approved unsupported writes), retained two matching error audits with unchanged Actor snapshots, and deleted its exact private fixture. Original documents/settings/views/world time and credential databases were preserved. Runtime source remains `68e1b4216ad05cfe77ff138b5045768aca776a59`, served bundle `cde74e8bd0252019a53cdfad410fe08ebc3ce041b67460e55430379bbe48e945`. Native fixture source records identify PF2e 7.12.2 on v13 and 8.6.0 on v14; v14 read-only reconciliation also observed 8.6.0.
