@@ -26,6 +26,7 @@
 - module/test/ops/context.test.ts (conditions classification/preparation boundaries only)
 - module/test/tools/adapters/** (five-tool permission, dispatch, audit and pack-API invariance checks)
 - protocol/test/tools/adapters/** (five-tool schema, bounds and registration checks)
+- protocol/test/tools/rules/validate.test.ts (five valid adapter examples only, preserving exhaustive assertions)
 
 ## Goal
 Define the system adapter interface and the five adapter tools that call it,
