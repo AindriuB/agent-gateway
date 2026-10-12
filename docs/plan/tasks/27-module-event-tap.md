@@ -9,6 +9,7 @@
 - protocol/src/link/version.ts (protocol major 3 declaration/comment only)
 - protocol/test/link/link.test.ts (event parsing and major-compatibility tests only)
 - module/test/link/client.test.ts (major-3 hello and older-gateway rejection tests only)
+- module/test/link/lifecycle.test.ts (faithful idle link-client fixture with state/onState/sendMessage only; preserve all lifecycle assertions)
 - gateway/src/link/server.ts (authenticated validated event acceptance/no-op only)
 - gateway/test/link/server.test.ts (event authentication/acceptance and major-compatibility tests only)
 - module/src/events/**
