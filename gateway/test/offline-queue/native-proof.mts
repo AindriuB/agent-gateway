@@ -365,7 +365,7 @@ try {
   const denied: any = await status(fresh, ids[1]!, 'denied');
   // Gateway receipt reason is its text result; native record retains exact human reason.
   const records = await state('queue');
-  task30Attestation(records, ids, baseline.gm.name, plan.denialReason);
+  task30Attestation(records, ids, baseline.gm.name, plan.denialReason, denied.result);
   if (!JSON.stringify(denied).includes(plan.denialReason))
     throw Error('Gateway denial reason missing');
   let audits: any[] = [];

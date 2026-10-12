@@ -243,11 +243,36 @@ describe('Task30 exact native queue acceptance scope', () => {
   });
   it('native attestation uses canonical GM name rather than ID', () => {
     const rows = [
-      { id: 'a', scope: 'once', resolvedBy: 'dev-gm' },
-      { id: 'b', resolvedBy: 'dev-gm', reason: 'intentional' },
+      { id: 'a', status: 'approved', scope: 'once', resolvedBy: 'dev-gm' },
+      { id: 'b', status: 'denied', resolvedBy: 'dev-gm', reason: 'intentional' },
     ];
-    expect(() => task30Attestation(rows, ['a', 'b'], 'dev-gm', 'intentional')).not.toThrow();
-    expect(() => task30Attestation(rows, ['a', 'b'], 'native-id', 'intentional')).toThrow();
+    expect(() =>
+      task30Attestation(rows, ['a', 'b'], 'dev-gm', 'intentional', 'intentional'),
+    ).not.toThrow();
+    expect(() =>
+      task30Attestation(rows, ['a', 'b'], 'native-id', 'intentional', 'intentional'),
+    ).toThrow();
+  });
+  it('attests the complete native denial reason against the receipt without normalizing punctuation', () => {
+    const tag = 'Task30-218a957cec48 deliberate denial';
+    const rows = [
+      { id: 'a', status: 'approved', scope: 'once', resolvedBy: 'dev-gm' },
+      { id: 'b', status: 'denied', resolvedBy: 'dev-gm', reason: `${tag},` },
+    ];
+    expect(task30Attestation(rows, ['a', 'b'], 'dev-gm', tag, `${tag},`).denied.reason).toBe(
+      `${tag},`,
+    );
+    expect(() => task30Attestation(rows, ['a', 'b'], 'dev-gm', tag, tag)).toThrow();
+    for (const reason of ['', 'Task30-wrong deliberate denial', `${tag}${'x'.repeat(1000)}`]) {
+      rows[1]!.reason = reason;
+      expect(() => task30Attestation(rows, ['a', 'b'], 'dev-gm', tag, reason)).toThrow();
+    }
+    rows[1]!.reason = tag;
+    rows[1]!.status = 'pending';
+    expect(() => task30Attestation(rows, ['a', 'b'], 'dev-gm', tag, tag)).toThrow();
+    rows[1]!.status = 'denied';
+    rows[0]!.status = 'pending';
+    expect(() => task30Attestation(rows, ['a', 'b'], 'dev-gm', tag, tag)).toThrow();
   });
   it('a rejected drain still closes subsequent owned resources and preserves failure', async () => {
     const errors: string[] = [],

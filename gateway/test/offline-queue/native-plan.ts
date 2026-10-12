@@ -61,13 +61,20 @@ export function task30Attestation(
   ids: string[],
   gmName: string,
   reason: string,
+  receiptReason: unknown,
 ) {
   const approved = records.find((r: any) => r.id === ids[0]) as any;
   const denied = records.find((r: any) => r.id === ids[1]) as any;
   if (
-    approved?.scope !== 'once' ||
+    approved?.status !== 'approved' ||
+    approved.scope !== 'once' ||
     approved.resolvedBy !== gmName ||
-    denied?.reason !== reason ||
+    denied?.status !== 'denied' ||
+    typeof denied.reason !== 'string' ||
+    !denied.reason.length ||
+    denied.reason.length > 1000 ||
+    !denied.reason.includes(reason) ||
+    denied.reason !== receiptReason ||
     denied.resolvedBy !== gmName
   )
     throw Error('Native once/denial attestation mismatch');
