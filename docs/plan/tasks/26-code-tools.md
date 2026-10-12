@@ -85,6 +85,15 @@ to auto-run code.
   bounded INTERNAL message instead of claiming successful serialization.
   Thrown compile/runtime errors return INTERNAL with bounded error message only,
   without stack/source dumps. Never claim rollback after approved code ran.
+- A normal native chat Macro can return a world ChatMessage. Represent only a
+  verified canonical instance of the configured native ChatMessage class as
+  bounded JSON `{uuid: "ChatMessage.<id>"}`: use own data descriptors for its
+  `_source._id`, require exact `game.messages.get(id)` identity, and compute the
+  UUID without invoking returned-object getters, `toJSON` or `toObject`. Reject
+  forged, stale or accessor-backed instances. Other unsupported host results
+  remain explicit result-serialization errors (for example, "Code returned an
+  unsupported result"), not a claim that already-invoked code had no effects.
+  This is not a general native-document serialization framework.
 - Arbitrary approved code runs with native Foundry permissions. This task adds
   no sandbox, hard CPU timeout, universal mutation correlation or automatic
   Undo guarantee. Audit the invocation/category/reviewed arguments and outcome
