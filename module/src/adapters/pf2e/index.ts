@@ -3,6 +3,7 @@ import type { SystemAdapter, ConditionChange, AdapterExecutionContext } from '..
 import { invalid } from '../../tools/_write.js';
 
 declare const game: any;
+declare const ChatMessage: any;
 
 const MAX_ACTIONS = 128;
 const MAX_ITEMS = 256;
@@ -64,6 +65,67 @@ async function auditedChat<T>(
   } finally {
     for (const uuid of uuids) await context.created(uuid);
   }
+}
+
+/**
+ * pf2e's own message creation drops caller options (Item#toMessage pf2e.mjs:45496 and
+ * SpellPF2e#toMessage :53446 hard-code theirs; Roll#toMessage via Check.roll :19526-19532 only
+ * forwards messageMode), so the GM audit witness could not correlate the message with this call.
+ * Each native path supports `create: false`, which returns the unsaved message. Create it here
+ * with `context.callOptions`, as chat_post does (tools/chat-post.ts:110), and record the result.
+ */
+async function postMessage(
+  message: any,
+  context: AdapterExecutionContext,
+  record: (message: any) => void,
+  options: Record<string, unknown> = {},
+): Promise<boolean> {
+  if (!message || typeof message.toObject !== 'function') return false;
+  const made = await ChatMessage.create(message.toObject(), {
+    ...options,
+    ...context.callOptions,
+  });
+  if (!made?.id) return false;
+  record(made);
+  return true;
+}
+
+/**
+ * Existing embedded documents a strike updates without caller options: a consumable thrown weapon
+ * (Check.roll, pf2e.mjs:19539) and spent ammunition (consumeAmmo, :36063/:36140, :52002).
+ */
+function strikeWrites(item: any): string[] {
+  const out: string[] = [];
+  if (
+    item?.type === 'weapon' &&
+    item.traits?.has?.('consumable') &&
+    (num(item.quantity) ?? 0) > 0 &&
+    typeof item.uuid === 'string'
+  )
+    out.push(item.uuid);
+  const ammo = item?.ammo;
+  if (
+    item?.system?.ammo?.builtIn !== true &&
+    (num(item?.system?.expend) ?? 0) > 0 &&
+    typeof ammo?.uuid === 'string' &&
+    !out.includes(ammo.uuid)
+  )
+    out.push(ammo.uuid);
+  return out;
+}
+
+/**
+ * Existing embedded documents SpellcastingEntryPF2e#consume (pf2e.mjs:53796-53840) updates. It
+ * takes no options, so these writes cannot carry callOptions. Focus points live on the Actor.
+ */
+function consumeTargets(entry: any, spell: any): string[] {
+  if (entry.isRitual === true) return [];
+  const focus = num(spell.system?.cast?.focusPoints) ?? 0;
+  if ((spell.isFocusSpell === true || spell.isCantrip === true) && focus === 0) return [];
+  if (focus > 0) return [];
+  const prepared = entry.isPrepared === true && entry.isFlexible !== true;
+  const target = entry.isInnate === true && !prepared ? spell : entry;
+  return typeof target.uuid === 'string' ? [target.uuid] : [];
 }
 
 function strikes(actor: any): any[] {
@@ -175,28 +237,41 @@ async function performAction(
     // yields skipDialog = true, whatever the setting.
     const showDialogs = Boolean((globalThis as any).game?.user?.settings?.showCheckDialogs);
     const event = { shiftKey: showDialogs, ctrlKey: false, metaKey: false };
-    // Check.roll (pf2e.mjs:19374) calls `callback(check, outcome, message, event)` with the message
-    // this very roll created (:19535-19537, :19540-19541); the strike variant forwards
-    // `callback` (:36064). Record only that message: overlapping strikes by the same user with the
-    // same weapon share author, origin and identifier, so no hook predicate can tell them apart.
-    // A cancelled create hands the callback `new ChatMessagePF2e(undefined)` (pf2e.mjs:19536), which has
-    // no id: record only a persisted message. NPC and hazard strikes (pf2e.mjs:39073, :20403) call
-    // `Check.roll` without a callback (:20499), so nothing identifies their message.
+    // Character strikes (pf2e.mjs:35997-36064) forward `createMessage` and `callback` to Check.roll
+    // (:19374), which then builds the roll message through Roll#toMessage with only a messageMode
+    // (:19526-19532), so the native create cannot carry callOptions. With createMessage: false it
+    // does not create the message but still hands the unsaved one to `callback(check, outcome,
+    // message, event)` (:19536-19537); create it there with callOptions and record exactly that
+    // message. Overlapping strikes by the same user with the same weapon share author, origin and
+    // identifier, so no hook predicate could tell them apart. NPC and hazard strikes (:39073,
+    // :20448-20499) call Check.roll without a callback, so their message is created natively
+    // without callOptions and is neither attributable nor undoable: disclosed below.
+    const supported = actor.type === 'character';
     let attributed = false;
-    let cancelled = false;
-    const rolled = await auditedChat(context, async (record) =>
-      variant.roll({
+    let noMessage = false;
+    const rolled = await auditedChat(context, async (record) => {
+      // These updates run inside pf2e without options (see strikeWrites), so their snapshots go
+      // stale for Undo rather than being restored incorrectly; enrol them all the same.
+      for (const uuid of supported ? strikeWrites(strike.item) : []) await context.snapshot(uuid);
+      return variant.roll({
         event,
-        callback: (_check: unknown, _outcome: unknown, message: any) => {
-          if (!message?.id) {
-            cancelled = true;
-            return;
-          }
-          attributed = true;
-          record(message);
-        },
-      }),
-    );
+        ...(supported
+          ? {
+              createMessage: false,
+              callback: async (_check: unknown, _outcome: unknown, message: any) => {
+                const mode = message?.flags?.pf2e?.context?.messageMode;
+                attributed = await postMessage(
+                  message,
+                  context,
+                  record,
+                  typeof mode === 'string' ? { messageMode: mode } : {},
+                );
+                noMessage = !attributed;
+              },
+            }
+          : {}),
+      });
+    });
     // pf2e resolves null when nothing was rolled: no ammo, out of range, no origin, cancelled.
     if (rolled === null || rolled === undefined)
       return {
@@ -205,7 +280,8 @@ async function performAction(
           `${text(strike.label, 200)} ${text(variant.label, 100)} was not rolled (no ammunition, out of range or no valid target)`.trim(),
       };
     const rolledLabel = `Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim();
-    if (!attributed && cancelled) return done(`${rolledLabel}. No attack message was created`);
+    if (!attributed && (noMessage || supported))
+      return done(`${rolledLabel}. No attack message was created`);
     if (!attributed)
       return done(
         `${rolledLabel}. The attack message was posted but not audited and cannot be undone`,
@@ -215,7 +291,17 @@ async function performAction(
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
-    await auditedChat(context, async (record) => record(await item.toMessage()));
+    // Item#toMessage hard-codes its create options (pf2e.mjs:45476-45496); `create: false` returns
+    // the unsaved message (:45496) so it can be created here with callOptions.
+    await auditedChat(context, async (record) => {
+      const made = await postMessage(
+        await item.toMessage(undefined, { create: false }),
+        context,
+        record,
+        { renderSheet: false },
+      );
+      if (!made) throw new Error(`No chat message was created for ${text(item.name, 200)}`);
+    });
     return done(`Performed ${text(item.name, 200)}`);
   }
   if (parts[0] === 'spell' && parts.length === 3) {
@@ -242,6 +328,11 @@ async function performAction(
     const castRank = rank ?? num(spell.rank);
     if (castRank === undefined && !fixed && spell.atWill !== true)
       return invalid('Spell rank is required for this spell');
+    // consume (pf2e.mjs:53796-53840) takes no options, so its slot or use update cannot carry
+    // callOptions; enrol the entry or spell it writes so Undo knows about them (their snapshots
+    // go stale rather than being restored wrongly). Focus points are on the Actor, already enrolled.
+    for (const uuid of spell.atWill === true ? [] : consumeTargets(entry, spell))
+      await context.snapshot(uuid);
     const cast = await auditedChat(context, async (record) => {
       // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
       let paid: boolean;
@@ -260,7 +351,15 @@ async function performAction(
         spell.system.location.value ??= entry.id;
         const cr =
           typeof spell.computeCastRank === 'function' ? spell.computeCastRank(castRank) : castRank;
-        record(await spell.toMessage(null, { actualCast: true, data: { castRank: cr } }));
+        // SpellPF2e#toMessage creates with fixed options (pf2e.mjs:53414, :53446); `create: false` returns
+        // the unsaved message (:53446) to create here with callOptions.
+        const made = await postMessage(
+          await spell.toMessage(null, { actualCast: true, create: false, data: { castRank: cr } }),
+          context,
+          record,
+          { renderSheet: false },
+        );
+        if (!made) throw new Error('no chat message was created');
       } catch (e) {
         throw new Error(
           `Casting ${text(spell.name, 200)} failed after its slot or focus point was spent: ${text(
@@ -347,24 +446,49 @@ function activeConditions(actor: any) {
     });
 }
 
-async function conditions(actor: any, change?: ConditionChange) {
+async function conditions(actor: any, change?: ConditionChange, context?: AdapterExecutionContext) {
   if (change !== undefined) {
     if (!SLUG.test(change.id)) return invalid('Unknown condition');
     if (change.id === 'persistent-damage')
       return invalid('Persistent damage cannot be changed through this tool');
     const known = game.pf2e?.ConditionManager?.getCondition?.(change.id);
     if (!known) return invalid('Unknown condition');
+    if (
+      typeof context?.snapshot !== 'function' ||
+      typeof context.intendCreate !== 'function' ||
+      typeof context.created !== 'function'
+    )
+      throw new Error('Audit context unavailable');
     const existing = list(actor.itemTypes?.condition).find(
       (c) => c.slug === change.id && c.active !== false,
     );
     const value = change.value;
+    // pf2e's increaseCondition, decreaseCondition and ConditionManager.updateConditionValue
+    // (pf2e.mjs:33531-33561, :48967) call createEmbeddedDocuments, deleteEmbeddedDocuments and
+    // Item#update/delete without accepting options, so callOptions cannot reach them. These are
+    // the same Foundry document operations they perform (same data and clamping), issued with
+    // callOptions the way core tools do (tools/_documents.ts:309).
     if (!change.active || value === 0) {
-      if (existing) await actor.decreaseCondition(change.id, { forceRemove: true });
+      if (existing) {
+        await context.snapshot(existing.uuid);
+        await actor.deleteEmbeddedDocuments('Item', [existing.id], context.callOptions);
+      }
     } else if (!existing) {
-      await actor.increaseCondition(change.id, value ? { value } : {});
+      await context.intendCreate(actor);
+      const data = known.toObject();
+      const base = data.system?.value?.value;
+      if (data.system?.value)
+        data.system.value.value = typeof base === 'number' ? Math.max(base, value ?? 1) : null;
+      const made = (await actor.createEmbeddedDocuments('Item', [data], context.callOptions))?.[0];
+      if (typeof made?.uuid === 'string' && made.uuid) await context.created(made.uuid, actor);
     } else if (value !== undefined && num(existing.system?.value?.value) !== undefined) {
-      if (existing.system.value.value !== value)
-        await game.pf2e.ConditionManager.updateConditionValue(existing.id, actor, value);
+      let next = value;
+      if (['dying', 'wounded', 'doomed'].includes(existing.slug))
+        next = Math.min(next, num(actor.attributes?.[existing.slug]?.max) ?? next);
+      if (existing.system.value.value !== next) {
+        await context.snapshot(existing.uuid);
+        await existing.update({ 'system.value.value': next }, context.callOptions);
+      }
     }
   }
   return { supported: true, conditions: activeConditions(actor) };

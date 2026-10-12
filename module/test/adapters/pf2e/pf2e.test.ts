@@ -27,8 +27,15 @@ const cantrip = {
   isCantrip: true,
   system: { location: { value: 'e1' }, time: { value: '2' } },
 };
+const unsaved = (uuid: string, extra: Record<string, unknown> = {}) => ({
+  toObject: () => ({ marker: uuid, ...extra }),
+});
+const chatCreate = vi.fn();
+const condUpdate = vi.fn();
 const frightened = {
   id: 'c1',
+  uuid: 'Actor.a.Item.c1',
+  update: condUpdate,
   slug: 'frightened',
   name: 'Frightened',
   active: true,
@@ -80,7 +87,10 @@ const actor: any = {
       },
     ],
   },
-  items: { get: (id: string) => (id === 'e1' ? { id: 'e1', cast, consume } : undefined) },
+  items: {
+    get: (id: string) =>
+      id === 'e1' ? { id: 'e1', uuid: 'Actor.a.Item.e1', cast, consume } : undefined,
+  },
   inventory: Object.assign(
     [
       {
@@ -108,24 +118,30 @@ const actor: any = {
     ],
     { bulk: { value: { normal: 1, light: 2 }, encumberedAfter: 8, max: 13 } },
   ),
-  increaseCondition: vi.fn(),
-  decreaseCondition: vi.fn(),
+  createEmbeddedDocuments: vi.fn(),
+  deleteEmbeddedDocuments: vi.fn(),
 };
-const updateConditionValue = vi.fn();
+const callOptions = { agentGateway: { callId: 'call1' } };
 const intendCreate = vi.fn(async () => {});
 const created = vi.fn(async () => {});
-const ctx = { intendCreate, created } as unknown as AdapterExecutionContext;
+const snapshot = vi.fn(async () => {});
+const ctx = { intendCreate, created, snapshot, callOptions } as unknown as AdapterExecutionContext;
 let createHooks: ((m: any) => void)[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
   createHooks = [];
   consume.mockResolvedValue(true);
-  spellMessage.mockResolvedValue({ uuid: 'ChatMessage.spell' });
-  toMessage.mockResolvedValue({ uuid: 'ChatMessage.action' });
+  chatCreate.mockImplementation(async (d: any) => ({
+    id: d.marker,
+    uuid: `ChatMessage.${d.marker}`,
+  }));
+  spellMessage.mockResolvedValue(unsaved('spell'));
+  toMessage.mockResolvedValue(unsaved('action'));
   roll.mockImplementation(async (p: any) => {
-    p.callback?.({}, 'success', { id: 'm1', uuid: 'ChatMessage.m1' }, p.event);
+    await p.callback?.({}, 'success', unsaved('m1'), p.event);
     return { total: 15 };
   });
+  (globalThis as any).ChatMessage = { create: chatCreate };
   (globalThis as any).Hooks = {
     on: (_n: string, h: (m: any) => void) => createHooks.push(h),
     off: vi.fn(),
@@ -135,8 +151,9 @@ beforeEach(() => {
     pf2e: {
       ConditionManager: {
         getCondition: (s: string) =>
-          ['frightened', 'off-guard', 'sickened'].includes(s) ? {} : null,
-        updateConditionValue,
+          ['frightened', 'off-guard', 'sickened'].includes(s)
+            ? { toObject: () => ({ type: 'condition', system: { value: { value: 1 } } }) }
+            : null,
       },
     },
   };
@@ -182,7 +199,11 @@ describe('pf2e adapter', () => {
     expect(toMessage).toHaveBeenCalledTimes(1);
     await pf2eAdapter.performAction(actor, 'spell:e1:s1', { rank: 4 }, ctx);
     expect(consume).toHaveBeenCalledWith(spell, 4);
-    expect(spellMessage).toHaveBeenCalledWith(null, { actualCast: true, data: { castRank: 4 } });
+    expect(spellMessage).toHaveBeenCalledWith(null, {
+      actualCast: true,
+      create: false,
+      data: { castRank: 4 },
+    });
     expect(cast).not.toHaveBeenCalled();
   });
   it('reports a strike that pf2e did not roll as not completed', async () => {
@@ -207,12 +228,23 @@ describe('pf2e adapter', () => {
     await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
     expect(intendCreate).toHaveBeenCalledTimes(1);
     expect(created).toHaveBeenCalledWith('ChatMessage.m1');
+    expect(roll.mock.calls[0]![0].createMessage).toBe(false);
+    expect(chatCreate).toHaveBeenCalledWith({ marker: 'm1' }, { ...callOptions });
   });
   it('records only the messages returned by action and spell calls', async () => {
     await pf2eAdapter.performAction(actor, 'action:a2', {}, ctx);
     expect(created).toHaveBeenCalledWith('ChatMessage.action');
+    expect(toMessage).toHaveBeenCalledWith(undefined, { create: false });
+    expect(chatCreate).toHaveBeenCalledWith(
+      { marker: 'action' },
+      { renderSheet: false, ...callOptions },
+    );
     await pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx);
     expect(created).toHaveBeenCalledWith('ChatMessage.spell');
+    expect(chatCreate).toHaveBeenCalledWith(
+      { marker: 'spell' },
+      { renderSheet: false, ...callOptions },
+    );
     expect(createHooks).toHaveLength(0);
   });
   it('asks for a rank when the native consume reports no slot given', async () => {
@@ -228,9 +260,9 @@ describe('pf2e adapter', () => {
     const gate = new Promise<void>((r) => (release = r));
     let n = 0;
     roll.mockImplementation(async (p: any) => {
-      const mine = `ChatMessage.mine${++n}`;
+      const mine = ++n;
       await gate;
-      p.callback({}, 'success', { id: `id${n}`, uuid: mine }, p.event);
+      await p.callback({}, 'success', unsaved(`mine${mine}`), p.event);
       return { total: 15 };
     });
     const mk = () => {
@@ -239,7 +271,9 @@ describe('pf2e adapter', () => {
         c,
         context: {
           intendCreate: vi.fn(async () => {}),
+          snapshot: vi.fn(async () => {}),
           created: c,
+          callOptions,
         } as unknown as AdapterExecutionContext,
       };
     };
@@ -255,22 +289,68 @@ describe('pf2e adapter', () => {
     expect(two.c.mock.calls.map((x: any[]) => x[0])).toEqual(['ChatMessage.mine2']);
     expect(createHooks).toHaveLength(0);
   });
-  it('says an unaudited strike cannot be undone when the callback never fires', async () => {
+  it('says an NPC strike is not audited and cannot be undone, and keeps native creation', async () => {
     roll.mockImplementation(async () => ({ total: 15 }));
-    const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
+    const npc = { ...actor, type: 'npc' };
+    const r = (await pf2eAdapter.performAction(npc, 'strike:w1:longsword:0', {}, ctx)) as any;
     expect(r.completed).toBe(true);
     expect(r.message).toMatch(/not audited and cannot be undone/);
+    expect(roll.mock.calls[0]![0].createMessage).toBeUndefined();
+    expect(roll.mock.calls[0]![0].callback).toBeUndefined();
     expect(created).not.toHaveBeenCalled();
   });
-  it('ignores a callback message without an id (cancelled create)', async () => {
-    roll.mockImplementation(async (p: any) => {
-      p.callback({}, 'success', { uuid: 'ChatMessage.ghost' }, p.event);
-      return { total: 15 };
-    });
+  it('says no message was created when a character strike callback never fires', async () => {
+    roll.mockImplementation(async () => ({ total: 15 }));
+    const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
+    expect(r.message).toMatch(/No attack message was created/);
+    expect(created).not.toHaveBeenCalled();
+  });
+  it('records nothing when the creation is cancelled', async () => {
+    chatCreate.mockResolvedValue(undefined);
     const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
     expect(created).not.toHaveBeenCalled();
     expect(r.message).toMatch(/No attack message was created/);
-    expect(r.message).not.toMatch(/posted/);
+  });
+  it('forwards the message mode of the roll to the created strike message', async () => {
+    roll.mockImplementation(async (p: any) => {
+      await p.callback(
+        {},
+        'success',
+        { ...unsaved('gm1'), flags: { pf2e: { context: { messageMode: 'gm' } } } },
+        p.event,
+      );
+      return { total: 15 };
+    });
+    await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    expect(chatCreate).toHaveBeenCalledWith(
+      { marker: 'gm1' },
+      { messageMode: 'gm', ...callOptions },
+    );
+  });
+  it('snapshots the consumable weapon and ammunition a character strike spends', async () => {
+    const strike = actor.system.actions[0];
+    const original = strike.item;
+    strike.item = {
+      ...original,
+      type: 'weapon',
+      quantity: 2,
+      traits: new Set(['consumable']),
+      system: { expend: 1 },
+      ammo: { uuid: 'Actor.a.Item.ammo1' },
+    };
+    try {
+      await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    } finally {
+      strike.item = original;
+    }
+    expect(snapshot.mock.calls.map((c: any[]) => c[0])).toEqual([
+      'Actor.a.Item.w1',
+      'Actor.a.Item.ammo1',
+    ]);
+  });
+  it('snapshots nothing for a strike that spends no embedded document', async () => {
+    await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    expect(snapshot).not.toHaveBeenCalled();
   });
   it.each([true, false])(
     'never opens a check dialog when showCheckDialogs is %s',
@@ -291,6 +371,28 @@ describe('pf2e adapter', () => {
     await expect(pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)).rejects.toThrow(
       /after its slot or focus point was spent/,
     );
+  });
+  it('snapshots the spellcasting entry before a slot spell consumes it', async () => {
+    const entry = actor.items.get('e1');
+    const order: string[] = [];
+    snapshot.mockImplementation(async (u: string) => void order.push(`snap:${u}`));
+    consume.mockImplementation(async () => void order.push('consume'));
+    await pf2eAdapter.performAction(actor, 'spell:e1:s1', { rank: 3 }, ctx);
+    expect(entry.uuid).toBe('Actor.a.Item.e1');
+    expect(order).toEqual(['snap:Actor.a.Item.e1', 'consume']);
+  });
+  it('snapshots the spell for innate casting, and nothing for cantrips or focus spells', async () => {
+    const entry = { id: 'e1', uuid: 'Actor.a.Item.e1', isInnate: true, consume, cast };
+    const innateActor = { ...actor, items: { get: () => entry } };
+    await pf2eAdapter.performAction(innateActor, 'spell:e1:s1', { rank: 3 }, ctx);
+    expect(snapshot.mock.calls.map((c: any[]) => c[0])).toEqual(['Actor.a.Item.s1']);
+    snapshot.mockClear();
+    await pf2eAdapter.performAction(actor, 'spell:e1:s2', {}, ctx);
+    expect(snapshot).not.toHaveBeenCalled();
+    const focus = { ...spell, uuid: 'x', system: { ...spell.system, cast: { focusPoints: 1 } } };
+    const focusActor = { ...actor, itemTypes: { ...actor.itemTypes, spell: [focus] } };
+    await pf2eAdapter.performAction(focusActor, 'spell:e1:s1', { rank: 3 }, ctx);
+    expect(snapshot).not.toHaveBeenCalled();
   });
   it('reports a failed spell consumption as not completed', async () => {
     consume.mockResolvedValue(false);
@@ -316,13 +418,35 @@ describe('pf2e adapter', () => {
       { id: 'off-guard', name: 'Off-Guard' },
     ]);
   });
-  it('changes conditions through the system condition API', async () => {
-    await pf2eAdapter.conditions(actor, { id: 'sickened', active: true, value: 3 });
-    expect(actor.increaseCondition).toHaveBeenCalledWith('sickened', { value: 3 });
-    await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 1 });
-    expect(updateConditionValue).toHaveBeenCalledWith('c1', actor, 1);
-    await pf2eAdapter.conditions(actor, { id: 'frightened', active: false });
-    expect(actor.decreaseCondition).toHaveBeenCalledWith('frightened', { forceRemove: true });
-    await expect(pf2eAdapter.conditions(actor, { id: 'bogus', active: true })).rejects.toThrow();
+  it('requires the audit context to change a condition', async () => {
+    await expect(
+      pf2eAdapter.conditions(actor, { id: 'sickened', active: true, value: 3 }),
+    ).rejects.toThrow(/Audit context/);
+  });
+  it('creates a missing condition with callOptions and declares it', async () => {
+    (actor.createEmbeddedDocuments as any).mockResolvedValue([{ uuid: 'Actor.a.Item.new' }]);
+    await pf2eAdapter.conditions(actor, { id: 'sickened', active: true, value: 3 }, ctx);
+    expect(intendCreate).toHaveBeenCalledWith(actor);
+    expect(actor.createEmbeddedDocuments).toHaveBeenCalledWith(
+      'Item',
+      [{ type: 'condition', system: { value: { value: 3 } } }],
+      callOptions,
+    );
+    expect(created).toHaveBeenCalledWith('Actor.a.Item.new', actor);
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+  it('updates an existing valued condition with callOptions after snapshotting it', async () => {
+    await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 1 }, ctx);
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith('Actor.a.Item.c1');
+    expect(condUpdate).toHaveBeenCalledWith({ 'system.value.value': 1 }, callOptions);
+    expect(intendCreate).not.toHaveBeenCalled();
+  });
+  it('removes a condition with callOptions after snapshotting it', async () => {
+    await pf2eAdapter.conditions(actor, { id: 'frightened', active: false }, ctx);
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith('Actor.a.Item.c1');
+    expect(actor.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item', ['c1'], callOptions);
+    await expect(
+      pf2eAdapter.conditions(actor, { id: 'bogus', active: true }, ctx),
+    ).rejects.toThrow();
   });
 });
