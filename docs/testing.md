@@ -329,6 +329,8 @@ permissions, fixed JSON args, bounded results, canonical ChatMessage UUIDs and
 hostile error/result values. Those offline cases are broader than the native
 fixture proof below.
 
+The integrated reusable harness and validation record at `260a1581e594eb0dfe3cdc8b717cf10312ab5bbb` passed the single combined `npm run verify` on its first run (3,268 fast / 2,227 slow tests, build/lint). Its four focused harness checks, standalone types, lint and serialization probe passed. Production remains the same native-tested bundle; generalized proof SHA-256 `71c20cfb07b4024ab26a3999f5fce61f4724c46579e6d72d6d113494a7d205ea` was checked offline and is not a new native execution.
+
 Fresh scoped human consent preceded one harmless Macro fixture, two real calls
 and exact cleanup per world. Required preconditions include the exact reviewed
 bundle, authenticated live GM principal/tool announcements, sole canonical
