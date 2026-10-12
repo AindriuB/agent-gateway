@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Offline write replay validation merged and task archived (task 30)
+
+PR #80 merged at 18:41:55 UTC: reviewed head `232130f6da8c3900ff4113732083f332f561c375`, main `216e22a38fa62606109ff13059e36fcfcff0d386`. Task30 moves to `docs/plan/done/30-offline-write-queue.md` with only Status changed. The derived inventory is 27 completed / 15 active contracts. Task31 — Add the system adapter interface and adapter tools — is next, with dependencies 21, 20d and 20e merged; implementation has not started. Task18 remains architecture-blocked.
+
+Final gate `682c291` passed build/lint, 3,509 fast / 2,227 slow tests and 17 focused offline harness checks. Bounded GM native acceptance on Foundry 14.369/13.351 remains pinned to tested runtime source `57adb9` / bundle `84ea050e`, with distinct executed harness revisions recorded below. Each passing run retained one mutation audit and removed its exact fixture; earlier failed attempts remain failed-and-cleaned (zero v14 audits, one v13 audit), leaving total retained audit counts one on v14 and two on v13.
+
+**Cost:** Completion records the accepted bounded ask_owner scope, not native allow/session-grant bypass, TTL/caps, crash uncertainty, policy/source tightening, native failed execution or installed deployment. This docs-only archive adds no runtime change, live action or private evidence export.
+
 ## 2026-10-12 — Offline write replay bounded GM native acceptance passed (task 30)
 
 Human-approved bounded Task30 acceptance passed on Foundry 14.369 and 13.351 at source `57adb9ac24903db62a5ffc1d38887133dcda4d7c` / bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d`. Each passing run used one temporary GM-private NPC, two name-only offline queued updates and an isolated gateway database with read-only credential import. Twelve SDK calls settled: two queued intents, eight owner receipt reads, one cross-owner status refusal and one ordinary offline-read refusal. Receipts survived isolated database reopen before delivery. A fresh native once approval executed one rename and returned `resultFailed:false`; a deliberate native denial retained its complete reason identically in the gateway receipt. Exact duplicate terminal delivery and a final reconnect left the Actor version and single matched mutation audit unchanged. Exact fixtures were deleted, original documents/settings/views/world time and credential databases remained unchanged, and each passing run retained one audit.
