@@ -10,7 +10,8 @@ it.each([13, 14] as const)('main registers on init and logs ready (v%i)', async 
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   await import('../../src/main.js');
   stub.fire('init');
-  expect(stub.registeredSettings.size).toBe(11);
+  expect(stub.registeredSettings.size).toBe(12);
+  expect(stub.registeredSettings.has('agent-gateway.offlineEventReading')).toBe(true);
   stub.fire('ready');
   expect(log).toHaveBeenCalledWith(`agent-gateway | ready (v${gen})`);
   log.mockRestore();

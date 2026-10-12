@@ -410,3 +410,32 @@ it('keeps player ceilings immutable and ignores GM draft handlers after role los
   ).toBe(true);
   expect(set).not.toHaveBeenCalled();
 });
+
+it('wires offline controls only for GM and rechecks authority at click time', async () => {
+  const g = globalThis as any;
+  const App = createPolicyApp();
+  const app = new App();
+  const context = await app._prepareContext();
+  expect(context.offlineEvents).toEqual({ enabled: false, retentionDays: 14 });
+  const form = document.createElement('form');
+  form.innerHTML =
+    '<input data-offline-enabled type="checkbox" checked><input data-offline-days value="3"><button data-offline-save type="button"></button><button data-offline-purge type="button"></button>';
+  app.element = form;
+  g.game.users = new Map([[g.game.user.id, g.game.user]]);
+  await app._onRender(context, {});
+  const button = form.querySelector<HTMLButtonElement>('[data-offline-save]')!;
+  expect(button.onclick).toBeTypeOf('function');
+  await button.onclick!.call(button, new MouseEvent('click'));
+  expect(set).toHaveBeenCalledWith('agent-gateway', 'offlineEventReading', {
+    enabled: true,
+    retentionDays: 3,
+  });
+  set.mockClear();
+  g.game.user.isGM = false;
+  await button.onclick!.call(button, new MouseEvent('click'));
+  expect(set).not.toHaveBeenCalled();
+  const player = new App();
+  player.element = form.cloneNode(true);
+  await player._onRender({}, {});
+  expect(player.element.querySelector('[data-offline-save]').onclick).toBeNull();
+});

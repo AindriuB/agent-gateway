@@ -12,7 +12,17 @@ export interface EventOwner {
   agentId: string;
 }
 export type StoredEvent = BufferedEvent['event'];
+export interface OfflineEventPolicy {
+  enabled: boolean;
+  retentionDays: number;
+}
 export interface EventRepository {
+  policy(worldId: string): OfflineEventPolicy;
+  setPolicy(worldId: string, policy: OfflineEventPolicy): void;
+  readAllowed(owner: EventOwner): boolean;
+  setReadAllowed(owner: EventOwner, allowed: boolean): void;
+  purge(worldId: string): number;
+  retain(now: number): number;
   append(owner: EventOwner, event: StoredEvent, receivedAt: number): BufferedEvent;
   read(owner: EventOwner, after: number | undefined, limit: number): EventReadOutput;
   history(
@@ -35,7 +45,74 @@ export function createEventRepository(db: DatabaseSync): EventRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw new EventCursorError('Invalid event limit');
   };
+  const remove = (where: string, values: (string | number)[]) => {
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        `INSERT INTO event_evictions(world_id,user_id,agent_id,last_evicted)
+        SELECT world_id,user_id,agent_id,MAX(cursor) FROM event_rows WHERE ${where}
+        GROUP BY world_id,user_id,agent_id ON CONFLICT(world_id,user_id,agent_id)
+        DO UPDATE SET last_evicted=MAX(last_evicted,excluded.last_evicted)`,
+      ).run(...values);
+      const count = Number(
+        db.prepare(`DELETE FROM event_rows WHERE ${where}`).run(...values).changes,
+      );
+      db.exec('COMMIT');
+      return count;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
   return {
+    policy(worldId) {
+      const row = db
+        .prepare('SELECT enabled,retention_days FROM event_policies WHERE world_id=?')
+        .get(worldId);
+      return row
+        ? { enabled: row.enabled === 1, retentionDays: Number(row.retention_days) }
+        : { enabled: false, retentionDays: 14 };
+    },
+    setPolicy(worldId, policy) {
+      if (
+        !worldId ||
+        worldId.length > 100 ||
+        typeof policy.enabled !== 'boolean' ||
+        !Number.isInteger(policy.retentionDays) ||
+        policy.retentionDays < 1 ||
+        policy.retentionDays > 365
+      )
+        throw Error('Invalid bounded offline event policy');
+      db.prepare(
+        `INSERT INTO event_policies(world_id,enabled,retention_days) VALUES (?,?,?)
+        ON CONFLICT(world_id) DO UPDATE SET enabled=excluded.enabled,retention_days=excluded.retention_days`,
+      ).run(worldId, policy.enabled ? 1 : 0, policy.retentionDays);
+    },
+    readAllowed(o) {
+      return (
+        db
+          .prepare(
+            'SELECT allowed FROM event_read_permissions WHERE world_id=? AND user_id=? AND agent_id=?',
+          )
+          .get(...args(o))?.allowed === 1
+      );
+    },
+    setReadAllowed(o, allowed) {
+      db.prepare(
+        `INSERT INTO event_read_permissions(world_id,user_id,agent_id,allowed) VALUES (?,?,?,?)
+        ON CONFLICT(world_id,user_id,agent_id) DO UPDATE SET allowed=excluded.allowed`,
+      ).run(...args(o), allowed === true ? 1 : 0);
+    },
+    purge(worldId) {
+      return remove('world_id=?', [worldId]);
+    },
+    retain(now) {
+      if (!Number.isSafeInteger(now) || now < 0) throw Error('Invalid retention clock');
+      return remove(
+        `received_at < ? - 86400000 * COALESCE((SELECT retention_days FROM event_policies WHERE event_policies.world_id=event_rows.world_id),14)`,
+        [now],
+      );
+    },
     ensureStream(o) {
       return (
         Number(
@@ -142,7 +219,12 @@ export function createEventRepository(db: DatabaseSync): EventRepository {
           payload: string;
         }>,
       );
-      return { events, nextAfter: events.at(-1)?.cursor ?? 0 };
+      const retained = this.read(o, 0, 1);
+      return {
+        events,
+        nextAfter: events.at(-1)?.cursor ?? retained.nextAfter,
+        ...(retained.cursorGap ? { cursorGap: retained.cursorGap } : {}),
+      };
     },
   };
 }

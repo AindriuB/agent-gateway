@@ -157,6 +157,17 @@
         "recreated": "exists again",
         "deleted": "was deleted since"
       }
+    },
+    "OfflineEvents": {
+      "title": "Offline event reading",
+      "hint": "Allow paired agents with an allowed read policy to read previously observed events while this world is offline. This gateway uses the last policy it received. Purge deletes this world’s buffered events from the connected gateway.",
+      "enabled": "Enable offline event reading",
+      "retention": "Retention in days (1–365)",
+      "save": "Save event settings",
+      "purge": "Purge buffered events",
+      "saved": "Offline event settings saved.",
+      "purged": "Deleted {count} buffered events.",
+      "failed": "Offline event operation failed."
     }
   },
   "AGENT_GATEWAY.ApprovalDialog.title": "Agent approval requests",

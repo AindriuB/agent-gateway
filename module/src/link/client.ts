@@ -79,6 +79,44 @@ export function backoffDelay(attempt: number, random: number): number {
 
 export class LinkClient {
   private socket: SocketLike | null = null;
+  private readonly purges = new Map<
+    string,
+    {
+      socket: SocketLike;
+      resolve: (count: number) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  private purgeSequence = 0;
+  purgeEvents(): Promise<number> {
+    const socket = this.socket;
+    if (
+      !socket ||
+      this._state.kind !== 'connected' ||
+      (socket.readyState !== undefined && socket.readyState !== 1)
+    )
+      return Promise.reject(new Error('Gateway offline'));
+    if (this.purges.size >= 4) return Promise.reject(new Error('Too many pending purge requests'));
+    const requestId = `purge-${++this.purgeSequence}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.purges.delete(requestId);
+        reject(new Error('Purge timed out'));
+      }, 10000);
+      this.purges.set(requestId, { socket, resolve, reject, timer });
+      try {
+        this.send({ type: 'purgeEvents', requestId });
+      } catch (e) {
+        clearTimeout(timer);
+        this.purges.delete(requestId);
+        reject(e);
+      }
+    });
+  }
+  sendEventPolicy(policy: { enabled: boolean; retentionDays: number }): void {
+    if (this._state.kind === 'connected') this.sendMessage({ type: 'eventPolicy', ...policy });
+  }
   private eventResume:
     | {
         url: string;
@@ -344,6 +382,20 @@ export class LinkClient {
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
         break;
       }
+      case 'purgeEventsResult': {
+        const pending = this.purges.get(msg.requestId);
+        if (
+          this.socket !== origin ||
+          !pending ||
+          pending.socket !== origin ||
+          this._state.kind !== 'connected'
+        )
+          break;
+        clearTimeout(pending.timer);
+        this.purges.delete(msg.requestId);
+        pending.resolve(msg.count);
+        break;
+      }
       case 'reject':
         this.active = false;
         this.resumeMode = null;
@@ -477,6 +529,12 @@ export class LinkClient {
 
   private setState(s: LinkState): void {
     this._state = s;
+    if (s.kind !== 'connected')
+      for (const [id, p] of this.purges) {
+        clearTimeout(p.timer);
+        this.purges.delete(id);
+        p.reject(new Error('Gateway disconnected'));
+      }
     for (const fn of this.listeners) fn(s);
   }
 }

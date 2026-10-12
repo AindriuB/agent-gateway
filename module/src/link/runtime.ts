@@ -1,3 +1,7 @@
+import {
+  installOfflineEventPolicy,
+  onOfflineEventSettingChange,
+} from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveInputs } from '../policy/stage.js';
 import { LinkClient } from './client.js';
@@ -64,6 +68,8 @@ export function getLinkClient(): LinkClient {
     isCategoryDenied: policyDenies(liveInputs, () => Boolean(game.user?.isGM)),
     eventReadAllowed: policyAllowsEventReads(liveInputs, () => Boolean(game.user?.isGM)),
   });
+  const refreshOffline = installOfflineEventPolicy(client);
+  onOfflineEventSettingChange(refreshOffline);
   return client;
 }
 

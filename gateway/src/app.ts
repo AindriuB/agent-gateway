@@ -69,6 +69,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       const registry = new LinkRegistry();
       const codes = new PairingCodes();
       events = new EventBuffer(store, registry);
+      events.startRetention();
       link = new LinkServer({
         port: config.linkPort,
         store,

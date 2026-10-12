@@ -23,6 +23,14 @@
   </fieldset>
   {{#if isGM}}
   <fieldset>
+    <legend>{{localize "AGENT_GATEWAY.OfflineEvents.title"}}</legend>
+    <p class="hint">{{localize "AGENT_GATEWAY.OfflineEvents.hint"}}</p>
+    <label><input type="checkbox" data-offline-enabled {{#if offlineEvents.enabled}}checked{{/if}} />{{localize "AGENT_GATEWAY.OfflineEvents.enabled"}}</label>
+    <label>{{localize "AGENT_GATEWAY.OfflineEvents.retention"}}<input type="number" data-offline-days value="{{offlineEvents.retentionDays}}" min="1" max="365" step="1" required /></label>
+    <button type="button" data-offline-save>{{localize "AGENT_GATEWAY.OfflineEvents.save"}}</button>
+    <button type="button" data-offline-purge>{{localize "AGENT_GATEWAY.OfflineEvents.purge"}}</button>
+  </fieldset>
+  <fieldset>
     <legend>{{localize "AGENT_GATEWAY.PolicyApp.agents"}}</legend>
     <label class="toggle"><input type="checkbox" name="playerEnabled" {{#if playerEnabled}}checked{{/if}} />{{localize "AGENT_GATEWAY.PolicyApp.playerEnabled"}}</label>
     <label class="toggle"><input type="checkbox" name="headlessEnabled" {{#if headlessEnabled}}checked{{/if}} />{{localize "AGENT_GATEWAY.PolicyApp.headlessEnabled"}}</label>

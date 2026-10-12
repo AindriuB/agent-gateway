@@ -1,3 +1,9 @@
+import {
+  readOfflineEventPolicy,
+  saveOfflineEventPolicy,
+  purgeOfflineEvents,
+} from '../../events/offline-setting.js';
+import { getLinkClient } from '../../link/runtime.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getApplicationV2, getHandlebarsApplicationMixin } from '../../compat/index.js';
 import { AGENT_CLASSES, CATEGORIES } from '../../policy/matrix.js';
@@ -71,11 +77,35 @@ export function createPolicyApp(): any {
     };
     static PARTS = { form: { template: `modules/${NS}/templates/policy/policy.hbs` } };
     async _prepareContext(): Promise<object> {
-      return policyContext(currentPolicyState());
+      return { ...policyContext(currentPolicyState()), offlineEvents: readOfflineEventPolicy() };
     }
     async _onRender(context: object, options: object): Promise<void> {
       await super._onRender?.(context, options);
       if (game.user?.isGM !== true) return;
+      const saveOffline = this.element.querySelector('[data-offline-save]');
+      const purgeOffline = this.element.querySelector('[data-offline-purge]');
+      if (saveOffline)
+        saveOffline.onclick = async () => {
+          try {
+            const enabled = this.element.querySelector('[data-offline-enabled]')?.checked;
+            const retentionDays = Number(this.element.querySelector('[data-offline-days]')?.value);
+            await saveOfflineEventPolicy({ enabled, retentionDays });
+            ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.OfflineEvents.saved'));
+          } catch {
+            ui.notifications.error(game.i18n.localize('AGENT_GATEWAY.OfflineEvents.failed'));
+          }
+        };
+      if (purgeOffline)
+        purgeOffline.onclick = async () => {
+          try {
+            const count = await purgeOfflineEvents(getLinkClient());
+            ui.notifications.info(
+              game.i18n.format('AGENT_GATEWAY.OfflineEvents.purged', { count }),
+            );
+          } catch {
+            ui.notifications.error(game.i18n.localize('AGENT_GATEWAY.OfflineEvents.failed'));
+          }
+        };
       for (const cls of AGENT_CLASSES)
         for (const cat of CATEGORIES) {
           const world = this.element.querySelector(`select[name="world_${cls}_${cat}"]`);

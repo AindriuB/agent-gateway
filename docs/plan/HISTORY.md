@@ -17,6 +17,22 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Offline event reading implemented and source verified; native pending (task 29)
+
+Task29 source `e28f836ae8a83116d59f0f75174d684c9917c5a7` passed build/lint and 3,427 fast / 2,227 slow tests. Rebase onto merged PR #75 main `3cd5cb1` preserved the exact gated tree `f45766b0a7f0181ccf59edf5fcac0e5adb80d501`. Bundle SHA-256 is `d19791ab8a7e38e365c4e84a76f4615fe80b99ec64f576b34bc331bff3b99101`. Independent focused review passed 74 tests; the earlier 241-test selection, later 32-test narrow selection and two registration-fixture checks remain separate results.
+
+The local implementation adds the default-disabled/14-day world setting, GM policy-app controls, protocol5 policy/purge frames, persisted exact-pair offline read permission, bounded receipt-time retention at startup/hourly and world-scoped purge with correlated count replies. Independent source review checked fresh-connection permission reset, SQL-failure refusal, exact session agent pinning and same-world purge waiter settlement. Cooperative software enforcement and unreachable-gateway policy limits remain explicit; no native GM attestation or Task18 unblock is claimed.
+
+**Cost:** The first full attempt reached 3,425 fast passes and two existing init-fixture failures because the required setting increased the registration count from 11 to 12. A reviewed exact ownership amendment allowed count correction plus the new setting identity assertion, preserving original init/ready checks; both targeted cases passed before the fresh full gate. The merged PR #75 deterministic notification-test repair is a separate dependency. No Task29 native run, installed deployment, private artifact export or archive/merge is established by this source gate; draft publication remains pending. Prior design history is preserved.
+
+## 2026-10-12 — Offline event reading design bounded; local implementation in progress (task 29)
+
+Task29's reviewed contract preserves its original goal: GM-controlled offline reading, disabled by default, 14-day default retention and a purge button. Necessary integration ownership now covers authenticated policy/purge frames, persistence, exact offline identity binding, MCP dispatch and startup/hourly retention. Local implementation is in progress; no final source gate, Task29 native result or completion is claimed. Its branch currently stacks on the separate Task28a test-only repair in open PR #75 (`1eb9b08`); that dependency is unmerged.
+
+The design requires protocol5 on both peers, persisted enabled world policy plus the same active pairing's last explicit read allow, fresh-connection permission reset and exact world/user/agent ownership. Retention is 1–365 integer days by gateway receipt time; purge targets the authenticated connection's world at that gateway, preserves cursor high-water and returns a correlated count. The security document makes cooperative software enforcement and unreachable-gateway last-known-policy limits explicit; native GM attestation and immediate cross-owner offline invalidation are not provided.
+
+**Cost:** Existing Task28 offline access refuses by design, so this task needs bounded lifecycle, persistence and authorization integration rather than a history-list toggle. Task28's historical native source/bundle and later offline repair remain separate; no proof is reused as Task29 acceptance. Native settings changes/purge need fresh scoped consent and isolated buffer storage. Task18 remains blocked, the 24-contract completed archive is unchanged, and no runtime/private evidence is exported by this documentation record.
+
 ## 2026-10-12 — Gateway event buffer task merged and archived (task 28)
 
 PR #73 merged on 2026-10-12 at 14:26:26 UTC: reviewed head `b5293a1e1c50fe65ca4debbe448653e6f7623600`, main merge `98ae4adda495884c0a25ab4b514b74baa130ab47`. Task28's contract moves to `docs/plan/done/28-gateway-event-buffer.md` with only its completion status changed. The derived inventory is 24 completed contracts and 17 active contracts. Task29 — Add offline event reading with retention and purge — is next; Task18's architecture blocker is unchanged.

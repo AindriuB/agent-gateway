@@ -114,24 +114,53 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     ];
   };
 
+  let eventOwner: ReturnType<NonNullable<typeof opts.events>['ownerFor']> | undefined;
+  const pinnedEventOwner = (pair: { worldId: string; userId: string }) => {
+    if (!opts.registry.get(pair.worldId, pair.userId) && !binding.offlineEventReady)
+      throw new LinkCallError(
+        'WORLD_OFFLINE',
+        'Offline first binding requires an exact native user ID',
+      );
+    const owner = opts.events!.ownerFor(pair, eventOwner?.agentId);
+    if (
+      eventOwner &&
+      (owner.agentId !== eventOwner.agentId ||
+        owner.worldId !== eventOwner.worldId ||
+        owner.userId !== eventOwner.userId)
+    )
+      throw new LinkCallError('FORBIDDEN', 'Event pairing changed; start a new session');
+    eventOwner ??= owner;
+    return eventOwner;
+  };
   const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
     const modules = moduleVisibleFor(conn);
-    if (!conn || !opts.events) return modules;
+    if (!opts.events || !binding.pair) return modules;
     try {
-      opts.events.authorize(conn);
+      const owner = pinnedEventOwner(binding.pair);
+      opts.events.authorizeOwner(owner);
+      return [
+        ...modules,
+        ...all
+          .filter((t) => {
+            if (t.handledBy !== 'gateway') return false;
+            if (t.name === 'events_poll') return true;
+            if (t.name !== 'events_history') return false;
+            try {
+              opts.events!.authorizeOwner(owner, true);
+              return true;
+            } catch {
+              return false;
+            }
+          })
+          .map((core) => ({ core, definition: coreDefinition(core) })),
+      ];
     } catch {
       return modules;
     }
-    return [
-      ...modules,
-      ...all
-        .filter((t) => t.handledBy === 'gateway' && t.name === 'events_poll')
-        .map((core) => ({ core, definition: coreDefinition(core) })),
-    ];
   };
 
   const currentConn = (): LinkConnection | undefined => {
-    const r = binding.resolve();
+    const r = binding.resolve(true, true);
     return r.kind === 'bound' ? r.conn : undefined;
   };
 
@@ -156,7 +185,8 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     if (!req.params.name.includes('-') && !all.some((t) => t.name === req.params.name))
       return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
-    const r = binding.resolve();
+    const gatewayTool = all.find((t) => t.name === req.params.name && t.handledBy === 'gateway');
+    const r = binding.resolve(true, !!gatewayTool);
     if (r.kind === 'ambiguous') {
       return failure(
         'INVALID_ARGS',
@@ -165,7 +195,37 @@ export function createSessionServer(opts: SessionServerOptions): Server {
           : `Several Foundry users are paired; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
       );
     }
-    if (r.kind === 'unbound' || !r.conn) return offline();
+    if (r.kind === 'unbound') return offline();
+    if (gatewayTool && opts.events) {
+      const parsed = gatewayTool.input.safeParse(req.params.arguments ?? {});
+      if (!parsed.success) return failure('INVALID_ARGS', parsed.error.message);
+      try {
+        const owner = pinnedEventOwner(r.pair);
+        const conn = opts.events.authorizeOwner(owner, gatewayTool.name === 'events_history');
+        const input = parsed.data as {
+          after?: number;
+          limit: number;
+          since?: string;
+          types?: string[];
+        };
+        const result =
+          gatewayTool.name === 'events_history'
+            ? opts.events.history(owner, Date.parse(input.since!), input.types, input.limit)
+            : conn
+              ? await opts.events.poll(conn, sessionId, input.after, input.limit, extra.signal)
+              : opts.events.readOffline(owner, input.after, input.limit);
+        if (conn) opts.events.authorize(conn);
+        opts.events.authorizeOwner(owner, gatewayTool.name === 'events_history');
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      } catch (e) {
+        if (e instanceof LinkCallError) return failure(e.code, e.message);
+        return failure('INTERNAL', 'Event read failed');
+      }
+    }
+    if (!r.conn) return offline();
     const conn = r.conn;
     const visible = visibleFor(conn).find((t) => t.definition.name === req.params.name);
     if (!visible) {
@@ -193,24 +253,6 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     }
     const args = parsed?.success ? parsed.data : packParsed?.ok ? packParsed.value : {};
     try {
-      if (visible.core?.handledBy === 'gateway') {
-        if (!opts.events) return failure('FORBIDDEN', 'Gateway event reads are unavailable');
-        if (tool.name !== 'events_poll')
-          return failure('FORBIDDEN', 'Offline event history is not enabled');
-        const input = args as { after?: number; limit: number };
-        const result = await opts.events.poll(
-          conn,
-          sessionId,
-          input.after,
-          input.limit,
-          extra.signal,
-        );
-        opts.events.authorize(conn);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-          structuredContent: result,
-        };
-      }
       const res = await opts.registry.call(
         conn,
         tool.name,
@@ -263,12 +305,20 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   opts.registry.on('disconnected', onDisconnected);
   const onToolset = changed(false);
   toolsets.on('changed', onToolset);
+  const onEventsChanged = () => {
+    if (!timer) {
+      timer = setTimeout(flush, interval);
+      timer.unref();
+    }
+  };
+  opts.events?.on('changed', onEventsChanged);
   const previousOnClose = server.onclose;
   server.onclose = () => {
     opts.events?.cancelSession(sessionId);
     opts.registry.off('connected', onConnected);
     opts.registry.off('disconnected', onDisconnected);
     toolsets.off('changed', onToolset);
+    opts.events?.off('changed', onEventsChanged);
     if (timer) clearTimeout(timer);
     previousOnClose?.();
   };
