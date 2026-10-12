@@ -270,6 +270,51 @@ at `plan/done/24-gm-scene-token-combat.md`.
 
 Reusable harness/documentation head `b669465671ed67baaadc507c63b85cf7f8bbd7c7` passed the combined required build/lint/full gate (3,158 fast / 2,227 slow tests), with 15 focused harness checks, standalone TypeScript, ESLint and actual-transpiled browser serialization checks. Production bundle remained unchanged. This is offline tooling verification, separate from the native-executed harnesses and the 3,143-test source gate.
 
+## GM table, playlist and notification native acceptance (task 25)
+
+The explicitly approved harness is `module/test/tools/gm-ambience/native-proof.mts`,
+separate from read-only E2E. Require a generation-specific test-world target and
+matching link port, exact reviewed source/bundle, stored pairing plus authenticated
+live GM/world/agent/connection and three announced tools before fixtures. Require
+one active canonical GM with other same-account sessions closed, exact Player1 and
+Player2 identities, trusted private audit anchor and once-only human write approvals.
+The opt-in `AGENT_GATEWAY_TASK25_APPROVED=exact-fixtures-and-cleanup` never replaces
+fresh approval of the concrete payload. Native source verifies module-channel sender
+attestation on v13/v14; receivers authenticate the separate server-supplied sender,
+not payload identity. Server relay acknowledgement is not recipient-display proof.
+
+The approved seven-call plan uses one disposable table/two overlapping results and
+one disposable playlist/two repeating sounds using an existing bundled asset. Both
+sounds remain volume zero during play/next; verify complete stop before changing
+volume to 0.25, with no subsequent play. Draw once without replacement/no chat,
+perform one approved fixture-only reset, then draw with replacement/blind AI chat.
+Notify only Player1 with escaped literal text and localized AI prefix; verify GM and
+Player2 absence. Match exact output/source references, native private-content DOM
+and redacted dice, not message/card absence: native blind rolls may show placeholders.
+Save all participant facts before assertions. Capture exact audit UUID plus entry ID
+for each call and freshly validate the retained set after terminal-only exact cleanup.
+Uncertain execution or ambiguous identity requires reconciliation, never broad deletion.
+
+Source `4d8b9d1f4520ff3d0a39fbd7f3cc9b045cd0b6b5` passed build/lint/full verification
+(3,211 fast / 2,227 slow tests), 90 independent focused checks and an actual Chromium
+no-network/no-execution probe of the shared inert text helper. Both native versions
+14.369/13.351 observed bundle `ad5438ea93336082f34d9b0e4b962eef6c97eb94370aa7db437947993eb21ae6`
+and passed seven successful once-approved calls, seven exact audits and seven removed
+fixture UUIDs per world. Original root/source/chat/reference state, personal views and
+world time were unchanged. Executed private harness SHA-256 was
+`813ed9591f7f4cb20ad1f2a62a3a8a7c300056a0c7c0e4dae0bf4f5670c6f456`. Temporary bundle routes and native
+approval-template preload were used; no installed deployment is claimed.
+
+Both final successful runs completed immediately; pending completion remains a
+text-only API and is not evidence of preserved structured output. Earlier v14
+harness failures cleaned six/one and seven/seven fixtures/audits respectively; a
+v13 environment mismatch stopped before effects. HISTORY records those limits.
+Later reusable harness generalization is an offline change until independently run.
+PR #67 awaits merge and the contract stays at
+`plan/tasks/25-gm-table-playlist-notify.md`. No native recursive table draws, every
+playlist mode, audible playback, automatic Undo, concurrent-GM behavior or public
+screenshot export is claimed. Natural audio lifecycle callbacks remain native.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
