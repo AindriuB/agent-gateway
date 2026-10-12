@@ -1,7 +1,7 @@
 # 33 — Add the pf2e system adapter
 
 **Repo:** .
-**Depends on:** 31
+**Status:** Complete. Merged in PR #86 (head `9918aae`, main `899e89a`); native v14 acceptance passed 7/7. Follow-up limits are in Task44.
 **Status:** In progress (started 2026-10-12; implementation on the Mac). Dependency 31 is merged and archived. No Task33 native fixtures or writes are authorized.
 **Owns:**
 - module/src/adapters/pf2e/**
