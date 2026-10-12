@@ -368,31 +368,15 @@ is archived at `plan/done/26-code-tools.md`.
 
 ## Task 27 event tap verification and compatibility
 
-Draft PR #71 source `0a5835b137527398eb5b5bdb7ceead40575a1b70` passed
-build/lint/full verification (3,302 fast / 2,227 slow tests). Independent focused
-protocol/module/gateway testing passed 123 checks; local focused testing passed
-130 after the existing lifecycle mock gained the required link-client interface.
-Offline tests cover strict event schemas, authenticated observer binding,
-private-chat/rendered-Token visibility, coalescing and delayed visibility loss,
-create/delete ordering, disconnect cancellation, sequence reset, bounded pending
-updates, redacted approval summaries and agent flags. Native acceptance is pending.
+PR #71 source `0a5835b137527398eb5b5bdb7ceead40575a1b70` passed build/lint/full verification (3,302 fast / 2,227 slow), 123 independent focused protocol/module/gateway checks and 130 local checks. Offline tests cover strict schemas, visibility loss, ordering, disconnect cancellation, sequence reset, bounded pending updates, approval redaction and agent flags.
 
-Upgrade both module and gateway to protocol **3.0.0** together. Major 2 or older
-peers fail the existing handshake compatibility check; do not pair a new event
-module with an old gateway. The gateway validates and discards event frames in
-Task 27; no event buffering, polling, reconnect gap or offline retention is
-available yet. Those capabilities belong to tasks 28/29.
+Human-consented native acceptance passed on Foundry v14.369 / PF2e 8.6.0 and v13.351 / PF2e 7.12.2 with production SHA-256 `80625451b6db75f19c2b95c0a6c6b158fb16d8e69f80d46d1b35b03c45a041ad`. Three clients captured real observer-bound frames for Actor coalescing, visible Token updates, private whisper/blind-roll and hidden Token redaction. An abnormal loss of only the owned GM socket discarded a pending update and reset sequence after a new welcome. One human once-approved public `chat_post` produced one correlated audit and agent-action event per world. V14 completed through pending text-only approval status; v13 completed immediately with structured output. Cleanup proved eight/seven exact fixture UUIDs absent, one audit retained per world, all three views restored and baseline roots/sources/time unchanged.
 
-Combat events use native visibility and constant labels rather than ownership
-or hidden turn details. Token events require the existing rendered placeable's
-current perception; v13 deletion may already have destroyed it, in which case
-the delete event is suppressed. Do not interpret the tap as a complete change
-log. Source bundle SHA-256
-`80625451b6db75f19c2b95c0a6c6b158fb16d8e69f80d46d1b35b03c45a041ad`
-is an offline build identity until a separately consented native proof runs.
-Any live fixture writes require fresh scoped human consent and exact cleanup;
-this source gate grants no such permission. The active contract remains at
-`plan/tasks/27-module-event-tap.md`.
+Native-executed proof SHA-256 was `971a5b433e173cc4b454638bbc5d9c9713cbe9413c07ab1d4100ccf8bc7bcdc8`; state helpers were v14 `35604f8cb5a5d7f225cbb90dcd368eb986701b6a97866aaf5059ffe477805521` and v13 `c9cfcb4faf4feea8de72ba262a0305c5cdb25cd0d1ed42e267ba0d0c223ca93f`. The latter only normalizes exact empty linked ActorDelta representations; foreign IDs, unknown/nonempty data and unrelated source drift remain refused. Six fixture-only name updates and one real chat call comprise this bounded native plan. Combat/all CRUD/approval transitions, unavailable-view Token deletes, native Undo and installed deployment were not proved. The final reusable harness has 16 independent focused checks, strict TypeScript/ESLint and actual-transpiled serialization; this offline tooling verification is separate from native execution and the source gate.
+
+Historical attempts remain failed-and-cleaned, not retroactive passes: the first v14 replacement-close run removed seven created fixtures/zero new audits; two v13 source-serialization stops each removed four reconciled fixtures/zero new audits, before any fixture views and after three views respectively. Exact cleanup and all original sources/time were checked. Private screenshots/artifacts remain local.
+
+Upgrade both module and gateway to protocol **3.0.0** together; older major peers fail the handshake compatibility check. Task 27 validates and discards event frames at the gateway, with no buffering, polling, gaps or offline retention until tasks 28/29. Combat uses native visibility and constant labels; Token events require current rendered perception, so v13 deletes with already-destroyed views are suppressed. This is not a complete change log. The active contract remains `plan/tasks/27-module-event-tap.md` until merge. Future native writes require fresh scoped human consent and exact cleanup.
 
 ## Permission rules on the Mac (auto mode)
 
