@@ -10,6 +10,7 @@ import {
   task31OnceRecord,
   task31AuditRows,
   task31CleanupReady,
+  task31InstalledRequest,
 } from './native-plan.js';
 import { validateSnapshot } from '../../../src/policy/snapshot.js';
 import { task31NativeState } from './native-state.js';
@@ -119,6 +120,22 @@ function nativeFixture() {
   };
 }
 describe('Task31 bounded generic native proof', () => {
+  it('bounds opt-in local TLS inspection to the approved origin with no redirects', () => {
+    expect(task31InstalledRequest('https://foundry.local', 14, true)).toEqual({
+      url: 'https://foundry.local/modules/agent-gateway/dist/module/main.js',
+      options: { ignoreHTTPSErrors: true, maxRedirects: 0, timeout: 20000 },
+    });
+    expect(
+      task31InstalledRequest('https://foundry13.local', 13, false).options.ignoreHTTPSErrors,
+    ).toBe(false);
+    for (const origin of [
+      'http://foundry.local',
+      'https://foundry.local:444',
+      'https://elsewhere.local',
+      'https://foundry13.local',
+    ])
+      expect(() => task31InstalledRequest(origin, 14, true)).toThrow();
+  });
   it('pins runtime and fixed six-call private fixture scope', () => {
     expect(TASK31_NATIVE_PINS.source).toMatch(/^[a-f0-9]{40}$/);
     expect(TASK31_NATIVE_PINS.bundle).toMatch(/^[a-f0-9]{64}$/);

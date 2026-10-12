@@ -33,6 +33,7 @@ import {
   task31OnceRecord,
   task31AuditRows,
   task31CleanupReady,
+  task31InstalledRequest,
 } from './native-plan.js';
 import { validateSnapshot } from '../../../src/policy/snapshot.js';
 import { task31NativeState, task31PreloadTemplate } from './native-state.js';
@@ -187,10 +188,12 @@ try {
       ),
     (route) => route.close(),
   );
-  const installed = await browser.context.request.get(
-      `${config.foundryOrigin}/modules/agent-gateway/dist/module/main.js`,
-      { ignoreHTTPSErrors: true },
-    ),
+  const inspection = task31InstalledRequest(
+    config.foundryOrigin,
+    generation,
+    process.env.AGENT_GATEWAY_E2E_INSECURE_TLS === '1',
+  );
+  const installed = await browser.context.request.get(inspection.url, inspection.options),
     installedBytes = await installed.body();
   if (!installed.ok() || !installedBytes.length || installedBytes.length > 6000000)
     throw Error('Bounded installed bundle required');

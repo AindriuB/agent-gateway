@@ -130,3 +130,13 @@ export function task31AuditRows(
 export function task31CleanupReady(pendingCount: number, calls: readonly { terminal: boolean }[]) {
   return pendingCount === 0 && calls.every((call) => call.terminal);
 }
+
+/** TLS exception is opt-in and cannot redirect beyond the exact approved local Foundry origin. */
+export function task31InstalledRequest(origin: string, generation: 13 | 14, insecureTLS: boolean) {
+  if (origin !== (generation === 13 ? 'https://foundry13.local' : 'https://foundry.local'))
+    throw Error('Exact approved installed-bundle origin required');
+  return {
+    url: `${origin}/modules/agent-gateway/dist/module/main.js`,
+    options: { ignoreHTTPSErrors: insecureTLS, maxRedirects: 0, timeout: 20000 },
+  };
+}
