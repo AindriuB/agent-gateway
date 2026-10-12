@@ -143,3 +143,15 @@ Head `deab903` passed live 7/7, and the reviewer approved it. The reviewer sugge
 Live 7/7 at `9e3ff95`. [P2] `module/src/adapters/pf2e/index.ts:113`: when ammunition is loaded as a subitem (for example a repeating weapon's magazine), it is synthetic. pf2e saves its changes through the owning weapon Item, so the update hook names the parent. The ammo snapshot never goes stale, and GM Undo can restore spent ammunition even though the result says the spend cannot be undone.
 
 Fix: snapshot the Item that is actually saved. Confirm in pf2e.mjs how a subitem is represented (`parentItem`, or whatever it is) and how its update is routed to the parent, and cite the lines. When ammo is a subitem, snapshot its owning Item; otherwise keep the ammo Item. Add a unit test for both.
+
+## Attempt 18 — PR #86 review finding (head 30950c7)
+Live 7/7 at `30950c7`.
+
+[P2] `module/src/adapters/pf2e/index.ts:359`: `listActions` emits `spell:rituals:<spellId>`, but `performAction` resolves entries only from `actor.items`, so the call returns "Unknown spell action". pf2e keeps the ritual entry in `actor.spellcasting` as a `RitualSpellcasting` object (pf2e 8.6.0 `src/module/item/spellcasting-entry/rituals.ts`). It is not an embedded Item and has no `consume`.
+
+Fix:
+- Resolve the entry through `actor.spellcasting` for both listing and performing.
+- Support its resource-free ritual cast path. Confirm in pf2e.mjs how a ritual is cast or posted, and cite the lines.
+- Spend nothing and add no spend disclosure.
+
+Also add a unit test that every id produced by `listActions` for a fixture covering the entry kinds — prepared, spontaneous, innate, focus and ritual entries, action/feat items and strikes — is accepted by `performAction`, meaning it does not return "Unknown …". This guards against the whole class of mismatch.
