@@ -265,4 +265,80 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     },
     humanTimeout(2),
   );
+
+  it(
+    'lists and performs a costed feat and audits its chat message as created',
+    async (ctx) => {
+      if (!writes) return ctx.skip();
+      const page = session.browser.page;
+      const madeFeat = await settle(
+        session,
+        await session.gateway.call('document_create', {
+          type: 'Item',
+          parentUuid: actorUuid,
+          data: JSON.stringify({
+            name: 'agent-gateway e2e feat (temporary)',
+            type: 'feat',
+            system: {
+              category: 'general',
+              actionType: { value: 'action' },
+              actions: { value: 1 },
+            },
+          }),
+        }),
+      );
+      expect(madeFeat.result.isError, madeFeat.result.text).toBe(false);
+      const featUuid = madeFeat.uuid;
+      expect(typeof featUuid).toBe('string');
+      try {
+        const listed = await call('actions_list');
+        const featId = (featUuid as string).split('.').pop();
+        const action = ((listed.structured?.actions ?? []) as Row[]).find(
+          (a) => a.id === `action:${featId}`,
+        );
+        expect(action, listed.text).toBeDefined();
+        expect(String(action?.cost)).toMatch(/1 action/);
+        const performed = await settle(
+          session,
+          await call('action_perform', { actionId: action?.id }),
+        );
+        expect(performed.result.isError, performed.result.text).toBe(false);
+        if (
+          performed.result.structured?.status !== 'approved' &&
+          performed.result.structured?.completed !== undefined
+        )
+          expect(performed.result.structured?.completed).toBe(true);
+        const created = (await page.evaluate(`(async () => {
+        const find = () => {
+          const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
+          const pages = journal ? [...journal.pages] : [];
+          return pages
+            .filter((p) => p.system.tool === 'action_perform' && p.system.args.includes(${JSON.stringify(
+              action?.id,
+            )}))
+            .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
+        };
+        // The audit page is written after the tool returns: poll, bounded to 10 s.
+        let page = find();
+        for (let i = 0; i < 40 && !page; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+          page = find();
+        }
+        return (page?.system.targets ?? [])
+          .filter((t) => t.existed === false && t.undoable === true && t.uuid.startsWith('ChatMessage.'))
+          .map((t) => t.uuid);
+      })()`)) as string[];
+        expect(created).toHaveLength(1);
+      } finally {
+        // Deleting the actor does not delete its chat messages; the feat goes with the actor.
+        await page.evaluate(`(async () => {
+        const ids = game.messages
+          .filter((m) => m.flags?.pf2e?.origin?.uuid === ${JSON.stringify(featUuid)})
+          .map((m) => m.id);
+        for (const id of ids) await game.messages.get(id)?.delete();
+      })()`);
+      }
+    },
+    humanTimeout(2),
+  );
 });
