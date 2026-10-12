@@ -310,6 +310,8 @@ text-only API and is not evidence of preserved structured output. Earlier v14
 harness failures cleaned six/one and seven/seven fixtures/audits respectively; a
 v13 environment mismatch stopped before effects. HISTORY records those limits.
 Later reusable harness generalization is an offline change until independently run.
+
+The combined reusable-harness/documentation head `4129902262904f6f9705435f5d1d8ffc116cac7d` passed build/lint/full verification on its first run (3,222 fast / 2,227 slow tests), with 11 focused harness checks, standalone TypeScript, ESLint and actual-transpiled browser serialization. Production remains the native-tested `4d8b9d1` / `ad5438ea…21ae6`; this combined offline tooling gate is separate from the 3,211-fast source gate and is not another native execution.
 PR #67 awaits merge and the contract stays at
 `plan/tasks/25-gm-table-playlist-notify.md`. No native recursive table draws, every
 playlist mode, audible playback, automatic Undo, concurrent-GM behavior or public
