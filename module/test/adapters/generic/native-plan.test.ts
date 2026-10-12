@@ -13,6 +13,7 @@ import {
   task31CleanupReady,
   task31InstalledRequest,
 } from './native-plan.js';
+import { DEFAULT_OWNER_MATRIX } from '../../../src/policy/matrix.js';
 import { validateSnapshot } from '../../../src/policy/snapshot.js';
 import { task31Reconcile } from './native-reconcile.js';
 import { task31NativeState } from './native-state.js';
@@ -470,6 +471,7 @@ describe('Task31 bounded generic native proof', () => {
       ['agent-gateway', 'auditJournalId'],
       ['agent-gateway', 'ownerPolicy'],
     ]);
+    expect(registrations[1][2].default).toBe(JSON.stringify(DEFAULT_OWNER_MATRIX));
     expect(context.CONFIG.JournalEntryPage.dataModels['agent-gateway.audit']).toBeTypeOf(
       'function',
     );
