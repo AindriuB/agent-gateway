@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 28 | PR #73 merged; Task28 archived, 24 done/17 active, Task29 next and18 blocked; historical native/offline repair distinction retained | ## 2026-10-12 — Gateway event buffer task merged and archived (task 28) |
 | 2026-10-12 | 28 | P1 rejected-toolset revocation repaired; offline gate 3,393/2,227, historical native source unchanged | ## 2026-10-12 — Event-read revocation survives rejected toolset refreshes (task 28) |
 | 2026-10-12 | 28 | Bounded v13/v14 polling, isolation, reconnect and exact NPC cleanup passed; history hidden, PR #73 merge pending | ## 2026-10-12 — Policy-gated event polling validated on v13 and v14; merge pending (task 28) |
 | 2026-10-12 | 28 | Source verified 3,380/2,227; protocol4, policy-gated online polling and pairing-isolated cursors; native pending, history hidden | ## 2026-10-12 — Policy-gated gateway event buffer implemented; native acceptance pending (task 28) |

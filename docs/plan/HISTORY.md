@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Gateway event buffer task merged and archived (task 28)
+
+PR #73 merged on 2026-10-12 at 14:26:26 UTC: reviewed head `b5293a1e1c50fe65ca4debbe448653e6f7623600`, main merge `98ae4adda495884c0a25ab4b514b74baa130ab47`. Task28's contract moves to `docs/plan/done/28-gateway-event-buffer.md` with only its completion status changed. The derived inventory is 24 completed contracts and 17 active contracts. Task29 — Add offline event reading with retention and purge — is next; Task18's architecture blocker is unchanged.
+
+The latest gateway repair `ac9b93e` passed build/lint and 3,393 fast / 2,227 slow tests, with local48 and independent42 focused selections. Native evidence remains separately pinned to gateway source `5059015` and module bundle `8cf825b`: one private NPC/two renames/exact cleanup per world, actual allowed GM/Player1 polling, nonconsumption/timeout/wake/cancellation/reconnect and hidden history refusal. The later revocation repair was not rerun natively; unchanged module bytes do not establish new gateway native coverage.
+
+**Cost:** Completion recording waited for the verified merge. Prior source-progress, native acceptance and P1 follow-up history entries remain untouched, including the prewrite join-name stop and offline-only policy/restart/retention limits. This docs-only archive changes no runtime, tests, live world, credentials or exported evidence; offline history remains Task29 rather than an implied completed capability.
+
 ## 2026-10-12 — Event-read revocation survives rejected toolset refreshes (task 28)
 
 The PR #73 event-read revocation repair `ac9b93e5e6c00df32947fd548a1a221806675025` passed build/lint/full verification on its first run (3,393 fast / 2,227 slow tests). Seven new regressions cover rejected count/byte announcements, invalid definitions with false, omitted or true authorization metadata, malformed frames, WebSocket payload errors, pending/future read refusal and valid restoration. Local 48-test and independent 42-test focused selections passed separately. Restrictive authorization is applied before definition validation; rejected updates cannot preserve or grant event reads, pending polls settle FORBIDDEN, and listings/subsequent reads reflect the revocation. Prior valid tool definitions remain available, and only a valid affirmative update can restore event access.
