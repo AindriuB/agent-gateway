@@ -124,3 +124,9 @@ Andrew decided:
 Also fix:
 - `index.ts:297-302` — pass `messageMode` when creating the `Item#toMessage` replica, as native does at pf2e.mjs:45495-45496.
 - e2e — the frightened test must no longer expect undoable condition Items. Assert instead that the result carries the "cannot be undone" disclosure, and that the restore still yields the prior value. Keep the strike ChatMessage undoable assertion.
+
+## Attempt 14 — failed (small)
+Head `78f067a`. Tester PASS. Reviewer REQUEST CHANGES; all of Andrew's decisions were implemented correctly, and scope is clean.
+- `module/src/adapters/pf2e/index.ts:522-524`: the value-update branch snapshots the whole cascade set, but `updateConditionValue` (pf2e.mjs:48967-48975) touches only the condition Item. Snapshot only `existing.uuid` there.
+- `index.ts:384`: the "failed after its slot or focus point was spent" wording appears even when nothing was spent. Use it only when `spends` is non-empty.
+- `index.ts:472-493`: when pf2e would cancel the deletion because of a `restrict` grant (pf2e.mjs:45389-45403), stop. Snapshot nothing and do not report success. Return what pf2e reports, or the unchanged conditions.
