@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 31
-**Status:** Next system adapter by Andrew's priority change, after accepted Task31 bounded native validation is published/merged. Implementation has not started; no Task33 native fixtures or writes are authorized.
+**Status:** In progress (started 2026-10-12; implementation on the Mac). Dependency 31 is merged and archived. No Task33 native fixtures or writes are authorized.
 **Owns:**
 - module/src/adapters/pf2e/**
 - module/test/adapters/pf2e/**
@@ -16,7 +16,7 @@ bulk, and conditions with values.
 
 ## Context
 - docs/plan/specs/2026-10-09-agent-gateway.md:159-161 — adapter interface
-- homelab `test-world` runs pf2e 8.6.0
+- `test-world` on foundry.local (homelab) runs pf2e 8.6.0; system source for reference at homelab `/srv/data/foundry/data/Data/systems/pf2e`
 - module/src/adapters/types.ts, module/test/adapters/contract.ts (31)
 - This adapter is internal to the core, not a tool pack (see 31); it adds no tool names and nothing to the pack API
 
