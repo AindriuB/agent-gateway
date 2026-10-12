@@ -11,9 +11,12 @@ const writes = process.env.AGENT_GATEWAY_E2E_PF2E_WRITE === '1';
 
 type Row = Record<string, unknown>;
 
-// Tests that wait on a human's approval must not be bounded by the default 5 s test timeout, nor
-// effectively by the human's decision time; the approval itself expires on the gateway side.
-const HUMAN_TIMEOUT_MS = 10 * 60_000;
+// A pending approval expires on the gateway after its TTL (module/src/approvals/config.ts,
+// APPROVAL_TTL_MS, mirrored here), so a human's answer can arrive any time up to then. Each test
+// that waits on N sequential approvals gets N TTLs plus margin, so the vitest timeout (not an
+// early give-up) is what bounds the wait and an approval can never land after the test stopped.
+const APPROVAL_TTL_MS = 60 * 60_000;
+const humanTimeout = (approvals: number): number => approvals * APPROVAL_TTL_MS + 5 * 60_000;
 
 const UUID_RE = /\b(?:Actor\.[A-Za-z0-9]{16}(?:\.Item\.[A-Za-z0-9]{16})?)\b/;
 
@@ -69,7 +72,7 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     expect(made.result.isError, made.result.text).toBe(false);
     actorUuid = made.uuid;
     expect(typeof actorUuid).toBe('string');
-  }, HUMAN_TIMEOUT_MS);
+  }, humanTimeout(1));
   afterAll(async () => {
     // A thrown or timed-out settle must not skip session.close(), and residue is named loudly.
     let failure: unknown;
@@ -94,7 +97,7 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
       failure ??= e;
     }
     if (failure) throw failure;
-  }, HUMAN_TIMEOUT_MS);
+  }, humanTimeout(1));
   beforeEach((ctx) => {
     if (!enabled) ctx.skip();
   });
@@ -166,7 +169,7 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         expect((await frightened())?.value).toBe(prior?.value);
       }
     },
-    HUMAN_TIMEOUT_MS,
+    humanTimeout(2),
   );
 
   it(
@@ -252,6 +255,6 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         // The weapon is embedded in the temporary actor, which the suite deletes.
       }
     },
-    HUMAN_TIMEOUT_MS,
+    humanTimeout(2),
   );
 });
