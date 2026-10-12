@@ -97,13 +97,14 @@ classes or authority are added; unsupported targets remain view-only.
   envelope to its exact intended recipients and prevent duplicate display within
   a bounded lifetime/cache. Registration must be idempotent and owned by the
   notify receiver, without unrelated bootstrap changes.
-- v14 module-channel server sender attestation is verified. v13 custom User.query
+- Native v13.351 and v14.369 server source verifies module-channel sender
+  attestation: the authenticated world session supplies a separate sender User ID,
+  independent of payload fields. An explicit recipients array routes to those User
+  IDs (including their tabs); omission can broadcast and is forbidden for targeted
+  delivery. Both generations may use this verified transport. v13 custom User.query
   discards sender identity before its callback, so that callback is insufficient.
-  v13 module-channel server proof is pending: table/playlist implementation may
-  proceed, and notify may implement a safe local invoking-GM path and fail-closed
-  remote branch pending proof. This is an unresolved acceptance gate, not a claim
-  that native v13 remote notifications are inherently unsupported. Any final
-  capability limitation requires explicit review before publication.
+  Server-source verification establishes the trust boundary; actual notification
+  delivery still requires the approved native acceptance checks below.
 - Distinguish server relay acceptance from recipient display. Never return an
   end-to-end delivered claim from a server-only acknowledgement; if delivery is
   acknowledged, require exact recipient-authenticated, bounded request correlation.
