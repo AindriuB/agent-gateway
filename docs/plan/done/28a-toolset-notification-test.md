@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 28
+**Status:** Complete; merged in PR #75 (head `1eb9b08`, main `3cd5cb1`). Targeted 16-test checks and required build/lint/full verification passed (3,393 fast / 2,227 slow). Test-only repair; no runtime or native changes.
 **Owns:**
 - gateway/test/routing/toolset.test.ts (the cross-user notification test only)
 
