@@ -161,7 +161,26 @@ function strikes(actor: any): any[] {
     (s) => s && (s.type === undefined || s.type === 'strike') && typeof s.slug === 'string',
   );
 }
-const spellEntryId = (spell: any): string => text(spell.system?.location?.value, 64);
+/**
+ * Ritual spells belong to the ephemeral RitualSpellcasting entry, id `rituals`, which exists only
+ * in actor.spellcasting and is not an embedded Item (pf2e.mjs:33885-33892, :34530). Other spells
+ * name their entry in system.location.value, which SpellPF2e#spellcasting resolves through
+ * actor.spellcasting (:53077-53080).
+ */
+const spellEntryId = (spell: any): string =>
+  spell.isRitual === true ? 'rituals' : text(spell.system?.location?.value, 64);
+function spellEntry(actor: any, id: string): any {
+  if (!id) return undefined;
+  return actor.spellcasting?.get?.(id) ?? actor.items?.get?.(id);
+}
+/** The entry that can cast this spell: a ritual entry, or one that consumes resources. */
+function castableEntry(actor: any, spell: any): any {
+  if (typeof spell?.toMessage !== 'function') return undefined;
+  const entry = spellEntry(actor, spellEntryId(spell));
+  if (!entry) return undefined;
+  if (spell.isRitual === true) return entry.isRitual === true ? entry : undefined;
+  return typeof entry.consume === 'function' ? entry : undefined;
+}
 
 function summary(actor: any) {
   const s = actor.system ?? {};
@@ -200,9 +219,11 @@ function summary(actor: any) {
 function listActions(actor: any) {
   const actions: any[] = [];
   for (const strike of strikes(actor)) {
+    // Only variants performAction can roll are listed.
     const variants = list(strike.variants);
     const itemId = text(strike.item?.id, 64) || text(strike.slug, 64);
-    (variants.length ? variants : [{ label: '' }]).forEach((v, i) => {
+    variants.forEach((v, i) => {
+      if (typeof v?.roll !== 'function') return;
       actions.push({
         id: `strike:${itemId}:${text(strike.slug, 64)}:${i}`,
         name:
@@ -221,7 +242,7 @@ function listActions(actor: any) {
   }
   for (const item of actionItems(actor)) {
     const cost = costLabel(item.actionCost);
-    if (!cost) continue;
+    if (!cost || typeof item.toMessage !== 'function') continue;
     actions.push({
       id: `action:${text(item.id, 64)}`,
       name: text(item.name, 1000),
@@ -230,6 +251,7 @@ function listActions(actor: any) {
     });
   }
   for (const spell of list(actor.itemTypes?.spell)) {
+    if (!castableEntry(actor, spell)) continue;
     const rank = num(spell.rank) ?? num(spell.system?.level?.value) ?? 0;
     const cantrip = spell.isCantrip === true || spell.system?.traits?.value?.includes?.('cantrip');
     actions.push({
@@ -356,15 +378,24 @@ async function performAction(
   }
   if (parts[0] === 'spell' && parts.length === 3) {
     const spell = list(actor.itemTypes?.spell).find((i) => i.id === parts[2]);
-    const entry = spell && actor.items?.get?.(parts[1]);
-    if (
-      !spell ||
-      !entry ||
-      typeof spell.toMessage !== 'function' ||
-      typeof entry.consume !== 'function'
-    )
+    const entry = spell && castableEntry(actor, spell);
+    if (!spell || !entry || spellEntryId(spell) !== parts[1])
       return invalid('Unknown spell action');
-    if (spellEntryId(spell) !== parts[1]) return invalid('Unknown spell action');
+    if (entry.isRitual === true) {
+      // RitualSpellcasting#cast (pf2e.mjs:33922-33928) has no slots, uses or focus cost: it only
+      // posts the spell via toMessage with actualCast. Replicate that with `create: false` so the
+      // message carries callOptions. Nothing is spent, so nothing is snapshotted or disclosed.
+      await auditedChat(context, async (record) => {
+        const made = await postMessage(
+          await spell.toMessage(undefined, { actualCast: true, create: false }),
+          context,
+          record,
+          { renderSheet: false },
+        );
+        if (!made) throw new Error(`No chat message was created for ${text(spell.name, 200)}`);
+      });
+      return done(`Cast ${text(spell.name, 200)}`);
+    }
     const rank = options.rank;
     if (
       rank !== undefined &&

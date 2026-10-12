@@ -415,6 +415,90 @@ describe('pf2e adapter', () => {
       pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx),
     ).rejects.toThrow(/kaput/);
   });
+  it('accepts every id listActions emits, across all entry and action kinds', async () => {
+    const mkEntry = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      uuid: `Actor.a.Item.${id}`,
+      consume,
+      ...extra,
+    });
+    const entries: Record<string, any> = {
+      prep: mkEntry('prep', { isPrepared: true }),
+      spont: mkEntry('spont', { isSpontaneous: true }),
+      innate: mkEntry('innate', { isInnate: true }),
+      focus: mkEntry('focus', { isFocusPool: true }),
+      // RitualSpellcasting: not an Item, no consume.
+      rituals: { id: 'rituals', isRitual: true },
+    };
+    const mkSpell = (id: string, loc: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      uuid: `Actor.a.Item.${id}`,
+      name: `Spell ${id}`,
+      rank: 2,
+      baseRank: 2,
+      toMessage: spellMessage,
+      system: { location: { value: loc }, time: { value: '2' }, ...(extra.system as object) },
+      ...extra,
+    });
+    const spells = [
+      mkSpell('sp1', 'prep'),
+      mkSpell('sp2', 'spont'),
+      mkSpell('sp3', 'innate'),
+      mkSpell('sp4', 'focus', { isFocusSpell: true, system: { cast: { focusPoints: 1 } } }),
+      mkSpell('sp5', 'rituals', { isRitual: true }),
+      // A ritual whose own location is empty is still on the rituals entry.
+      mkSpell('sp6', '', { isRitual: true }),
+      // Orphaned: no entry can cast it, so it must not be listed.
+      mkSpell('sp7', 'gone'),
+    ];
+    const full = {
+      ...actor,
+      items: { get: () => undefined },
+      spellcasting: { get: (id: string) => entries[id] },
+      itemTypes: {
+        ...actor.itemTypes,
+        spell: spells,
+        feat: [{ id: 'f1', name: 'Feat', actionCost: { type: 'action', value: 1 }, toMessage }],
+      },
+    };
+    const { actions } = (await pf2eAdapter.listActions(full)) as any;
+    const ids: string[] = actions.map((a: any) => a.id);
+    expect(ids.some((i) => i.startsWith('strike:'))).toBe(true);
+    expect(ids.some((i) => i.startsWith('action:'))).toBe(true);
+    expect(ids).toEqual(expect.arrayContaining(['spell:rituals:sp5', 'spell:rituals:sp6']));
+    expect(ids.some((i) => i.endsWith(':sp7'))).toBe(false);
+    for (const id of ids) {
+      const outcome = await pf2eAdapter
+        .performAction(full, id, { rank: 2 }, ctx)
+        .catch((e: Error) => e);
+      expect(outcome instanceof Error ? outcome.message : '', id).not.toMatch(/Unknown/);
+    }
+  });
+  it('casts a ritual without consuming anything or disclosing a spend', async () => {
+    const ritual = {
+      id: 'r1',
+      uuid: 'Actor.a.Item.r1',
+      name: 'Ritual',
+      isRitual: true,
+      toMessage: spellMessage,
+      system: { location: { value: 'rituals' } },
+    };
+    const ra = {
+      ...actor,
+      items: { get: () => undefined },
+      spellcasting: { get: () => ({ id: 'rituals', isRitual: true }) },
+      itemTypes: { ...actor.itemTypes, spell: [ritual] },
+    };
+    const r = (await pf2eAdapter.performAction(ra, 'spell:rituals:r1', {}, ctx)) as any;
+    expect(r).toEqual({ completed: true, message: 'Cast Ritual' });
+    expect(consume).not.toHaveBeenCalled();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(spellMessage).toHaveBeenCalledWith(undefined, { actualCast: true, create: false });
+    expect(chatCreate).toHaveBeenCalledWith(
+      { marker: 'spell' },
+      { renderSheet: false, ...callOptions },
+    );
+  });
   it('neither lists nor performs suppressed actions or feats', async () => {
     const cost = { type: 'action', value: 1 };
     const sup = {
