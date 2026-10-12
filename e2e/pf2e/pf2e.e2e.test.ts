@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadContext } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 
@@ -10,10 +10,12 @@ const writes = process.env.AGENT_GATEWAY_E2E_PF2E_WRITE === '1';
 
 type Row = Record<string, unknown>;
 
-describe.skipIf(!enabled)('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
+// Tests are always registered (so `vitest list` shows them); each skips at run time unless enabled.
+describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
   let session: UserSession;
   let actorUuid: string | undefined;
   beforeAll(async () => {
+    if (!enabled) return;
     const ctx = loadContext();
     session = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
     const made = await session.gateway.call('document_create', {
@@ -26,10 +28,16 @@ describe.skipIf(!enabled)('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
   });
   afterAll(async () => {
     try {
-      if (actorUuid) await session.gateway.call('document_delete', { uuids: [actorUuid] });
+      if (actorUuid) {
+        const del = await session.gateway.call('document_delete', { uuids: [actorUuid] });
+        expect(del.isError, del.text).toBe(false);
+      }
     } finally {
       await session?.close();
     }
+  });
+  beforeEach((ctx) => {
+    if (!enabled) ctx.skip();
   });
   const call = (name: string, args: Record<string, unknown> = {}) =>
     session.gateway.call(name, { actorUuid, ...args });
@@ -68,32 +76,30 @@ describe.skipIf(!enabled)('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     expect(r.structured?.supported).toBe(true);
   });
 
-  it.skipIf(!writes)(
-    'applies frightened 2 via the system condition API and restores it',
-    async () => {
-      const before = await call('conditions');
-      const prior = ((before.structured?.conditions ?? []) as Row[]).find(
+  it('applies frightened 2 via the system condition API and restores it', async (ctx) => {
+    if (!writes) return ctx.skip();
+    const before = await call('conditions');
+    const prior = ((before.structured?.conditions ?? []) as Row[]).find(
+      (c) => c.id === 'frightened',
+    );
+    try {
+      const on = await call('conditions', {
+        change: { id: 'frightened', active: true, value: 2 },
+      });
+      expect(on.isError, on.text).toBe(false);
+      const rows = (on.structured?.conditions ?? []) as Row[];
+      expect(rows.find((c) => c.id === 'frightened')?.value).toBe(2);
+    } finally {
+      const restore = await call('conditions', {
+        change: prior
+          ? { id: 'frightened', active: true, value: prior.value as number }
+          : { id: 'frightened', active: false },
+      });
+      expect(restore.isError, restore.text).toBe(false);
+      const after = ((restore.structured?.conditions ?? []) as Row[]).find(
         (c) => c.id === 'frightened',
       );
-      try {
-        const on = await call('conditions', {
-          change: { id: 'frightened', active: true, value: 2 },
-        });
-        expect(on.isError, on.text).toBe(false);
-        const rows = (on.structured?.conditions ?? []) as Row[];
-        expect(rows.find((c) => c.id === 'frightened')?.value).toBe(2);
-      } finally {
-        const restore = await call('conditions', {
-          change: prior
-            ? { id: 'frightened', active: true, value: prior.value as number }
-            : { id: 'frightened', active: false },
-        });
-        expect(restore.isError, restore.text).toBe(false);
-        const after = ((restore.structured?.conditions ?? []) as Row[]).find(
-          (c) => c.id === 'frightened',
-        );
-        expect(after?.value).toBe(prior?.value);
-      }
-    },
-  );
+      expect(after?.value).toBe(prior?.value);
+    }
+  });
 });

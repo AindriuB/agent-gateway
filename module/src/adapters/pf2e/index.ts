@@ -45,9 +45,14 @@ function spellCost(v: unknown): string | undefined {
 
 /**
  * Run a native operation that creates ChatMessages, declaring the creation first and recording
- * every message this user creates meanwhile, so the audit trail covers them.
+ * only messages provably produced by it: created by this user, in flight, and spoken by this
+ * actor. A message that cannot be attributed (e.g. a concurrent chat_post) is never recorded.
  */
-async function auditedChat<T>(context: AdapterExecutionContext, run: () => Promise<T>): Promise<T> {
+async function auditedChat<T>(
+  context: AdapterExecutionContext,
+  actor: any,
+  run: () => Promise<T>,
+): Promise<T> {
   if (
     typeof context?.intendCreate !== 'function' ||
     typeof context.created !== 'function' ||
@@ -62,6 +67,8 @@ async function auditedChat<T>(context: AdapterExecutionContext, run: () => Promi
     if (
       typeof message?.uuid === 'string' &&
       message.uuid &&
+      typeof actor?.id === 'string' &&
+      message.speaker?.actor === actor.id &&
       (message.author?.id ?? message.user?.id) === userId
     )
       uuids.push(message.uuid);
@@ -179,13 +186,13 @@ async function performAction(
     );
     const variant = strike ? list(strike.variants)[Number(parts[3])] : undefined;
     if (!variant || typeof variant.roll !== 'function') return invalid('Unknown strike action');
-    await auditedChat(context, () => variant.roll({}));
+    await auditedChat(context, actor, () => variant.roll({}));
     return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
   }
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
-    await auditedChat(context, () => item.toMessage());
+    await auditedChat(context, actor, () => item.toMessage());
     return done(`Performed ${text(item.name, 200)}`);
   }
   if (parts[0] === 'spell' && parts.length === 3) {
@@ -205,14 +212,30 @@ async function performAction(
     if (rank !== undefined && (fixed ? rank !== num(spell.rank) : rank < baseRank))
       return invalid(`Spell rank must be ${fixed ? 'the spell rank' : `at least ${baseRank}`}`);
     const castRank = rank ?? num(spell.rank);
-    const cast = await auditedChat(context, async () => {
+    if (castRank === undefined && !fixed && spell.atWill !== true)
+      return invalid('Spell rank is required for this spell');
+    const cast = await auditedChat(context, actor, async () => {
       // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
-      const paid = spell.atWill === true || (await entry.consume(spell, castRank));
+      let paid: boolean;
+      try {
+        paid = spell.atWill === true || Boolean(await entry.consume(spell, castRank));
+      } catch {
+        return false;
+      }
       if (!paid) return false;
-      await entry.cast(spell, {
-        consume: false,
-        ...(castRank === undefined ? {} : { rank: castRank }),
-      });
+      try {
+        await entry.cast(spell, {
+          consume: false,
+          ...(castRank === undefined ? {} : { rank: castRank }),
+        });
+      } catch (e) {
+        throw new Error(
+          `Casting ${text(spell.name, 200)} failed after its slot or focus point was spent: ${text(
+            (e as Error)?.message,
+            300,
+          )}`,
+        );
+      }
       return true;
     });
     if (!cast)

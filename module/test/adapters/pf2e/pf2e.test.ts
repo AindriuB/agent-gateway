@@ -32,6 +32,7 @@ const frightened = {
   system: { value: { value: 2 } },
 };
 const actor: any = {
+  id: 'act1',
   name: 'Valeros',
   img: 'icons/v.webp',
   type: 'character',
@@ -115,7 +116,9 @@ beforeEach(() => {
   createHooks = [];
   consume.mockResolvedValue(true);
   roll.mockImplementation(async () =>
-    createHooks.forEach((h) => h({ uuid: 'ChatMessage.m1', author: { id: 'u1' } })),
+    createHooks.forEach((h) =>
+      h({ uuid: 'ChatMessage.m1', author: { id: 'u1' }, speaker: { actor: 'act1' } }),
+    ),
   );
   (globalThis as any).Hooks = {
     on: (_n: string, h: (m: any) => void) => createHooks.push(h),
@@ -192,6 +195,24 @@ describe('pf2e adapter', () => {
     await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
     expect(intendCreate).toHaveBeenCalledTimes(1);
     expect(created).toHaveBeenCalledWith('ChatMessage.m1');
+  });
+  it('does not record messages it cannot attribute to the actor', async () => {
+    roll.mockImplementation(async () =>
+      createHooks.forEach((h) => {
+        h({ uuid: 'ChatMessage.other', author: { id: 'u1' }, speaker: { actor: 'someone' } });
+        h({ uuid: 'ChatMessage.nospeaker', author: { id: 'u1' } });
+        h({ uuid: 'ChatMessage.mine', author: { id: 'u1' }, speaker: { actor: 'act1' } });
+      }),
+    );
+    await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(created).toHaveBeenCalledWith('ChatMessage.mine');
+  });
+  it('says the slot was spent when the cast throws after consumption', async () => {
+    cast.mockRejectedValueOnce(new Error('boom'));
+    await expect(pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)).rejects.toThrow(
+      /after its slot or focus point was spent/,
+    );
   });
   it('reports a failed spell consumption as not completed', async () => {
     consume.mockResolvedValue(false);
