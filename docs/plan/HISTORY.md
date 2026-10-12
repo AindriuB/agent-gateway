@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Offline event reading implemented and source verified; native pending (task 29)
+
+Task29 source `e28f836ae8a83116d59f0f75174d684c9917c5a7` passed build/lint and 3,427 fast / 2,227 slow tests. Rebase onto merged PR #75 main `3cd5cb1` preserved the exact gated tree `f45766b0a7f0181ccf59edf5fcac0e5adb80d501`. Bundle SHA-256 is `d19791ab8a7e38e365c4e84a76f4615fe80b99ec64f576b34bc331bff3b99101`. Independent focused review passed 74 tests; the earlier 241-test selection, later 32-test narrow selection and two registration-fixture checks remain separate results.
+
+The local implementation adds the default-disabled/14-day world setting, GM policy-app controls, protocol5 policy/purge frames, persisted exact-pair offline read permission, bounded receipt-time retention at startup/hourly and world-scoped purge with correlated count replies. Independent source review checked fresh-connection permission reset, SQL-failure refusal, exact session agent pinning and same-world purge waiter settlement. Cooperative software enforcement and unreachable-gateway policy limits remain explicit; no native GM attestation or Task18 unblock is claimed.
+
+**Cost:** The first full attempt reached 3,425 fast passes and two existing init-fixture failures because the required setting increased the registration count from 11 to 12. A reviewed exact ownership amendment allowed count correction plus the new setting identity assertion, preserving original init/ready checks; both targeted cases passed before the fresh full gate. The merged PR #75 deterministic notification-test repair is a separate dependency. No Task29 native run, installed deployment, private artifact export or archive/merge is established by this source gate; draft publication remains pending. Prior design history is preserved.
+
 ## 2026-10-12 — Offline event reading design bounded; local implementation in progress (task 29)
 
 Task29's reviewed contract preserves its original goal: GM-controlled offline reading, disabled by default, 14-day default retention and a purge button. Necessary integration ownership now covers authenticated policy/purge frames, persistence, exact offline identity binding, MCP dispatch and startup/hourly retention. Local implementation is in progress; no final source gate, Task29 native result or completion is claimed. Its branch currently stacks on the separate Task28a test-only repair in open PR #75 (`1eb9b08`); that dependency is unmerged.

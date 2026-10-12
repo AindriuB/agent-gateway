@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 28, 15
-**Status:** Local implementation in progress on the reviewed bounded contract; final source verification and native acceptance pending. Currently stacked on the separate Task28a test repair in open PR #75; no completion or archive claim.
+**Status:** Local implementation and source verification passed at `e28f836` (build/lint, 3,427 fast / 2,227 slow). PR #75 is merged; Task29 is based on main. Draft publication, native acceptance and merge remain pending; contract stays active.
 **Owns:**
 - module/src/events/offline-setting.ts
 - module/src/apps/policy/** (offline-reading section only)
