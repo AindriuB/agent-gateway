@@ -26,6 +26,9 @@
 - protocol/test/link/link.test.ts
 - protocol/src/tools/rules.ts (bounded output-union/depth allowance for these two trusted core gateway definitions only)
 - protocol/test/tools/rules/validate.test.ts (two canonical examples and scoped output-schema regressions only)
+- protocol/test/tools/rules/definitions.test.ts (registry-wide canonical-definition assertion only; hostile public/pack checks unchanged)
+- module/src/ops/core-tools.ts (exclude gateway definitions from module handler registration only)
+- module/test/ops/registry/registry.test.ts (gateway exclusion and preserved module-handler validation)
 - module/src/link/client.ts (last successfully sent event resume metadata only)
 - module/src/link/toolset.ts (event-read authorization metadata only)
 - module/src/link/runtime.ts (existing policy evaluator wiring only)
@@ -53,6 +56,7 @@ gateway rather than the module.
 - [ ] `events_poll` (player, read, `handledBy: 'gateway'`): args optional `after` gateway cursor, `limit` (max 100); waits up to 25 s when nothing is new; returns events and `nextAfter`
 - [ ] `events_history` (player, read, gateway): args `since` ISO time, `types` filter, `limit` max 100; only listed when the bound connection has offline reading enabled (stubbed false until 29)
 - [ ] `coverage.test.ts` in the module still passes (gateway tools exempt by `handledBy`)
+- [ ] Module core registration filters `handledBy: 'gateway'` definitions before handler validation/registration; module tools still require handlers, unknown handlers still fail, and gateway tools never enter the module handler registry
 - [ ] Tests: long-poll wake on new event, timeout empty result, gap insertion, buffer eviction
 - [ ] `npm run verify` passes
 
@@ -106,7 +110,9 @@ gateway rather than the module.
   object depth at most 4 in these two core gateway output schemas only; inputs and pack schemas
   retain existing limits. Eligibility must come from the static trusted core
   validation entrypoint/definition identity, never a caller-supplied tool name or
-  origin claim; document and test that boundary. Test excessive/recursive/malformed unions and unrelated
+  origin claim; document and test that boundary. The registry-wide definitions
+  fixture must validate actual canonical tool objects through `conservativeProblems`,
+  preserving all hostile public and pack validator assertions. Test excessive/recursive/malformed unions and unrelated
   definitions remain refused; keep existing traversal/byte/branch budgets bounded.
 - Tests cover durable reopen/cursor monotonicity, exact 10000 eviction, receipt-time
   history/filtering, two-user/world/agent isolation, pre-auth/forged ingress,
