@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Scene event visibility aligned with tool privacy (task 27)
+
+The PR #71 Scene-privacy follow-up `17facbaddaef72cb26225988d9bf7ddee6f66485` passed build/lint/full verification on its first run (3,328 fast / 2,227 slow tests) and 21 independently reviewed focused event tests. Scene event admission and delayed flush now reuse the existing tool visibility rule in addition to OBSERVER permission: a non-GM must have the Scene active, in navigation or personally viewed. Regressions suppress inactive/non-navigation/unviewed create/update/delete events, preserve active/navigation/viewed/GM visibility and player navigation names, and drop queued updates when each visibility route is lost. New bundle SHA-256 `cefa4a00d6fa1e136464d9703a696179326a32c7239eaa63b38f9b6b77de3238` has offline verification only. The earlier native runs remain historical proof of `0a5835b` / `80625451…041ad`; this fix was not rerun against native worlds.
+
+**Cost:** OBSERVER permission alone allowed an inactive, non-navigation Scene reference to leave a player client even when that user was viewing another Scene. Reusing the existing visibility predicate closes that disclosure at admission and the 500 ms flush; client-local `isView` is not requester authority. Only the owned event source/tests changed. No new native actions, installed deployment, task archive or merge is claimed; Task 27 remains active awaiting PR #71 merge, archive count 22 and task 18 blocked.
+
 ## 2026-10-12 — Visible-client event tap validated on v13 and v14; merge pending (task 27)
 
 Task 27 remains active in open PR #71, verified and awaiting merge. Source `0a5835b137527398eb5b5bdb7ceead40575a1b70` passed build/lint/full verification (3,302 fast / 2,227 slow), 123 independent focused checks and 130 local checks. The archive remains at 22 contracts; task 18 stays blocked and task 28 follows after merge.
