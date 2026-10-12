@@ -317,6 +317,53 @@ PR #67 is merged at `6ec99ff`; the completed contract is archived at
 playlist mode, audible playback, automatic Undo, concurrent-GM behavior or public
 screenshot export is claimed. Natural audio lifecycle callbacks remain native.
 
+## Task 26 native code approval acceptance
+
+Task 26 source `7e626ebe04e5547e1ae5a4491d001e400d61fa8c` passed build/lint/full
+verification on its first run (3,264 fast / 2,227 slow tests) and 46 independent
+focused checks. The actual policy/approval/audit pipeline tests cover forced
+code approval under tampered allow policy for both core tools and a registered
+pack tool, source drift refusal, once-only behavior and cached-SDK pending
+continuation. Native-shaped tests cover world/compendium and script/chat
+permissions, fixed JSON args, bounded results, canonical ChatMessage UUIDs and
+hostile error/result values. Those offline cases are broader than the native
+fixture proof below.
+
+Fresh scoped human consent preceded one harmless Macro fixture, two real calls
+and exact cleanup per world. Required preconditions include the exact reviewed
+bundle, authenticated live GM principal/tool announcements, sole canonical
+native GM, no pending/running requests, and a pinned private GM-designated audit
+journal and Setting anchor. No policy or global settings are changed. The
+executor never clicks approval controls.
+
+On actual v14.369 and v13.351, `macro_run` executed the fresh world script Macro
+with one fixed JSON argument binding and `script_run` evaluated an async
+read-only source. Each source only awaited a resolved Promise and returned the
+native generation/run identity (plus Macro args). The native approval DOM and
+local screenshots verified the entire exact source, code category and Approve
+once, with no session control, before each human approval. Both calls in both
+worlds naturally returned pending approval and then exact expected JSON text
+through approval-status polling; the existing API is text-only after pending,
+so structured output preservation is not claimed.
+
+Exact observed production SHA-256 was
+`deadc3daef7d9c4a265f474b2155ca8a4558de51315e9ca5803c0f30ec261aa7`;
+executed private harness SHA-256 was
+`b4646e96f7944f997075ed75871f2e73c9782a4f5df0a3bd9348dc1e13df6875`.
+Each world retained two distinct exact successful code audits with zero targets,
+removed its exact Macro UUID, and preserved baseline roots, all original Macro
+sources, world time and personal scene/level/target/combat views. Cleanup requires
+bounded settlement, terminal native decisions and fresh exact audit-ID
+correlation; uncertainty requires manual reconciliation instead of racing a
+pending call.
+
+Native chat macros, compendium macros, arbitrary code mutations, automatic Undo,
+sandboxing and hard CPU limits are outside this native proof. Later reusable
+source/bundle-pin generalization is offline tooling until separately executed.
+Temporary browser bundle routes/template cache are not an installed deployment,
+and private screenshots are not exported. PR #69 awaits merge; the contract
+remains at `plan/tasks/26-code-tools.md`.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:

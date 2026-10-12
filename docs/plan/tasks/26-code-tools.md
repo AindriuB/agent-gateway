@@ -1,6 +1,7 @@
 # 26 — Add code tools macro_run and script_run with mandatory confirmation
 
 **Repo:** .
+**Status:** Implementation and bounded native v13/v14 acceptance verified; PR #69 awaits merge. Keep this contract active until merge.
 **Depends on:** 21, 20d, 20e
 **Owns:**
 - protocol/src/tools/macro-run.ts
