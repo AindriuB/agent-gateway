@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { APPROVAL_WAIT_MS } from '@agent-gateway/protocol';
+export const TASK30_PENDING_MS = APPROVAL_WAIT_MS + 20000;
 /** Pure scope/pin validation. Importing this file never connects to Foundry. */
 export const TASK30_PINS = Object.freeze({
   source: '57adb9ac24903db62a5ffc1d38887133dcda4d7c',
@@ -70,4 +72,22 @@ export function task30Attestation(
   )
     throw Error('Native once/denial attestation mismatch');
   return { approved, denied };
+}
+
+/** Native pending reports follow the real approval wait; probes remain bounded. */
+export async function task30AwaitPending(
+  check: () => boolean,
+  clock: { now(): number; sleep(ms: number): Promise<void> },
+) {
+  const deadline = clock.now() + TASK30_PENDING_MS;
+  while (!check()) {
+    if (clock.now() >= deadline) throw Error('Native pending replay deadline');
+    await clock.sleep(100);
+  }
+}
+
+/** Preserve the primary acceptance error; cleanup errors remain separately recorded evidence. */
+export function task30TeardownFailure(primary: unknown, errors: string[]) {
+  if (errors.length && !primary)
+    throw Error('Native teardown requires reconciliation: ' + errors.join('; '));
 }

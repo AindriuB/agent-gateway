@@ -276,3 +276,81 @@ export async function task30PreloadTemplate(text: string): Promise<boolean> {
   g.Handlebars.partials[path] = compiled;
   return true;
 }
+
+/** Read-only reconstruction after a failed run; no intent, approval or world mutation. */
+export function task30RecoverCustody(input: any): { uuid: string } {
+  const g = globalThis as any,
+    game = g.game,
+    b = input.baseline,
+    d = game.actors.get(input.created.uuid.replace(/^Actor\./, '')),
+    storage = game.settings.storage.get('world'),
+    anchors = storage.contents.filter((s: any) => s.key === 'agent-gateway.auditJournalId'),
+    anchor = anchors[0],
+    audit = game.journal.get(b.auditId);
+  if (
+    !game.ready ||
+    game.world.id !== 'test-world' ||
+    Number(game.release.generation) !== input.generation ||
+    !game.user?.isGM ||
+    game.users.get(game.user.id) !== game.user ||
+    game.user.id !== b.gm.id ||
+    game.users.activeGM !== game.user ||
+    game.users.filter((u: any) => u.active && u.isGM).length !== 1 ||
+    game.time.worldTime !== b.worldTime ||
+    !d ||
+    !(d instanceof g.CONFIG.Actor.documentClass) ||
+    game.actors.get(d.id) !== d ||
+    d.uuid !== input.created.uuid ||
+    d.parent ||
+    d.pack ||
+    d.name !== input.plan.actor.name ||
+    d.flags?.world?.task30 !== input.run ||
+    d.ownership.default !== 0 ||
+    game.users.some((u: any) => !u.isGM && d.testUserPermission(u, 'OBSERVER')) ||
+    !Number.isFinite(d._stats?.modifiedTime) ||
+    d._stats.modifiedTime !== input.created.source._stats?.modifiedTime ||
+    JSON.stringify(d.toObject()) !== JSON.stringify(input.created.source) ||
+    anchors.length !== 1 ||
+    storage.get(anchor.id) !== anchor ||
+    anchor.user !== null ||
+    anchor.value !== b.auditId ||
+    !b.settings.some(
+      (saved: any) => saved.id === anchor.id && saved.source === JSON.stringify(anchor.toObject()),
+    ) ||
+    !audit ||
+    audit.pages.contents.length !== b.auditPages.length ||
+    audit.pages.contents.some(
+      (p: any) =>
+        !b.auditPages.some(
+          (saved: any) => saved.id === p.id && saved.source === JSON.stringify(p.toObject()),
+        ),
+    )
+  )
+    throw Error('Exact failed-run fixture/audit/version custody required');
+  const raw = localStorage.getItem(`agent-gateway.${game.world.id}.approvalQueue`),
+    rows = raw === null ? [] : (JSON.parse(raw)[game.user.id] ?? []);
+  if (
+    !Array.isArray(rows) ||
+    rows.length > 1000 ||
+    rows.some((r: any) => r.status === 'pending' || (r.status === 'approved' && !r.result)) ||
+    input.ids.some(
+      (id: string) =>
+        !rows.some((r: any) => r.id === id && r.status === 'expired' && r.replay === true),
+    )
+  )
+    throw Error('Fresh-page replay metadata must be expired and nonexecutable');
+  const source = d.toObject();
+  delete source._stats;
+  (g.__task30Audit ??= new Map()).set(input.run, {
+    audit,
+    anchor,
+    anchorSource: JSON.stringify(anchor.toObject()),
+  });
+  (g.__task30Fixtures ??= new Map()).set(input.run, {
+    actor: d,
+    uuid: d.uuid,
+    source: JSON.stringify(source),
+    validated: true,
+  });
+  return { uuid: d.uuid };
+}

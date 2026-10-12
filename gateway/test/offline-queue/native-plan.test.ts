@@ -10,8 +10,11 @@ import {
   task30Status,
   task30Attestation,
   task30SafePhase,
+  task30AwaitPending,
+  TASK30_PENDING_MS,
+  task30TeardownFailure,
 } from './native-plan.js';
-import { task30NativeState, task30PreloadTemplate } from './native-state.js';
+import { task30NativeState, task30PreloadTemplate, task30RecoverCustody } from './native-state.js';
 function nativeFixture() {
   const gm: any = { id: 'gm', name: 'GM', isGM: true, active: true, targets: new Set() },
     player = { id: 'player', isGM: false },
@@ -264,12 +267,15 @@ describe('Task30 exact native queue acceptance scope', () => {
   it('actual tsx transpilation keeps both browser callbacks self-contained', () => {
     const url = new URL('./native-state.ts', import.meta.url).href;
     const script = `import {runInNewContext} from 'node:vm';
-      const {task30NativeState,task30PreloadTemplate}=await import(${JSON.stringify(url)});
+      const {task30NativeState,task30PreloadTemplate,task30RecoverCustody}=await import(${JSON.stringify(url)});
       const f=runInNewContext('('+task30NativeState.toString()+')',{});
       if(await f({op:'createdCandidate',run:'0123456789ab'})!==null)throw Error('candidate');
       const partials={};const p=runInNewContext('('+task30PreloadTemplate.toString()+')',{Handlebars:{partials,compile:(s)=>()=>s}});
       await p('<article data-request="x"></article>');
-      if(Object.keys(partials).length!==1)throw Error('template');`;
+      if(Object.keys(partials).length!==1)throw Error('template');
+      const recovery=runInNewContext('('+task30RecoverCustody.toString()+')',{game:{actors:{get:()=>undefined},settings:{storage:{get:()=>({contents:[]})}},journal:{get:()=>undefined}}});
+      let rejected=false;try {recovery({created:{uuid:'Actor.fixture'},baseline:{auditId:'audit'}});}catch(e){if(!String(e).includes('Exact failed-run'))throw e;rejected=true;}
+      if(!rejected)throw Error('recovery');`;
     expect(() =>
       execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
         cwd: fileURLToPath(new URL('../../../', import.meta.url)),
@@ -277,5 +283,102 @@ describe('Task30 exact native queue acceptance scope', () => {
         stdio: 'pipe',
       }),
     ).not.toThrow();
+  });
+  it('allows the real25second approval timeout before expecting a pending receipt', async () => {
+    let now = 0;
+    await task30AwaitPending(() => now >= 25000, {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    });
+    expect(now).toBe(25000);
+    expect(TASK30_PENDING_MS).toBeGreaterThan(25000);
+    now = 0;
+    await expect(
+      task30AwaitPending(() => false, {
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      }),
+    ).rejects.toThrow('deadline');
+    expect(now).toBe(TASK30_PENDING_MS);
+  });
+  it('read-only recovery admits only exact unchanged failed-run fixture and expired replay metadata', async () => {
+    const f = nativeFixture(),
+      baseline = await f.callback({ ...f.input, op: 'baseline' }),
+      plan = task30Plan(f.input.run, 'gm');
+    const data = {
+      _id: 'fixture',
+      name: plan.actor.name,
+      type: 'npc',
+      flags: plan.actor.flags,
+      ownership: plan.actor.ownership,
+      _stats: { modifiedTime: 12 },
+    };
+    class Actor {
+      id = 'fixture';
+      uuid = 'Actor.fixture';
+      name = data.name;
+      parent = null;
+      pack = null;
+      flags = data.flags;
+      ownership = data.ownership;
+      _stats = data._stats;
+      toObject() {
+        return structuredClone(data);
+      }
+      testUserPermission() {
+        return false;
+      }
+    }
+    const actor = new Actor();
+    f.context.CONFIG.Actor.documentClass = Actor;
+    f.game.actors.get = () => actor;
+    f.setRaw([
+      { id: 'a', status: 'expired', replay: true },
+      { id: 'b', status: 'expired', replay: true },
+    ]);
+    const callback = runInNewContext('(' + task30RecoverCustody.toString() + ')', f.context);
+    const input = {
+      ...f.input,
+      baseline,
+      plan,
+      ids: ['a', 'b'],
+      created: { uuid: actor.uuid, source: structuredClone(data) },
+    };
+    expect(callback(input)).toEqual({ uuid: actor.uuid });
+    data._stats.modifiedTime = 13;
+    expect(() => callback(input)).toThrow('custody');
+    data._stats.modifiedTime = 12;
+    f.setRaw([
+      { id: 'a', status: 'pending', replay: true },
+      { id: 'b', status: 'expired', replay: true },
+    ]);
+    expect(() => callback(input)).toThrow('nonexecutable');
+    f.setRaw([
+      { id: 'a', status: 'expired', replay: true },
+      { id: 'b', status: 'expired', replay: true },
+    ]);
+    f.audit.pages.contents.push({ id: 'new' });
+    expect(() => callback(input)).toThrow('custody');
+  });
+  it('preserves the original acceptance failure while separately retaining cleanup errors', async () => {
+    const primary = Error('pending status deadline'),
+      secondary: string[] = [];
+    const run = async () => {
+      try {
+        throw primary;
+      } finally {
+        await task30SafePhase(secondary, 'cleanup', () => {
+          throw Error('fixture still pending');
+        });
+        task30TeardownFailure(primary, secondary);
+      }
+    };
+    await expect(run()).rejects.toBe(primary);
+    expect(secondary[0]).toContain('fixture still pending');
+    expect(() => task30TeardownFailure(undefined, secondary)).toThrow('reconciliation');
   });
 });

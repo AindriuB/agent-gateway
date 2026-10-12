@@ -24,6 +24,8 @@ import {
   task30Status,
   task30Attestation,
   task30SafePhase,
+  task30AwaitPending,
+  task30TeardownFailure,
 } from './native-plan.js';
 import { task30NativeState, task30PreloadTemplate } from './native-state.js';
 const generation = Number(process.env.AGENT_GATEWAY_TASK30_GENERATION) as 13 | 14;
@@ -114,8 +116,9 @@ let browser: Awaited<ReturnType<typeof openUserBrowser>> | undefined,
   listening = false,
   captureError = '',
   started = false;
+let originalFailure: unknown;
 let installedBundleHash = '';
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 async function until(check: () => boolean | Promise<boolean>, ms = 15000) {
   const deadline = Date.now() + ms;
   while (!(await check())) {
@@ -347,7 +350,10 @@ try {
     throw Error('Cross-owner queued receipt exposed');
   await stranger.close();
   await reconnect();
-  await until(() => ids.every((id) => store.queue.get(owner, id)?.state === 'pending'));
+  await task30AwaitPending(
+    () => ids.every((id) => store.queue.get(owner, id)?.state === 'pending'),
+    { now: Date.now, sleep: delay },
+  );
   await dialog(ids[0]!, 0);
   await until(() => store.queue.get(owner, ids[0]!)?.state === 'approved', 300000);
   const approvedStatus: any = await status(fresh, ids[0]!, 'approved');
@@ -431,6 +437,13 @@ try {
   save('cleanup.json', await state('cleanup'));
   cleaned = true;
   complete = true;
+} catch (error) {
+  originalFailure = error;
+  save('failure.json', {
+    message: String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+  throw error;
 } finally {
   const teardownErrors: string[] = [];
   const safely = (label: string, op: () => unknown | Promise<unknown>) =>
@@ -479,6 +492,5 @@ try {
   process.stdout.write(
     `TASK30_RESULT ${JSON.stringify({ complete, cleaned, evidence, teardownErrors })}\n`,
   );
-  if (teardownErrors.length)
-    throw Error('Native teardown requires reconciliation: ' + teardownErrors.join('; '));
+  task30TeardownFailure(originalFailure, teardownErrors);
 }
