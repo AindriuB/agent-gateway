@@ -1,3 +1,4 @@
+import { registerOfflineEventSettings } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
@@ -54,6 +55,7 @@ settingRegistrars.push(registerPairingCredential, registerPairingMenu);
 settingRegistrars.push(registerPolicySettings);
 settingRegistrars.push(registerRateLimitSettings);
 settingRegistrars.push(registerPolicyMenu);
+settingRegistrars.push(registerOfflineEventSettings);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {

@@ -134,6 +134,21 @@ export const ToolsetMessage = z.strictObject({
 
 export const EventMessage = z.strictObject({ type: z.literal('event'), event: AgentEvent });
 
+export const EventPolicyMessage = z.strictObject({
+  type: z.literal('eventPolicy'),
+  enabled: z.boolean(),
+  retentionDays: z.number().int().min(1).max(365),
+});
+export const PurgeEventsMessage = z.strictObject({
+  type: z.literal('purgeEvents'),
+  requestId: z.string().min(1).max(100),
+});
+export const PurgeEventsResultMessage = z.strictObject({
+  type: z.literal('purgeEventsResult'),
+  requestId: z.string().min(1).max(100),
+  count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -146,6 +161,9 @@ export const LinkMessage = z.discriminatedUnion('type', [
   PongMessage,
   ToolsetMessage,
   EventMessage,
+  EventPolicyMessage,
+  PurgeEventsMessage,
+  PurgeEventsResultMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

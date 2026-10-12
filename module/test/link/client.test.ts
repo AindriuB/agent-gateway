@@ -224,8 +224,8 @@ it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async
   expect(sockets).toHaveLength(1);
 });
 
-it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7'])(
-  'stops after an older gateway %s rejects the v4 hello, without welcome or retrying',
+it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7', '4.0.0', '4.99.7'])(
+  'stops after an older gateway %s rejects the v5 hello, without welcome or retrying',
   async (legacy) => {
     token = 'tok';
     const states: string[] = [];
@@ -234,10 +234,10 @@ it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7'])(
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '4.0.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '5.0.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
-    if (compatibility.ok) throw new Error('Legacy gateway must reject v4');
+    if (compatibility.ok) throw new Error('Legacy gateway must reject v5');
     expect(compatibility.message).toContain(`local ${legacy}, remote ${PROTOCOL_VERSION}`);
     expect(compatibility.message).toMatch(/upgrade the local side/i);
     socket.recv({ type: 'reject', code: compatibility.code, message: compatibility.message });
@@ -719,3 +719,38 @@ it.each([2, 3])(
     expect(sockets[1]!.sent[0].resume).toEqual({ connectionId: 'c1', lastSeq: 2 });
   },
 );
+
+it('correlates purge count to the pending request and exact live socket', async () => {
+  token = 'tok';
+  client.start();
+  const ws = sockets[0]!;
+  ws.onopen?.();
+  ws.recv(welcome());
+  const pending = client.purgeEvents();
+  const sent = ws.sent.at(-1);
+  expect(sent.type).toBe('purgeEvents');
+  ws.recv({ type: 'purgeEventsResult', requestId: 'foreign', count: 99 });
+  ws.recv({ type: 'purgeEventsResult', requestId: sent.requestId, count: 3 });
+  await expect(pending).resolves.toBe(3);
+  ws.recv({ type: 'purgeEventsResult', requestId: sent.requestId, count: 99 });
+  expect(vi.getTimerCount()).toBe(0);
+});
+it('bounds purge requests and rejects pending requests on disconnect or timeout', async () => {
+  token = 'tok';
+  client.start();
+  const ws = sockets[0]!;
+  ws.onopen?.();
+  ws.recv(welcome());
+  const polls = Array.from({ length: 4 }, () => client.purgeEvents());
+  const observed = polls.map((p) => expect(p).rejects.toThrow());
+  await expect(client.purgeEvents()).rejects.toThrow('Too many');
+  client.stop();
+  await Promise.all(observed);
+  client.start();
+  const next = sockets.at(-1)!;
+  next.onopen?.();
+  next.recv(welcome());
+  const timeout = expect(client.purgeEvents()).rejects.toThrow('timed out');
+  await vi.advanceTimersByTimeAsync(10000);
+  await timeout;
+});

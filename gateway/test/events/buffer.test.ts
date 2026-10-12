@@ -136,7 +136,109 @@ describe('online event buffer authority and lifecycle', () => {
     const check = expect(p).rejects.toMatchObject({ code: 'WORLD_OFFLINE' });
     registry.remove(c);
     await check;
-    expect(() => buffer.history(c)).toThrow();
+    expect(() =>
+      buffer.history(
+        { worldId: c.worldId, userId: c.userId, agentId: c.agentId },
+        0,
+        undefined,
+        100,
+      ),
+    ).toThrow();
     expect(buffer.pendingCount).toBe(0);
+  });
+  it('returns offline rows only under retained world and exact-pair authorization', () => {
+    const c = connection();
+    buffer.accept(c, event());
+    buffer.setPolicy(c, { enabled: true, retentionDays: 14 });
+    registry.remove(c);
+    const owner = { worldId: 'w', userId: 'u', agentId: 'a' };
+    expect(buffer.readOffline(owner, 0, 100).events).toHaveLength(1);
+    expect(buffer.history(owner, 0, undefined, 100).events).toHaveLength(1);
+    store.events.setPolicy('w', { enabled: false, retentionDays: 14 });
+    expect(() => buffer.readOffline(owner, 0, 100)).toThrow('Offline');
+    store.events.setPolicy('w', { enabled: true, retentionDays: 14 });
+    store.events.setReadAllowed(owner, false);
+    expect(() => buffer.readOffline(owner, 0, 100)).toThrow('authorization');
+  });
+  it('clears a retained grant on fresh connection even if it closes before toolset', () => {
+    const c = connection();
+    buffer.setPolicy(c, { enabled: true, retentionDays: 14 });
+    registry.remove(c);
+    const next = new LinkConnection('next', 'a', 'w', 'u', { send() {}, close() {} });
+    registry.add(next);
+    buffer.connect(next);
+    registry.remove(next);
+    expect(() => buffer.readOffline({ worldId: 'w', userId: 'u', agentId: 'a' }, 0, 100)).toThrow(
+      'authorization',
+    );
+    sets.set(c, [], true);
+    expect(store.events.readAllowed({ worldId: 'w', userId: 'u', agentId: 'a' })).toBe(false);
+  });
+  it('persists invalid toolset revocation and never grants an invalid true announcement', () => {
+    const c = connection();
+    buffer.setPolicy(c, { enabled: true, retentionDays: 14 });
+    sets.set(c, Array(65).fill({}), true);
+    registry.remove(c);
+    expect(() => buffer.readOffline({ worldId: 'w', userId: 'u', agentId: 'a' }, 0, 100)).toThrow(
+      'authorization',
+    );
+  });
+  it('runs receipt retention on start and hourly, then clears its timer on close', async () => {
+    buffer.close();
+    let now = 86400000;
+    buffer = new EventBuffer(store, registry, sets, () => now);
+    store.events.setPolicy('w', { enabled: false, retentionDays: 1 });
+    store.events.append({ worldId: 'w', userId: 'u', agentId: 'a' }, event(), 0);
+    buffer.startRetention();
+    expect(
+      store.events.read({ worldId: 'w', userId: 'u', agentId: 'a' }, 0, 100).events,
+    ).toHaveLength(1);
+    now++;
+    await vi.advanceTimersByTimeAsync(3600000);
+    expect(
+      store.events.read({ worldId: 'w', userId: 'u', agentId: 'a' }, 0, 100).events,
+    ).toHaveLength(0);
+    buffer.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('contains hourly storage failure and retries the next interval', async () => {
+    const spy = vi.spyOn(store.events, 'retain');
+    buffer.startRetention();
+    spy.mockImplementationOnce(() => {
+      throw Error('storage offline');
+    });
+    await vi.advanceTimersByTimeAsync(3600000);
+    expect(spy).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3600000);
+    expect(spy).toHaveBeenCalledTimes(3);
+    spy.mockRestore();
+  });
+  it('purge releases latest-cursor and empty-world waiters without touching another world', async () => {
+    const c = connection();
+    buffer.accept(c, event());
+    const other = connection('other', 'b', 'other', 'u');
+    const latest = buffer.poll(c, 'latest', 1, 100);
+    const unrelated = buffer.poll(other, 'other', 0, 100);
+    expect(buffer.purge(c)).toBe(1);
+    expect(await latest).toEqual({ events: [], nextAfter: 1 });
+    expect(buffer.pendingCount).toBe(1);
+    const empty = buffer.poll(c, 'empty', 1, 100);
+    expect(buffer.purge(c)).toBe(0);
+    expect(await empty).toEqual({ events: [], nextAfter: 1 });
+    const observed = expect(unrelated).rejects.toMatchObject({ code: 'WORLD_OFFLINE' });
+    buffer.close();
+    await observed;
+  });
+  it('uses current authenticated agent online and preserves that exact active agent offline', () => {
+    const c = connection();
+    store.createPairing({ id: 'second', tokenHash: 'second', worldId: 'w', userId: 'u' });
+    expect(buffer.ownerFor({ worldId: 'w', userId: 'u' }).agentId).toBe('a');
+    registry.remove(c);
+    expect(buffer.ownerFor({ worldId: 'w', userId: 'u' }, 'a').agentId).toBe('a');
+    expect(() => buffer.ownerFor({ worldId: 'w', userId: 'u' })).toThrow('exact active pairing');
+    const next = new LinkConnection('next', 'second', 'w', 'u', { send() {}, close() {} });
+    registry.add(next);
+    buffer.connect(next);
+    expect(() => buffer.ownerFor({ worldId: 'w', userId: 'u' }, 'a')).toThrow('changed');
   });
 });

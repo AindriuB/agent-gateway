@@ -98,3 +98,66 @@ describe('transactional event repository', () => {
     db.close();
   });
 });
+
+describe('offline policy, retention and purge persistence', () => {
+  it('persists per-world policy and exact-owner grants across reopen', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'task29-')), 'events.db');
+    let s = openStore(path);
+    expect(s.events.policy('w')).toEqual({ enabled: false, retentionDays: 14 });
+    s.events.setPolicy('w', { enabled: true, retentionDays: 2 });
+    s.events.setReadAllowed(owner, true);
+    s.close();
+    s = openStore(path);
+    expect(s.events.policy('w')).toEqual({ enabled: true, retentionDays: 2 });
+    expect(s.events.policy('other').enabled).toBe(false);
+    expect(s.events.readAllowed(owner)).toBe(true);
+    expect(s.events.readAllowed({ ...owner, agentId: 'other' })).toBe(false);
+    expect(s.events.readAllowed({ ...owner, userId: 'other' })).toBe(false);
+    s.close();
+  });
+  it('purges only one world, reports loss and preserves grants and cursor high-water', () => {
+    const s = openStore(':memory:');
+    s.events.setPolicy('w', { enabled: true, retentionDays: 14 });
+    s.events.setReadAllowed(owner, true);
+    s.events.append(owner, event(), 1);
+    s.events.append({ ...owner, userId: 'v' }, event(1, 'v'), 2);
+    s.events.append({ ...owner, worldId: 'other' }, event(), 3);
+    expect(s.events.purge('w')).toBe(2);
+    expect(s.events.read(owner, 0, 100)).toEqual({
+      events: [],
+      nextAfter: 1,
+      cursorGap: { after: 0, firstAvailable: 2 },
+    });
+    expect(s.events.read({ ...owner, worldId: 'other' }, 0, 100).events).toHaveLength(1);
+    expect(s.events.append(owner, event(2), 4).cursor).toBe(2);
+    expect(s.events.policy('w').enabled).toBe(true);
+    expect(s.events.readAllowed(owner)).toBe(true);
+    s.close();
+  });
+  it('expires by receipt time and each world retention even when disabled', () => {
+    const s = openStore(':memory:');
+    const day = 86400000;
+    s.events.setPolicy('w', { enabled: false, retentionDays: 1 });
+    s.events.setPolicy('other', { enabled: true, retentionDays: 3 });
+    s.events.append(owner, { ...event(), ts: day * 100 }, day);
+    s.events.append(owner, event(2), day * 2);
+    s.events.append({ ...owner, worldId: 'other' }, event(), day);
+    expect(s.events.retain(day * 3)).toBe(1);
+    expect(s.events.read(owner, 0, 100).events.map((e) => e.cursor)).toEqual([2]);
+    expect(s.events.read({ ...owner, worldId: 'other' }, 0, 100).events).toHaveLength(1);
+    s.close();
+  });
+  it('rolls back purge rows and eviction watermark on delete failure', () => {
+    const db = new DatabaseSync(':memory:');
+    applyMigrations(db, MIGRATIONS);
+    const r = createEventRepository(db);
+    r.append(owner, event(), 1);
+    db.exec(
+      "CREATE TRIGGER fail_purge BEFORE DELETE ON event_rows BEGIN SELECT RAISE(ABORT,'purge failure'); END",
+    );
+    expect(() => r.purge('w')).toThrow('purge failure');
+    expect(r.read(owner, 0, 100).events).toHaveLength(1);
+    expect(r.read(owner, 0, 100).cursorGap).toBeUndefined();
+    db.close();
+  });
+});

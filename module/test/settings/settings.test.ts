@@ -29,7 +29,9 @@ describe.each([13, 14] as Generation[])('settings on v%i', (gen) => {
     registerSettings();
     for (const cfg of stub.registeredSettings.values()) {
       for (const key of [cfg.name, cfg.hint!]) {
-        expect(key).toMatch(/^AGENT_GATEWAY\.Settings\./);
+        if (cfg.name === 'AGENT_GATEWAY.OfflineEvents.title')
+          expect(key).toMatch(/^AGENT_GATEWAY\.OfflineEvents\./);
+        else expect(key).toMatch(/^AGENT_GATEWAY\.Settings\./);
         expect(typeof resolveKey(key)).toBe('string');
       }
     }

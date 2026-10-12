@@ -196,6 +196,28 @@ export class LinkServer {
             ws.close(1008, 'invalid event stream');
           }
           break;
+        case 'eventPolicy':
+        case 'purgeEvents':
+          if (this.opts.registry.get(conn.worldId, conn.userId) !== conn || conn.closed) {
+            ws.close(1008, 'stale event policy connection');
+            break;
+          }
+          try {
+            if (msg.type === 'eventPolicy')
+              this.opts.events?.setPolicy(conn, {
+                enabled: msg.enabled,
+                retentionDays: msg.retentionDays,
+              });
+            else if (this.opts.events)
+              send({
+                type: 'purgeEventsResult',
+                requestId: msg.requestId,
+                count: this.opts.events.purge(conn),
+              });
+          } catch {
+            ws.close(1008, 'invalid event policy');
+          }
+          break;
         case 'toolset':
           // Only for the connection that sent it, never another's.
           toolsets.set(conn, msg.tools, msg.eventReadAllowed === true);

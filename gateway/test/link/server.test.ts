@@ -144,7 +144,7 @@ describe('handshake', () => {
     expect(await c.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
   });
 
-  it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
+  it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '4.0.0', '4.99.7'])(
     'rejects legacy module %s before welcome or consuming its pairing code',
     async (legacy) => {
       h = await startServer();

@@ -42,6 +42,10 @@ export const identityOf = (c: LinkConnection): Identity => ({
 export class SessionBinding {
   private bound: BoundPair | undefined;
   private sawAmbiguity = false;
+  private wasOnline = false;
+  get offlineEventReady(): boolean {
+    return !!this.bound && (this.wasOnline || this.selector.user === this.bound.userId);
+  }
 
   constructor(
     private readonly registry: LinkRegistry,
@@ -60,7 +64,7 @@ export class SessionBinding {
    * Where the session stands now. `allowBind` is false for disconnect events: losing a
    * connection must never be what binds a session.
    */
-  resolve(allowBind = true): Resolution {
+  resolve(allowBind = true, allowOfflineExact = false): Resolution {
     if (!this.bound) {
       const matched = this.matching();
       if (matched.length > 1) {
@@ -76,14 +80,20 @@ export class SessionBinding {
       const implicit = this.selector.user === undefined;
       // An explicit selector binds once its target connects. Without one, the single paired
       // identity is the binding whether or not it is connected yet: never decided by timing.
-      const ready = only && (implicit || this.registry.get(only.worldId, only.userId));
+      const ready =
+        only &&
+        ((implicit && !allowOfflineExact) ||
+          this.registry.get(only.worldId, only.userId) ||
+          (allowOfflineExact && this.selector.user === only.userId));
       // A session that has seen several candidates never settles on the survivor.
       if (!allowBind || !only || !ready || this.sawAmbiguity) return { kind: 'unbound' };
       this.bound = { worldId: only.worldId, userId: only.userId };
       if (implicit) this.onImplicitBind?.(only);
     }
     const pair = this.bound;
-    return { kind: 'bound', pair, conn: this.registry.get(pair.worldId, pair.userId) };
+    const conn = this.registry.get(pair.worldId, pair.userId);
+    if (conn && !conn.closed) this.wasOnline = true;
+    return { kind: 'bound', pair, conn };
   }
 
   private matching(): Identity[] {
