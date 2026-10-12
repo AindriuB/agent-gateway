@@ -226,4 +226,29 @@ describe('ToolsetStore caps', () => {
     expect(store.get(conn)?.map((t) => t.name)).toEqual(['fixture_tool']);
     expect(logs).toEqual(['ignored toolset: announcement count or byte cap exceeded']);
   });
+  it.each([false, undefined, true])(
+    'invalid definitions cannot preserve or grant event reads (%s)',
+    async (allowed) => {
+      h = await startServer();
+      const m = await pairModule(h, 'uA');
+      modules.push(m);
+      const conn = h.registry.list()[0]!;
+      const store = new ToolsetStore(() => {});
+      const tools = [definition('fixture_tool')];
+      store.set(conn, tools, true);
+      const previous = store.get(conn);
+      let changes = 0;
+      store.on('changed', () => changes++);
+      store.set(conn, ['invalid' as unknown as AnnouncedTool], allowed);
+      expect(store.eventReadAllowed(conn)).toBe(false);
+      expect(store.get(conn)).toBe(previous);
+      expect(changes).toBe(1);
+      store.set(conn, ['invalid' as unknown as AnnouncedTool], true);
+      expect(store.eventReadAllowed(conn)).toBe(false);
+      expect(changes).toBe(1);
+      store.set(conn, tools, true);
+      expect(store.eventReadAllowed(conn)).toBe(true);
+      expect(changes).toBe(2);
+    },
+  );
 });

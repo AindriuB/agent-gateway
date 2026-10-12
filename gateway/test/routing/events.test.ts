@@ -169,4 +169,87 @@ describe('gateway event tools over authenticated link and real SDK', () => {
       ).events,
     ).toEqual([]);
   });
+  const packTool = {
+    name: 'fixture-destroy',
+    category: 'destructive' as const,
+    minRole: 'gm' as const,
+    description: 'Private destructive fixture',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    pack: { id: 'fixture', version: '1.0.0', prefix: 'fixture' },
+  };
+  it.each(['count', 'bytes'] as const)(
+    'revokes pending and subsequent reads on rejected %s refresh without replacing definitions',
+    async (kind) => {
+      tc.send({ type: 'toolset', tools: [packTool], eventReadAllowed: true });
+      const conn = registry.list()[0]!;
+      await until(() => toolsets.eventReadAllowed(conn));
+      const previous = toolsets.get(conn);
+      expect(previous?.map((t) => t.name)).toEqual([packTool.name]);
+      const c = await session();
+      const pending = c.callTool({ name: 'events_poll', arguments: { after: 0 } });
+      await until(() => events.pendingCount === 1);
+      const tools =
+        kind === 'count'
+          ? Array.from({ length: 65 }, () => packTool)
+          : Array.from({ length: 64 }, () => ({
+              ...packTool,
+              inputSchema: { description: 'x'.repeat(5000) },
+            }));
+      tc.send({ type: 'toolset', tools, eventReadAllowed: false });
+      expectErrorCode(await pending, 'FORBIDDEN');
+      expect(events.pendingCount).toBe(0);
+      expect(toolsets.get(conn)).toBe(previous);
+      expect((await c.listTools()).tools.map((t) => t.name)).toEqual([packTool.name]);
+      expectErrorCode(
+        await c.callTool({ name: 'events_poll', arguments: { after: 0 } }),
+        'FORBIDDEN',
+      );
+      // An invalid affirmative announcement cannot undo the independently applied revocation.
+      tc.send({ type: 'toolset', tools, eventReadAllowed: true });
+      tc.send({ type: 'ping' });
+      await tc.next('pong');
+      expect(toolsets.eventReadAllowed(conn)).toBe(false);
+      expect(toolsets.get(conn)).toBe(previous);
+      expectErrorCode(
+        await c.callTool({ name: 'events_poll', arguments: { after: 0 } }),
+        'FORBIDDEN',
+      );
+      // A later valid identical definition may grant again; cached signatures must not suppress it.
+      tc.send({ type: 'toolset', tools: [packTool], eventReadAllowed: true });
+      await until(() => toolsets.eventReadAllowed(conn));
+      expect((await c.listTools()).tools.map((t) => t.name)).toEqual(
+        expect.arrayContaining(['events_poll', packTool.name]),
+      );
+    },
+  );
+  it('revokes before closing a schema-invalid authenticated announcement', async () => {
+    await announce(true);
+    const conn = registry.list()[0]!;
+    const c = await session();
+    const pending = c.callTool({ name: 'events_poll', arguments: { after: 0 } });
+    await until(() => events.pendingCount === 1);
+    tc.send({ type: 'toolset', tools: 'invalid', eventReadAllowed: true });
+    expectErrorCode(await pending, 'FORBIDDEN');
+    expect(toolsets.eventReadAllowed(conn)).toBe(false);
+    expect(events.pendingCount).toBe(0);
+    await tc.untilClosed();
+  });
+  it('revokes pending reads when the WebSocket payload cap rejects a frame', async () => {
+    await announce(true);
+    const conn = registry.list()[0]!;
+    const c = await session();
+    const pending = c.callTool({ name: 'events_poll', arguments: { after: 0 } });
+    await until(() => events.pendingCount === 1);
+    tc.send({
+      type: 'toolset',
+      tools: [],
+      eventReadAllowed: true,
+      oversized: 'x'.repeat(1024 * 1024),
+    });
+    expectErrorCode(await pending, 'FORBIDDEN');
+    expect(toolsets.eventReadAllowed(conn)).toBe(false);
+    expect(events.pendingCount).toBe(0);
+    await tc.untilClosed();
+  });
 });

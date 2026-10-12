@@ -108,7 +108,10 @@ export class LinkServer {
       this.sockets.delete(ws);
       if (conn) this.opts.registry.remove(conn);
     });
-    ws.on('error', () => ws.terminate());
+    ws.on('error', () => {
+      if (conn) toolsets.revokeEventReads(conn);
+      ws.terminate();
+    });
 
     ws.on('message', (data: RawData) => {
       const raw = Array.isArray(data) ? Buffer.concat(data) : data;
@@ -124,6 +127,7 @@ export class LinkServer {
               tools: ToolsetMessage.shape.tools.element.array(),
             });
             if (uncapped.safeParse(candidate).success) {
+              toolsets.revokeEventReads(conn);
               console.warn('ignored toolset: announcement count or byte cap exceeded');
               return;
             }
@@ -131,8 +135,10 @@ export class LinkServer {
             /* Generic parse rejection below. */
           }
         }
-        if (conn) ws.close(1008, parsed.reason);
-        else reject('INVALID_ARGS', parsed.message);
+        if (conn) {
+          toolsets.revokeEventReads(conn);
+          ws.close(1008, parsed.reason);
+        } else reject('INVALID_ARGS', parsed.message);
         return;
       }
       const msg = parsed.message;
