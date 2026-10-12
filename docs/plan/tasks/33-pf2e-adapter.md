@@ -98,3 +98,9 @@ Head `6e106f4`. Reviewer REQUEST CHANGES. Character strikes are now invocation-s
 - `module/src/adapters/pf2e/index.ts:182-194` — NPC/hazard strikes (`system.actions` from melee items, pf2e.mjs:39073, :20403) call `Ca.roll(y, b, c.event)` without the callback (:20499). They post a message, return `completed:true`, and record nothing, silently (a regression from 83b749d). Minimum fix: when the strike resolved but the callback never fired, say in the result that the attack message was posted but not audited and cannot be undone. Only if a provably invocation-specific signal exists on that path may it be recorded. Add a unit test where `roll` ignores `callback`.
 - `module/test/adapters/pf2e/pf2e.test.ts:233-245` — make the overlap test real: two concurrent `performAction` calls whose `roll` mocks interleave on a shared deferred, each calling back with its own message; assert each records only its own uuid.
 - `index.ts:184` — record from the callback only when `message?.id` is set (a cancelled create yields `new ChatMessagePF2e(undefined)`, :19528).
+
+## Attempt 11 — failed
+Head `32ed177`. Reviewer REQUEST CHANGES; adapter code is correct (per-call `record`/`attributed` closures; NPC/hazard disclosure honest; id guard), scope clean.
+- `module/test/adapters/pf2e/pf2e.test.ts:226-245` — the overlap test shares one `ctx`/`created` spy, so it cannot catch cross-attribution. Give each concurrent `performAction` its own context and `created` spy; assert call 1 recorded exactly `['ChatMessage.mine1']` and call 2 exactly `['ChatMessage.mine2']`.
+- `module/src/adapters/pf2e/index.ts:182` comments — fix pf2e citations: `new ChatMessagePF2e(O)` is pf2e.mjs:19536; the callback block is :19535-19537.
+- `index.ts:204-206` — when the callback fired with an id-less (cancelled) message, do not say the message "was posted"; use distinct text that no message was created.
