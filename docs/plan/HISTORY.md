@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — System adapter tools implementation in progress (task 31)
+
+Task31 adds five fixed core tools behind an internal system-selected adapter interface. Generic fallback exposes bounded Actor identity/summary metadata, empty unsupported action/inventory/condition collections and no native mutation. Canonical top-level world Actor identity, current native user, ownership or GM status and current folder policy are checked before adapter invocation; writes recheck after audit snapshots. Trusted mutation context stays separate from caller options.
+
+Source `68e1b4216ad05cfe77ff138b5045768aca776a59` passed build and 54 focused tests across four files. Independent source review and the required full gate are pending. Task31 stays active; native acceptance and publication are pending.
+
+**Cost:** Conditions changes require synchronous trusted read-to-write classification before policy/rate/approval/audit. Base-read conditions calls remain conservatively refused offline, including changes. Synthetic/compendium Actors and public adapter registration remain unsupported; strict iterative structural bounds precede recursive result validation. No protocol major change, pack API expansion, installed deployment or native Task31 write authorization is claimed.
+
 ## 2026-10-12 — Offline write replay validation merged and task archived (task 30)
 
 PR #80 merged at 18:41:55 UTC: reviewed head `232130f6da8c3900ff4113732083f332f561c375`, main `216e22a38fa62606109ff13059e36fcfcff0d386`. Task30 moves to `docs/plan/done/30-offline-write-queue.md` with only Status changed. The derived inventory is 27 completed / 15 active contracts. Task31 — Add the system adapter interface and adapter tools — is next, with dependencies 21, 20d and 20e merged; implementation has not started. Task18 remains architecture-blocked.
