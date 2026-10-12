@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { buildSync } from 'esbuild';
 import { loadContext } from '../../../../e2e/lib/context.js';
 import { openUserBrowser, joinWorld, asJoinPage } from '../../../../e2e/lib/browser.js';
 import { TASK31_NATIVE_PINS, task31AuditRows, task31OnceRecord } from './native-plan.js';
@@ -28,6 +29,14 @@ if (
 )
   throw Error('Exact read-only target required');
 const bundle = readFileSync(resolve(root, 'dist/module/main.js'));
+const registration = buildSync({
+  entryPoints: [resolve(root, 'module/test/adapters/generic/native-reconcile-registration.ts')],
+  bundle: true,
+  format: 'esm',
+  target: 'es2022',
+  write: false,
+  keepNames: false,
+}).outputFiles[0]!.text;
 if (createHash('sha256').update(bundle).digest('hex') !== TASK31_NATIVE_PINS.bundle)
   throw Error('Frozen bundle changed');
 const awaiting = [read('awaiting-0.json'), read('awaiting-1.json')],
@@ -52,7 +61,7 @@ try {
     (route) => route.close(),
   );
   await browser.context.route('**/modules/agent-gateway/dist/module/main.js*', (route) =>
-    route.fulfill({ body: bundle, contentType: 'text/javascript' }),
+    route.fulfill({ body: registration, contentType: 'text/javascript' }),
   );
   await joinWorld(asJoinPage(browser.page), config, config.gmUser);
   await browser.page.waitForFunction('game.ready && !canvas.loading');
@@ -75,7 +84,12 @@ try {
       {
         ...recovered,
         originalResultPreserved: true,
-        remainingCaptureChecks: true,
+        recordedCaptureChecks: [
+          'six SDK calls terminal',
+          'two unique native approval IDs',
+          'no queuedCalls in saved frames',
+        ],
+        originalCaptureErrorEvidence: 'unavailable; original final assertion not reached',
         source: TASK31_NATIVE_PINS.source,
         bundle: TASK31_NATIVE_PINS.bundle,
       },

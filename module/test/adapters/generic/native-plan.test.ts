@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
+import { buildSync } from 'esbuild';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -443,6 +444,37 @@ describe('Task31 bounded generic native proof', () => {
     await expect(
       f.callback({ ...f.input, baseline, plan, uuid: actor.uuid, op: 'cleanup' }),
     ).rejects.toThrow('custody');
+  });
+  it('read-only bootstrap runs registrations only and installs no ready or mutation hooks', () => {
+    const entry = fileURLToPath(new URL('./native-reconcile-registration.ts', import.meta.url));
+    const compiled = buildSync({
+      entryPoints: [entry],
+      bundle: true,
+      format: 'esm',
+      target: 'es2022',
+      write: false,
+      keepNames: false,
+    }).outputFiles[0]!.text;
+    const hooks: any[] = [],
+      registrations: any[] = [];
+    const context: any = {
+      Hooks: { once: (event: string, callback: any) => hooks.push({ event, callback }) },
+      game: { settings: { register: (...args: any[]) => registrations.push(args) } },
+      CONFIG: { JournalEntryPage: { dataModels: {} } },
+      foundry: { data: { fields: {} }, abstract: { TypeDataModel: class {} } },
+    };
+    runInNewContext(compiled, context);
+    expect(hooks.map((h) => h.event)).toEqual(['init']);
+    hooks[0].callback();
+    expect(registrations.map((r) => [r[0], r[1]])).toEqual([
+      ['agent-gateway', 'auditJournalId'],
+      ['agent-gateway', 'ownerPolicy'],
+    ]);
+    expect(context.CONFIG.JournalEntryPage.dataModels['agent-gateway.audit']).toBeTypeOf(
+      'function',
+    );
+    expect(compiled).not.toContain('ensureAuditJournal');
+    expect(compiled).not.toContain('readyAudit');
   });
   it('reconciles exact persisted once records and audits read-only after cleanup', async () => {
     const f = nativeFixture(),
