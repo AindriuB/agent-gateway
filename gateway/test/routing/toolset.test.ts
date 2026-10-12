@@ -122,9 +122,10 @@ describe('announced tool sets', () => {
 
   it('ignores announcements for other users connections', async () => {
     const { s, toolsets } = await start(true, { user: 'alice' });
+    // Bind Alice and record her tool-list signature before Bob can trigger initial binding.
+    await names(s);
     const other = await pairModule(h!, 'uB', { userName: 'bob' });
     modules.push(other);
-    await names(s);
     const bob = h!.registry.get('w1', 'uB')!;
     set(toolsets, bob, []);
     await tick(80);
