@@ -19,6 +19,7 @@
 - module/test/events/offline-setting.test.ts (new)
 - module/test/apps/policy/policy.test.ts (offline controls/GM guards only)
 - module/test/settings/settings.test.ts (new world setting registration only)
+- module/test/settings/main.test.ts (faithful registered-setting count and offline-setting identity only; preserve init/ready assertions)
 - module/test/link/client.test.ts (new frames/replies and protocol version fixtures only)
 - module/test/link/lifecycle.test.ts (faithful new installer fixtures only if required)
 - gateway/src/link/server.ts (authenticated eventPolicy/purgeEvents handling only)
