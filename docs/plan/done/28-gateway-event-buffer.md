@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 27, 20
-**Status:** Source and bounded native acceptance verified at `5059015` on Foundry 13.351/14.369; draft PR #73 awaits merge. Build/lint/full gate: 3,380 fast / 2,227 slow. Contract remains active.
+**Status:** Complete and merged in PR #73; archived. Bounded native proof remains at `5059015` / `8cf825b`; later gateway revocation repair `ac9b93e` is offline-verified (3,393 fast / 2,227 slow), without a native rerun.
 **Owns:**
 - gateway/src/events/**
 - gateway/test/events/**
