@@ -119,7 +119,10 @@ export function task31AuditRows(
       row.agentId !== agentId ||
       row.targets.length !== 1 ||
       row.targets[0].uuid !== created.uuid ||
-      JSON.stringify(row.targets[0].before) !== JSON.stringify(created.source)
+      typeof row.targets[0].before !== 'string' ||
+      row.targets[0].before.length > 200000 ||
+      row.targets[0].before !== JSON.stringify(created.source) ||
+      row.targets[0].afterModifiedTime !== created.source._stats.modifiedTime
     )
       throw Error('Exact native unsupported audit mismatch');
   }

@@ -13,6 +13,7 @@ import {
   task31InstalledRequest,
 } from './native-plan.js';
 import { validateSnapshot } from '../../../src/policy/snapshot.js';
+import { task31Reconcile } from './native-reconcile.js';
 import { task31NativeState } from './native-state.js';
 function nativeFixture() {
   const gm: any = { id: 'gm', name: 'GM', isGM: true, active: true, targets: new Set() },
@@ -212,7 +213,7 @@ describe('Task31 bounded generic native proof', () => {
   });
   it('requires two exact failed audits with unmodified native before snapshots', () => {
     const plan = task31NativePlan('0123456789ab', 'gm', 'Actor.a'),
-      created = { uuid: 'Actor.a', source: { name: 'Hero' } };
+      created = { uuid: 'Actor.a', source: { name: 'Hero', _stats: { modifiedTime: 42 } } };
     const rows = plan.calls.slice(4).map((spec) => ({
       tool: spec.name,
       args: JSON.stringify(spec.args),
@@ -224,9 +225,35 @@ describe('Task31 bounded generic native proof', () => {
       category: 'write',
       userId: 'gm',
       agentId: 'agent',
-      targets: [{ uuid: created.uuid, before: created.source }],
+      targets: [
+        { uuid: created.uuid, before: JSON.stringify(created.source), afterModifiedTime: 42 },
+      ],
     }));
     expect(task31AuditRows(rows, plan, created, 'gm', 'agent')).toBe(rows);
+    for (const before of [
+      created.source,
+      'not-json',
+      'x'.repeat(200001),
+      JSON.stringify({ ...created.source, name: 'changed' }),
+    ])
+      expect(() =>
+        task31AuditRows(
+          [{ ...rows[0], targets: [{ ...rows[0]!.targets[0], before }] }, rows[1]],
+          plan,
+          created,
+          'gm',
+          'agent',
+        ),
+      ).toThrow();
+    expect(() =>
+      task31AuditRows(
+        [{ ...rows[0], targets: [{ ...rows[0]!.targets[0], afterModifiedTime: 43 }] }, rows[1]],
+        plan,
+        created,
+        'gm',
+        'agent',
+      ),
+    ).toThrow();
     expect(() => task31AuditRows(rows.slice(0, 1), plan, created, 'gm', 'agent')).toThrow();
     expect(() =>
       task31AuditRows([{ ...rows[0], status: 'ok' }, rows[1]], plan, created, 'gm', 'agent'),
@@ -416,6 +443,56 @@ describe('Task31 bounded generic native proof', () => {
     await expect(
       f.callback({ ...f.input, baseline, plan, uuid: actor.uuid, op: 'cleanup' }),
     ).rejects.toThrow('custody');
+  });
+  it('reconciles exact persisted once records and audits read-only after cleanup', async () => {
+    const f = nativeFixture(),
+      baseline = await f.callback({ ...f.input, op: 'baseline' });
+    const reconcile = runInNewContext(`(${task31Reconcile.toString()})`, f.context);
+    const records = [
+      { id: 'a', status: 'approved', result: { failed: true } },
+      { id: 'b', status: 'approved', result: { failed: true } },
+    ];
+    f.setRaw(records);
+    f.audit.pages.contents = [
+      {
+        id: 'new1',
+        uuid: 'JournalEntry.audit.JournalEntryPage.new1',
+        system: { toObject: () => ({ tool: 'action_perform' }) },
+      },
+      {
+        id: 'new2',
+        uuid: 'JournalEntry.audit.JournalEntryPage.new2',
+        system: { toObject: () => ({ tool: 'conditions' }) },
+      },
+    ];
+    const input = { ...f.input, baseline, created: { uuid: 'Actor.absent' }, ids: ['a', 'b'] };
+    expect(reconcile(input)).toMatchObject({
+      fixtureAbsent: true,
+      originalSourcesUnchanged: true,
+      records,
+    });
+    f.setRaw([...records, { id: 'later', status: 'pending' }]);
+    expect(() => reconcile(input)).toThrow('Unsettled');
+    f.setRaw(records);
+    f.game.time.worldTime = 1;
+    expect(() => reconcile(input)).toThrow('canonical');
+  });
+  it('reconciliation serializes through actual tsx without injected closures', () => {
+    const source = fileURLToPath(new URL('./native-reconcile.ts', import.meta.url));
+    const serialized = execFileSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        `import {task31Reconcile} from ${JSON.stringify(source)};process.stdout.write(task31Reconcile.toString());`,
+      ],
+      { encoding: 'utf8' },
+    );
+    const callback = runInNewContext(`(${serialized})`, {});
+    expect(() => callback({ baseline: {} })).toThrow();
+    expect(serialized).not.toContain('__name');
   });
   it('actual tsx serialization has no injected closure dependency', async () => {
     const source = fileURLToPath(new URL('./native-state.ts', import.meta.url));
