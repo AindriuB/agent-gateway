@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 28, 15
-**Status:** Source verified and merged in PR #76 (head `88b27ca`, main `369a443`). Source `e28f836` passed build/lint and 3,427 fast / 2,227 slow tests. Required native acceptance remains unperformed; this contract stays active.
+**Status:** Source merged in PR #76; bounded GM native acceptance passed on Foundry 13.351/14.369 at `88b27ca` / bundle `d19791ab`. Source verification passed build/lint and 3,427 fast / 2,227 slow tests. The combined required gate passed (build/lint, 3,437 fast / 2,227 slow); reusable-harness publication remains pending; contract stays active until the validation record merges.
 **Owns:**
 - module/src/events/offline-setting.ts
 - module/src/apps/policy/** (offline-reading section only)
