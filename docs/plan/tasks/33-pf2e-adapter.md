@@ -8,6 +8,7 @@
 - module/test/adapters/pf2e/**
 - module/src/adapters/index.ts (registry insertion only)
 - e2e/pf2e/**
+- e2e/vitest.e2e.config.ts (add the pf2e spec to the e2e-live include list only)
 
 ## Goal
 Implement the adapter for pf2e 8.6.x: summaries, strikes and actions with their
