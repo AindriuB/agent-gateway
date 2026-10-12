@@ -382,7 +382,7 @@ The later PR #71 Token-ancestor privacy fix `930ee51150f6befe6a0cc4f4f76010b92ff
 
 Historical attempts remain failed-and-cleaned, not retroactive passes: the first v14 replacement-close run removed seven created fixtures/zero new audits; two v13 source-serialization stops each removed four reconciled fixtures/zero new audits, before any fixture views and after three views respectively. Exact cleanup and all original sources/time were checked. Private screenshots/artifacts remain local.
 
-Upgrade both module and gateway to protocol **3.0.0** together; older major peers fail the handshake compatibility check. Task 27 validates and discards event frames at the gateway, with no buffering, polling, gaps or offline retention until tasks 28/29. Combat uses native visibility and constant labels; Token events require current rendered perception, so v13 deletes with already-destroyed views are suppressed. This is not a complete change log. The active contract remains `plan/tasks/27-module-event-tap.md` until merge. Future native writes require fresh scoped human consent and exact cleanup.
+Upgrade both module and gateway to protocol **3.0.0** together; older major peers fail the handshake compatibility check. Task 27 validates and discards event frames at the gateway, with no buffering, polling, gaps or offline retention until tasks 28/29. Combat uses native visibility and constant labels; Token events require current rendered perception, so v13 deletes with already-destroyed views are suppressed. This is not a complete change log. PR #71 is merged; the contract is archived at `plan/done/27-module-event-tap.md`. Future native writes require fresh scoped human consent and exact cleanup.
 
 ## Permission rules on the Mac (auto mode)
 
