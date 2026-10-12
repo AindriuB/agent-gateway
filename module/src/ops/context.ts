@@ -6,6 +6,13 @@ const bindings = new WeakMap<OpContext, { base: ToolCategory; effective: ToolCat
 /** Classification is local trusted code, never a category supplied in tool arguments. */
 export function actionCategory(tool: string, args: unknown, base: string, core = true): string {
   const action = (args as { action?: unknown } | null)?.action;
+  if (
+    core &&
+    base === 'read' &&
+    tool === 'conditions' &&
+    (args as { change?: unknown } | null)?.change !== undefined
+  )
+    return 'write';
   return core &&
     base === 'write' &&
     ((tool === 'token_manage' && action === 'remove') ||

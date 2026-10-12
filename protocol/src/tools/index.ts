@@ -1,3 +1,13 @@
+import { actorSummary } from './actor-summary.js';
+export * from './actor-summary.js';
+import { actionsList } from './actions-list.js';
+export * from './actions-list.js';
+import { actionPerform } from './action-perform.js';
+export * from './action-perform.js';
+import { inventory } from './inventory.js';
+export * from './inventory.js';
+import { conditions } from './conditions.js';
+export * from './conditions.js';
 import { eventsPoll } from './events-poll.js';
 import { eventsHistory } from './events-history.js';
 export * from './events-poll.js';
@@ -61,6 +71,12 @@ export * from './approval-status.js';
 
 /** Registry of all tools. Later tasks only append entries. */
 export const TOOLS: readonly ToolDefinition[] = [
+  actorSummary,
+  actionsList,
+  actionPerform,
+  inventory,
+  conditions,
+
   macroRun,
   scriptRun,
   tableRoll,
