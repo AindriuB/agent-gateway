@@ -118,8 +118,8 @@ Task28a is complete and archived at `docs/plan/done/28a-toolset-notification-tes
 
 ## Next
 
-### Offline write queue ready for planning
-Task30 — Queue writes attempted while the world is offline — depends on merged tasks 21 and 28. It is the next task, under architecture review; implementation has not started. Task29's bounded acceptance does not unblock Task18.
+### Offline write queue in progress
+Task30 — Queue writes attempted while the world is offline — is being implemented against the reviewed bounded replay contract. It adds pairing-scoped SQLite intent receipts, validated tool catalogs, protocol6 replay and fresh once-only native approvals. Queue acceptance records intent; it does not authorize execution. Delivered work with an uncertain outcome becomes an explicit `unknown` receipt and is never automatically retried. Source verification and independent review are in progress; no Task30 native acceptance or installed deployment is claimed. Task30 stays active, the inventory remains 26 completed / 16 active contracts, and Task18 stays blocked.
 
 ### Audit Undo validation scope
 Task 19's original PR #41 evidence remains offline verification and v14 backend reservation inspection. Task 23a now supplies human Audit UI Undo and local screenshot evidence on v13.351/v14.369 for one grouped three-root deletion with exact embedded restoration, plus fresh persisted completion and reservation-release checks. The repair is now merged through PR #63; this supplies task 19's requested successful native Undo UI/screenshot evidence. Direct embedded-only Undo and native concurrent-reservation contention are evidence limits, not invented unfinished task19 requirements. Do not infer those cases from task 21's snapshots or the task23a stub regressions.

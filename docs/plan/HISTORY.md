@@ -17,6 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Bounded offline write replay in progress (task 30)
+Task30 implementation is underway against its reviewed replay contract. Pairing-scoped SQLite intent, protocol6 delivery, browser receipt guards and fresh once-only native approval are being added. An offline receipt records intent, while current native policy and permission decide whether replay may proceed. Unknown delivery outcomes remain bounded reconciliation receipts without automatic resend.
+**Cost:** Source gates and independent review are pending. Task30 native validation is not authorized and no deployment or live replay is claimed. Task29 evidence does not validate these new paths; Task18 remains blocked. Task30 stays active and the completion inventory remains 26 done / 16 active.
+
 ## 2026-10-12 — Offline event reading validation merged and task archived (task 29)
 
 PR #78 merged at 17:15:37 UTC: reviewed head `366fc5e28a875eb01a03aabe51c0e1e3bc8f0283`, main `eac0f40e31ac29bf7df5b2d4662b43b03e250e3e`. Task29 moves to `docs/plan/done/29-offline-event-reading.md` with only its Status changed. The derived inventory is 26 completed / 16 active contracts. Task30 — Queue writes attempted while the world is offline — is next with merged dependencies 21 and 28; its implementation has not started. Task18 remains architecture-blocked.
