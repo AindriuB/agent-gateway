@@ -1,3 +1,4 @@
+import { OfflineQueue } from './offline-queue/service.js';
 import { EventBuffer } from './events/index.js';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -61,6 +62,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let link: LinkServer | undefined;
   let store: Store | undefined;
   let events: EventBuffer | undefined;
+  let queue: OfflineQueue | undefined;
   return {
     async start() {
       const dbPath = deps.dbPath ?? defaultDbPath();
@@ -69,6 +71,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       const registry = new LinkRegistry();
       const codes = new PairingCodes();
       events = new EventBuffer(store, registry);
+      queue = new OfflineQueue(store, registry);
       events.startRetention();
       link = new LinkServer({
         port: config.linkPort,
@@ -78,6 +81,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
         gatewayVersion: deps.version,
         events,
+        queue,
       });
       const port = await link.listen();
       writeStatus(
@@ -88,6 +92,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         version: deps.version,
         registry,
         events,
+        queue,
         ...(deps.selector ? { selector: deps.selector } : {}),
         knownIdentities: () =>
           store?.listActivePairings().map((p) => ({
@@ -103,6 +108,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     async stop() {
       await server?.close();
       server = undefined;
+      queue?.close();
+      queue = undefined;
       events?.close();
       events = undefined;
       await link?.close();

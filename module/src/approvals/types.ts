@@ -17,6 +17,7 @@ export interface ApprovalRecord {
   argsHash: string;
   category: string;
   approver: ApproverClass;
+  replay?: true;
   createdAt: number;
   expiresAt: number;
   status: ApprovalStatus;
@@ -38,6 +39,7 @@ export interface ApprovalRequestPayload {
   argsHash: string;
   category: string;
   approver: ApproverClass;
+  replay?: true;
   createdAt: number;
   expiresAt: number;
 }

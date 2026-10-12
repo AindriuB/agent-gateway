@@ -142,6 +142,25 @@ export class LinkClient {
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
   onCall: CallHandler | null = null;
+  onQueued:
+    | ((
+        call: Extract<LinkMessage, { type: 'queuedCalls' }>['calls'][number],
+        current: () => boolean,
+        report: (
+          status: Extract<LinkMessage, { type: 'queuedStatus' }>['status'],
+          text: string,
+        ) => void,
+      ) => Promise<void>)
+    | null = null;
+  replayScope(): string {
+    const identity = this.deps.getIdentity();
+    return JSON.stringify([
+      normalizeGatewayUrl(this.deps.getGatewayUrl()),
+      identity.world.id,
+      identity.user.id,
+      this.agentId,
+    ]);
+  }
 
   constructor(private readonly deps: LinkClientDeps) {}
 
@@ -421,6 +440,40 @@ export class LinkClient {
       case 'ping':
         this.send({ type: 'pong' });
         break;
+      case 'queuedCalls': {
+        const agentId = this.agentId;
+        const scope = this.replayScope();
+        const current = () =>
+          this.socket === origin &&
+          this._state.kind === 'connected' &&
+          this.agentId === agentId &&
+          this.replayScope() === scope &&
+          (origin.readyState === undefined || origin.readyState === 1);
+        for (const call of msg.calls) {
+          const report = (
+            status: Extract<LinkMessage, { type: 'queuedStatus' }>['status'],
+            text: string,
+          ) => {
+            if (current())
+              origin.send(
+                JSON.stringify({
+                  type: 'queuedStatus',
+                  id: call.id,
+                  status,
+                  text: text.slice(0, 4000),
+                }),
+              );
+          };
+          if (!this.onQueued) {
+            report('denied', 'Replay bridge unavailable');
+            continue;
+          }
+          void this.onQueued(call, current, report).catch(() =>
+            report('unknown', 'Replay outcome uncertain; reconciliation required'),
+          );
+        }
+        break;
+      }
       case 'call':
         await this.dispatch(origin, msg);
         break;

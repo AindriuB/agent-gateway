@@ -1,4 +1,5 @@
-import { OpAdmissionError } from './types.js';
+import { canonicalJson } from '../approvals/canonical.js';
+import { OpAdmissionError, bindReplay, replayOf } from './types.js';
 import { actionCategory, effectiveCategory, prepareContext } from './context.js';
 import { checkToolDefinition, type ToolDefinition } from '@agent-gateway/protocol';
 import { coreEntry, registerCoreTools } from './core-tools.js';
@@ -46,6 +47,19 @@ export function createRegistryDispatcher(
       tool: def.name,
       args: parsed.data,
     };
+    const replay = replayOf(call);
+    if (replay) {
+      if (def.category === 'read' || !replay.current() || Date.now() >= replay.expiresAt)
+        return fail('FORBIDDEN', 'Queued request is no longer executable');
+      bindReplay(ctx, replay);
+    }
+    let prepared = '';
+    const original = canonicalJson({
+      user: ctx.user,
+      agent: ctx.agent,
+      sessionId: ctx.sessionId,
+      tool: ctx.tool,
+    });
     const stages = [...configuredStages].sort((a, b) => a.order - b.order);
     const run = async (i: number): Promise<DispatchResult> => {
       const stage = stages[i];
@@ -53,6 +67,35 @@ export function createRegistryDispatcher(
         // Fail closed: a call that needs approval never reaches its handler without it.
         if (ctx.approval && ctx.approved !== true) {
           return fail('DENIED', `Approval is required for "${def.name}" and was not obtained`);
+        }
+        if (
+          replay &&
+          (canonicalJson(ctx.args) !== prepared ||
+            canonicalJson({
+              user: ctx.user,
+              agent: ctx.agent,
+              sessionId: ctx.sessionId,
+              tool: ctx.tool,
+            }) !== original)
+        )
+          return fail('FORBIDDEN', 'Queued approval binding changed');
+        if (
+          replay &&
+          (!replay.current() ||
+            Date.now() >= replay.expiresAt ||
+            registry.info(call.tool) !== def ||
+            lookup(call.tool) !== implementation)
+        )
+          return fail('FORBIDDEN', 'Queued request binding expired or changed');
+        if (replay) {
+          const policy = stages.find((stage) => stage.name === 'policy');
+          if (!policy) return fail('FORBIDDEN', 'Replay requires current policy enforcement');
+          const decision = await policy.run(ctx, async () => ({ text: '', structured: {} }));
+          if ('error' in decision) return decision;
+          if (ctx.approval?.approver === 'gm' && replay.gmApproved?.() !== true)
+            return fail('DENIED', 'Current policy requires fresh GM approval');
+          if (!replay.current() || Date.now() >= replay.expiresAt)
+            return fail('FORBIDDEN', 'Queued connection expired');
         }
         return handler(ctx);
       }
@@ -94,6 +137,7 @@ export function createRegistryDispatcher(
         )
           return fail('FORBIDDEN', 'Admission cannot change the prepared category');
       }
+      if (replay) prepared = canonicalJson(ctx.args);
       return await run(0);
     } catch (err) {
       if (err instanceof OpAdmissionError) return fail(err.code, err.message);

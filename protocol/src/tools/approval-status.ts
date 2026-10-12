@@ -21,8 +21,8 @@ export const approvalStatus = defineTool({
   output: z.strictObject({
     id: z.string().describe('The approval id'),
     status: z
-      .enum(['pending', 'approved', 'denied', 'expired'])
-      .describe('pending, approved, denied or expired'),
+      .enum(['pending', 'approved', 'denied', 'expired', 'queued', 'unknown'])
+      .describe('queued intent, pending approval, approved, denied, expired or unknown outcome'),
     reason: z.string().optional().describe('The approver reason, when the request was denied'),
     result: z
       .string()

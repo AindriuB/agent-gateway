@@ -1,5 +1,5 @@
 import { actionCategory, effectiveCategory } from '../ops/context.js';
-import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
+import { isOpError, replayOf, type DispatchResult, type OpContext } from '../ops/types.js';
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import { callHash } from './canonical.js';
@@ -188,7 +188,9 @@ export class ApprovalManager {
         r.status = 'expired';
         r.resolvedAt = now;
         changed = true;
-        this.waiters.get(r.id)?.finish(this.pendingResult(r.id));
+        const waiter = this.waiters.get(r.id);
+        if (waiter) replayOf(waiter.ctx)?.report('expired', 'Queued approval expired');
+        waiter?.finish(this.pendingResult(r.id));
         this.waiters.delete(r.id);
         this.announceResolved(r);
       }
@@ -215,6 +217,7 @@ export class ApprovalManager {
       argsHash: r.argsHash,
       category: r.category,
       approver: r.approver,
+      ...(r.replay ? { replay: true as const } : {}),
       createdAt: r.createdAt,
       expiresAt: r.expiresAt,
     };
@@ -299,6 +302,9 @@ export class ApprovalManager {
     ctx: OpContext,
     next: () => Promise<DispatchResult>,
   ): Promise<DispatchResult> {
+    const replay = replayOf(ctx);
+    if (replay && (!replay.current() || this.env.now() >= replay.expiresAt))
+      return { error: { code: 'DENIED', message: 'Queued request expired or disconnected' } };
     const user = this.env.user(ctx.user.id);
     if (!user) {
       return { error: { code: 'FORBIDDEN', message: 'The requesting user no longer exists' } };
@@ -352,6 +358,7 @@ export class ApprovalManager {
       }
     }
     r.result = storedResult(res);
+    replayOf(ctx)?.report('approved', r.result.text);
     this.persist();
     return res;
   }
@@ -386,7 +393,7 @@ export class ApprovalManager {
         error: { code: 'DENIED', message: this.env.t('AGENT_GATEWAY.Approvals.policyChanged') },
       };
     }
-    if (now0.kind === 'allow' || this.hasGrant(ctx, now0.approver)) {
+    if (!replayOf(ctx) && (now0.kind === 'allow' || this.hasGrant(ctx, now0.approver))) {
       return this.resumeApproved(ctx, next);
     }
 
@@ -401,7 +408,7 @@ export class ApprovalManager {
 
     const now = this.env.now();
     const record: ApprovalRecord = {
-      id: this.newId(),
+      id: replayOf(ctx)?.id ?? this.newId(),
       agentId: ctx.agent.id,
       agentOwnerId: ctx.agent.ownerUserId,
       headless: ctx.agent.headless,
@@ -413,7 +420,8 @@ export class ApprovalManager {
       category,
       approver: approval.approver,
       createdAt: now,
-      expiresAt: now + CFG.APPROVAL_TTL_MS,
+      expiresAt: Math.min(now + CFG.APPROVAL_TTL_MS, replayOf(ctx)?.expiresAt ?? Infinity),
+      ...(replayOf(ctx) ? { replay: true as const } : {}),
       status: 'pending',
     };
     this.records.set(record.id, record);
@@ -472,6 +480,7 @@ export class ApprovalManager {
     ) {
       return false;
     }
+    if (r.replay && o.scope === 'session') return false;
     if (o.decision !== 'approve' && o.decision !== 'deny') return false;
     if (o.decision === 'approve') {
       // The request may have waited a long time. Judge it by today's policy, not the old one.
@@ -498,6 +507,7 @@ export class ApprovalManager {
       r.status = 'denied';
       r.reason = cleanText(o.reason, CFG.MAX_REASON_CHARS);
       this.waiters.delete(r.id);
+      if (waiter) replayOf(waiter.ctx)?.report('denied', r.reason ?? 'Denied');
       const name = who.name;
       waiter?.finish({
         error: {
@@ -508,9 +518,10 @@ export class ApprovalManager {
         },
       });
     } else {
+      replayOf(waiter!.ctx)?.markApproved?.(who.isGM);
       r.status = 'approved';
       // Code is never approved for a whole session: every code call is shown and asked again.
-      r.scope = o.scope === 'session' && r.category !== 'code' ? 'session' : 'once';
+      r.scope = o.scope === 'session' && !r.replay && r.category !== 'code' ? 'session' : 'once';
       if (r.scope === 'session') {
         this.grants.set(
           JSON.stringify([r.requesterId, r.agentId, r.sessionId, r.tool, r.category]),
@@ -551,7 +562,7 @@ export class ApprovalManager {
     const own = this.records.get(id);
     if (own) return this.applyResolution(own, me.id, o);
     const entry = this.inbox.get(id);
-    if (!entry || !me.isGM) return false;
+    if (!entry || !me.isGM || (entry.replay && o.scope === 'session')) return false;
     this.expireDue();
     if (!this.inbox.has(id)) return false;
     this.inbox.delete(id);
@@ -614,6 +625,7 @@ export class ApprovalManager {
       argsHash: e.argsHash,
       category: e.category,
       approver: e.approver,
+      ...(e.replay ? { replay: true as const } : {}),
       createdAt: e.createdAt,
       expiresAt: e.expiresAt,
       requesterId: e.requesterId,
@@ -786,6 +798,7 @@ export class ApprovalManager {
         !('origin' in def) || def.origin === 'core',
       ),
       approver: data.approver,
+      ...(data.replay === true ? { replay: true as const } : {}),
       createdAt: data.createdAt,
       expiresAt,
       requesterId: senderId,

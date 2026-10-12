@@ -12,6 +12,10 @@ import { safeText } from './sanitize.js';
 
 /** Full definitions, isolated by authenticated link connection. Core authority stays in the session. */
 export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
+  private readonly catalogs = new WeakMap<LinkConnection, readonly AnnouncedTool[]>();
+  catalog(conn: LinkConnection): readonly AnnouncedTool[] | undefined {
+    return this.catalogs.get(conn);
+  }
   private readonly sets = new WeakMap<LinkConnection, readonly AnnouncedTool[]>();
   private readonly eventReads = new WeakMap<LinkConnection, boolean>();
   eventReadAllowed(conn: LinkConnection): boolean {
@@ -21,7 +25,8 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
   private readonly signatures = new WeakMap<LinkConnection, string>();
 
   revokeEventReads(conn: LinkConnection): void {
-    if (!this.eventReadAllowed(conn)) return;
+    const catalog = this.catalogs.delete(conn);
+    if (!this.eventReadAllowed(conn) && !catalog) return;
     this.eventReads.set(conn, false);
     this.signatures.delete(conn);
     this.emit('changed', conn);
@@ -91,11 +96,18 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
       this.log(`dropped ${packs - TOOL_LIMITS.sessionPackTools} pack tools: session cap exceeded`);
     let signature: string;
     try {
-      signature = JSON.stringify({ tools: next, eventReadAllowed: eventReadAllowed === true });
+      signature = JSON.stringify({
+        tools: next,
+        eventReadAllowed: eventReadAllowed === true,
+        catalogValid: keep.size === tools.length && packs <= TOOL_LIMITS.sessionPackTools,
+      });
     } catch {
       reject('ignored toolset: serialization failed');
       return;
     }
+    if (keep.size === tools.length && packs <= TOOL_LIMITS.sessionPackTools)
+      this.catalogs.set(conn, next);
+    else this.catalogs.delete(conn);
     if (this.signatures.get(conn) === signature) return;
     this.sets.set(conn, next);
     this.eventReads.set(conn, eventReadAllowed === true);
