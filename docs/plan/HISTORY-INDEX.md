@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 31 | Five bounded adapter tools verified 3,580/2,227 plus independent113; native/publication pending | ## 2026-10-12 — Bounded system adapter tools source verified (task 31) |
 | 2026-10-12 | 30 | PR80 merged; bounded offline replay validation archived; 27 done / 15 active; next31 | ## 2026-10-12 — Offline write replay validation merged and task archived (task 30) |
 | 2026-10-12 | 30 | GM offline replay passes v13/v14; prior failures cleaned; validation publication pending | ## 2026-10-12 — Offline write replay bounded GM native acceptance passed (task 30) |
 | 2026-10-12 | 30 | bounded offline replay and execution-failure receipts verified; native acceptance pending | ## 2026-10-12 — Bounded offline write replay source verified (task 30) |

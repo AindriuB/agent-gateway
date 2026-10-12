@@ -1,3 +1,8 @@
+import { actorSummaryHandler } from './actor-summary.js';
+import { actionsListHandler } from './actions-list.js';
+import { actionPerformHandler } from './action-perform.js';
+import { inventoryHandler } from './inventory.js';
+import { conditionsHandler } from './conditions.js';
 import { macroRunHandler } from './macro-run.js';
 import { scriptRunHandler } from './script-run.js';
 import { tableRollHandler } from './table-roll.js';
@@ -28,6 +33,11 @@ import { approvalStatusHandler } from './approval-status.js';
 
 /** Map from tool name to handler. Later tasks only insert entries. */
 export const HANDLERS: Record<string, OpHandler> = {
+  actor_summary: actorSummaryHandler,
+  actions_list: actionsListHandler,
+  action_perform: actionPerformHandler,
+  inventory: inventoryHandler,
+  conditions: conditionsHandler,
   macro_run: macroRunHandler,
   script_run: scriptRunHandler,
   table_roll: tableRollHandler,
