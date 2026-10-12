@@ -103,7 +103,12 @@ function strikeWrites(item: any): string[] {
     typeof item.uuid === 'string'
   )
     out.push(item.uuid);
-  const ammo = item?.ammo;
+  // Loaded ammunition (a repeating weapon's magazine, say) is a synthetic subitem built from its
+  // owner's system.subitems (pf2e.mjs:46161-46167) and carries `parentItem`. Its update is
+  // rerouted to a parentItem.update({system:{subitems}}) call (:46375-46387), so the persisted,
+  // hook-visible document is the owning Item: snapshot that one.
+  let ammo = item?.ammo;
+  for (let depth = 0; ammo?.parentItem && depth < 8; depth++) ammo = ammo.parentItem;
   if (
     item?.system?.ammo?.builtIn !== true &&
     (num(item?.system?.expend) ?? 0) > 0 &&

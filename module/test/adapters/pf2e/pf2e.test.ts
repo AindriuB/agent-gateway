@@ -350,6 +350,22 @@ describe('pf2e adapter', () => {
       'Actor.a.Item.ammo1',
     ]);
   });
+  it('snapshots the owning weapon, not the synthetic subitem, for loaded ammunition', async () => {
+    const strike = actor.system.actions[0];
+    const original = strike.item;
+    const owner = { uuid: 'Actor.a.Item.w1' };
+    strike.item = {
+      ...original,
+      system: { expend: 1 },
+      ammo: { uuid: 'Actor.a.Item.w1.Item.mag1', parentItem: owner },
+    };
+    try {
+      await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    } finally {
+      strike.item = original;
+    }
+    expect(snapshot.mock.calls.map((c: any[]) => c[0])).toEqual(['Actor.a.Item.w1']);
+  });
   it('snapshots nothing for a strike that spends no embedded document', async () => {
     await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
     expect(snapshot).not.toHaveBeenCalled();
