@@ -1,3 +1,5 @@
+import { AgentEvent } from '../events/index.js';
+export { AgentEvent, EventType, EVENT_CONFIG } from '../events/index.js';
 import { snapshotToolsetValue } from './toolset-value.js';
 import { z } from 'zod';
 import { TOOL_LIMITS } from '../tools/limits.js';
@@ -123,6 +125,8 @@ export const ToolsetMessage = z.strictObject({
     }, 'toolset exceeds announcement byte cap'),
 });
 
+export const EventMessage = z.strictObject({ type: z.literal('event'), event: AgentEvent });
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -134,6 +138,7 @@ export const LinkMessage = z.discriminatedUnion('type', [
   PingMessage,
   PongMessage,
   ToolsetMessage,
+  EventMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

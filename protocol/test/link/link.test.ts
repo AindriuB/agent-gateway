@@ -119,9 +119,9 @@ describe('error codes', () => {
 
 describe('checkCompat', () => {
   it('accepts identical and minor/patch differences', () => {
-    expect(PROTOCOL_VERSION).toBe('2.0.0');
-    expect(checkCompat(PROTOCOL_VERSION, '2.0.0')).toEqual({ ok: true });
-    expect(checkCompat(PROTOCOL_VERSION, '2.5.3')).toEqual({ ok: true });
+    expect(PROTOCOL_VERSION).toBe('3.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '3.0.0')).toEqual({ ok: true });
+    expect(checkCompat(PROTOCOL_VERSION, '3.5.3')).toEqual({ ok: true });
   });
 
   it('refuses a major mismatch naming both versions and the side to upgrade', () => {
@@ -137,8 +137,8 @@ describe('checkCompat', () => {
     if (!r2.ok) expect(r2.message).toMatch(/upgrade the remote side/i);
   });
 
-  it.each(['1.0.0', '1.99.7'])(
-    'refuses legacy name-only protocol %s in either direction',
+  it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
+    'refuses older protocol %s in either direction',
     (legacy) => {
       expect(checkCompat(PROTOCOL_VERSION, legacy)).toMatchObject({
         ok: false,

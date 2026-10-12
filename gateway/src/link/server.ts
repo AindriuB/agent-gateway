@@ -172,6 +172,10 @@ export class LinkServer {
         case 'error':
           conn.settle(msg.id, { err: new LinkCallError(msg.code, msg.message) });
           break;
+        case 'event':
+          // Task 28 owns buffering. Bind even discarded events to this authenticated observer.
+          if (msg.event.userId !== conn.userId) ws.close(1008, 'event observer mismatch');
+          break;
         case 'toolset':
           // Only for the connection that sent it, never another's.
           toolsets.set(conn, msg.tools);

@@ -144,7 +144,7 @@ describe('handshake', () => {
     expect(await c.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
   });
 
-  it.each(['1.0.0', '1.99.7'])(
+  it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
     'rejects legacy module %s before welcome or consuming its pairing code',
     async (legacy) => {
       h = await startServer();
@@ -269,4 +269,55 @@ describe('registry over the wire', () => {
 it('opens the store type used by the harness', () => {
   expect(openStore(':memory:')).toBeDefined();
   expect(new LinkRegistry()).toBeDefined();
+});
+
+const eventFrame = (userId = 'u1') => ({
+  type: 'event',
+  event: { seq: 1, ts: 0, type: 'chat', userId, summary: 'A chat message was posted' },
+});
+describe('Task27 event admission', () => {
+  it('rejects an event before hello without consuming a pairing', async () => {
+    h = await startServer();
+    const c = await connect(h.port);
+    c.send(eventFrame());
+    expect(await c.next()).toMatchObject({ type: 'reject', code: 'INVALID_ARGS' });
+    await c.untilClosed();
+    expect(h.registry.list()).toEqual([]);
+    expect(h.store.listActivePairings()).toEqual([]);
+  });
+  it('accepts and drops authenticated events while preserving ping and tool transport', async () => {
+    h = await startServer();
+    const c = await connect(h.port);
+    c.send(hello({ kind: 'pairingCode', code: h.codes.generate() }));
+    expect(await c.next()).toMatchObject({ type: 'welcome' });
+    c.send(eventFrame());
+    c.send({ type: 'ping' });
+    expect(await c.next()).toEqual({ type: 'pong' });
+    expect(c.closed).toBe(false);
+    const conn = h.registry.get('w1', 'u1')!;
+    const pending = h.registry.call(conn, 'read', { limit: 1 }, 1000);
+    const call = await c.next('call');
+    expect(call).toMatchObject({ tool: 'read', args: { limit: 1 } });
+    c.send({ type: 'result', id: (call as { id: string }).id, ok: true, text: 'done' });
+    await expect(pending).resolves.toEqual({ text: 'done', structured: undefined });
+    expect(c.messages).toEqual([]);
+  });
+  it('refuses a relabeled observer after authentication', async () => {
+    h = await startServer();
+    const c = await connect(h.port);
+    c.send(hello({ kind: 'pairingCode', code: h.codes.generate() }));
+    await c.next();
+    c.send(eventFrame('other'));
+    await c.untilClosed();
+    expect(h.registry.list()).toEqual([]);
+  });
+  it('refuses extra document data in an authenticated event', async () => {
+    h = await startServer();
+    const c = await connect(h.port);
+    c.send(hello({ kind: 'pairingCode', code: h.codes.generate() }));
+    await c.next();
+    c.send({ ...eventFrame(), event: { ...eventFrame().event, data: { secret: true } } });
+    await c.untilClosed();
+    expect(h.registry.list()).toEqual([]);
+  });
 });
