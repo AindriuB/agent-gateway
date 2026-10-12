@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 28
-**Status:** Source verified at `b320505daaec9928fc5908cf938874948c5be240` (build/lint, 3,487 fast / 2,227 slow; both independent reviews passed). Publication and native acceptance pending; no Task30 native writes are authorized.
+**Status:** Earlier source verified at `b320505daaec9928fc5908cf938874948c5be240` (build/lint, 3,487 fast / 2,227 slow; both independent reviews passed). PR #80 review found queued failure-state loss; repair and renewed source/harness verification are pending. Native acceptance is on hold; no Task30 native writes are authorized.
 **Owns:**
 - gateway/src/offline-queue/**
 - gateway/test/offline-queue/**
@@ -80,3 +80,7 @@ submits the queued calls, which go through normal policy and approval.
 - Real link/MCP replay tests using the existing fake module client: durable immediate receipt, reconnect approval with unchanged ID, forced once under allow and existing session grants, stricter GM/deny/disabled after queueing and during approval, full macro/script source admission, changed args/source/definition/category, forged provenance/replies, duplicate batches, pending/terminal status and text-only delayed results.
 - Abort before commit versus accepted receipt surviving session close; expiry before replay and during pending approval, disconnected/restarted uncertain delivery with no re-execution, durable duplicate/in-progress guard and honest unknown outcome. Verify actual handler/audit invocation counts, not only queued records. All existing online calls and Task29 offline gateway reads must retain their behavior.
 - Native validation is not authorized by implementation permission. After source gates/review, propose fresh exact human consent for isolated gateway storage and harmless temporary world fixtures, a real owner/GM once approval and exact cleanup. Do not replay arbitrary existing offline writes, mutate production queue/history or export private evidence. No native Task30 result or deployment may be inferred from Task29 acceptance.
+
+## Open review defect — queued result failure state
+
+PR #80 review identified that an explicitly approved replay whose handler fails loses the existing `storedResult.failed` flag across queued status, persistence and gateway `approval_status`. Preserve a strict optional boolean `resultFailed` through the correlated protocol, browser receipt/duplicate response, SQLite receipt and gateway status response. Approval state remains distinct from execution success: an approved failed call must retain its failure evidence. Add static migration006 for existing migration005 databases instead of modifying their installed schema in place. Regression checks must cover failed approved handlers, durable reopen and duplicate terminal responses, while successful/pending receipts retain their existing semantics. Native execution remains on hold until the repair passes source review/full verification and the harness pins are refreshed.
