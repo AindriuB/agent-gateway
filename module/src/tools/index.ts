@@ -1,3 +1,6 @@
+import { tableRollHandler } from './table-roll.js';
+import { playlistControlHandler } from './playlist-control.js';
+import { notifyHandler } from './notify.js';
 import { tokenManageHandler } from './token-manage.js';
 import { combatManageHandler } from './combat-manage.js';
 import { sceneControlHandler } from './scene-control.js';
@@ -23,6 +26,9 @@ import { approvalStatusHandler } from './approval-status.js';
 
 /** Map from tool name to handler. Later tasks only insert entries. */
 export const HANDLERS: Record<string, OpHandler> = {
+  table_roll: tableRollHandler,
+  playlist_control: playlistControlHandler,
+  notify: notifyHandler,
   token_manage: tokenManageHandler,
   combat_manage: combatManageHandler,
   scene_control: sceneControlHandler,

@@ -1,3 +1,9 @@
+import { tableRoll } from './table-roll.js';
+import { playlistControl } from './playlist-control.js';
+import { notify } from './notify.js';
+export * from './table-roll.js';
+export * from './playlist-control.js';
+export * from './notify.js';
 import { tokenManage } from './token-manage.js';
 import { combatManage } from './combat-manage.js';
 import { sceneControl } from './scene-control.js';
@@ -47,6 +53,9 @@ export * from './approval-status.js';
 
 /** Registry of all tools. Later tasks only append entries. */
 export const TOOLS: readonly ToolDefinition[] = [
+  tableRoll,
+  playlistControl,
+  notify,
   tokenManage,
   combatManage,
   sceneControl,

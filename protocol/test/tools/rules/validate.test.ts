@@ -123,6 +123,9 @@ describe('validateArgs', () => {
   it('rejects invalid schemas rather than ignoring unsupported rules', () =>
     expect(validateArgs({ ...schema, pattern: '.*' }, valid).ok).toBe(false));
   const examples: Record<string, unknown> = {
+    table_roll: { tableUuid: 'RollTable.example' },
+    playlist_control: { playlistUuid: 'Playlist.example', action: 'play' },
+    notify: { message: 'Hello' },
     document_create: { type: 'Actor', data: '{"name":"Test"}' },
     document_update: { uuid: 'Actor.example', update: '{"name":"Test"}' },
     document_delete: { uuids: ['Actor.example'] },
