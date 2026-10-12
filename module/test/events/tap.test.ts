@@ -338,3 +338,88 @@ it.each(['active', 'navigation', 'viewed'])(
     expect(s.frames).toEqual([]);
   },
 );
+
+function syntheticDocuments(s: ReturnType<typeof setup>) {
+  const token = {
+    ...doc('Token', 'private-token'),
+    uuid: `${s.scene.uuid}.Token.private-token`,
+    parent: s.scene,
+    hidden: false,
+    actorLink: false,
+  } as any;
+  token._object = { document: token, destroyed: false, isVisible: true };
+  Object.defineProperty(token, 'object', {
+    get() {
+      throw Error('No lazy Token construction');
+    },
+  });
+  const actor = {
+    ...doc('Actor', 'synthetic'),
+    uuid: `${token.uuid}.Actor.synthetic`,
+    parent: token,
+  };
+  const item = {
+    ...doc('Item', 'private-item'),
+    uuid: `${actor.uuid}.Item.private-item`,
+    parent: actor,
+  };
+  return { token, actor, item };
+}
+function concealToken(s: ReturnType<typeof setup>, token: any, state: string) {
+  if (state === 'hidden') token.hidden = true;
+  if (state === 'unrendered') delete token._object;
+  if (state === 'imperceptible') token._object.isVisible = false;
+  if (state === 'destroyed') token._object.destroyed = true;
+  if (state === 'offscene') s.canvas.scene = doc('Scene', 'other');
+}
+it.each(['hidden', 'unrendered', 'imperceptible', 'destroyed', 'offscene'])(
+  'suppresses synthetic Actor and Item lifecycle through a %s Token ancestor',
+  (state) => {
+    const s = setup(),
+      { token, actor, item } = syntheticDocuments(s);
+    concealToken(s, token, state);
+    for (const target of [actor, item]) {
+      s.hook(`create${target.documentName}`, target, {});
+      s.hook(`update${target.documentName}`, target, {}, {});
+      vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+      s.hook(`delete${target.documentName}`, target, {});
+    }
+    expect(s.frames).toEqual([]);
+  },
+);
+it.each(['hidden', 'unrendered', 'imperceptible', 'destroyed', 'offscene'])(
+  'rechecks %s Token ancestor perception before flushing synthetic updates',
+  (state) => {
+    const s = setup(),
+      { token, actor, item } = syntheticDocuments(s);
+    for (const target of [actor, item]) s.hook(`update${target.documentName}`, target, {}, {});
+    concealToken(s, token, state);
+    vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+    expect(s.frames).toEqual([]);
+  },
+);
+it.each([false, true])('allows visible synthetic ancestry with native GM=%s perception', (isGM) => {
+  const s = setup(),
+    { token, actor, item } = syntheticDocuments(s);
+  s.user().isGM = isGM;
+  token.hidden = isGM;
+  for (const target of [actor, item]) {
+    s.hook(`create${target.documentName}`, target, {});
+    s.hook(`update${target.documentName}`, target, {}, {});
+    vi.advanceTimersByTime(EVENT_CONFIG.COALESCE_MS);
+    s.hook(`delete${target.documentName}`, target, {});
+  }
+  expect(s.frames.map((f) => f.event.type)).toEqual([
+    'actor_create',
+    'actor_update',
+    'actor_delete',
+    'item_create',
+    'item_update',
+    'item_delete',
+  ]);
+  expect(s.frames[0].event.doc.uuid).toBe(actor.uuid);
+  expect(s.frames[3].event.doc.uuid).toBe(item.uuid);
+  token._object.isVisible = false;
+  s.hook('createActor', actor, {});
+  expect(s.frames).toHaveLength(6);
+});

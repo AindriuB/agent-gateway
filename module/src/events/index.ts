@@ -72,28 +72,30 @@ export function installEventTap(client: Client, overrides?: EventTapDeps): { dis
       clear();
     }
   });
+  const tokenVisible = (doc: any, user: any): boolean => {
+    const canvas = deps.canvas(),
+      object = doc._object;
+    return (
+      !!canvas?.ready &&
+      canvas.scene === doc.parent &&
+      (!doc.hidden || user.isGM === true) &&
+      !!object &&
+      object.destroyed === false &&
+      object.document === doc &&
+      object.isVisible === true
+    );
+  };
   const visible = (doc: any, user: any): boolean => {
     if (!doc || !user || isAuditDocument(doc)) return false;
     if (doc.documentName === 'ChatMessage') return doc.isContentVisible === true;
     if (doc.documentName === 'Combat') return doc.visible === true;
-    if (doc.documentName === 'Token') {
-      const canvas = deps.canvas(),
-        object = doc._object;
-      return (
-        !!canvas?.ready &&
-        canvas.scene === doc.parent &&
-        (!doc.hidden || user.isGM === true) &&
-        !!object &&
-        object.destroyed === false &&
-        object.document === doc &&
-        object.isVisible === true
-      );
-    }
+    if (doc.documentName === 'Token') return tokenVisible(doc, user);
     const seen = new Set<any>();
     for (let current = doc; current; current = current.parent) {
       if (
         seen.size === 8 ||
         seen.has(current) ||
+        (current.documentName === 'Token' && !tokenVisible(current, user)) ||
         (current.documentName === 'Scene' && !rootVisible(current, user)) ||
         current.testUserPermission?.(user, 'OBSERVER') !== true
       )
