@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 24 contracts have merged implementations and recorded evidence. Task 19's
+These 25 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -24,6 +24,7 @@ over unchecked historical boxes.
 | 26 | Complete; bounded native v13/v14 full-source once-only code approval and pending text completion passed | PR #69 (`4f00ed1`, merged `b8eb171`); combined gate 3,268 fast / 2,227 slow |
 | 27 | Complete; bounded native v13/v14 event privacy/reconnect proof; later Scene/Token ancestor privacy fixes offline-verified only | PR #71 (`e58590e`, merged `d0093d9`); latest gate 3,340 fast / 2,227 slow |
 | 28 | Complete; bounded native v13/v14 polling/isolation/reconnect proof; later gateway revocation fix offline-verified only | PR #73 (`b5293a1`, merged `98ae4ad`); latest gate 3,393 fast / 2,227 slow |
+| 28a | Complete; deterministic cross-user notification test binding, no runtime changes | PR #75 (`1eb9b08`, merged `3cd5cb1`); targeted 16 checks and build/lint/full gate 3,393 fast / 2,227 slow |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains

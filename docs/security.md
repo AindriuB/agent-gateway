@@ -2,7 +2,7 @@
 
 ## Offline event reading — source verified, native acceptance pending
 
-Offline reading is an opt-in world setting, off by default. Task29 stores `{enabled:false, retentionDays:14}` and bounds retention to integer days from 1 to 365. Source `e28f836ae8a83116d59f0f75174d684c9917c5a7` passed build/lint and 3,427 fast / 2,227 slow tests. Native acceptance remains pending; these are software trust boundaries, not a live-world proof.
+Offline reading is an opt-in world setting, off by default. Task29 stores `{enabled:false, retentionDays:14}` and bounds retention to integer days from 1 to 365. PR #76 is merged; required native acceptance remains pending. Source `e28f836ae8a83116d59f0f75174d684c9917c5a7` passed build/lint and 3,427 fast / 2,227 slow tests. Native acceptance remains pending; these are software trust boundaries, not a live-world proof.
 
 Player gateways enforce this setting **by software, not cryptography**. The gateway trusts policy observations from its authenticated paired module; it does not independently attest that the sender is a native GM or that the world setting is still current. The legitimate module reads the world setting and restricts editing/purge controls to a freshly checked native GM. A modified gateway or paired client can evade these cooperative checks. An unreachable gateway cannot discover a later world-policy change; it uses the last accepted setting until an authenticated update arrives. This does not solve Task18's immediate cross-owner/offline invalidation blocker.
 
