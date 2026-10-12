@@ -171,7 +171,10 @@ const spellEntryId = (spell: any): string =>
   spell.isRitual === true ? 'rituals' : text(spell.system?.location?.value, 64);
 function spellEntry(actor: any, id: string): any {
   if (!id) return undefined;
-  return actor.spellcasting?.get?.(id) ?? actor.items?.get?.(id);
+  // When actor.spellcasting exists a miss means "no entry": pf2e treats such spells as orphaned
+  // (pf2e.mjs:33970). Only without it do we fall back to embedded Items.
+  if (actor.spellcasting?.get) return actor.spellcasting.get(id) ?? undefined;
+  return actor.items?.get?.(id);
 }
 /** The entry that can cast this spell: a ritual entry, or one that consumes resources. */
 function castableEntry(actor: any, spell: any): any {

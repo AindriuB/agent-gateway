@@ -474,6 +474,27 @@ describe('pf2e adapter', () => {
       expect(outcome instanceof Error ? outcome.message : '', id).not.toMatch(/Unknown/);
     }
   });
+  it('treats a spell located at a non-entry Item as orphaned, neither listed nor performable', async () => {
+    const orphan = {
+      id: 'so',
+      name: 'Orphan',
+      rank: 1,
+      toMessage: spellMessage,
+      system: { location: { value: 'pot' }, time: { value: '2' } },
+    };
+    const oa = {
+      ...actor,
+      items: { get: () => ({ id: 'pot', uuid: 'Actor.a.Item.pot', consume }) },
+      spellcasting: { get: () => undefined },
+      itemTypes: { ...actor.itemTypes, spell: [orphan] },
+    };
+    const { actions } = (await pf2eAdapter.listActions(oa)) as any;
+    expect(actions.some((x: any) => x.id === 'spell:pot:so')).toBe(false);
+    await expect(pf2eAdapter.performAction(oa, 'spell:pot:so', { rank: 1 }, ctx)).rejects.toThrow(
+      /Unknown/,
+    );
+    expect(consume).not.toHaveBeenCalled();
+  });
   it('casts a ritual without consuming anything or disclosing a spend', async () => {
     const ritual = {
       id: 'r1',
