@@ -138,6 +138,16 @@ function spellSpends(entry: any, spell: any): string {
   return targets[0] === spell.uuid ? 'innate spell use' : 'spell slot';
 }
 
+/**
+ * Actionable abilities: `action` Items and `feat` Items with an action cost. AbilityItem, Feat and
+ * the other item classes derive actionCost from system.actionType.value, `passive` giving null
+ * (pf2e.mjs:52239-52245, :52305-52311, :52455-52461), so a costed feat has type action, reaction
+ * or free. costLabel keeps only those.
+ */
+function actionItems(actor: any): any[] {
+  return [...list(actor.itemTypes?.action), ...list(actor.itemTypes?.feat)];
+}
+
 function strikes(actor: any): any[] {
   return list(actor.system?.actions).filter(
     (s) => s && (s.type === undefined || s.type === 'strike') && typeof s.slug === 'string',
@@ -201,7 +211,7 @@ function listActions(actor: any) {
       });
     });
   }
-  for (const item of list(actor.itemTypes?.action)) {
+  for (const item of actionItems(actor)) {
     const cost = costLabel(item.actionCost);
     if (!cost) continue;
     actions.push({
@@ -260,29 +270,44 @@ async function performAction(
     const spentAmmo = strikeWrites(strike.item).length > 0;
     let attributed = false;
     let noMessage = false;
-    const rolled = await auditedChat(context, async (record) => {
-      // These updates run inside pf2e without options (see strikeWrites), so their snapshots go
-      // stale for Undo rather than being restored incorrectly; enrol them all the same.
-      for (const uuid of supported ? strikeWrites(strike.item) : []) await context.snapshot(uuid);
-      return variant.roll({
-        event,
-        ...(supported
-          ? {
-              createMessage: false,
-              callback: async (_check: unknown, _outcome: unknown, message: any) => {
-                const mode = message?.flags?.pf2e?.context?.messageMode;
-                attributed = await postMessage(
-                  message,
-                  context,
-                  record,
-                  typeof mode === 'string' ? { messageMode: mode } : {},
-                );
-                noMessage = !attributed;
-              },
-            }
-          : {}),
+    let rolled: unknown;
+    try {
+      rolled = await auditedChat(context, async (record) => {
+        // These updates run inside pf2e without options (see strikeWrites), so their snapshots go
+        // stale for Undo rather than being restored incorrectly; enrol them all the same.
+        for (const uuid of supported ? strikeWrites(strike.item) : []) await context.snapshot(uuid);
+        return variant.roll({
+          event,
+          ...(supported
+            ? {
+                createMessage: false,
+                callback: async (_check: unknown, _outcome: unknown, message: any) => {
+                  const mode = message?.flags?.pf2e?.context?.messageMode;
+                  attributed = await postMessage(
+                    message,
+                    context,
+                    record,
+                    typeof mode === 'string' ? { messageMode: mode } : {},
+                  );
+                  noMessage = !attributed;
+                },
+              }
+            : {}),
+        });
       });
-    });
+    } catch (e) {
+      // A failure after the roll may already have spent ammunition. Return, not throw, so the
+      // disclosure survives invokeAdapter and the caller does not blindly retry.
+      if (!spentAmmo) throw e;
+      return {
+        completed: false,
+        message:
+          `Rolling ${text(strike.label, 200)} failed; ammunition or a thrown weapon may have been spent and that cannot be undone: ${text((e as Error)?.message, 300)}`.slice(
+            0,
+            2000,
+          ),
+      };
+    }
     // pf2e resolves null when nothing was rolled: no ammo, out of range, no origin, cancelled.
     if (rolled === null || rolled === undefined)
       return {
@@ -304,7 +329,7 @@ async function performAction(
     return done(`${rolledLabel}${spent}`);
   }
   if (parts[0] === 'action' && parts.length === 2) {
-    const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
+    const item = actionItems(actor).find((i) => i.id === parts[1] && costLabel(i.actionCost));
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
     // Item#toMessage hard-codes its create options (pf2e.mjs:45476-45496); `create: false` returns
     // the unsaved message (:45496) so it can be created here with callOptions.
@@ -380,14 +405,17 @@ async function performAction(
         );
         if (!made) throw new Error('no chat message was created');
       } catch (e) {
-        throw new Error(
-          `Casting ${text(spell.name, 200)} failed${
-            spends ? ' after its slot or focus point was spent' : ''
-          }: ${text((e as Error)?.message, 300)}${spentNote}`,
-        );
+        // Return, not throw: invokeAdapter turns a throw into a generic invalid-result error that
+        // would hide the spend disclosure and invite a retry that spends again.
+        return {
+          failure: `Casting ${text(spell.name, 200)} failed${
+            spends ? ` after its ${spends} was spent and cannot be undone` : ''
+          }: ${text((e as Error)?.message, 300)}`,
+        };
       }
       return true;
     });
+    if (typeof cast === 'object') return { completed: false, message: cast.failure.slice(0, 2000) };
     if (!cast)
       return {
         completed: false,

@@ -4,6 +4,8 @@ import { pf2eAdapter } from '../../../src/adapters/pf2e/index.js';
 import { selectAdapter } from '../../../src/adapters/index.js';
 import type { AdapterExecutionContext } from '../../../src/adapters/types.js';
 import { adapterContract } from '../contract.js';
+import { actionPerform } from '@agent-gateway/protocol';
+import { boundedAdapterData } from '../../../src/tools/_adapters.js';
 
 const roll = vi.fn();
 const cast = vi.fn();
@@ -366,11 +368,66 @@ describe('pf2e adapter', () => {
       expect(skipDialog).toBe(true);
     },
   );
-  it('says the slot was spent when the cast throws after consumption', async () => {
+  it('returns the spend disclosure, valid for the tool wrapper, when a cast fails after consumption', async () => {
     spellMessage.mockRejectedValueOnce(new Error('boom'));
-    await expect(pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)).rejects.toThrow(
-      /after its slot or focus point was spent/,
-    );
+    const r = (await pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)) as any;
+    expect(r).toEqual({
+      completed: false,
+      message: expect.stringMatching(/after its spell slot was spent and cannot be undone: boom/),
+    });
+    // The same checks invokeAdapter applies to an adapter result.
+    const bounded = boundedAdapterData(r) as object;
+    expect(
+      actionPerform.output.parse({ ...bounded, actorUuid: 'Actor.a', systemId: 'pf2e' }),
+    ).toMatchObject({ completed: false });
+  });
+  it('returns a disclosure when a strike roll throws after ammunition may be spent', async () => {
+    const strike = actor.system.actions[0];
+    const original = strike.item;
+    strike.item = { ...original, system: { expend: 1 }, ammo: { uuid: 'Actor.a.Item.ammo1' } };
+    roll.mockRejectedValueOnce(new Error('kaput'));
+    let r: any;
+    try {
+      r = await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
+    } finally {
+      strike.item = original;
+    }
+    expect(r.completed).toBe(false);
+    expect(r.message).toMatch(/may have been spent and that cannot be undone: kaput/);
+    roll.mockRejectedValueOnce(new Error('kaput'));
+    await expect(
+      pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx),
+    ).rejects.toThrow(/kaput/);
+  });
+  it('lists and performs costed feats, and ignores passive ones', async () => {
+    const feat = (id: string, name: string, actionCost: unknown) => ({
+      id,
+      name,
+      actionCost,
+      toMessage,
+    });
+    const withFeats = {
+      ...actor,
+      itemTypes: {
+        ...actor.itemTypes,
+        feat: [
+          feat('f1', 'Reactive Shield', { type: 'reaction', value: null }),
+          feat('f2', 'Sudden Charge', { type: 'action', value: 2 }),
+          feat('f3', 'Quick Draw', { type: 'free', value: null }),
+          feat('f4', 'Toughness', null),
+        ],
+      },
+    };
+    const { actions } = (await pf2eAdapter.listActions(withFeats)) as any;
+    const byName = (n: string) => actions.find((a: any) => a.name === n);
+    expect(byName('Reactive Shield')).toMatchObject({ id: 'action:f1', cost: 'reaction' });
+    expect(byName('Sudden Charge').cost).toBe('2 actions');
+    expect(byName('Quick Draw').cost).toBe('free action');
+    expect(byName('Toughness')).toBeUndefined();
+    const r = (await pf2eAdapter.performAction(withFeats, 'action:f2', {}, ctx)) as any;
+    expect(r.message).toBe('Performed Sudden Charge');
+    expect(toMessage).toHaveBeenCalledWith(undefined, { create: false });
+    await expect(pf2eAdapter.performAction(withFeats, 'action:f4', {}, ctx)).rejects.toThrow();
   });
   it('snapshots the spellcasting entry before a slot spell consumes it', async () => {
     const entry = actor.items.get('e1');
@@ -526,9 +583,9 @@ describe('pf2e adapter', () => {
   });
   it('does not claim a spend when a cantrip cast fails', async () => {
     spellMessage.mockRejectedValueOnce(new Error('boom'));
-    await expect(pf2eAdapter.performAction(actor, 'spell:e1:s2', {}, ctx)).rejects.toThrow(
-      /^(?!.*was spent).*boom/,
-    );
+    const r = (await pf2eAdapter.performAction(actor, 'spell:e1:s2', {}, ctx)) as any;
+    expect(r.completed).toBe(false);
+    expect(r.message).toMatch(/^(?!.*was spent).*boom/);
   });
   it('makes no snapshot for a no-op change', async () => {
     await pf2eAdapter.conditions(actor, { id: 'frightened', active: true, value: 2 }, ctx);
