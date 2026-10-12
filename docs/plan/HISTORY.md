@@ -17,6 +17,16 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Bounded visible-client event tap implemented; native acceptance pending (task 27)
+
+Task 27 source `0a5835b137527398eb5b5bdb7ceead40575a1b70` is published in draft PR #71. Build/lint/full verification passed (3,302 fast / 2,227 slow tests), with 123 independent focused protocol/module/gateway checks and 130 local focused checks after the existing lifecycle fixture correction. Native acceptance has not run; the contract stays active, the completed archive remains at 22 contracts and task 18 stays blocked. Task 28 follows this event foundation.
+
+The tap sends strict bounded event frames for the authenticated observing user after welcome, sequences them per connection, coalesces document updates for 500 ms, drops pending updates on disconnect and rechecks current visibility before flush. Native private-chat content visibility and rendered Token perception fail closed; approval summaries exclude source/arguments/reasons and agent document writes retain a boolean flag. Combat uses native visibility and constant labels because it has no ownership fields. V13 may destroy Token perception before the delete hook, so unavailable-view delete events are suppressed; this is not a complete change log.
+
+Protocol major 3 is required on both module and gateway: older peers are rejected at handshake with the existing upgrade diagnostic. Authenticated observer-matched events are validated and discarded by the gateway in this task; buffering, gap production, polling and offline retention remain tasks 28/29. Production bundle SHA-256 is `80625451b6db75f19c2b95c0a6c6b158fb16d8e69f80d46d1b35b03c45a041ad`; this is an offline build identity, not a native-tested bundle or installed deployment.
+
+**Cost:** Native source review found that Combat inherits NONE ownership for players despite native visibility, and v13 destroys the Token placeable before deletion hooks. The fix uses native Combat visibility without hidden details and explicitly suppresses Token deletes when current perception cannot be established, avoiding a historical visibility cache. The first full gate also exposed seven legacy lifecycle mocks returning an empty link client; their fixture now supplies the real installer interface with all original lifecycle assertions preserved. No live fixture writes or new native evidence are claimed.
+
 ## 2026-10-12 — Source-bound GM code task merged and archived (task 26)
 
 PR #69 merged on 2026-10-12 at 09:33:14 UTC, head `4f00ed1dff5aefdae7d4a0c2593e7b452ed1a4c2`, main `b8eb171a8afb2e181f37840c7f900ffabd289693`. Task 26 is complete and its contract moved to `docs/plan/done/26-code-tools.md` with only its status changed. The archive now contains 22 contracts; 19 active contract files remain, including blocked task 18. Task 27 is next.

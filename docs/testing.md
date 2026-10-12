@@ -366,6 +366,34 @@ Temporary browser bundle routes/template cache are not an installed deployment,
 and private screenshots are not exported. PR #69 is merged; the contract
 is archived at `plan/done/26-code-tools.md`.
 
+## Task 27 event tap verification and compatibility
+
+Draft PR #71 source `0a5835b137527398eb5b5bdb7ceead40575a1b70` passed
+build/lint/full verification (3,302 fast / 2,227 slow tests). Independent focused
+protocol/module/gateway testing passed 123 checks; local focused testing passed
+130 after the existing lifecycle mock gained the required link-client interface.
+Offline tests cover strict event schemas, authenticated observer binding,
+private-chat/rendered-Token visibility, coalescing and delayed visibility loss,
+create/delete ordering, disconnect cancellation, sequence reset, bounded pending
+updates, redacted approval summaries and agent flags. Native acceptance is pending.
+
+Upgrade both module and gateway to protocol **3.0.0** together. Major 2 or older
+peers fail the existing handshake compatibility check; do not pair a new event
+module with an old gateway. The gateway validates and discards event frames in
+Task 27; no event buffering, polling, reconnect gap or offline retention is
+available yet. Those capabilities belong to tasks 28/29.
+
+Combat events use native visibility and constant labels rather than ownership
+or hidden turn details. Token events require the existing rendered placeable's
+current perception; v13 deletion may already have destroyed it, in which case
+the delete event is suppressed. Do not interpret the tap as a complete change
+log. Source bundle SHA-256
+`80625451b6db75f19c2b95c0a6c6b158fb16d8e69f80d46d1b35b03c45a041ad`
+is an offline build identity until a separately consented native proof runs.
+Any live fixture writes require fresh scoped human consent and exact cleanup;
+this source gate grants no such permission. The active contract remains at
+`plan/tasks/27-module-event-tap.md`.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
