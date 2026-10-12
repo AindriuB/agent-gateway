@@ -70,3 +70,10 @@ Head `ea22d19`. Tester PASS (`npm run verify`: 3,616 fast / 2,227 slow; e2e-unit
 - `e2e/pf2e/pf2e.e2e.test.ts:143` — replace the post-hoc DOM count with a `Hooks.on('renderCheckModifiersDialog', …)` counter installed in the page before the call (CheckModifiersDialog, pf2e.mjs:19217) and assert it stayed zero.
 - `e2e/pf2e/pf2e.e2e.test.ts:152` — require `t.undoable === true` (view-only `blankTarget` entries also have `existed:false`, audit/witness.ts:413, :469).
 - `e2e/pf2e/pf2e.e2e.test.ts:159-161` — cleanup must not depend on the audit lookup: in `finally`, delete messages with `flags.pf2e.origin.uuid === <weapon uuid>` and `context.type === 'attack-roll'` (actor deletion does not remove chat).
+
+## Attempt 6 — failed
+Head `16176a2`. Tester PASS (`npm run verify` first run: 3,617 fast / 2,227 slow; e2e-unit 163). Reviewer REQUEST CHANGES; all Attempt 5 items fixed, adapter null-roll change correct, approval-text UUID regex confirmed (manager.ts:21-24, :664-669; document-create.ts:14), scope clean.
+- `e2e/pf2e/pf2e.e2e.test.ts:128-144` — the frightened write test does not settle `pending_approval` (`conditions` with `change` is write → `ask_owner`). A late approval fails at :133 for harness reasons, and a pending restore makes :144 pass vacuously (undefined === undefined). Settle both calls and assert the restore against an actual read after it completes.
+- `e2e/pf2e/pf2e.e2e.test.ts:148` — give tests that wait on human approval a per-test timeout that does not bound the human's decision (strike needs two approvals; each call waits 25 s before pending).
+- `e2e/pf2e/pf2e.e2e.test.ts:33-34, :75` — treat an error result from `approval_status` as terminal (throw with its text) instead of polling silently; on the delete path include `actorUuid` in the thrown message so residue is named.
+- Make cleanup robust to a timed-out or thrown `settle()`: `session.close()` and the actor delete attempt must still run (or report the residue UUID loudly).
