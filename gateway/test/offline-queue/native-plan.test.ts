@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   TASK30_PINS,
   task30Plan,
@@ -258,5 +260,22 @@ describe('Task30 exact native queue acceptance scope', () => {
     expect(calls).toEqual(['drain', 'browser', 'queue', 'events', 'store']);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('timeout');
+  });
+  it('actual tsx transpilation keeps both browser callbacks self-contained', () => {
+    const url = new URL('./native-state.ts', import.meta.url).href;
+    const script = `import {runInNewContext} from 'node:vm';
+      const {task30NativeState,task30PreloadTemplate}=await import(${JSON.stringify(url)});
+      const f=runInNewContext('('+task30NativeState.toString()+')',{});
+      if(await f({op:'createdCandidate',run:'0123456789ab'})!==null)throw Error('candidate');
+      const partials={};const p=runInNewContext('('+task30PreloadTemplate.toString()+')',{Handlebars:{partials,compile:(s)=>()=>s}});
+      await p('<article data-request="x"></article>');
+      if(Object.keys(partials).length!==1)throw Error('template');`;
+    expect(() =>
+      execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
+        cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+        timeout: 10000,
+        stdio: 'pipe',
+      }),
+    ).not.toThrow();
   });
 });
