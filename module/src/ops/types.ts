@@ -38,8 +38,22 @@ export interface OpResult {
   structured: Record<string, unknown>;
 }
 
+export class OpAdmissionError extends Error {
+  constructor(
+    readonly code: 'INVALID_ARGS' | 'FORBIDDEN',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+export type AdmissionContext = Readonly<
+  Pick<OpContext, 'user' | 'agent' | 'sessionId' | 'tool' | 'args'>
+>;
+
 export type OpHandler = ((ctx: OpContext) => Promise<DispatchResult> | DispatchResult) & {
   prepare?: (ctx: OpContext) => void;
+  /** Trusted core read-only admission; returns replacement review arguments only. */
+  admit?: (ctx: AdmissionContext) => Promise<unknown>;
 };
 
 export type OpErrorCode =

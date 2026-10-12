@@ -123,6 +123,8 @@ describe('validateArgs', () => {
   it('rejects invalid schemas rather than ignoring unsupported rules', () =>
     expect(validateArgs({ ...schema, pattern: '.*' }, valid).ok).toBe(false));
   const examples: Record<string, unknown> = {
+    macro_run: { macroUuid: 'Macro.example' },
+    script_run: { source: 'return 1;' },
     table_roll: { tableUuid: 'RollTable.example' },
     playlist_control: { playlistUuid: 'Playlist.example', action: 'play' },
     notify: { message: 'Hello' },

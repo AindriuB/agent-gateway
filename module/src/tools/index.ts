@@ -1,3 +1,5 @@
+import { macroRunHandler } from './macro-run.js';
+import { scriptRunHandler } from './script-run.js';
 import { tableRollHandler } from './table-roll.js';
 import { playlistControlHandler } from './playlist-control.js';
 import { notifyHandler } from './notify.js';
@@ -26,6 +28,8 @@ import { approvalStatusHandler } from './approval-status.js';
 
 /** Map from tool name to handler. Later tasks only insert entries. */
 export const HANDLERS: Record<string, OpHandler> = {
+  macro_run: macroRunHandler,
+  script_run: scriptRunHandler,
   table_roll: tableRollHandler,
   playlist_control: playlistControlHandler,
   notify: notifyHandler,
