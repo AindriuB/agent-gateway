@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { CallResult } from '../lib/gateway.js';
 import { loadContext } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 
@@ -10,6 +11,41 @@ const writes = process.env.AGENT_GATEWAY_E2E_PF2E_WRITE === '1';
 
 type Row = Record<string, unknown>;
 
+const UUID_RE = /\b(?:Actor\.[A-Za-z0-9]{16}(?:\.Item\.[A-Za-z0-9]{16})?)\b/;
+
+/**
+ * A call that needs the human's approval returns pending_approval with an id. Poll the
+ * approval_status tool until that is terminal; there is deliberately no wall-clock bound across
+ * the human's decision (the test timeout still applies). Returns the final result and, for a
+ * pending call, the uuid found in the approved result text.
+ */
+async function settle(
+  session: UserSession,
+  r: CallResult,
+): Promise<{ result: CallResult; uuid: string | undefined }> {
+  let current = r;
+  if (r.structured?.status === 'pending_approval') {
+    const id = String(r.structured.id);
+    for (;;) {
+      current = await session.gateway.call('approval_status', { id });
+      const status = current.structured?.status;
+      if (status === 'approved' && typeof current.structured?.result === 'string') break;
+      if (status === 'denied' || status === 'expired' || status === 'unknown')
+        throw new Error(`approval ${id} ended ${String(status)}: ${current.text}`);
+      await new Promise((res) => setTimeout(res, 1000));
+    }
+    const text = String(current.structured?.result);
+    return {
+      result: { ...current, isError: current.structured?.resultFailed === true, text },
+      uuid: UUID_RE.exec(text)?.[0],
+    };
+  }
+  return {
+    result: r,
+    uuid: typeof r.structured?.uuid === 'string' ? r.structured.uuid : undefined,
+  };
+}
+
 // Tests are always registered (so `vitest list` shows them); each skips at run time unless enabled.
 describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
   let session: UserSession;
@@ -18,19 +54,25 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     if (!enabled) return;
     const ctx = loadContext();
     session = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
-    const made = await session.gateway.call('document_create', {
-      type: 'Actor',
-      data: JSON.stringify({ name: 'agent-gateway e2e pf2e (temporary)', type: 'character' }),
-    });
-    expect(made.isError, made.text).toBe(false);
-    actorUuid = made.structured?.uuid as string;
+    const made = await settle(
+      session,
+      await session.gateway.call('document_create', {
+        type: 'Actor',
+        data: JSON.stringify({ name: 'agent-gateway e2e pf2e (temporary)', type: 'character' }),
+      }),
+    );
+    expect(made.result.isError, made.result.text).toBe(false);
+    actorUuid = made.uuid;
     expect(typeof actorUuid).toBe('string');
   });
   afterAll(async () => {
     try {
       if (actorUuid) {
-        const del = await session.gateway.call('document_delete', { uuids: [actorUuid] });
-        expect(del.isError, del.text).toBe(false);
+        const del = await settle(
+          session,
+          await session.gateway.call('document_delete', { uuids: [actorUuid] }),
+        );
+        expect(del.result.isError, del.result.text).toBe(false);
       }
     } finally {
       await session?.close();
@@ -106,41 +148,54 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
   it('performs a strike without a dialog and audits its chat message as created', async (ctx) => {
     if (!writes) return ctx.skip();
     const page = session.browser.page;
-    const weapon = await session.gateway.call('document_create', {
-      type: 'Item',
-      parentUuid: actorUuid,
-      data: JSON.stringify({
-        name: 'agent-gateway e2e club (temporary)',
-        type: 'weapon',
-        system: {
-          category: 'simple',
-          group: 'club',
-          damage: { dice: 1, die: 'd6', damageType: 'bludgeoning' },
-          equipped: { carryType: 'held', handsHeld: 1 },
-        },
+    const madeWeapon = await settle(
+      session,
+      await session.gateway.call('document_create', {
+        type: 'Item',
+        parentUuid: actorUuid,
+        data: JSON.stringify({
+          name: 'agent-gateway e2e club (temporary)',
+          type: 'weapon',
+          system: {
+            category: 'simple',
+            group: 'club',
+            damage: { dice: 1, die: 'd6', damageType: 'bludgeoning' },
+            equipped: { carryType: 'held', handsHeld: 1 },
+          },
+        }),
       }),
-    });
-    expect(weapon.isError, weapon.text).toBe(false);
-    let messageId: string | undefined;
+    );
+    expect(madeWeapon.result.isError, madeWeapon.result.text).toBe(false);
+    const weaponUuid = madeWeapon.uuid;
+    expect(typeof weaponUuid).toBe('string');
     try {
+      // Count CheckModifiersDialog renders (pf2e.mjs:19217) from before the call.
+      await page.evaluate(`(() => {
+        window.__agentGatewayDialogs = 0;
+        window.__agentGatewayDialogHook = Hooks.on('renderCheckModifiersDialog', () => {
+          window.__agentGatewayDialogs++;
+        });
+      })()`);
       const listed = await call('actions_list');
       const strike = ((listed.structured?.actions ?? []) as Row[]).find(
         (a) =>
           a.group === 'Strikes' &&
-          String(a.id).startsWith(
-            `strike:${(weapon.structured?.uuid as string).split('.').pop()}:`,
-          ) &&
+          String(a.id).startsWith(`strike:${(weaponUuid as string).split('.').pop()}:`) &&
           String(a.id).endsWith(':0'),
       );
       expect(strike, listed.text).toBeDefined();
-      const started = Date.now();
-      const r = await call('action_perform', { actionId: strike?.id });
-      expect(r.isError, r.text).toBe(false);
-      expect(r.structured?.completed).toBe(true);
-      // A blocked check dialog would hold the call open until its timeout.
-      expect(Date.now() - started).toBeLessThan(15_000);
+      const performed = await settle(
+        session,
+        await call('action_perform', { actionId: strike?.id }),
+      );
+      expect(performed.result.isError, performed.result.text).toBe(false);
+      if (
+        performed.result.structured?.status !== 'approved' &&
+        performed.result.structured?.completed !== undefined
+      )
+        expect(performed.result.structured?.completed).toBe(true);
       const found = (await page.evaluate(`(async () => {
-        const dialogs = document.querySelectorAll('[class*="check-modifiers"]').length;
+        const dialogs = window.__agentGatewayDialogs;
         const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
         const pages = journal ? [...journal.pages] : [];
         const page = pages
@@ -149,16 +204,25 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
           )}))
           .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
         const created = (page?.system.targets ?? []).filter(
-          (t) => t.existed === false && t.uuid.startsWith('ChatMessage.'),
+          (t) => t.existed === false && t.undoable === true && t.uuid.startsWith('ChatMessage.'),
         );
         return { dialogs, created: created.map((t) => t.uuid) };
       })()`)) as { dialogs: number; created: string[] };
       expect(found.dialogs).toBe(0);
       expect(found.created).toHaveLength(1);
-      messageId = found.created[0]?.split('.').pop();
     } finally {
-      if (messageId)
-        await page.evaluate(`game.messages.get(${JSON.stringify(messageId)})?.delete()`);
+      // Independent of the audit lookup. Deleting the actor does not delete its chat messages.
+      await page.evaluate(`(async () => {
+        if (window.__agentGatewayDialogHook !== undefined)
+          Hooks.off('renderCheckModifiersDialog', window.__agentGatewayDialogHook);
+        delete window.__agentGatewayDialogs;
+        delete window.__agentGatewayDialogHook;
+        const ids = game.messages
+          .filter((m) => m.flags?.pf2e?.origin?.uuid === ${JSON.stringify(weaponUuid)} &&
+            m.flags?.pf2e?.context?.type === 'attack-roll')
+          .map((m) => m.id);
+        for (const id of ids) await game.messages.get(id)?.delete();
+      })()`);
       // The weapon is embedded in the temporary actor, which the suite deletes.
     }
   });

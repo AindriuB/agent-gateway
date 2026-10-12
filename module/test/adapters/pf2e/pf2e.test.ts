@@ -127,11 +127,12 @@ beforeEach(() => {
   consume.mockResolvedValue(true);
   spellMessage.mockResolvedValue({ uuid: 'ChatMessage.spell' });
   toMessage.mockResolvedValue({ uuid: 'ChatMessage.action' });
-  roll.mockImplementation(async () =>
+  roll.mockImplementation(async () => {
     createHooks.forEach((h) =>
       h({ uuid: 'ChatMessage.m1', author: { id: 'u1' }, flags: strikeFlags() }),
-    ),
-  );
+    );
+    return { total: 15 };
+  });
   (globalThis as any).Hooks = {
     on: (_n: string, h: (m: any) => void) => createHooks.push(h),
     off: vi.fn(),
@@ -190,6 +191,11 @@ describe('pf2e adapter', () => {
     expect(consume).toHaveBeenCalledWith(spell, 4);
     expect(spellMessage).toHaveBeenCalledWith(null, { actualCast: true, data: { castRank: 4 } });
     expect(cast).not.toHaveBeenCalled();
+  });
+  it('reports a strike that pf2e did not roll as not completed', async () => {
+    roll.mockResolvedValueOnce(null);
+    const r = (await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx)) as any;
+    expect(r.completed).toBe(false);
   });
   it('rejects unknown ids and bad ranks without side effects', async () => {
     await expect(pf2eAdapter.performAction(actor, 'strike:x:y:0', {}, ctx)).rejects.toThrow();

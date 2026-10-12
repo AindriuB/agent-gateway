@@ -192,7 +192,7 @@ async function performAction(
     // yields skipDialog = true, whatever the setting.
     const showDialogs = Boolean((globalThis as any).game?.user?.settings?.showCheckDialogs);
     const event = { shiftKey: showDialogs, ctrlKey: false, metaKey: false };
-    await auditedChat(
+    const rolled = await auditedChat(
       context,
       (m) => {
         const pf2e = m.flags?.pf2e;
@@ -205,6 +205,13 @@ async function performAction(
       },
       () => variant.roll({ event }),
     );
+    // pf2e resolves null when nothing was rolled: no ammo, out of range, no origin, cancelled.
+    if (rolled === null || rolled === undefined)
+      return {
+        completed: false,
+        message:
+          `${text(strike.label, 200)} ${text(variant.label, 100)} was not rolled (no ammunition, out of range or no valid target)`.trim(),
+      };
     return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
   }
   if (parts[0] === 'action' && parts.length === 2) {
