@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 27, 20
-**Status:** Source verified at `5059015`; published in draft PR #73; native acceptance and merge pending. Build/lint/full gate: 3,380 fast / 2,227 slow. Contract remains active.
+**Status:** Source and bounded native acceptance verified at `5059015` on Foundry 13.351/14.369; draft PR #73 awaits merge. Build/lint/full gate: 3,380 fast / 2,227 slow. Contract remains active.
 **Owns:**
 - gateway/src/events/**
 - gateway/test/events/**

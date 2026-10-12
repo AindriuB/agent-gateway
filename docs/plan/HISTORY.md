@@ -17,6 +17,16 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Policy-gated event polling validated on v13 and v14; merge pending (task 28)
+
+Task 28 source `5059015ce17480f65dbe3629bb8db3a1a60c9782` and bundle `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf` passed the scoped native checks on Foundry 13.351 and 14.369. Source verification remains build/lint plus 3,380 fast / 2,227 slow tests. Each world used one temporary GM-private NPC, two exact name updates and exact deletion; all original root sets, sources, world time and participant views were preserved.
+
+Nine gateway polls per world settled, including cancellation and WORLD_OFFLINE outcomes: two identical nonconsuming reads, a 25,010 ms v13 / 25,012 ms v14 timeout, rename wake, owned transient disconnect and cursor continuation. Each new welcome produced one gateway gap with known trailing `missed: 0`, followed by native sequence 1 at a higher gateway cursor. Actual GM and Player1 policy metadata allowed reads in both worlds; Player1 returned no private Actor events. `events_history` was absent and directly refused. Captures reported no errors and zero forwarded module calls; these gateway reads create no world audit records.
+
+Executed harness SHA-256: proof `828aef6b507b125b917e06dd0b9329021229b846450879a9da82aa12d4abb7da`, plan `c4597aac61f29dc4ac7ef06bcbffde04639e323d31584771d9e08143a3404493`, state `c25a022c6d3ce0a370830557dcc504079c339e8728d1fe7fd50b9035ff5c4831`. The four reusable harness files retain these executed bytes and configurable pins; six offline helper regressions, strict TypeScript, lint and actual tsx serialization passed. The combined publication gate is not yet claimed. PR #73 remains unmerged and Task28 active; archive23 and Task18's blocker are unchanged.
+
+**Cost:** An initial v14 invocation used a nonexistent GM display name and stopped at join before baseline or fixture creation, with zero native calls; no baseline comparison is claimed for that attempt. Corrected runs imported pairings read-only into isolated gateway databases and changed no policies/settings. Ask/deny/disabled metadata refusal, retention eviction, restart and broader privacy cases remain offline-tested rather than native-proven. Gap zero covers only known sent-but-unreceived trailing frames, not unobserved offline world activity. No installed deployment, offline-history availability, approvals, Undo, public screenshots or private artifact exports are claimed.
+
 ## 2026-10-12 — Policy-gated gateway event buffer implemented; native acceptance pending (task 28)
 
 Task 28 source `5059015ce17480f65dbe3629bb8db3a1a60c9782` passed required build/lint/full verification (3,380 fast / 2,227 slow tests). The earlier focused suite passed 354 tests; later independent and targeted checks passed 71, six and 17 tests respectively. Production bundle SHA-256 is `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf`. This is source verification only: native protocol4/buffering acceptance has not run, and the active contract is not archived. The exact source is published in draft PR #73; native acceptance remains pending. The completed archive remains at 23 contracts; task 18 stays architecture-blocked.

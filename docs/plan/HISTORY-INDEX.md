@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 28 | Bounded v13/v14 polling, isolation, reconnect and exact NPC cleanup passed; history hidden, PR #73 merge pending | ## 2026-10-12 — Policy-gated event polling validated on v13 and v14; merge pending (task 28) |
 | 2026-10-12 | 28 | Source verified 3,380/2,227; protocol4, policy-gated online polling and pairing-isolated cursors; native pending, history hidden | ## 2026-10-12 — Policy-gated gateway event buffer implemented; native acceptance pending (task 28) |
 | 2026-10-12 | 27 | PR #71 merged; Task27 archived, 23 done/18 active contracts, task28 next and18 blocked; native proof/follow-up limits preserved | ## 2026-10-12 — Visible-client event tap task merged and archived (task 27) |
 | 2026-10-12 | 27 | Token ancestor perception protects synthetic Actor/Item events at capture and flush; offline gate passed, native proof stays historical | ## 2026-10-12 — Token ancestor perception enforced for synthetic document events (task 27) |
