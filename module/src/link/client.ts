@@ -149,6 +149,7 @@ export class LinkClient {
         report: (
           status: Extract<LinkMessage, { type: 'queuedStatus' }>['status'],
           text: string,
+          resultFailed?: boolean,
         ) => void,
       ) => Promise<void>)
     | null = null;
@@ -453,6 +454,7 @@ export class LinkClient {
           const report = (
             status: Extract<LinkMessage, { type: 'queuedStatus' }>['status'],
             text: string,
+            resultFailed?: boolean,
           ) => {
             if (current())
               origin.send(
@@ -461,6 +463,7 @@ export class LinkClient {
                   id: call.id,
                   status,
                   text: text.slice(0, 4000),
+                  ...(resultFailed !== undefined ? { resultFailed } : {}),
                 }),
               );
           };

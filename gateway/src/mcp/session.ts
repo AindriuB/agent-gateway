@@ -240,7 +240,14 @@ export function createSessionServer(opts: SessionServerOptions): Server {
           const row = opts.queue.status(queueOwner, (id.data as { id: string }).id);
           if (row) {
             const status = row.state === 'claimed' ? 'unknown' : row.state;
-            const result = { id: row.id, status, ...(row.result ? { result: row.result } : {}) };
+            const result = {
+              id: row.id,
+              status,
+              ...(row.result ? { result: row.result } : {}),
+              ...(status === 'approved' && row.result_failed !== null
+                ? { resultFailed: row.result_failed === 1 }
+                : {}),
+            };
             return {
               content: [
                 {

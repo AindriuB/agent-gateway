@@ -162,12 +162,17 @@ export const QueuedCallsMessage = z.strictObject({
   type: z.literal('queuedCalls'),
   calls: z.array(QueuedCall).min(1).max(5),
 });
-export const QueuedStatusMessage = z.strictObject({
-  type: z.literal('queuedStatus'),
-  id: QueuedCall.shape.id,
-  status: z.enum(['pending', 'approved', 'denied', 'expired', 'unknown']),
-  text: z.string().max(4000),
-});
+export const QueuedStatusMessage = z
+  .strictObject({
+    type: z.literal('queuedStatus'),
+    id: QueuedCall.shape.id,
+    status: z.enum(['pending', 'approved', 'denied', 'expired', 'unknown']),
+    text: z.string().max(4000),
+    resultFailed: z.boolean().optional(),
+  })
+  .refine((r) => r.resultFailed === undefined || r.status === 'approved', {
+    message: 'Only approved execution results carry resultFailed',
+  });
 
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [

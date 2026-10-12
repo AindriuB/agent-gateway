@@ -131,7 +131,7 @@ it.each(['macro_run', 'script_run'])(
     ).toBe(false);
     expect(h.records).toHaveLength(1);
     if (tool === 'macro_run') expect(h.macro.execute).toHaveBeenCalledTimes(1);
-    expect(h.report).toHaveBeenCalledWith('approved', expect.any(String));
+    expect(h.report).toHaveBeenCalledWith('approved', expect.any(String), false);
   },
 );
 it('replayed macro refuses changed native source despite an unchanged queued UUID', async () => {
@@ -147,6 +147,8 @@ it('replayed macro refuses changed native source despite an unchanged queued UUI
   expect(h.macro.execute).not.toHaveBeenCalled();
   expect(h.records).toHaveLength(1);
   expect(h.records[0].status).toBe('error');
+  expect(h.report).toHaveBeenCalledWith('approved', expect.any(String), true);
+  expect(h.client.manager.ownRecords()[0]?.result?.failed).toBe(true);
 });
 it('denied replay policy performs no code execution or audit', async () => {
   const h = setup();

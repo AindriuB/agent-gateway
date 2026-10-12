@@ -264,4 +264,41 @@ describe('protocol6 queued replay boundaries', () => {
       ).ok,
     ).toBe(false);
   });
+  it('preserves only literal approved execution failure flags', () => {
+    for (const resultFailed of [true, false])
+      expect(
+        parseLinkMessage(
+          JSON.stringify({
+            type: 'queuedStatus',
+            id: call.id,
+            status: 'approved',
+            text: 'result',
+            resultFailed,
+          }),
+        ),
+      ).toMatchObject({ ok: true, message: { resultFailed } });
+    for (const resultFailed of ['true', 1, [], null])
+      expect(
+        parseLinkMessage(
+          JSON.stringify({
+            type: 'queuedStatus',
+            id: call.id,
+            status: 'approved',
+            text: 'result',
+            resultFailed,
+          }),
+        ).ok,
+      ).toBe(false);
+    expect(
+      parseLinkMessage(
+        JSON.stringify({
+          type: 'queuedStatus',
+          id: call.id,
+          status: 'pending',
+          text: 'waiting',
+          resultFailed: true,
+        }),
+      ).ok,
+    ).toBe(false);
+  });
 });

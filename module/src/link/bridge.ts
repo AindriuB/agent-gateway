@@ -82,12 +82,12 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       definition: frame.definition,
     });
     if (!claim.fresh) {
-      send(claim.receipt.status, claim.receipt.text);
+      send(claim.receipt.status, claim.receipt.text, claim.receipt.resultFailed);
       return;
     }
-    const report = (status: Parameters<typeof send>[0], text: string) => {
-      const saved = guard.update(frame.id, status, text);
-      send(saved.status, saved.text);
+    const report = (status: Parameters<typeof send>[0], text: string, resultFailed?: boolean) => {
+      const saved = guard.update(frame.id, status, text, resultFailed);
+      send(saved.status, saved.text, saved.resultFailed);
     };
     const def = liveToolMetadata.info(frame.tool);
     if (
@@ -139,7 +139,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       if (isOpError(res)) report('denied', `${res.error.code}: ${res.error.message}`);
       else if (res.structured.status === 'pending_approval')
         report('pending', 'Awaiting fresh once approval; nothing executed');
-      else report('approved', res.text);
+      else report('approved', res.text, false);
     } catch {
       report('unknown', 'Execution outcome unknown; reconciliation required');
     }

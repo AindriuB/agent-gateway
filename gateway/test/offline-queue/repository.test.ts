@@ -1,3 +1,6 @@
+import { DatabaseSync } from 'node:sqlite';
+import { applyMigrations } from '../../src/store/migrate.js';
+import { MIGRATIONS } from '../../src/store/migrations/index.js';
 import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -117,5 +120,40 @@ describe('durable offline queue', () => {
     expect(s.queue.status(owner, r.id, 'new', 'denied', 'bad', 4)).toBe(true);
     expect(s.queue.get(owner, r.id)?.state).toBe('approved');
     s.close();
+  });
+  it('adds failure metadata to an existing version5 database without inventing success for legacy receipts', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'queue-upgrade-')),
+      path = join(dir, 'q.sqlite');
+    const old = new DatabaseSync(path);
+    applyMigrations(old, MIGRATIONS.slice(0, 5));
+    old
+      .prepare(
+        'INSERT INTO queued_calls(id,world_id,user_id,agent_id,session_id,tool,definition,args,args_hash,created_at,expires_at,state,result,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'legacy',
+        'w',
+        'u',
+        'a',
+        's',
+        'write',
+        '{}',
+        '{}',
+        'hash',
+        1,
+        2,
+        'approved',
+        'legacy result',
+        2,
+      );
+    old.close();
+    const s = openStore(path);
+    expect(s.queue.get(owner, 'legacy')?.result_failed).toBeNull();
+    const row = s.queue.enqueue(owner, 's', definition, {}, 10);
+    s.queue.claim(owner, row.id, 'c');
+    s.queue.status(owner, row.id, 'c', 'approved', 'ok', 11, false);
+    expect(s.queue.get(owner, row.id)?.result_failed).toBe(0);
+    s.close();
+    rmSync(dir, { recursive: true });
   });
 });

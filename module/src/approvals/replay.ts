@@ -10,6 +10,7 @@ interface Receipt {
   binding: string;
   status: ReplayStatus;
   text: string;
+  resultFailed?: boolean;
   updatedAt: number;
 }
 /** Fail-closed durable browser guard. Never executes anything loaded from storage. */
@@ -35,6 +36,8 @@ export class ReplayReceipts {
         !['pending', 'approved', 'denied', 'expired', 'unknown'].includes(row.status) ||
         typeof row.text !== 'string' ||
         row.text.length > 4000 ||
+        (row.resultFailed !== undefined &&
+          (typeof row.resultFailed !== 'boolean' || row.status !== 'approved')) ||
         !Number.isFinite(row.updatedAt)
       )
         throw Error('Corrupt replay receipt');
@@ -74,12 +77,15 @@ export class ReplayReceipts {
     this.live.add(id);
     return { fresh: true, receipt };
   }
-  update(id: string, status: ReplayStatus, text: string): Receipt {
+  update(id: string, status: ReplayStatus, text: string, resultFailed?: boolean): Receipt {
     const rows = this.read(),
       row = rows.find((row) => row.id === id);
     if (!row) throw Error('Missing replay receipt');
     if (row.status !== 'pending') return row;
+    if (resultFailed !== undefined && (typeof resultFailed !== 'boolean' || status !== 'approved'))
+      throw Error('Invalid replay failure flag');
     row.status = status;
+    if (resultFailed !== undefined) row.resultFailed = resultFailed;
     row.text = text.slice(0, 4000);
     row.updatedAt = this.now();
     this.save(rows);

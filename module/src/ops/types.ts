@@ -76,7 +76,11 @@ export interface ReplayContext {
   current(): boolean;
   markApproved?(gm: boolean): void;
   gmApproved?(): boolean;
-  report(status: 'pending' | 'approved' | 'denied' | 'expired' | 'unknown', text: string): void;
+  report(
+    status: 'pending' | 'approved' | 'denied' | 'expired' | 'unknown',
+    text: string,
+    resultFailed?: boolean,
+  ): void;
 }
 const replayContexts = new WeakMap<object, ReplayContext>();
 export function bindReplay(value: object, replay: ReplayContext): void {

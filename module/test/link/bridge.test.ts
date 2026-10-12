@@ -206,4 +206,31 @@ describe('authenticated queued bridge', () => {
     await flush();
     installBridge(client, { dispatch, getUser: () => gameUser, storage: () => storage });
   });
+  it('keeps failed approved continuation honest through duplicate ingress and bridge reinstall', async () => {
+    const storage = setupStorage();
+    dispatch.mockImplementation(async (call) => {
+      replayOf(call)!.report('approved', 'FORBIDDEN: reviewed macro source changed', true);
+      return { error: { code: 'FORBIDDEN', message: 'reviewed macro source changed' } };
+    });
+    const f = frame();
+    socket.recv(f);
+    await flush();
+    expect(socket.sent.at(-1)).toMatchObject({
+      type: 'queuedStatus',
+      status: 'approved',
+      resultFailed: true,
+    });
+    socket.recv(f);
+    await flush();
+    installBridge(client, { dispatch, getUser: () => gameUser, storage: () => storage });
+    socket.recv(f);
+    await flush();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(socket.sent.at(-1)).toMatchObject({
+      type: 'queuedStatus',
+      status: 'approved',
+      resultFailed: true,
+      text: 'FORBIDDEN: reviewed macro source changed',
+    });
+  });
 });

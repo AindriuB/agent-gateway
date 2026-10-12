@@ -34,6 +34,7 @@ export interface QueueRow {
   state: QueueState;
   connection_id: string | null;
   result: string | null;
+  result_failed: 0 | 1 | null;
   resolved_at: number | null;
 }
 const ownerArgs = (o: QueueOwner) => [o.worldId, o.userId, o.agentId];
@@ -180,7 +181,10 @@ export function createQueueRepository(db: DatabaseSync) {
       state: Exclude<QueueState, 'queued' | 'claimed'>,
       result: string,
       now: number,
+      resultFailed?: boolean,
     ): boolean {
+      if (resultFailed !== undefined && (typeof resultFailed !== 'boolean' || state !== 'approved'))
+        throw new LinkCallError('INVALID_ARGS', 'Invalid queued execution failure flag');
       const row = db
         .prepare(`SELECT * FROM queued_calls WHERE ${scope} AND id=? AND connection_id=?`)
         .get(...ownerArgs(o), id, connectionId) as unknown as QueueRow | undefined;
@@ -194,11 +198,12 @@ export function createQueueRepository(db: DatabaseSync) {
         Number(
           db
             .prepare(
-              `UPDATE queued_calls SET state=?,result=?,resolved_at=? WHERE ${scope} AND id=? AND connection_id=? AND state IN ('claimed','pending')`,
+              `UPDATE queued_calls SET state=?,result=?,result_failed=?,resolved_at=? WHERE ${scope} AND id=? AND connection_id=? AND state IN ('claimed','pending')`,
             )
             .run(
               state,
               result.slice(0, 4000),
+              resultFailed === undefined ? null : Number(resultFailed),
               state === 'pending' ? null : now,
               ...ownerArgs(o),
               id,

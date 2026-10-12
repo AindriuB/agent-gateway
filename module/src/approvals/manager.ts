@@ -358,7 +358,7 @@ export class ApprovalManager {
       }
     }
     r.result = storedResult(res);
-    replayOf(ctx)?.report('approved', r.result.text);
+    replayOf(ctx)?.report('approved', r.result.text, r.result.failed);
     this.persist();
     return res;
   }

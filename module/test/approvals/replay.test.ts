@@ -165,7 +165,7 @@ describe('replay once approval enforcement', () => {
     expect(h.p.manager.resolveApproval(r.id, { decision: 'approve', scope: 'once' })).toBe(true);
     await done;
     expect(h.handler).toHaveBeenCalledTimes(1);
-    expect(h.report).toHaveBeenCalledWith('approved', 'executed');
+    expect(h.report).toHaveBeenCalledWith('approved', 'executed', false);
   });
   it.each(['disconnect', 'deny', 'disable'] as const)(
     'rechecks %s immediately before execution',
@@ -275,5 +275,21 @@ describe('replay once approval enforcement', () => {
     });
     expect(await dispatcher(call, { id: 'p1', isGM: false })).toHaveProperty('error');
     expect(h.handler).not.toHaveBeenCalled();
+  });
+  it('retains approved execution failure across duplicate delivery and guard recreation', () => {
+    const s = storage(),
+      g = new ReplayReceipts(s, 'failed');
+    g.claim('id', { args: 1 });
+    expect(g.update('id', 'approved', 'source changed', true)).toMatchObject({
+      resultFailed: true,
+    });
+    expect(g.update('id', 'approved', 'stale success', false)).toMatchObject({
+      text: 'source changed',
+      resultFailed: true,
+    });
+    expect(new ReplayReceipts(s, 'failed').claim('id', { args: 1 })).toMatchObject({
+      fresh: false,
+      receipt: { status: 'approved', resultFailed: true },
+    });
   });
 });

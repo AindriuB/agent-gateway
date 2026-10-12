@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -19,6 +22,7 @@ const definitions = [write, approvalStatus].map((t) => ({
   ...toJsonSchema(t),
 }));
 let store: Store, queue: OfflineQueue, server: LinkServer, h: Harness;
+const dirs: string[] = [];
 const browsers: TestClient[] = [],
   clients: Client[] = [];
 afterEach(async () => {
@@ -27,9 +31,10 @@ afterEach(async () => {
   await server?.close();
   queue?.close();
   store?.close();
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-async function start() {
-  store = openStore(':memory:');
+async function start(dbPath = ':memory:') {
+  store = openStore(dbPath);
   const registry = new LinkRegistry(),
     codes = new PairingCodes();
   queue = new OfflineQueue(store, registry);
@@ -199,5 +204,53 @@ describe('real link and MCP durable offline writes', () => {
     browsers.push(tc);
     tc.send(hello({ kind: 'pairingCode', code: h.codes.generate() }, { protocolVersion: '5.0.0' }));
     expect(await tc.next()).toMatchObject({ type: 'reject', code: 'PROTOCOL_MAJOR_MISMATCH' });
+  });
+  it('preserves failed approved execution status through duplicate replies, offline session recreation and database reopen', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'queue-status-'));
+    dirs.push(dir);
+    const path = join(dir, 'q.sqlite');
+    const m = await start(path);
+    await offline(m);
+    const first = await session(),
+      id = await queued(first);
+    const re = await reconnectModule(h, m);
+    browsers.push(re.tc);
+    re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await re.tc.next('queuedCalls');
+    re.tc.send({
+      type: 'queuedStatus',
+      id,
+      status: 'approved',
+      text: 'FORBIDDEN: macro source changed',
+      resultFailed: true,
+    });
+    await until(
+      () =>
+        store.queue.get({ worldId: m.worldId, userId: m.userId, agentId: m.agentId }, id)?.state ===
+        'approved',
+    );
+    re.tc.send({
+      type: 'queuedStatus',
+      id,
+      status: 'approved',
+      text: 'stale success',
+      resultFailed: false,
+    });
+    await offline(re);
+    await first.close();
+    await server.close();
+    queue.close();
+    store.close();
+    store = openStore(path);
+    queue = new OfflineQueue(store, h.registry);
+    const fresh = await session();
+    expect(
+      (await fresh.callTool({ name: 'approval_status', arguments: { id } })).structuredContent,
+    ).toMatchObject({
+      id,
+      status: 'approved',
+      result: 'FORBIDDEN: macro source changed',
+      resultFailed: true,
+    });
   });
 });

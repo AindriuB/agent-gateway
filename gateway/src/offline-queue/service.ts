@@ -175,7 +175,9 @@ export class OfflineQueue {
   }
   accept(c: LinkConnection, msg: Extract<LinkMessage, { type: 'queuedStatus' }>) {
     if (!this.current(c)) throw new LinkCallError('FORBIDDEN', 'Stale replay receipt connection');
-    if (!this.store.queue.status(c, msg.id, c.id, msg.status, msg.text, this.now()))
+    if (
+      !this.store.queue.status(c, msg.id, c.id, msg.status, msg.text, this.now(), msg.resultFailed)
+    )
       throw new LinkCallError('FORBIDDEN', 'Unclaimed or terminal replay receipt');
     this.deliver(c);
   }
