@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { EventEmitter } from 'node:events';
 import {
   checkToolDefinition,
@@ -42,7 +43,7 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
 
   set(conn: LinkConnection, tools: readonly AnnouncedTool[], eventReadAllowed = false): void {
     // Restrictive metadata is authoritative even when definitions cannot be accepted.
-    if (eventReadAllowed !== true) this.revokeEventReads(conn);
+    if (eventReadAllowed !== true && this.eventReadAllowed(conn)) this.revokeEventReads(conn);
     const reject = (line: string) => {
       this.revokeEventReads(conn);
       this.log(line);
@@ -94,19 +95,21 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
     );
     if (packs > TOOL_LIMITS.sessionPackTools)
       this.log(`dropped ${packs - TOOL_LIMITS.sessionPackTools} pack tools: session cap exceeded`);
+    const catalogValid =
+      tools.every((tool) => isDeepStrictEqual(keep.get(tool.name), tool)) &&
+      packs <= TOOL_LIMITS.sessionPackTools;
     let signature: string;
     try {
       signature = JSON.stringify({
         tools: next,
         eventReadAllowed: eventReadAllowed === true,
-        catalogValid: keep.size === tools.length && packs <= TOOL_LIMITS.sessionPackTools,
+        catalogValid,
       });
     } catch {
       reject('ignored toolset: serialization failed');
       return;
     }
-    if (keep.size === tools.length && packs <= TOOL_LIMITS.sessionPackTools)
-      this.catalogs.set(conn, next);
+    if (catalogValid) this.catalogs.set(conn, next);
     else this.catalogs.delete(conn);
     if (this.signatures.get(conn) === signature) return;
     this.sets.set(conn, next);

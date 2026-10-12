@@ -67,7 +67,8 @@ function setup(barrier?: Promise<void>) {
   const handler = vi.fn(async () => ({ text: 'executed', structured: {} }));
   let context: import('../../src/ops/types.js').OpContext | undefined;
   let decision: 'allow' | 'ask_owner' | 'ask_gm' | 'deny' = 'allow',
-    current = true;
+    current = true,
+    enabled = true;
   const inputs = () => ({
     world: {
       ...DEFAULT_WORLD_MATRIX,
@@ -79,7 +80,7 @@ function setup(barrier?: Promise<void>) {
       },
     },
     owner: DEFAULT_OWNER_MATRIX,
-    playerAgentsEnabled: true,
+    playerAgentsEnabled: enabled,
     headlessAgentsEnabled: false,
   });
   const dispatcher = createDispatcher({
@@ -132,6 +133,9 @@ function setup(barrier?: Promise<void>) {
     disconnect: () => {
       current = false;
     },
+    disable: () => {
+      enabled = false;
+    },
     deny: () => {
       decision = 'deny';
     },
@@ -163,7 +167,7 @@ describe('replay once approval enforcement', () => {
     expect(h.handler).toHaveBeenCalledTimes(1);
     expect(h.report).toHaveBeenCalledWith('approved', 'executed');
   });
-  it.each(['disconnect', 'deny'] as const)(
+  it.each(['disconnect', 'deny', 'disable'] as const)(
     'rechecks %s immediately before execution',
     async (change) => {
       const h = setup(),
