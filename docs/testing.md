@@ -396,6 +396,8 @@ Executed proof `828aef6b507b125b917e06dd0b9329021229b846450879a9da82aa12d4abb7da
 
 Combined publication verification at `a6530d9df0399dbd66fba772c6fb80174ec27c4e` passed build/lint and 3,386 fast / 2,227 slow tests on its first run. The four executed harness files also passed six focused checks, strict TypeScript, lint and actual tsx serialization. Runtime source and bundle remain the native-verified `5059015` / `8cf825b`; this gate adds no new native coverage.
 
+The PR #73 event-read revocation repair `ac9b93e5e6c00df32947fd548a1a221806675025` passed build/lint/full verification on its first run (3,393 fast / 2,227 slow tests). Seven new regressions cover rejected count/byte announcements, invalid definitions with false, omitted or true authorization metadata, malformed frames, WebSocket payload errors, pending/future read refusal and valid restoration. Local 48-test and independent 42-test focused selections passed separately. Restrictive authorization is applied before definition validation; rejected updates cannot preserve or grant event reads, pending polls settle FORBIDDEN, and listings/subsequent reads reflect the revocation. Prior valid tool definitions remain available, and only a valid affirmative update can restore event access. The module bundle remains `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf`, but native proof remains historical gateway source `5059015`; the new gateway repair was not rerun natively. Task28 stays active awaiting PR #73 merge, archive23 and Task18 blocked unchanged. No live actions, deployment or new native coverage are claimed.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:

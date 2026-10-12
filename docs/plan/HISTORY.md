@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Event-read revocation survives rejected toolset refreshes (task 28)
+
+The PR #73 event-read revocation repair `ac9b93e5e6c00df32947fd548a1a221806675025` passed build/lint/full verification on its first run (3,393 fast / 2,227 slow tests). Seven new regressions cover rejected count/byte announcements, invalid definitions with false, omitted or true authorization metadata, malformed frames, WebSocket payload errors, pending/future read refusal and valid restoration. Local 48-test and independent 42-test focused selections passed separately. Restrictive authorization is applied before definition validation; rejected updates cannot preserve or grant event reads, pending polls settle FORBIDDEN, and listings/subsequent reads reflect the revocation. Prior valid tool definitions remain available, and only a valid affirmative update can restore event access.
+
+**Cost:** Ignoring over-cap definitions previously retained the old affirmative event-read permission, including pending polls. Revocation now proceeds independently of definition acceptance and emits the authorization change before asynchronous socket closure. Invalid affirmative updates cannot regrant; clearing the cached signature permits a later valid identical toolset to restore access. The module bundle remains `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf`, but native proof remains historical gateway source `5059015`; the new gateway repair was not rerun natively. Task28 stays active awaiting PR #73 merge, archive23 and Task18 blocked unchanged. No live actions, deployment or new native coverage are claimed.
+
 ## 2026-10-12 — Policy-gated event polling validated on v13 and v14; merge pending (task 28)
 
 Task 28 source `5059015ce17480f65dbe3629bb8db3a1a60c9782` and bundle `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf` passed the scoped native checks on Foundry 13.351 and 14.369. Source verification remains build/lint plus 3,380 fast / 2,227 slow tests. Each world used one temporary GM-private NPC, two exact name updates and exact deletion; all original root sets, sources, world time and participant views were preserved.
