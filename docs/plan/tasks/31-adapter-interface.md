@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 20d, 20e
-**Status:** Source verified at `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests and both independent reviews passed. Source merged in PR #82 (head `1d4743b`, main `783ba3a`); native acceptance remains pending, so this contract stays active. Dependencies are merged. No Task31 native writes are authorized.
+**Status:** Source verified at `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests and both independent reviews passed. Source merged in PR #82 (head `1d4743b`, main `783ba3a`); bounded native validation is accepted as recorded below; this contract stays active pending validation publication/merge. Dependencies are merged. No further Task31 native writes are authorized by this record.
 **Owns:**
 - module/src/adapters/index.ts
 - module/src/adapters/types.ts
@@ -69,3 +69,17 @@ test suite every concrete adapter must pass.
 - Shared adapter contract fixtures check strict bounded summary/action/inventory/condition shapes, generic unsupported behavior and no native mutation. Five-tool tests verify exact registration/role/count guards, internal registry fallback, unchanged public pack API keys, and current native ownership/GM/folder access before adapter invocation.
 - Cover noncanonical/missing/compendium/synthetic Actor rejection, denied folder even for GM, malformed/throwing/oversized adapter outputs, inert bounded options, read-versus-change conditions classification before each policy/rate/approval/audit stage, no late/forged escalation, ownership/folder loss while approval waits, and snapshot/audit behavior for a fake supported adapter. Existing online calls, ordinary offline reads and Task30 replay remain unchanged.
 - No Task31 native mutation or installed deployment is authorized by implementation permission. After source review and the required full gate, propose exact fresh consent for any native test fixtures, actions, approval dialogs and cleanup. Task30 native evidence does not establish adapter behavior.
+
+## Bounded native acceptance scope
+
+- Validate generic native plumbing on both configured PF2e worlds before starting Task33. The proposed fixed scope is one temporary GM-private NPC and six real SDK calls per world: summary, actions, inventory and conditions reads, then unsupported action and condition-change calls. Two real human once approvals admit the unsupported writes; each must return `INVALID_ARGS` and retain one error audit with an unchanged existing Actor snapshot. Reads produce no audit. This does not validate concrete PF2e semantics or player permissions.
+- Before fixture creation, prove the exact tested runtime bundle/fallback, canonical sole GM, actual read-allow/write-ask_owner policy, fixture admissibility under current GM folder restrictions and native audit subtype/anchor/routing. Serve the verified bundle only to test browsers and use an isolated gateway with read-only credential import; change no world settings.
+- Verify the fixture full source/version after each unsupported call, track and drain every SDK/approval continuation, and fence nonexecutable failed continuations before any exact fixture deletion. Restore participant views and verify original documents/settings/world time and credential databases. Retain the two error audits per world. Exact fixture payloads, targets, audit writes and cleanup still require fresh scoped human approval; this plan does not grant it.
+
+## Native validation result; publication pending
+
+Bounded generic native validation is accepted on Foundry 13.351 and 14.369. V13 completed the automated proof; v14 retained an automated audit-encoding failure and was accepted from separately reviewed read-only reconciliation. Each world completed six SDK calls (four reads and two human once-approved unsupported writes), retained two matching error audits with unchanged Actor snapshots, and deleted its exact private fixture. Original documents/settings/views/world time and credential databases were preserved.
+
+Final reusable harness `5f4bab8a78605748a3db52391b8ac03b5fa84fe7` passed build/lint, 3,595 fast / 2,227 slow tests, 15 independent offline harness checks, strict TypeScript, ESLint and actual-tsx callback serialization. Runtime source remains `68e1b4216ad05cfe77ff138b5045768aca776a59`, served bundle `cde74e8bd0252019a53cdfad410fe08ebc3ce041b67460e55430379bbe48e945`. V14 ran `1e8acbf` and reconciled read-only at `5f4bab8`; v13 ran `5f4bab8`.
+
+This proves GM generic plumbing only, not concrete PF2e semantics, player ownership/privacy, policy races, supported adapter mutations or installed deployment. V14's unpersisted volatile capture-error state cannot be reconstructed; saved terminal calls, unique approval IDs and absence of queued frames were checked separately. The original v14 result remains failed, cleaned and free of teardown errors. Any repeat requires fresh scoped approval.

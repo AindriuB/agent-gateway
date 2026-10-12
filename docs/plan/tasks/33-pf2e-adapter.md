@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 31
+**Status:** Next system adapter by Andrew's priority change, after accepted Task31 bounded native validation is published/merged. Implementation has not started; no Task33 native fixtures or writes are authorized.
 **Owns:**
 - module/src/adapters/pf2e/**
 - module/test/adapters/pf2e/**

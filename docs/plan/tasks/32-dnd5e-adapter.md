@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 31
+**Status:** Planned; deferred by Andrew's priority change. Validate Task31 first, then implement Task33 before this task. Not complete.
 **Owns:**
 - module/src/adapters/dnd5e/**
 - module/test/adapters/dnd5e/**
