@@ -40,3 +40,9 @@ Head `3f06dc9`. Tester PASS (`npm run verify`: 3,607 fast / 2,227 slow; e2e tsc 
 - `index.ts:142-164` — strike/action/spell ChatMessages are created without `context.intendCreate`/`context.created`, so they escape the audit trail (Task 31 contract, `_write.ts:6`).
 - `index.ts:164` — focus spell with 0 focus points reports `completed:true` though `consume` returned false.
 - Suggestions: reject `persistent-damage` (native opens a GM dialog and applies nothing); e2e write test should restore prior frightened state, not remove it; format spell `cost` like `costLabel`.
+
+## Attempt 2 — failed
+Head `3f345c9`. Tester PASS (`npm run verify`: 3,610 fast / 2,227 slow; e2e-unit 163; e2e tsc/eslint clean). Reviewer REQUEST CHANGES; all Attempt 1 items confirmed fixed, scope clean.
+- `module/src/adapters/pf2e/index.ts:61-68` — `auditedChat` records every `createChatMessage` by the same user while the call is in flight (e.g. a `chat_post` or another message during a check dialog). Those become `undoable` created targets, so audit Undo would delete messages the call never made. Record only messages provably produced by this call (e.g. use returned messages, or match speaker actor + origin item/flags); if a message cannot be attributed, do not record it as created.
+- Suggestions: if `entry.cast` throws after `consume` succeeded, say in the error that the slot/focus point was spent; with no `rank`, pick the prepared slot rank (or return INVALID_ARGS) instead of letting native `consume` throw "Slot not given"; the e2e spec must assert the `document_delete` result so a refused delete is not silent.
+- Tester: `vitest list --project e2e-live` showed no pf2e test names even with `AGENT_GATEWAY_E2E_PF2E=1`. Confirm the spec's tests are actually registered when enabled (not skipped by an import-time condition or hidden by `beforeAll`), so a live run cannot pass vacuously.
