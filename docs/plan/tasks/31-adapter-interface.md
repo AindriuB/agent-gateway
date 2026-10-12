@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 20d, 20e
-**Status:** Architecture reviewed; source implementation in progress against the bounded contract below; full verification and native acceptance pending. Dependencies are merged. No Task31 native writes are authorized.
+**Status:** Source verified at `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests and both independent reviews passed. Native acceptance and publication pending. Dependencies are merged. No Task31 native writes are authorized.
 **Owns:**
 - module/src/adapters/index.ts
 - module/src/adapters/types.ts
@@ -41,13 +41,13 @@ test suite every concrete adapter must pass.
 - Adapters are **not** tool packs (decided 2026-10-10): an adapter implements a fixed interface behind fixed core tool names, so the AI sees the same five tools on every system. Making each adapter a pack would namespace them per system (`dnd5e-actor_summary`), hide the abstraction the two v1 adapters exist to test, and add an install step to the five-minute setup. Adapters stay internal in v1 and are not reachable through `game.modules.get('agent-gateway').api`
 
 ## Acceptance
-- [ ] `types.ts` declares `SystemAdapter {systemId, actorSummary(actor), listActions(actor), performAction(actor, actionId, options), inventorySemantics(actor), conditions(actor, change?)}` with result types that stay within conservative schema rules and a separate internal trusted execution context for mutation methods
-- [ ] `index.ts` selects the adapter by `game.system.id` from a registry; unknown systems get the generic adapter (summary from name/img/type, empty actions, `action_perform` returns `INVALID_ARGS` "not supported for <system>")
-- [ ] Tools: `actor_summary` (read), `actions_list` (read), `action_perform` (write), `inventory` (read), `conditions` (read when no change requested; change escalates to write via `ctx.escalate`); all player role; actor must be owned (or GM)
-- [ ] `contract.ts` exports a test suite taking an adapter and fixtures; the generic adapter passes it
-- [ ] Guards pass, including tool-count
-- [ ] `Object.keys(game.modules.get('agent-gateway').api)` is unchanged by this task (test), so no adapter surface leaks into the pack API
-- [ ] `npm run verify` passes
+- [x] `types.ts` declares `SystemAdapter {systemId, actorSummary(actor), listActions(actor), performAction(actor, actionId, options), inventorySemantics(actor), conditions(actor, change?)}` with result types that stay within conservative schema rules and a separate internal trusted execution context for mutation methods
+- [x] `index.ts` selects the adapter by `game.system.id` from a registry; unknown systems get the generic adapter (summary from name/img/type, empty actions, `action_perform` returns `INVALID_ARGS` "not supported for <system>")
+- [x] Tools: `actor_summary` (read), `actions_list` (read), `action_perform` (write), `inventory` (read), `conditions` (read when no change requested; change escalates to write via `ctx.escalate`); all player role; actor must be owned (or GM)
+- [x] `contract.ts` exports a test suite taking an adapter and fixtures; the generic adapter passes it
+- [x] Guards pass, including tool-count
+- [x] `Object.keys(game.modules.get('agent-gateway').api)` is unchanged by this task (test), so no adapter surface leaks into the pack API
+- [x] `npm run verify` passes
 
 ## Out of scope
 - dnd5e (32) and pf2e (33) implementations
