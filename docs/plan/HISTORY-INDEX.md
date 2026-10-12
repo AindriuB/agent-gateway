@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 31 | V13 automated/native proof and bounded v14 read-only reconciliation accepted; 3,595/2,227; publication pending | ## 2026-10-12 — Generic adapter native validation accepted with v14 reconciliation (task 31) |
 | 2026-10-12 | 31, 32, 33 | Validate31 first; PF2e33 next, dnd5e32 deferred; native consent pending | ## 2026-10-12 — Validate generic adapter plumbing before PF2e; dnd5e deferred (tasks 31–33) |
 | 2026-10-12 | 31 | PR82 source merged; native pending keeps31 active; 27 done / 15 active; next32 | ## 2026-10-12 — System adapter source merged; native acceptance pending (task 31) |
 | 2026-10-12 | 31 | Five bounded adapter tools verified 3,580/2,227 plus independent113; native/publication pending | ## 2026-10-12 — Bounded system adapter tools source verified (task 31) |
