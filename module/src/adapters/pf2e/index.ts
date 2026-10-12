@@ -45,39 +45,35 @@ function spellCost(v: unknown): string | undefined {
 
 /**
  * Run a native operation that creates ChatMessages, declaring the creation first and recording
- * only messages provably produced by it: created by this user, in flight, and spoken by this
- * actor. A message that cannot be attributed (e.g. a concurrent chat_post) is never recorded.
+ * only messages provably produced by it. `run` receives `record`, for messages the native call
+ * returned. With `match`, a createChatMessage hook also records in-flight messages that created by
+ * this user and satisfy the predicate. Anything else (e.g. a concurrent chat_post) is never recorded.
  */
 async function auditedChat<T>(
   context: AdapterExecutionContext,
-  actor: any,
-  run: () => Promise<T>,
+  match: ((message: any) => boolean) | undefined,
+  run: (record: (message: any) => void) => Promise<T>,
 ): Promise<T> {
   if (
     typeof context?.intendCreate !== 'function' ||
     typeof context.created !== 'function' ||
-    typeof Hooks?.on !== 'function' ||
-    typeof Hooks.off !== 'function'
+    (match && (typeof Hooks?.on !== 'function' || typeof Hooks.off !== 'function'))
   )
     throw new Error('Audit context unavailable');
   await context.intendCreate();
-  const uuids: string[] = [];
+  const uuids = new Set<string>();
   const userId = game.user?.id;
-  const hook = (message: any) => {
-    if (
-      typeof message?.uuid === 'string' &&
-      message.uuid &&
-      typeof actor?.id === 'string' &&
-      message.speaker?.actor === actor.id &&
-      (message.author?.id ?? message.user?.id) === userId
-    )
-      uuids.push(message.uuid);
+  const record = (message: any) => {
+    if (typeof message?.uuid === 'string' && message.uuid) uuids.add(message.uuid);
   };
-  const id = Hooks.on('createChatMessage', hook);
+  const hook = (message: any) => {
+    if ((message?.author?.id ?? message?.user?.id) === userId && match?.(message)) record(message);
+  };
+  const id = match ? Hooks.on('createChatMessage', hook) : undefined;
   try {
-    return await run();
+    return await run(record);
   } finally {
-    Hooks.off('createChatMessage', id);
+    if (match) Hooks.off('createChatMessage', id);
     for (const uuid of uuids) await context.created(uuid);
   }
 }
@@ -186,19 +182,38 @@ async function performAction(
     );
     const variant = strike ? list(strike.variants)[Number(parts[3])] : undefined;
     if (!variant || typeof variant.roll !== 'function') return invalid('Unknown strike action');
-    await auditedChat(context, actor, () => variant.roll({}));
+    const itemUuid = text(strike.item?.uuid, 256);
+    const identifier = `${text(strike.item?.id, 64)}.${text(strike.slug, 64)}.${parts[3]}`;
+    await auditedChat(
+      context,
+      (m) => {
+        const pf2e = m.flags?.pf2e;
+        return (
+          itemUuid !== '' &&
+          pf2e?.origin?.uuid === itemUuid &&
+          pf2e?.context?.type === 'attack-roll' &&
+          pf2e?.context?.identifier === identifier
+        );
+      },
+      () => variant.roll({ skipDialog: true }),
+    );
     return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
   }
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
-    await auditedChat(context, actor, () => item.toMessage());
+    await auditedChat(context, undefined, async (record) => record(await item.toMessage()));
     return done(`Performed ${text(item.name, 200)}`);
   }
   if (parts[0] === 'spell' && parts.length === 3) {
     const spell = list(actor.itemTypes?.spell).find((i) => i.id === parts[2]);
     const entry = spell && actor.items?.get?.(parts[1]);
-    if (!spell || !entry || typeof entry.cast !== 'function' || typeof entry.consume !== 'function')
+    if (
+      !spell ||
+      !entry ||
+      typeof spell.toMessage !== 'function' ||
+      typeof entry.consume !== 'function'
+    )
       return invalid('Unknown spell action');
     if (spellEntryId(spell) !== parts[1]) return invalid('Unknown spell action');
     const rank = options.rank;
@@ -214,20 +229,25 @@ async function performAction(
     const castRank = rank ?? num(spell.rank);
     if (castRank === undefined && !fixed && spell.atWill !== true)
       return invalid('Spell rank is required for this spell');
-    const cast = await auditedChat(context, actor, async () => {
+    const cast = await auditedChat(context, undefined, async (record) => {
       // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
       let paid: boolean;
       try {
         paid = spell.atWill === true || Boolean(await entry.consume(spell, castRank));
-      } catch {
-        return false;
+      } catch (e) {
+        const msg = text((e as Error)?.message, 300);
+        return invalid(
+          /slot not given/i.test(msg)
+            ? 'Spell rank is required: pass `rank` to choose a spell slot'
+            : `Could not cast ${text(spell.name, 200)}: ${msg}`,
+        );
       }
       if (!paid) return false;
       try {
-        await entry.cast(spell, {
-          consume: false,
-          ...(castRank === undefined ? {} : { rank: castRank }),
-        });
+        spell.system.location.value ??= entry.id;
+        const cr =
+          typeof spell.computeCastRank === 'function' ? spell.computeCastRank(castRank) : castRank;
+        record(await spell.toMessage(null, { actualCast: true, data: { castRank: cr } }));
       } catch (e) {
         throw new Error(
           `Casting ${text(spell.name, 200)} failed after its slot or focus point was spent: ${text(
