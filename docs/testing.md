@@ -363,8 +363,8 @@ Native chat macros, compendium macros, arbitrary code mutations, automatic Undo,
 sandboxing and hard CPU limits are outside this native proof. Later reusable
 source/bundle-pin generalization is offline tooling until separately executed.
 Temporary browser bundle routes/template cache are not an installed deployment,
-and private screenshots are not exported. PR #69 awaits merge; the contract
-remains at `plan/tasks/26-code-tools.md`.
+and private screenshots are not exported. PR #69 is merged; the contract
+is archived at `plan/done/26-code-tools.md`.
 
 ## Permission rules on the Mac (auto mode)
 
