@@ -238,6 +238,19 @@ describe('Task31 bounded generic native proof', () => {
       },
     };
     record.toObject = () => record._source;
+    const latch: any = {
+      id: 'latch',
+      key: 'agent-gateway.worldPolicySnapshotMigrated',
+      user: null,
+      value: true,
+      _source: {
+        _id: 'latch',
+        key: 'agent-gateway.worldPolicySnapshotMigrated',
+        user: null,
+        value: 'true',
+      },
+    };
+    latch.toObject = () => latch._source;
     const oldGet = f.game.settings.get;
     f.game.settings.get = (ns: string, key: string) =>
       key === 'worldPolicy'
@@ -246,11 +259,16 @@ describe('Task31 bounded generic native proof', () => {
           ? true
           : oldGet(ns, key);
     f.game.settings.storage.get = () => ({
-      contents: [f.anchor, record],
-      get: (id: string) => (id === record.id ? record : f.anchor),
+      contents: [f.anchor, record, latch],
+      get: (id: string) => (id === record.id ? record : id === latch.id ? latch : f.anchor),
     });
     const baseline = await f.callback({ ...f.input, op: 'baseline' });
     expect(baseline.gm.id).toBe('gm');
+    f.game.settings.storage.get = () => ({
+      contents: [f.anchor, record],
+      get: (id: string) => (id === record.id ? record : f.anchor),
+    });
+    await expect(f.callback({ ...f.input, op: 'baseline' })).rejects.toThrow('migration authority');
     f.game.user = { ...f.gm };
     await expect(f.callback({ ...f.input, op: 'baseline' })).rejects.toThrow('canonical');
   });
@@ -270,14 +288,26 @@ describe('Task31 bounded generic native proof', () => {
     await expect(f.callback({ ...f.input, op: 'baseline' })).rejects.toThrow('ask_owner');
   });
   it('refuses restricted folders, duplicate records and stricter owner policy before creating', async () => {
-    for (const scenario of ['folders', 'owner', 'duplicates', 'shadow', 'migration']) {
+    for (const scenario of [
+      'folders',
+      'owner',
+      'duplicates',
+      'shadow',
+      'migration',
+      'nestedOwner',
+    ]) {
       const f = nativeFixture(),
         original = f.game.settings.get;
       let creates = 0;
       f.context.CONFIG.Actor.documentClass.create = async () => {
         creates++;
       };
-      if (scenario === 'migration')
+      if (scenario === 'nestedOwner')
+        f.game.settings.get = (ns: string, key: string) =>
+          key === 'ownerPolicy'
+            ? { gmAgents: JSON.stringify({ read: 'deny', write: 'ask_gm' }) }
+            : original(ns, key);
+      else if (scenario === 'migration')
         f.game.settings.get = (ns: string, key: string) =>
           key === 'worldPolicySnapshotMigrated' ? true : original(ns, key);
       else if (scenario === 'shadow')

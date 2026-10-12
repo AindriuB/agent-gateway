@@ -94,8 +94,15 @@ export async function task31NativeState(input: any): Promise<any> {
           value = null;
         }
       }
-      const row =
+      let row =
         value && typeof value === 'object' && !Array.isArray(value) ? value.gmAgents : undefined;
+      if (typeof row === 'string') {
+        try {
+          row = JSON.parse(row);
+        } catch {
+          row = undefined;
+        }
+      }
       const decisions = ['allow', 'ask_owner', 'ask_gm', 'deny'];
       const read = decisions.includes(row?.read) ? row.read : 'allow';
       const write = decisions.includes(row?.write) ? row.write : 'allow';
@@ -138,6 +145,9 @@ export async function task31NativeState(input: any): Promise<any> {
         (Object.hasOwn(policy, 'version')
           ? policy.version !== 1 ||
             migrated !== true ||
+            !storage.contents.some(
+              (s: any) => s.key === 'agent-gateway.worldPolicySnapshotMigrated',
+            ) ||
             !storage.contents.some((s: any) => s.key === 'agent-gateway.worldPolicy')
           : migrated !== false)
       )
