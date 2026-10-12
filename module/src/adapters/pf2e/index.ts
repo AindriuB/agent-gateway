@@ -3,7 +3,6 @@ import type { SystemAdapter, ConditionChange, AdapterExecutionContext } from '..
 import { invalid } from '../../tools/_write.js';
 
 declare const game: any;
-declare const Hooks: any;
 
 const MAX_ACTIONS = 128;
 const MAX_ITEMS = 256;
@@ -46,34 +45,23 @@ function spellCost(v: unknown): string | undefined {
 /**
  * Run a native operation that creates ChatMessages, declaring the creation first and recording
  * only messages provably produced by it. `run` receives `record`, for messages the native call
- * returned. With `match`, a createChatMessage hook also records in-flight messages that created by
- * this user and satisfy the predicate. Anything else (e.g. a concurrent chat_post) is never recorded.
+ * returned or handed to its callback. Anything else (e.g. a concurrent chat_post or another
+ * strike by the same user) is never recorded.
  */
 async function auditedChat<T>(
   context: AdapterExecutionContext,
-  match: ((message: any) => boolean) | undefined,
   run: (record: (message: any) => void) => Promise<T>,
 ): Promise<T> {
-  if (
-    typeof context?.intendCreate !== 'function' ||
-    typeof context.created !== 'function' ||
-    (match && (typeof Hooks?.on !== 'function' || typeof Hooks.off !== 'function'))
-  )
+  if (typeof context?.intendCreate !== 'function' || typeof context.created !== 'function')
     throw new Error('Audit context unavailable');
   await context.intendCreate();
   const uuids = new Set<string>();
-  const userId = game.user?.id;
   const record = (message: any) => {
     if (typeof message?.uuid === 'string' && message.uuid) uuids.add(message.uuid);
   };
-  const hook = (message: any) => {
-    if ((message?.author?.id ?? message?.user?.id) === userId && match?.(message)) record(message);
-  };
-  const id = match ? Hooks.on('createChatMessage', hook) : undefined;
   try {
     return await run(record);
   } finally {
-    if (match) Hooks.off('createChatMessage', id);
     for (const uuid of uuids) await context.created(uuid);
   }
 }
@@ -182,28 +170,20 @@ async function performAction(
     );
     const variant = strike ? list(strike.variants)[Number(parts[3])] : undefined;
     if (!variant || typeof variant.roll !== 'function') return invalid('Unknown strike action');
-    const itemUuid = text(strike.item?.uuid, 256);
-    // pf2e builds `${item.id}.${slug}.${melee|ranged}`; the MAP index is not part of it.
-    const identifier = `${text(strike.item?.id, 64)}.${text(strike.slug, 64)}.${
-      strike.item?.isMelee ? 'melee' : 'ranged'
-    }`;
     // Check.roll only honours the user's showCheckDialogs setting, or an `event` run through
     // eventToRollParams, where Shift inverts it. Pass a synthetic event whose Shift state always
     // yields skipDialog = true, whatever the setting.
     const showDialogs = Boolean((globalThis as any).game?.user?.settings?.showCheckDialogs);
     const event = { shiftKey: showDialogs, ctrlKey: false, metaKey: false };
-    const rolled = await auditedChat(
-      context,
-      (m) => {
-        const pf2e = m.flags?.pf2e;
-        return (
-          itemUuid !== '' &&
-          pf2e?.origin?.uuid === itemUuid &&
-          pf2e?.context?.type === 'attack-roll' &&
-          pf2e?.context?.identifier === identifier
-        );
-      },
-      () => variant.roll({ event }),
+    // Check.roll (pf2e.mjs:19374) calls `callback(check, outcome, message, event)` with the message
+    // this very roll created (:19525-19535, :19540-19541); the strike variant forwards
+    // `callback` (:36064). Record only that message: overlapping strikes by the same user with the
+    // same weapon share author, origin and identifier, so no hook predicate can tell them apart.
+    const rolled = await auditedChat(context, async (record) =>
+      variant.roll({
+        event,
+        callback: (_check: unknown, _outcome: unknown, message: any) => record(message),
+      }),
     );
     // pf2e resolves null when nothing was rolled: no ammo, out of range, no origin, cancelled.
     if (rolled === null || rolled === undefined)
@@ -217,7 +197,7 @@ async function performAction(
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
     if (!item || typeof item.toMessage !== 'function') return invalid('Unknown action');
-    await auditedChat(context, undefined, async (record) => record(await item.toMessage()));
+    await auditedChat(context, async (record) => record(await item.toMessage()));
     return done(`Performed ${text(item.name, 200)}`);
   }
   if (parts[0] === 'spell' && parts.length === 3) {
@@ -244,7 +224,7 @@ async function performAction(
     const castRank = rank ?? num(spell.rank);
     if (castRank === undefined && !fixed && spell.atWill !== true)
       return invalid('Spell rank is required for this spell');
-    const cast = await auditedChat(context, undefined, async (record) => {
+    const cast = await auditedChat(context, async (record) => {
       // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
       let paid: boolean;
       try {

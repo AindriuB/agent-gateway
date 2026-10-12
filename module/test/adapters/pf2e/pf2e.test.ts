@@ -128,10 +128,8 @@ beforeEach(() => {
   consume.mockResolvedValue(true);
   spellMessage.mockResolvedValue({ uuid: 'ChatMessage.spell' });
   toMessage.mockResolvedValue({ uuid: 'ChatMessage.action' });
-  roll.mockImplementation(async () => {
-    createHooks.forEach((h) =>
-      h({ uuid: 'ChatMessage.m1', author: { id: 'u1' }, flags: strikeFlags() }),
-    );
+  roll.mockImplementation(async (p: any) => {
+    p.callback?.({}, 'success', { uuid: 'ChatMessage.m1' }, p.event);
     return { total: 15 };
   });
   (globalThis as any).Hooks = {
@@ -231,28 +229,19 @@ describe('pf2e adapter', () => {
       /No spell slots left/,
     );
   });
-  it('does not record same-actor, same-author messages without matching pf2e flags', async () => {
-    const own = { uuid: 'ChatMessage.mine', author: { id: 'u1' }, flags: strikeFlags() };
-    roll.mockImplementation(async () =>
-      createHooks.forEach((h) => {
-        h({ uuid: 'ChatMessage.post', author: { id: 'u1' }, speaker: { actor: 'act1' } });
-        h({ ...own, uuid: 'ChatMessage.other-author', author: { id: 'u2' } });
-        h({
-          ...own,
-          uuid: 'ChatMessage.wrong-identifier',
-          flags: {
-            pf2e: {
-              ...own.flags.pf2e,
-              context: { type: 'attack-roll', identifier: 'w1.longsword.0' },
-            },
-          },
-        });
-        h(own);
-      }),
-    );
+  it('records only the message handed to this strike call, never an overlapping one', async () => {
+    roll.mockImplementation(async (p: any) => {
+      // A second same-user, same-weapon strike lands while this one is in flight.
+      const other = { uuid: 'ChatMessage.other', author: { id: 'u1' }, flags: strikeFlags() };
+      createHooks.forEach((h) => h(other));
+      p.callback({}, 'success', { uuid: 'ChatMessage.mine' }, p.event);
+      return { total: 15 };
+    });
     await pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx);
     expect(created).toHaveBeenCalledTimes(1);
     expect(created).toHaveBeenCalledWith('ChatMessage.mine');
+    expect(created).not.toHaveBeenCalledWith('ChatMessage.other');
+    expect(createHooks).toHaveLength(0);
   });
   it.each([true, false])(
     'never opens a check dialog when showCheckDialogs is %s',
