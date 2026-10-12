@@ -16,6 +16,7 @@ import {
   computeToolset,
   installToolsetAnnouncer,
   policyDenies,
+  policyAllowsEventReads,
 } from '../../src/link/toolset.js';
 import type { PolicyInputs } from '../../src/policy/evaluate.js';
 import { type ToolInfo } from '../../src/ops/registry.js';
@@ -27,11 +28,13 @@ describe('computeToolset', () => {
   it('is the role tools, sorted', () => {
     expect(computeToolset(true).map((t) => t.name)).toEqual(
       toolsForRole(true)
+        .filter((t) => t.handledBy === 'module')
         .map((t) => t.name)
         .sort(),
     );
     expect(computeToolset(false).map((t) => t.name)).toEqual(
       toolsForRole(false)
+        .filter((t) => t.handledBy === 'module')
         .map((t) => t.name)
         .sort(),
     );
@@ -46,6 +49,7 @@ describe('computeToolset', () => {
     const all = computeToolset(true);
     const noRead = computeToolset(true, (c) => c === 'read');
     const expected = toolsForRole(true)
+      .filter((t) => t.handledBy === 'module')
       .filter((t) => t.category !== 'read')
       .map((t) => t.name)
       .sort();
@@ -134,6 +138,28 @@ describe('ToolsetAnnouncer', () => {
   });
 });
 
+it('refreshes metadata-only policy changes without changing announced definitions', () => {
+  let allowed = true;
+  const send = vi.fn();
+  const a = new ToolsetAnnouncer({
+    isGM: () => true,
+    toolsForRole: () => [],
+    eventReadAllowed: () => allowed,
+    send,
+  });
+  a.connected();
+  a.refresh();
+  expect(send).toHaveBeenCalledTimes(1);
+  allowed = false;
+  a.refresh();
+  expect(send.mock.calls.map((c) => c[0])).toEqual([
+    { type: 'toolset', tools: [], eventReadAllowed: true },
+    { type: 'toolset', tools: [], eventReadAllowed: false },
+  ]);
+  a.refresh();
+  expect(send).toHaveBeenCalledTimes(2);
+});
+
 describe('a forged toolset does not grant anything', () => {
   it('a player is refused a GM tool at dispatch even if the module announced it', async () => {
     const gmTool = defineTool({
@@ -205,6 +231,34 @@ describe('policyDenies', () => {
     ...o,
   });
 
+  it('advertises event reads only on explicit current allow, never ask or disabled switches', () => {
+    for (const read of ['ask_owner', 'ask_gm', 'deny'])
+      expect(
+        policyAllowsEventReads(
+          () => inputs({ world: matrix({ read }) }),
+          () => true,
+        )(),
+      ).toBe(false);
+    expect(
+      policyAllowsEventReads(
+        () => inputs(),
+        () => true,
+      )(),
+    ).toBe(true);
+    expect(
+      policyAllowsEventReads(
+        () => inputs({ playerAgentsEnabled: false }),
+        () => false,
+      )(),
+    ).toBe(false);
+    expect(
+      policyAllowsEventReads(
+        () => inputs({ headlessAgentsEnabled: false }),
+        () => true,
+        true,
+      )(),
+    ).toBe(false);
+  });
   it('hides only deny; ask_* and allow stay listed', () => {
     const d = policyDenies(
       () => inputs({ world: matrix({ write: 'deny' }) }),

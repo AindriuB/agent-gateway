@@ -1,3 +1,4 @@
+import { EventBuffer } from './events/index.js';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -59,6 +60,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let server: Server | undefined;
   let link: LinkServer | undefined;
   let store: Store | undefined;
+  let events: EventBuffer | undefined;
   return {
     async start() {
       const dbPath = deps.dbPath ?? defaultDbPath();
@@ -66,6 +68,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       store = openStore(dbPath);
       const registry = new LinkRegistry();
       const codes = new PairingCodes();
+      events = new EventBuffer(store, registry);
       link = new LinkServer({
         port: config.linkPort,
         store,
@@ -73,6 +76,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         registry,
         allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
         gatewayVersion: deps.version,
+        events,
       });
       const port = await link.listen();
       writeStatus(
@@ -82,6 +86,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       server = createSessionServer({
         version: deps.version,
         registry,
+        events,
         ...(deps.selector ? { selector: deps.selector } : {}),
         knownIdentities: () =>
           store?.listActivePairings().map((p) => ({
@@ -97,6 +102,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     async stop() {
       await server?.close();
       server = undefined;
+      events?.close();
+      events = undefined;
       await link?.close();
       link = undefined;
       store?.close();

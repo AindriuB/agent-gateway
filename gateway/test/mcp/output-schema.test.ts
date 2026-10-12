@@ -1,3 +1,4 @@
+import { eventsPoll, eventsHistory, toJsonSchema } from '@agent-gateway/protocol';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import { describe, expect, it } from 'vitest';
 import { projectOutputSchema } from '../../src/mcp/output-schema.js';
@@ -46,4 +47,31 @@ describe('MCP output envelope', () => {
     expect(normal).toEqual(before);
     expect(second).toEqual(projectOutputSchema(before));
   });
+});
+
+it('projects bounded native-event/gap wrappers into SDK-valid output schemas', () => {
+  for (const tool of [eventsPoll, eventsHistory]) {
+    const validator = new AjvJsonSchemaValidator().getValidator(
+      projectOutputSchema(toJsonSchema(tool).outputSchema),
+    );
+    const native = {
+      cursor: 1,
+      event: { seq: 1, ts: 1, type: 'actor_create', userId: 'u', summary: 'Actor created' },
+    };
+    const gap = {
+      cursor: 2,
+      event: {
+        type: 'gap',
+        ts: 1,
+        userId: 'u',
+        summary: 'Connection interrupted',
+        missed: 'unknown',
+      },
+    };
+    expect(validator({ events: [native, gap], nextAfter: 2 }).valid).toBe(true);
+    expect(
+      validator({ events: [{ ...gap, event: { ...gap.event, seq: 2 } }], nextAfter: 2 }).valid,
+    ).toBe(false);
+    expect(validator({ events: Array(101).fill(native), nextAfter: 1 }).valid).toBe(false);
+  }
 });

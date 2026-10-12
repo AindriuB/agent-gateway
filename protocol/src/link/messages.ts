@@ -25,6 +25,12 @@ export const HelloMessage = z.strictObject({
     role: z.number().int(),
     isGM: z.boolean(),
   }),
+  resume: z
+    .strictObject({
+      connectionId: z.string().min(1).max(100),
+      lastSeq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    })
+    .optional(),
   auth: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('pairingCode'), code: z.string() }),
     z.strictObject({ kind: z.literal('pairingToken'), token: z.string() }),
@@ -75,6 +81,7 @@ export const PongMessage = z.strictObject({ type: z.literal('pong') });
 /** Full definitions for the user's current role and policy; the module re-checks every call. */
 export const ToolsetMessage = z.strictObject({
   type: z.literal('toolset'),
+  eventReadAllowed: z.boolean().optional(),
   tools: z
     .array(
       z.custom<AnnouncedTool>((value) => {

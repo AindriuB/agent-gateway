@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveInputs } from '../policy/stage.js';
 import { LinkClient } from './client.js';
-import { installToolsetAnnouncer, policyDenies, type ToolsetAnnouncer } from './toolset.js';
+import {
+  installToolsetAnnouncer,
+  policyDenies,
+  policyAllowsEventReads,
+  type ToolsetAnnouncer,
+} from './toolset.js';
 
 declare const game: any;
 declare const ui: any;
@@ -57,6 +62,7 @@ export function getLinkClient(): LinkClient {
   announcer ??= installToolsetAnnouncer(client, {
     isGM: () => Boolean(game.user?.isGM),
     isCategoryDenied: policyDenies(liveInputs, () => Boolean(game.user?.isGM)),
+    eventReadAllowed: policyAllowsEventReads(liveInputs, () => Boolean(game.user?.isGM)),
   });
   return client;
 }

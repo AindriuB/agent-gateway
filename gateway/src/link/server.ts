@@ -1,3 +1,4 @@
+import type { EventBuffer } from '../events/index.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -32,6 +33,7 @@ export interface LinkServerOptions {
   allowNonLoopback?: boolean;
   /** Time a socket may stay silent before sending `hello`. */
   helloTimeoutMs?: number;
+  events?: EventBuffer;
 }
 
 export const hashToken = (token: string): string =>
@@ -174,11 +176,23 @@ export class LinkServer {
           break;
         case 'event':
           // Task 28 owns buffering. Bind even discarded events to this authenticated observer.
-          if (msg.event.userId !== conn.userId) ws.close(1008, 'event observer mismatch');
+          if (
+            msg.event.userId !== conn.userId ||
+            this.opts.registry.get(conn.worldId, conn.userId) !== conn ||
+            conn.closed
+          ) {
+            ws.close(1008, 'event observer mismatch');
+            break;
+          }
+          try {
+            this.opts.events?.accept(conn, msg.event);
+          } catch {
+            ws.close(1008, 'invalid event stream');
+          }
           break;
         case 'toolset':
           // Only for the connection that sent it, never another's.
-          toolsets.set(conn, msg.tools);
+          toolsets.set(conn, msg.tools, msg.eventReadAllowed === true);
           break;
         default:
           ws.close(1008, 'unexpected message');
@@ -243,6 +257,14 @@ export class LinkServer {
       },
       { userName: recordedName, isGM: hello.user.isGM },
     );
+    this.opts.registry.add(conn);
+    try {
+      this.opts.events?.connect(conn, hello.resume);
+    } catch {
+      this.opts.registry.remove(conn);
+      reject('INTERNAL', 'Could not initialize event stream');
+      return undefined;
+    }
     send({
       type: 'welcome',
       gatewayVersion: this.opts.gatewayVersion,
@@ -251,7 +273,6 @@ export class LinkServer {
       agentId,
       ...(issuedToken ? { pairingToken: issuedToken } : {}),
     });
-    this.opts.registry.add(conn);
     return conn;
   }
 }

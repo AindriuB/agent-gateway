@@ -146,8 +146,24 @@ describe('tool registry', () => {
     const register = vi.spyOn(registry, 'registerAll');
     registerCoreTools(registry);
     expect(register).toHaveBeenCalledOnce();
-    expect(registry.list().map((tool) => tool.name)).toEqual(TOOLS.map((tool) => tool.name));
-    for (const tool of TOOLS) expect(registry.info(tool.name)).toMatchObject(toJsonSchema(tool));
+    expect(registry.list().map((tool) => tool.name)).toEqual(
+      TOOLS.filter((tool) => tool.handledBy === 'module').map((tool) => tool.name),
+    );
+    for (const tool of TOOLS.filter((tool) => tool.handledBy === 'module'))
+      expect(registry.info(tool.name)).toMatchObject(toJsonSchema(tool));
+  });
+
+  it('never installs gateway-owned tools or accepts accidental module handlers for them', () => {
+    const registry = new ToolRegistry();
+    registerCoreTools(registry);
+    expect(registry.info('events_poll')).toBeUndefined();
+    expect(registry.info('events_history')).toBeUndefined();
+    expect(() =>
+      registerCoreTools(new ToolRegistry(), TOOLS, {
+        ...HANDLERS,
+        events_poll: HANDLERS.world_info!,
+      }),
+    ).toThrow('events_poll');
   });
 
   it('refuses either direction of core handler mismatch before installing anything', () => {

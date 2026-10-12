@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { validateArgs, TOOLS, toJsonSchema } from '../../../src/tools/index.js';
+import {
+  validateArgs,
+  TOOLS,
+  toJsonSchema,
+  eventsPoll,
+  eventsHistory,
+  conservativeProblems,
+  checkToolDefinition,
+  walk,
+} from '../../../src/tools/index.js';
 
 const schema = {
   type: 'object',
@@ -144,6 +153,8 @@ describe('validateArgs', () => {
       round: 1,
       turn: 0,
     },
+    events_poll: {},
+    events_history: { since: '2026-01-01T00:00:00Z' },
     world_info: {},
     document_search: { type: 'Actor' },
     document_get: { uuid: 'Actor.example' },
@@ -191,5 +202,28 @@ describe('validateArgs', () => {
     expect(
       validateArgs(s, { rows: Array.from({ length: 100 }, () => ({ inner: { value: 1 } })) }).ok,
     ).toBe(true);
+  });
+});
+
+describe('static gateway event output schema boundary', () => {
+  it('admits only the two actual static definitions through the trusted output path', () => {
+    for (const tool of [eventsPoll, eventsHistory]) {
+      expect(conservativeProblems(tool)).toEqual([]);
+      expect(conservativeProblems({ ...tool })).not.toEqual([]);
+      const announced = { ...tool, ...toJsonSchema(tool) };
+      expect(checkToolDefinition(announced, 'core')).not.toEqual([]);
+      expect(checkToolDefinition(announced, 'pack')).not.toEqual([]);
+      const errors: string[] = [];
+      walk(announced.outputSchema, 0, 'output', errors, {
+        root: announced.outputSchema,
+        chain: [],
+        trustedOutput: true,
+      });
+      expect(errors).not.toEqual([]);
+    }
+  });
+  it('keeps the static definitions immutable and refuses equivalent impostor input unions', () => {
+    expect(Object.isFrozen(eventsPoll)).toBe(true);
+    expect(conservativeProblems({ ...eventsPoll, input: eventsHistory.output })).not.toEqual([]);
   });
 });

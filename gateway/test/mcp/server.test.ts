@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { defineTool, toJsonSchema } from '@agent-gateway/protocol/tools';
+import { defineTool, toJsonSchema, eventsPoll, eventsHistory } from '@agent-gateway/protocol/tools';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { EmptyModuleConnections } from '../../src/app.js';
@@ -36,6 +36,13 @@ async function connect(tools: Parameters<typeof createMcpServer>[0]['tools']) {
 }
 
 describe('mcp server', () => {
+  it('never lists or forwards gateway-owned event tools in legacy mode', async () => {
+    const c = await connect([fixture, eventsPoll, eventsHistory]);
+    expect((await c.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
+    const r = await c.callTool({ name: 'events_poll', arguments: {} });
+    expect(JSON.stringify(r)).toContain('UNKNOWN_TOOL');
+    await c.close();
+  });
   it('lists [] for an empty registry', async () => {
     expect((await (await connect([])).listTools()).tools).toEqual([]);
   });
