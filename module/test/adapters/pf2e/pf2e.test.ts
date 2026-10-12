@@ -52,7 +52,7 @@ const actor: any = {
         type: 'strike',
         slug: 'longsword',
         label: 'Longsword',
-        item: { id: 'w1', uuid: 'Actor.a.Item.w1', name: 'Longsword' },
+        item: { id: 'w1', uuid: 'Actor.a.Item.w1', name: 'Longsword', isMelee: true },
         variants: [
           { label: '+14', roll },
           { label: 'MAP -5 (+9)', roll },
@@ -114,10 +114,10 @@ const updateConditionValue = vi.fn();
 const intendCreate = vi.fn(async () => {});
 const created = vi.fn(async () => {});
 const ctx = { intendCreate, created } as unknown as AdapterExecutionContext;
-const strikeFlags = (i: number) => ({
+const strikeFlags = () => ({
   pf2e: {
     origin: { uuid: 'Actor.a.Item.w1' },
-    context: { type: 'attack-roll', identifier: `w1.longsword.${i}` },
+    context: { type: 'attack-roll', identifier: 'w1.longsword.melee' },
   },
 });
 let createHooks: ((m: any) => void)[] = [];
@@ -129,7 +129,7 @@ beforeEach(() => {
   toMessage.mockResolvedValue({ uuid: 'ChatMessage.action' });
   roll.mockImplementation(async () =>
     createHooks.forEach((h) =>
-      h({ uuid: 'ChatMessage.m1', author: { id: 'u1' }, flags: strikeFlags(0) }),
+      h({ uuid: 'ChatMessage.m1', author: { id: 'u1' }, flags: strikeFlags() }),
     ),
   );
   (globalThis as any).Hooks = {
@@ -190,7 +190,6 @@ describe('pf2e adapter', () => {
     expect(consume).toHaveBeenCalledWith(spell, 4);
     expect(spellMessage).toHaveBeenCalledWith(null, { actualCast: true, data: { castRank: 4 } });
     expect(cast).not.toHaveBeenCalled();
-    expect(roll).toHaveBeenCalledWith({ skipDialog: true });
   });
   it('rejects unknown ids and bad ranks without side effects', async () => {
     await expect(pf2eAdapter.performAction(actor, 'strike:x:y:0', {}, ctx)).rejects.toThrow();
@@ -226,12 +225,21 @@ describe('pf2e adapter', () => {
     );
   });
   it('does not record same-actor, same-author messages without matching pf2e flags', async () => {
-    const own = { uuid: 'ChatMessage.mine', author: { id: 'u1' }, flags: strikeFlags(0) };
+    const own = { uuid: 'ChatMessage.mine', author: { id: 'u1' }, flags: strikeFlags() };
     roll.mockImplementation(async () =>
       createHooks.forEach((h) => {
         h({ uuid: 'ChatMessage.post', author: { id: 'u1' }, speaker: { actor: 'act1' } });
         h({ ...own, uuid: 'ChatMessage.other-author', author: { id: 'u2' } });
-        h({ ...own, uuid: 'ChatMessage.wrong-map', flags: strikeFlags(1) });
+        h({
+          ...own,
+          uuid: 'ChatMessage.wrong-identifier',
+          flags: {
+            pf2e: {
+              ...own.flags.pf2e,
+              context: { type: 'attack-roll', identifier: 'w1.longsword.0' },
+            },
+          },
+        });
         h(own);
       }),
     );
@@ -239,6 +247,20 @@ describe('pf2e adapter', () => {
     expect(created).toHaveBeenCalledTimes(1);
     expect(created).toHaveBeenCalledWith('ChatMessage.mine');
   });
+  it.each([true, false])(
+    'never opens a check dialog when showCheckDialogs is %s',
+    async (setting) => {
+      (globalThis as any).game.user.settings = { showCheckDialogs: setting };
+      let skipDialog: boolean | undefined;
+      // Mirrors pf2e's eventToRollParams (pf2e.mjs:13768-13773) as applied by Check.roll.
+      roll.mockImplementation(async (p: any) => {
+        const r = !setting;
+        skipDialog = p.event.shiftKey ? !r : r;
+      });
+      await pf2eAdapter.performAction(actor, 'strike:w1:longsword:2', {}, ctx);
+      expect(skipDialog).toBe(true);
+    },
+  );
   it('says the slot was spent when the cast throws after consumption', async () => {
     spellMessage.mockRejectedValueOnce(new Error('boom'));
     await expect(pf2eAdapter.performAction(actor, 'spell:e1:s1', {}, ctx)).rejects.toThrow(

@@ -102,4 +102,64 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
       expect(after?.value).toBe(prior?.value);
     }
   });
+
+  it('performs a strike without a dialog and audits its chat message as created', async (ctx) => {
+    if (!writes) return ctx.skip();
+    const page = session.browser.page;
+    const weapon = await session.gateway.call('document_create', {
+      type: 'Item',
+      parentUuid: actorUuid,
+      data: JSON.stringify({
+        name: 'agent-gateway e2e club (temporary)',
+        type: 'weapon',
+        system: {
+          category: 'simple',
+          group: 'club',
+          damage: { dice: 1, die: 'd6', damageType: 'bludgeoning' },
+          equipped: { carryType: 'held', handsHeld: 1 },
+        },
+      }),
+    });
+    expect(weapon.isError, weapon.text).toBe(false);
+    let messageId: string | undefined;
+    try {
+      const listed = await call('actions_list');
+      const strike = ((listed.structured?.actions ?? []) as Row[]).find(
+        (a) =>
+          a.group === 'Strikes' &&
+          String(a.id).startsWith(
+            `strike:${(weapon.structured?.uuid as string).split('.').pop()}:`,
+          ) &&
+          String(a.id).endsWith(':0'),
+      );
+      expect(strike, listed.text).toBeDefined();
+      const started = Date.now();
+      const r = await call('action_perform', { actionId: strike?.id });
+      expect(r.isError, r.text).toBe(false);
+      expect(r.structured?.completed).toBe(true);
+      // A blocked check dialog would hold the call open until its timeout.
+      expect(Date.now() - started).toBeLessThan(15_000);
+      const found = (await page.evaluate(`(async () => {
+        const dialogs = document.querySelectorAll('[class*="check-modifiers"]').length;
+        const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
+        const pages = journal ? [...journal.pages] : [];
+        const page = pages
+          .filter((p) => p.system.tool === 'action_perform' && p.system.args.includes(${JSON.stringify(
+            strike?.id,
+          )}))
+          .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
+        const created = (page?.system.targets ?? []).filter(
+          (t) => t.existed === false && t.uuid.startsWith('ChatMessage.'),
+        );
+        return { dialogs, created: created.map((t) => t.uuid) };
+      })()`)) as { dialogs: number; created: string[] };
+      expect(found.dialogs).toBe(0);
+      expect(found.created).toHaveLength(1);
+      messageId = found.created[0]?.split('.').pop();
+    } finally {
+      if (messageId)
+        await page.evaluate(`game.messages.get(${JSON.stringify(messageId)})?.delete()`);
+      // The weapon is embedded in the temporary actor, which the suite deletes.
+    }
+  });
 });

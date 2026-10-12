@@ -183,7 +183,15 @@ async function performAction(
     const variant = strike ? list(strike.variants)[Number(parts[3])] : undefined;
     if (!variant || typeof variant.roll !== 'function') return invalid('Unknown strike action');
     const itemUuid = text(strike.item?.uuid, 256);
-    const identifier = `${text(strike.item?.id, 64)}.${text(strike.slug, 64)}.${parts[3]}`;
+    // pf2e builds `${item.id}.${slug}.${melee|ranged}`; the MAP index is not part of it.
+    const identifier = `${text(strike.item?.id, 64)}.${text(strike.slug, 64)}.${
+      strike.item?.isMelee ? 'melee' : 'ranged'
+    }`;
+    // Check.roll only honours the user's showCheckDialogs setting, or an `event` run through
+    // eventToRollParams, where Shift inverts it. Pass a synthetic event whose Shift state always
+    // yields skipDialog = true, whatever the setting.
+    const showDialogs = Boolean((globalThis as any).game?.user?.settings?.showCheckDialogs);
+    const event = { shiftKey: showDialogs, ctrlKey: false, metaKey: false };
     await auditedChat(
       context,
       (m) => {
@@ -195,7 +203,7 @@ async function performAction(
           pf2e?.context?.identifier === identifier
         );
       },
-      () => variant.roll({ skipDialog: true }),
+      () => variant.roll({ event }),
     );
     return done(`Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim());
   }
