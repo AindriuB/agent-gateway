@@ -12,7 +12,8 @@ export interface ToolsetDeps {
   /** Role-to-tools lookup; defaults to the unified tool registry. Injectable for tests. */
   toolsForRole?(isGM: boolean): readonly ToolInfo[];
   /** Put a `toolset` frame on the link, if it is up. */
-  send(msg: { type: 'toolset'; tools: AnnouncedTool[] }): void;
+  eventReadAllowed?(): boolean;
+  send(msg: { eventReadAllowed?: boolean; type: 'toolset'; tools: AnnouncedTool[] }): void;
 }
 
 /** Role tools minus tools whose category policy denies. Sorted, so equal sets compare equal. */
@@ -53,18 +54,20 @@ export class ToolsetAnnouncer {
   /** The link has just been welcomed: send unconditionally, the gateway has no set for it yet. */
   connected(): void {
     const tools = this.compute();
-    this.last = JSON.stringify(tools);
-    this.deps.send({ type: 'toolset', tools });
+    const eventReadAllowed = this.deps.eventReadAllowed?.() === true;
+    this.last = JSON.stringify({ tools, eventReadAllowed });
+    this.deps.send({ eventReadAllowed, type: 'toolset', tools });
   }
 
   /** Re-evaluate; sends only if the set differs from what was last sent. */
   refresh(): void {
     if (this.last === undefined) return;
     const tools = this.compute();
-    const sig = JSON.stringify(tools);
+    const eventReadAllowed = this.deps.eventReadAllowed?.() === true;
+    const sig = JSON.stringify({ tools, eventReadAllowed });
     if (sig === this.last) return;
     this.last = sig;
-    this.deps.send({ type: 'toolset', tools });
+    this.deps.send({ type: 'toolset', tools, eventReadAllowed });
   }
 
   /** The link dropped: the next welcome starts over. */
@@ -108,4 +111,16 @@ export function installToolsetAnnouncer(
     }
   });
   return announcer;
+}
+
+/** Gateway event reads cannot ask for approval: only an explicit current allow is advertised. */
+export function policyAllowsEventReads(
+  inputs: () => PolicyInputs,
+  isGM: () => boolean,
+  headless = LINK_AGENT_HEADLESS,
+): () => boolean {
+  return () => {
+    const verdict = evaluate(inputs(), { isGM: isGM(), headless, category: 'read' });
+    return verdict.kind === 'decision' && verdict.decision === 'allow';
+  };
 }

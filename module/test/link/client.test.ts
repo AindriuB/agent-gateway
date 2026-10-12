@@ -224,8 +224,8 @@ it('PROTOCOL_MAJOR_MISMATCH stops retrying and shows the gateway message', async
   expect(sockets).toHaveLength(1);
 });
 
-it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
-  'stops after an older gateway %s rejects the v3 hello, without welcome or retrying',
+it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7', '3.0.0', '3.99.7'])(
+  'stops after an older gateway %s rejects the v4 hello, without welcome or retrying',
   async (legacy) => {
     token = 'tok';
     const states: string[] = [];
@@ -234,10 +234,10 @@ it.each(['1.0.0', '1.99.7', '2.0.0', '2.99.7'])(
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '3.0.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '4.0.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
-    if (compatibility.ok) throw new Error('Legacy gateway must reject v3');
+    if (compatibility.ok) throw new Error('Legacy gateway must reject v4');
     expect(compatibility.message).toContain(`local ${legacy}, remote ${PROTOCOL_VERSION}`);
     expect(compatibility.message).toMatch(/upgrade the local side/i);
     socket.recv({ type: 'reject', code: compatibility.code, message: compatibility.message });
@@ -655,3 +655,67 @@ it('a welcome token write finishing after a restart does not disturb the new con
   open();
   expect(sockets[1]!.sent[0].auth).toEqual({ kind: 'pairingCode', code: 'NEW' });
 });
+
+it('sends a bound resume hint only after a welcome and actual event sends', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  expect(sockets[0]!.sent[0].resume).toBeUndefined();
+  sockets[0]!.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  client.sendMessage({
+    type: 'event',
+    event: { seq: 7, ts: 1, type: 'actor_update', userId: 'u', summary: 'Actor updated' },
+  });
+  sockets[0]!.onclose?.({ code: 1006, reason: '' });
+  await vi.advanceTimersByTimeAsync(2000);
+  open();
+  expect(sockets[1]!.sent[0].resume).toEqual({ connectionId: 'c1', lastSeq: 7 });
+  sockets[1]!.recv(welcome({ connectionId: 'c2' }));
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[1]!.onclose?.({ code: 1006, reason: '' });
+  token = 'changed';
+  await vi.advanceTimersByTimeAsync(4000);
+  open();
+  expect(sockets[2]!.sent[0].resume).toBeUndefined();
+});
+it('does not reuse resume hints on another gateway URL', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  sockets[0]!.onclose?.({ code: 1006, reason: '' });
+  gwUrl = 'ws://other';
+  tokenUrl = 'ws://other';
+  await vi.advanceTimersByTimeAsync(2000);
+  open();
+  expect(sockets[1]!.sent[0].resume).toBeUndefined();
+});
+
+it.each([2, 3])(
+  'does not count a silently discarded event on socket state %s as sent',
+  async (state) => {
+    token = 'tok';
+    client.start();
+    open();
+    sockets[0]!.recv(welcome());
+    await vi.advanceTimersByTimeAsync(0);
+    client.sendMessage({
+      type: 'event',
+      event: { seq: 2, ts: 1, type: 'actor_update', userId: 'u', summary: 'Actor updated' },
+    });
+    const socket = sockets[0]!;
+    const before = socket.sent.length;
+    (socket as FakeSocket & { readyState: number }).readyState = state;
+    client.sendMessage({
+      type: 'event',
+      event: { seq: 3, ts: 1, type: 'actor_update', userId: 'u', summary: 'Never sent' },
+    });
+    expect(socket.sent).toHaveLength(before);
+    socket.onclose?.({ code: 1006, reason: '' });
+    await vi.advanceTimersByTimeAsync(2000);
+    open();
+    expect(sockets[1]!.sent[0].resume).toEqual({ connectionId: 'c1', lastSeq: 2 });
+  },
+);

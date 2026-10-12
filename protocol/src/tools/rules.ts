@@ -1,3 +1,5 @@
+import { eventsPoll } from './events-poll.js';
+import { eventsHistory } from './events-history.js';
 import { TOOL_NAME_PATTERN, type ToolDefinition } from './define.js';
 import { toJsonSchema, type JsonSchemaObject } from './json-schema.js';
 import { TOOL_LIMITS } from './limits.js';
@@ -87,6 +89,7 @@ function isJsonValue(value: unknown): boolean {
 interface Refs {
   root: JsonSchemaObject;
   chain: readonly string[];
+  trustedOutput?: boolean;
 }
 function resolveRef(root: JsonSchemaObject, ref: string): unknown {
   if (ref !== '#' && !ref.startsWith('#/')) return undefined;
@@ -100,7 +103,7 @@ function resolveRef(root: JsonSchemaObject, ref: string): unknown {
 }
 
 /** Also walks forbidden schema-bearing keywords to give useful migration diagnostics. */
-export function walk(
+function inspect(
   node: unknown,
   depth: number,
   path: string,
@@ -123,8 +126,12 @@ export function walk(
   }
   ancestors.add(node);
   for (const key of Object.keys(node))
-    if (!keywords.has(key)) problems.push(`${path}: uses ${key}`);
-  if (typeof node.type !== 'string' || !types.has(node.type))
+    if (!keywords.has(key) && !(refs.trustedOutput && key === 'anyOf'))
+      problems.push(`${path}: uses ${key}`);
+  const union = refs.trustedOutput && Array.isArray(node.anyOf) && node.anyOf.length === 2;
+  if (refs.trustedOutput && 'anyOf' in node && !union)
+    problems.push(`${path}: union requires exactly two variants`);
+  if (!union && (typeof node.type !== 'string' || !types.has(node.type)))
     problems.push(`${path}: invalid type${Array.isArray(node.type) ? ' (multi-type union)' : ''}`);
   if (
     'description' in node &&
@@ -133,7 +140,8 @@ export function walk(
   )
     problems.push(`${path}: invalid description`);
   const next = depth + (node.type === 'object' || 'properties' in node ? 1 : 0);
-  if (next > 3) problems.push(`${path}: object nesting deeper than 3`);
+  if (next > (refs.trustedOutput ? 4 : 3))
+    problems.push(`${path}: object nesting deeper than ${refs.trustedOutput ? 4 : 3}`);
   if (node.type === 'object' || 'properties' in node) {
     if (node.additionalProperties !== false)
       problems.push(`${path}: additionalProperties is not false`);
@@ -147,7 +155,7 @@ export function walk(
         problems.push(`${path}: unsafe property name ${key}`);
       if (!isSchemaObject(value) || !isPlainText(value.description))
         problems.push(`${path}/properties/${key}: missing description`);
-      walk(value, next, `${path}/properties/${key}`, problems, refs, ancestors, budget);
+      inspect(value, next, `${path}/properties/${key}`, problems, refs, ancestors, budget);
     }
   }
   const props = isSchemaObject(node.properties) ? node.properties : {};
@@ -206,7 +214,7 @@ export function walk(
       if (target === undefined) problems.push(`${path}: unresolvable $ref`);
       else if (ancestors.has(target)) problems.push(`${path}: recursive $ref`);
       else
-        walk(
+        inspect(
           target,
           next,
           `${path}/$ref`,
@@ -220,18 +228,22 @@ export function walk(
   for (const key of ['$defs', 'definitions'])
     if (isSchemaObject(node[key]))
       for (const [k, value] of Object.entries(node[key]))
-        walk(value, next, `${path}/${key}/${k}`, problems, refs, ancestors, budget);
+        inspect(value, next, `${path}/${key}/${k}`, problems, refs, ancestors, budget);
   for (const key of ['items', 'not', 'if', 'propertyNames'])
-    if (key in node) walk(node[key], next, `${path}/${key}`, problems, refs, ancestors, budget);
+    if (key in node) inspect(node[key], next, `${path}/${key}`, problems, refs, ancestors, budget);
   for (const key of ['oneOf', 'anyOf', 'allOf', 'prefixItems'])
     if (Array.isArray(node[key]))
       node[key].forEach((value, i) =>
-        walk(value, next, `${path}/${key}[${i}]`, problems, refs, ancestors, budget),
+        inspect(value, next, `${path}/${key}[${i}]`, problems, refs, ancestors, budget),
       );
   ancestors.delete(node);
 }
 
-export function checkToolDefinition(def: AnnouncedTool, origin: 'core' | 'pack'): string[] {
+function checkedDefinition(
+  def: AnnouncedTool,
+  origin: 'core' | 'pack',
+  trustedOutput = false,
+): string[] {
   const problems: string[] = [];
   if (!isSchemaObject(def)) return ['tool definition must be an object'];
   if (!isPlainText(def.description) || def.description.length > TOOL_LIMITS.toolDescriptionLength)
@@ -278,11 +290,36 @@ export function checkToolDefinition(def: AnnouncedTool, origin: 'core' | 'pack')
     }
     if (!isSchemaObject(schema) || schema.type !== 'object')
       problems.push(`${label}: root type must be object`);
-    walk(schema, 0, label, problems);
+    inspect(schema, 0, label, problems, {
+      root: schema,
+      chain: [],
+      trustedOutput: trustedOutput && label === 'output',
+    });
   }
   return problems;
 }
 
+export function checkToolDefinition(def: AnnouncedTool, origin: 'core' | 'pack'): string[] {
+  return checkedDefinition(def, origin);
+}
+
+/** Public schema validation never grants the static gateway output exception. */
+export function walk(
+  node: unknown,
+  depth: number,
+  path: string,
+  problems: string[],
+  refs: Refs = { root: node as JsonSchemaObject, chain: [] },
+  ancestors = new Set<unknown>(),
+  budget = { remaining: 4096 },
+): void {
+  inspect(node, depth, path, problems, { root: refs.root, chain: refs.chain }, ancestors, budget);
+}
+
 export function conservativeProblems(tool: ToolDefinition): string[] {
-  return checkToolDefinition({ ...tool, ...toJsonSchema(tool) }, 'core');
+  return checkedDefinition(
+    { ...tool, ...toJsonSchema(tool) },
+    'core',
+    tool === eventsPoll || tool === eventsHistory,
+  );
 }

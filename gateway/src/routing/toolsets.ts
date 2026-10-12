@@ -13,7 +13,19 @@ import { safeText } from './sanitize.js';
 /** Full definitions, isolated by authenticated link connection. Core authority stays in the session. */
 export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
   private readonly sets = new WeakMap<LinkConnection, readonly AnnouncedTool[]>();
+  private readonly eventReads = new WeakMap<LinkConnection, boolean>();
+  eventReadAllowed(conn: LinkConnection): boolean {
+    return this.eventReads.get(conn) === true;
+  }
+
   private readonly signatures = new WeakMap<LinkConnection, string>();
+
+  revokeEventReads(conn: LinkConnection): void {
+    if (!this.eventReadAllowed(conn)) return;
+    this.eventReads.set(conn, false);
+    this.signatures.delete(conn);
+    this.emit('changed', conn);
+  }
 
   constructor(private readonly log: (line: string) => void = console.warn) {
     super();
@@ -23,17 +35,23 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
     return this.sets.get(conn);
   }
 
-  set(conn: LinkConnection, tools: readonly AnnouncedTool[]): void {
+  set(conn: LinkConnection, tools: readonly AnnouncedTool[], eventReadAllowed = false): void {
+    // Restrictive metadata is authoritative even when definitions cannot be accepted.
+    if (eventReadAllowed !== true) this.revokeEventReads(conn);
+    const reject = (line: string) => {
+      this.revokeEventReads(conn);
+      this.log(line);
+    };
     // Snapshot the complete input before reading fields, running validators or serializing.
     const snapshot = snapshotToolsetValue(tools);
     if (!snapshot.ok) {
-      this.log('ignored toolset: invalid bounded JSON representation');
+      reject('ignored toolset: invalid bounded JSON representation');
       return;
     }
     const uncapped = ToolsetMessage.extend({ tools: ToolsetMessage.shape.tools.element.array() });
     const parsed = uncapped.safeParse({ type: 'toolset', tools: snapshot.value });
     if (!parsed.success) {
-      this.log('ignored toolset: invalid bounded JSON representation');
+      reject('ignored toolset: invalid bounded JSON representation');
       return;
     }
     tools = parsed.data.tools;
@@ -41,14 +59,14 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
     try {
       encoded = JSON.stringify({ type: 'toolset', tools });
     } catch {
-      this.log('ignored toolset: serialization failed');
+      reject('ignored toolset: serialization failed');
       return;
     }
     if (
       tools.length > TOOL_LIMITS.announcementTools ||
       Buffer.byteLength(encoded) > TOOL_LIMITS.announcementBytes
     ) {
-      this.log('ignored toolset: announcement count or byte cap exceeded');
+      reject('ignored toolset: announcement count or byte cap exceeded');
       return;
     }
     const keep = new Map<string, AnnouncedTool>();
@@ -73,13 +91,14 @@ export class ToolsetStore extends EventEmitter<{ changed: [LinkConnection] }> {
       this.log(`dropped ${packs - TOOL_LIMITS.sessionPackTools} pack tools: session cap exceeded`);
     let signature: string;
     try {
-      signature = JSON.stringify(next);
+      signature = JSON.stringify({ tools: next, eventReadAllowed: eventReadAllowed === true });
     } catch {
-      this.log('ignored toolset: serialization failed');
+      reject('ignored toolset: serialization failed');
       return;
     }
     if (this.signatures.get(conn) === signature) return;
     this.sets.set(conn, next);
+    this.eventReads.set(conn, eventReadAllowed === true);
     this.signatures.set(conn, signature);
     this.emit('changed', conn);
   }

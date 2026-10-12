@@ -1,3 +1,4 @@
+import { createEventRepository, type EventRepository } from '../events/repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
 import { MIGRATIONS } from './migrations/index.js';
@@ -21,8 +22,11 @@ export interface NewPairing {
   userName?: string;
 }
 
-/** Gateway persistence. Holds hashed credentials and gateway state, never world data. */
+/** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
 export interface Store {
+  readonly events: EventRepository;
+  isPairingActive(id: string, worldId: string, userId: string): boolean;
+  onPairingRevoked(listener: () => void): () => void;
   createPairing(p: NewPairing): PairingRow;
   findPairingByHash(tokenHash: string): PairingRow | undefined;
   /** Pairings that are not revoked. */
@@ -57,6 +61,7 @@ export function openStore(path: string, now: () => number = Date.now): Store {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = DELETE');
   applyMigrations(db, MIGRATIONS);
+  const revokedListeners = new Set<() => void>();
   const insert = db.prepare(
     'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at) VALUES (?, ?, ?, ?, ?, ?)',
   );
@@ -67,6 +72,17 @@ export function openStore(path: string, now: () => number = Date.now): Store {
     'UPDATE pairings SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL',
   );
   return {
+    events: createEventRepository(db),
+    onPairingRevoked(listener) {
+      revokedListeners.add(listener);
+      return () => {
+        revokedListeners.delete(listener);
+      };
+    },
+    isPairingActive(id, worldId, userId) {
+      const r = byId.get(id) as Row | undefined;
+      return !!r && r.revoked_at === null && r.world_id === worldId && r.user_id === userId;
+    },
     createPairing(p) {
       insert.run(p.id, p.tokenHash, p.worldId, p.userId, p.userName ?? '', now());
       return toRow(byId.get(p.id) as unknown as Row);
@@ -79,7 +95,9 @@ export function openStore(path: string, now: () => number = Date.now): Store {
       return (active.all() as unknown as Row[]).map(toRow);
     },
     revokePairing(id) {
-      return Number(revoke.run(now(), id).changes) > 0;
+      const changed = Number(revoke.run(now(), id).changes) > 0;
+      if (changed) for (const listener of revokedListeners) listener();
+      return changed;
     },
     close() {
       db.close();

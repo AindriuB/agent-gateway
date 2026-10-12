@@ -79,6 +79,16 @@ export function backoffDelay(attempt: number, random: number): number {
 
 export class LinkClient {
   private socket: SocketLike | null = null;
+  private eventResume:
+    | {
+        url: string;
+        worldId: string;
+        userId: string;
+        token: string;
+        connectionId: string;
+        lastSeq: number;
+      }
+    | undefined;
   private timer: unknown = null;
   private attempt = 0;
   private active = false;
@@ -252,10 +262,22 @@ export class LinkClient {
         }
         auth = { kind: 'pairingToken', token };
       }
+      const identity = this.deps.getIdentity();
+      const prior = this.eventResume;
+      const resume =
+        prior &&
+        prior.url === url &&
+        prior.worldId === identity.world.id &&
+        prior.userId === identity.user.id &&
+        auth.kind === 'pairingToken' &&
+        prior.token === auth.token
+          ? { connectionId: prior.connectionId, lastSeq: prior.lastSeq }
+          : undefined;
       this.send({
         type: 'hello',
         protocolVersion: PROTOCOL_VERSION,
-        ...this.deps.getIdentity(),
+        ...identity,
+        ...(resume ? { resume } : {}),
         auth,
       });
     };
@@ -308,6 +330,17 @@ export class LinkClient {
         this.attempt = 0;
         this.agentId = msg.agentId;
         const id = this.deps.getIdentity();
+        const token = this.tokenForUrl(url);
+        this.eventResume = token
+          ? {
+              url,
+              worldId: id.world.id,
+              userId: id.user.id,
+              token,
+              connectionId: msg.connectionId,
+              lastSeq: 0,
+            }
+          : undefined;
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
         break;
       }
@@ -415,7 +448,27 @@ export class LinkClient {
 
   /** Send a frame on the live socket, if there is one. Used for `toolset`, after `welcome`. */
   sendMessage(msg: LinkMessage): void {
+    // Native WebSocket.send silently discards while closing; do not claim it was sent.
+    if (
+      msg.type === 'event' &&
+      (!this.socket || (this.socket.readyState !== undefined && this.socket.readyState !== 1))
+    )
+      return;
     this.send(msg);
+    if (
+      msg.type === 'event' &&
+      this.socket &&
+      this._state.kind === 'connected' &&
+      this.eventResume
+    ) {
+      const identity = this.deps.getIdentity();
+      if (
+        identity.world.id === this.eventResume.worldId &&
+        identity.user.id === this.eventResume.userId &&
+        msg.event.userId === identity.user.id
+      )
+        this.eventResume.lastSeq = Math.max(this.eventResume.lastSeq, msg.event.seq);
+    }
   }
 
   private send(msg: LinkMessage): void {

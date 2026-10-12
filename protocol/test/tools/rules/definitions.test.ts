@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   checkToolDefinition,
+  conservativeProblems,
   TOOLS,
-  toJsonSchema,
   parseApiVersion,
   type AnnouncedTool,
 } from '../../../src/tools/index.js';
@@ -225,7 +225,7 @@ describe('pack names and metadata', () => {
       ).toBeGreaterThan(0),
   );
   it.each(TOOLS.map((t) => [t.name, t] as const))('checks core %s', (_name, tool) =>
-    expect(checkToolDefinition({ ...tool, ...toJsonSchema(tool) }, 'core')).toEqual([]),
+    expect(conservativeProblems(tool)).toEqual([]),
   );
   it('parses API version', () => expect(parseApiVersion('1.0')).toEqual({ major: 1, minor: 0 }));
   it.each(['1', '1.0.0', '1.0-beta', '-1.0', 1, null])('refuses API version %j', (v) =>

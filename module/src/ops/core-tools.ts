@@ -26,13 +26,14 @@ export function registerCoreTools(
   tools: readonly ToolDefinition[] = TOOLS,
   handlers: Readonly<Record<string, OpHandler>> = HANDLERS,
 ): void {
-  const entries = tools.map((tool) => {
+  const moduleTools = tools.filter((tool) => tool.handledBy === 'module');
+  const entries = moduleTools.map((tool) => {
     if (!Object.hasOwn(handlers, tool.name))
       throw new RegistryError('INVALID', `Core tool "${tool.name}" has no handler`);
     return coreEntry(tool, handlers[tool.name]!);
   });
   for (const name of Object.keys(handlers))
-    if (!tools.some((tool) => tool.name === name))
+    if (!moduleTools.some((tool) => tool.name === name))
       throw new RegistryError('INVALID', `Core handler "${name}" has no definition`);
   registry.registerAll(entries);
 }

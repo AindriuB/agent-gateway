@@ -1,3 +1,7 @@
+import { eventsPoll } from './events-poll.js';
+import { eventsHistory } from './events-history.js';
+export * from './events-poll.js';
+export * from './events-history.js';
 import { macroRun } from './macro-run.js';
 import { scriptRun } from './script-run.js';
 export * from './macro-run.js';
@@ -83,6 +87,8 @@ export const TOOLS: readonly ToolDefinition[] = [
   documentUpdate,
   documentDelete,
   compendiumImport,
+  eventsPoll,
+  eventsHistory,
 ];
 
 export function toolsForRole(isGM: boolean): readonly ToolDefinition[] {

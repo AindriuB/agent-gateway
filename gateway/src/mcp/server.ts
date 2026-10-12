@@ -13,7 +13,7 @@ export interface McpServerOptions {
 }
 
 export function createMcpServer(opts: McpServerOptions): Server {
-  const all = opts.tools ?? TOOLS;
+  const all = (opts.tools ?? TOOLS).filter((t) => t.handledBy === 'module');
   const visible = opts.role === 'gm' ? all : all.filter((t) => t.minRole === 'player');
   const server = new Server(
     { name: 'foundry-agent-gateway', version: opts.version },

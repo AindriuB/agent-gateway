@@ -1,7 +1,7 @@
 import type { ErrorCode } from './errors.js';
 
-/** v3 adds module event frames; older peers must upgrade before events can be sent. */
-export const PROTOCOL_VERSION = '3.0.0';
+/** v4 adds authenticated event-read metadata and connection-bound resume hints. */
+export const PROTOCOL_VERSION = '4.0.0';
 
 export type CompatResult = { ok: true } | { ok: false; code: ErrorCode; message: string };
 

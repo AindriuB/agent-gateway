@@ -1,5 +1,14 @@
 import { expect, it } from 'vitest';
-import { AgentEvent, EventType, EVENT_CONFIG, parseLinkMessage } from '../../src/index.js';
+import {
+  BufferedEvent,
+  GatewayGap,
+  eventsPoll,
+  eventsHistory,
+  AgentEvent,
+  EventType,
+  EVENT_CONFIG,
+  parseLinkMessage,
+} from '../../src/index.js';
 const sample = {
   seq: 1,
   ts: 0,
@@ -40,4 +49,26 @@ it('accepts only the explicit boolean agent flag and rejects unknown frame field
     parseLinkMessage(JSON.stringify({ type: 'event', event: sample, document: { secret: true } }))
       .ok,
   ).toBe(false);
+});
+
+it('separates the durable cursor and gateway gap from native sequence', () => {
+  expect(BufferedEvent.parse({ cursor: 7, event: sample }).cursor).toBe(7);
+  const gap = {
+    type: 'gap',
+    ts: 2,
+    userId: 'observer',
+    summary: 'Connection interrupted',
+    missed: 'unknown',
+  };
+  expect(GatewayGap.safeParse(gap).success).toBe(true);
+  expect(GatewayGap.safeParse({ ...gap, seq: 7 }).success).toBe(false);
+  expect(BufferedEvent.safeParse({ cursor: 0, event: sample }).success).toBe(false);
+  expect(BufferedEvent.safeParse({ cursor: 1, event: { ...gap, missed: -1 } }).success).toBe(false);
+  expect(eventsPoll.input.parse({})).toEqual({ limit: 100 });
+  for (const since of ['yesterday', '2026-02-30T00:00:00Z', '2026-01-01'])
+    expect(eventsHistory.input.safeParse({ since }).success).toBe(false);
+  expect(
+    eventsHistory.input.safeParse({ since: '2026-01-01T00:00:00Z', types: ['actor_update'] })
+      .success,
+  ).toBe(true);
 });

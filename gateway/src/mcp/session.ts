@@ -1,3 +1,4 @@
+import type { EventBuffer } from '../events/index.js';
 import { projectOutputSchema } from './output-schema.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -20,6 +21,7 @@ export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 
 export interface SessionServerOptions {
   version: string;
+  events?: EventBuffer;
   registry: LinkRegistry;
   selector?: UserSelector;
   /** Defaults to the protocol registry; injectable for tests. */
@@ -73,13 +75,15 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     minRole: t.minRole,
     ...toJsonSchema(t),
   });
-  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
+  const moduleVisibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
     const announced = conn ? toolsets.get(conn) : undefined;
     if (!announced)
-      return (conn?.info.isGM ? all : all.filter((t) => t.minRole === 'player')).map((core) => ({
-        core,
-        definition: coreDefinition(core),
-      }));
+      return all
+        .filter((t) => t.handledBy === 'module' && (conn?.info.isGM || t.minRole === 'player'))
+        .map((core) => ({
+          core,
+          definition: coreDefinition(core),
+        }));
     const report = conn && warned.get(conn) !== announced;
     if (conn) warned.set(conn, announced);
     const coreNames = new Set(announced.filter((t) => !t.name.includes('-')).map((t) => t.name));
@@ -97,7 +101,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       }
     return [
       ...all
-        .filter((t) => coreNames.has(t.name))
+        .filter((t) => t.handledBy === 'module' && coreNames.has(t.name))
         .map((core) => ({ core, definition: coreDefinition(core) })),
       ...announced
         .filter((t) => t.name.includes('-'))
@@ -107,6 +111,22 @@ export function createSessionServer(opts: SessionServerOptions): Server {
             description: `[Third-party tool pack ${t.pack!.prefix}: ${t.pack!.id} ${t.pack!.version}] ${t.description}`,
           },
         })),
+    ];
+  };
+
+  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
+    const modules = moduleVisibleFor(conn);
+    if (!conn || !opts.events) return modules;
+    try {
+      opts.events.authorize(conn);
+    } catch {
+      return modules;
+    }
+    return [
+      ...modules,
+      ...all
+        .filter((t) => t.handledBy === 'gateway' && t.name === 'events_poll')
+        .map((core) => ({ core, definition: coreDefinition(core) })),
     ];
   };
 
@@ -133,7 +153,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return { tools: listed(conn) };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     if (!req.params.name.includes('-') && !all.some((t) => t.name === req.params.name))
       return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
     const r = binding.resolve();
@@ -173,6 +193,24 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     }
     const args = parsed?.success ? parsed.data : packParsed?.ok ? packParsed.value : {};
     try {
+      if (visible.core?.handledBy === 'gateway') {
+        if (!opts.events) return failure('FORBIDDEN', 'Gateway event reads are unavailable');
+        if (tool.name !== 'events_poll')
+          return failure('FORBIDDEN', 'Offline event history is not enabled');
+        const input = args as { after?: number; limit: number };
+        const result = await opts.events.poll(
+          conn,
+          sessionId,
+          input.after,
+          input.limit,
+          extra.signal,
+        );
+        opts.events.authorize(conn);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+          structuredContent: result,
+        };
+      }
       const res = await opts.registry.call(
         conn,
         tool.name,
@@ -227,6 +265,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   toolsets.on('changed', onToolset);
   const previousOnClose = server.onclose;
   server.onclose = () => {
+    opts.events?.cancelSession(sessionId);
     opts.registry.off('connected', onConnected);
     opts.registry.off('disconnected', onDisconnected);
     toolsets.off('changed', onToolset);

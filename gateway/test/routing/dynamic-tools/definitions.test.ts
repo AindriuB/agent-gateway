@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { TOOLS, toJsonSchema, type AnnouncedTool } from '@agent-gateway/protocol';
+import { TOOLS as PROTOCOL_TOOLS, toJsonSchema, type AnnouncedTool } from '@agent-gateway/protocol';
 import { ToolsetStore } from '../../../src/routing/toolsets.js';
 import { startServer, type Harness } from '../../link/helpers.js';
 import {
@@ -12,6 +12,8 @@ import {
   type FakeModule,
 } from '../harness.js';
 
+// This fixture exercises module-announced definitions; gateway reads are tested separately.
+const TOOLS = PROTOCOL_TOOLS.filter((tool) => tool.handledBy === 'module');
 const schema = {
   type: 'object',
   additionalProperties: false,
