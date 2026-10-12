@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 28, 15
-**Status:** Source merged in PR #76; bounded GM native acceptance passed on Foundry 13.351/14.369 at `88b27ca` / bundle `d19791ab`. Source verification passed build/lint and 3,427 fast / 2,227 slow tests. The combined required gate passed (build/lint, 3,437 fast / 2,227 slow); reusable-harness publication remains pending; contract stays active until the validation record merges.
+**Status:** Complete; source merged in PR #76 and bounded native validation/harness record merged in PR #78 (head `366fc5e`, main `eac0f40`). Source gate passed build/lint, 3,427 fast / 2,227 slow; combined gate passed 3,437 fast / 2,227 slow. GM native acceptance passed on Foundry 13.351/14.369 at `88b27ca` / bundle `d19791ab`; bounded evidence and software-trust limits remain in PLAN/testing/security.
 **Owns:**
 - module/src/events/offline-setting.ts
 - module/src/apps/policy/** (offline-reading section only)

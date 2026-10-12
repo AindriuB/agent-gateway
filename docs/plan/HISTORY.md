@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Offline event reading validation merged and task archived (task 29)
+
+PR #78 merged at 17:15:37 UTC: reviewed head `366fc5e28a875eb01a03aabe51c0e1e3bc8f0283`, main `eac0f40e31ac29bf7df5b2d4662b43b03e250e3e`. Task29 moves to `docs/plan/done/29-offline-event-reading.md` with only its Status changed. The derived inventory is 26 completed / 16 active contracts. Task30 — Queue writes attempted while the world is offline — is next with merged dependencies 21 and 28; its implementation has not started. Task18 remains architecture-blocked.
+
+Task29 source verification passed build/lint and 3,427 fast / 2,227 slow tests, and the combined harness gate passed 3,437 fast / 2,227 slow. Foundry 13.351/14.369 bounded GM native proof remains pinned to `88b27ca` / bundle `d19791ab`, executed proof `a3ef5e44`: nine reads/four UI operations per world, isolated purge five, exact fixture deletion and original setting/baseline restoration. Prior failures and software-trust limits remain recorded below.
+
+**Cost:** Completion records the accepted bounded scope, not native multiplayer/revocation/retention timing, independent GM attestation or installed deployment. This docs-only archive adds no runtime change, live action or private evidence export.
+
 ## 2026-10-12 — Offline reading GM native acceptance passed; validation publication pending (task 29)
 
 Human-consented bounded native acceptance passed on Foundry v14.369 and v13.351. Each world used one GM browser, one temporary GM-private NPC, two exact renames, an isolated gateway database and read-only pairing import. Three actual policy-app saves enabled 14-day offline reading, disabled it, then enabled it again; one actual UI purge deleted five isolated buffered events and displayed the correlated localized count. Nine gateway reads and all four UI operations settled per world: enabled offline poll/history returned already-buffered rows immediately and nonconsumingly, disabled history was hidden and both offline reads returned WORLD_OFFLINE, and explicit post-purge cursor zero returned an empty payload with high-water five and first-available six.
