@@ -142,10 +142,13 @@ function spellSpends(entry: any, spell: any): string {
  * Actionable abilities: `action` Items and `feat` Items with an action cost. AbilityItem, Feat and
  * the other item classes derive actionCost from system.actionType.value, `passive` giving null
  * (pf2e.mjs:52239-52245, :52305-52311, :52455-52461), so a costed feat has type action, reaction
- * or free. costLabel keeps only those.
+ * or free. costLabel keeps only those. Items with `suppressed` set (suppressFeats, :52432-52433;
+ * feat prepareBaseData :52482) are skipped, as the sheet does (#prepareAbilities, :24951).
  */
 function actionItems(actor: any): any[] {
-  return [...list(actor.itemTypes?.action), ...list(actor.itemTypes?.feat)];
+  return [...list(actor.itemTypes?.action), ...list(actor.itemTypes?.feat)].filter(
+    (i) => i && i.suppressed !== true,
+  );
 }
 
 function strikes(actor: any): any[] {

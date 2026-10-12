@@ -399,6 +399,24 @@ describe('pf2e adapter', () => {
       pf2eAdapter.performAction(actor, 'strike:w1:longsword:0', {}, ctx),
     ).rejects.toThrow(/kaput/);
   });
+  it('neither lists nor performs suppressed actions or feats', async () => {
+    const cost = { type: 'action', value: 1 };
+    const sup = {
+      ...actor,
+      itemTypes: {
+        ...actor.itemTypes,
+        action: [
+          { id: 'sa', name: 'Hidden Action', actionCost: cost, suppressed: true, toMessage },
+        ],
+        feat: [{ id: 'sf', name: 'Hidden Feat', actionCost: cost, suppressed: true, toMessage }],
+      },
+    };
+    const { actions } = (await pf2eAdapter.listActions(sup)) as any;
+    expect(actions.some((a: any) => /Hidden/.test(a.name))).toBe(false);
+    for (const id of ['action:sa', 'action:sf'])
+      await expect(pf2eAdapter.performAction(sup, id, {}, ctx)).rejects.toThrow(/Unknown action/);
+    expect(toMessage).not.toHaveBeenCalled();
+  });
   it('lists and performs costed feats, and ignores passive ones', async () => {
     const feat = (id: string, name: string, actionCost: unknown) => ({
       id,
