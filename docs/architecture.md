@@ -67,8 +67,8 @@ does not exist.
 
 <!-- One line each, with the date and the alternative that was rejected. -->
 
-## Offline intent replay (Task30 implementation in progress)
+## Offline intent replay (Task30 source verified)
 
 The gateway owns pairing-scoped SQLite catalogs, queue intent and status receipts. MCP offline admission persists the original session, validated definition and exact arguments before returning a queue ID. The authenticated module link receives bounded `queuedCalls` batches and returns correlated `queuedStatus` frames under protocol6. Only fresh matching definitions on the exact active owner connection permit delivery.
 
-The module owns native admission, a durable browser replay guard and fresh once-only approvals. Queueing never carries permission forward from an offline policy or a session grant. Before execution, the dispatcher checks the immutable request, current native policy/permissions, original queue deadline and current authenticated connection. Unknown outcomes remain reconciliation receipts and are not automatically replayed. This is bounded cooperative persistence, not exactly-once distributed world mutation. Source gates and review are pending; no native Task30 acceptance is claimed.
+The module owns native admission, a durable browser replay guard and fresh once-only approvals. Queueing never carries permission forward from an offline policy or a session grant. Before execution, the dispatcher checks the immutable request, current native policy/permissions, original queue deadline and current authenticated connection. Unknown outcomes remain reconciliation receipts and are not automatically replayed. This is bounded cooperative persistence, not exactly-once distributed world mutation. Source `b320505daaec9928fc5908cf938874948c5be240` passed build/lint and the required full gate (3,487 fast / 2,227 slow tests). Both independent reviews passed; the independent 213-test selection passed separately. Publication and native acceptance remain pending.

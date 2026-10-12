@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 28
-**Status:** Architecture reviewed; implementation awaits the bounded contract and independent review. No Task30 native writes are authorized.
+**Status:** Source verified at `b320505daaec9928fc5908cf938874948c5be240` (build/lint, 3,487 fast / 2,227 slow; both independent reviews passed). Publication and native acceptance pending; no Task30 native writes are authorized.
 **Owns:**
 - gateway/src/offline-queue/**
 - gateway/test/offline-queue/**

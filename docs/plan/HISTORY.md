@@ -17,9 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
-## 2026-10-12 — Bounded offline write replay in progress (task 30)
-Task30 implementation is underway against its reviewed replay contract. Pairing-scoped SQLite intent, protocol6 delivery, browser receipt guards and fresh once-only native approval are being added. An offline receipt records intent, while current native policy and permission decide whether replay may proceed. Unknown delivery outcomes remain bounded reconciliation receipts without automatic resend.
-**Cost:** Source gates and independent review are pending. Task30 native validation is not authorized and no deployment or live replay is claimed. Task29 evidence does not validate these new paths; Task18 remains blocked. Task30 stays active and the completion inventory remains 26 done / 16 active.
+## 2026-10-12 — Bounded offline write replay source verified (task 30)
+Task30 implementation follows its reviewed replay contract. Pairing-scoped SQLite intent, protocol6 delivery, browser receipt guards and fresh once-only native approval are implemented. An offline receipt records intent, while current native policy and permission decide whether replay may proceed. Unknown delivery outcomes remain bounded reconciliation receipts without automatic resend.
+Source `b320505daaec9928fc5908cf938874948c5be240` passed build/lint and the required full gate (3,487 fast / 2,227 slow tests). Both independent reviews passed; the independent 213-test selection passed separately.
+**Cost:** The first full gate stopped in the fast suite (3,481 passed / one failed) on an existing notification-count compatibility expectation; the no-op announcement repair and additional code-replay tests preceded the fresh passing gate. No slow-suite result is claimed for that failed attempt. Publication is pending. Task30 native validation is not authorized and no deployment or live replay is claimed. Task29 evidence does not validate these new paths; Task18 remains blocked. Task30 stays active and the completion inventory remains 26 done / 16 active.
 
 ## 2026-10-12 — Offline event reading validation merged and task archived (task 29)
 
