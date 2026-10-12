@@ -46,3 +46,13 @@ Head `3f345c9`. Tester PASS (`npm run verify`: 3,610 fast / 2,227 slow; e2e-unit
 - `module/src/adapters/pf2e/index.ts:61-68` — `auditedChat` records every `createChatMessage` by the same user while the call is in flight (e.g. a `chat_post` or another message during a check dialog). Those become `undoable` created targets, so audit Undo would delete messages the call never made. Record only messages provably produced by this call (e.g. use returned messages, or match speaker actor + origin item/flags); if a message cannot be attributed, do not record it as created.
 - Suggestions: if `entry.cast` throws after `consume` succeeded, say in the error that the slot/focus point was spent; with no `rank`, pick the prepared slot rank (or return INVALID_ARGS) instead of letting native `consume` throw "Slot not given"; the e2e spec must assert the `document_delete` result so a refused delete is not silent.
 - Tester: `vitest list --project e2e-live` showed no pf2e test names even with `AGENT_GATEWAY_E2E_PF2E=1`. Confirm the spec's tests are actually registered when enabled (not skipped by an import-time condition or hidden by `beforeAll`), so a live run cannot pass vacuously.
+
+## Attempt 3 — failed
+Head `f52d159`. Tester PASS (`npm run verify`: 3,612 fast / 2,227 slow; e2e-unit 163; 5 pf2e e2e tests always registered, run-time skip). Reviewer REQUEST CHANGES; other Attempt 2 items fixed, scope clean.
+- `module/src/adapters/pf2e/index.ts:71` — attribution by `speaker.actor` + author is not proof: a concurrent `chat_post` with the same actor as speaker (chat-post.ts:116, :140) is recorded as a created target of the strike and deleted by its Undo. Attribute per path using pf2e 8.6.0 (pf2e.mjs):
+  - Action: record only the message returned by `item.toMessage()` (:45496); no hook.
+  - Spell: after `consume`, call `spell.toMessage(null, {actualCast: true, data: {castRank}})` directly and record its returned message (:53446, as `cast` does at :53789-53794); otherwise require `flags.pf2e.origin.uuid === spell.uuid` and `flags.pf2e.casting.id === entry.id`.
+  - Strike: require `flags.pf2e.origin.uuid === item.uuid`, `flags.pf2e.context.type === 'attack-roll'` and `context.identifier === \`${item.id}.${slug}.${mapIndex}\`` (:19517, :20480-20481) in addition to author.
+  - Add a unit test: a same-actor, same-author message without pf2e origin flags created during the call is not recorded.
+- Pass `skipDialog: true` to `variant.roll` so a strike never blocks on a GM check dialog (:19383).
+- Replace the bare `catch { return false }` around `consume` (index.ts:221-224) with INVALID_ARGS asking for `rank` on "Slot not given", or the native error text otherwise.
