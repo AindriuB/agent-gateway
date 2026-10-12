@@ -138,3 +138,8 @@ Live 6/6 on v14 at `4fab588`. The code review found two defects:
 
 ## Attempt 16 — suppressed feats (Andrew, 2026-10-12)
 Head `deab903` passed live 7/7, and the reviewer approved it. The reviewer suggested one change, which Andrew wants made now. `module/src/adapters/pf2e/index.ts:147` `actionItems` includes Items marked `suppressed`. The character sheet's `#prepareAbilities` skips them (pf2e.mjs:24951), and `suppressFeats` sets the flag (:52432-52490). Exclude suppressed Items from both `listActions` and `performAction`, so a suppressed Item reports "Unknown action", and add a unit test for each.
+
+## Attempt 17 — PR #86 review finding (head 9e3ff95)
+Live 7/7 at `9e3ff95`. [P2] `module/src/adapters/pf2e/index.ts:113`: when ammunition is loaded as a subitem (for example a repeating weapon's magazine), it is synthetic. pf2e saves its changes through the owning weapon Item, so the update hook names the parent. The ammo snapshot never goes stale, and GM Undo can restore spent ammunition even though the result says the spend cannot be undone.
+
+Fix: snapshot the Item that is actually saved. Confirm in pf2e.mjs how a subitem is represented (`parentItem`, or whatever it is) and how its update is routed to the parent, and cite the lines. When ammo is a subitem, snapshot its owning Item; otherwise keep the ammo Item. Add a unit test for both.
