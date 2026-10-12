@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 27, 20
+**Status:** Source verified at `5059015`; publication, native acceptance and merge pending. Build/lint/full gate: 3,380 fast / 2,227 slow. Contract remains active.
 **Owns:**
 - gateway/src/events/**
 - gateway/test/events/**

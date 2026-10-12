@@ -384,6 +384,14 @@ Historical attempts remain failed-and-cleaned, not retroactive passes: the first
 
 Upgrade both module and gateway to protocol **3.0.0** together; older major peers fail the handshake compatibility check. Task 27 validates and discards event frames at the gateway, with no buffering, polling, gaps or offline retention until tasks 28/29. Combat uses native visibility and constant labels; Token events require current rendered perception, so v13 deletes with already-destroyed views are suppressed. This is not a complete change log. PR #71 is merged; the contract is archived at `plan/done/27-module-event-tap.md`. Future native writes require fresh scoped human consent and exact cleanup.
 
+## Task 28 gateway event buffer source verification
+
+Source `5059015ce17480f65dbe3629bb8db3a1a60c9782` passed required build/lint/full verification (3,380 fast / 2,227 slow tests), after correcting the module-announcement fixture to exclude gateway tools; its 17 targeted tests passed with existing assertions intact. Earlier focused checks passed 354 tests, with later independent/targeted runs of 71 and six. Exact bundle `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf` has offline verification only; no Task28 native run or installed deployment is established.
+
+Upgrade both peers to protocol **4.0.0**. New hello resume metadata and toolset `eventReadAllowed` are strict protocol additions. Native event sequence remains connection-local; polling uses durable SQLite gateway cursors and does not consume events. Offline tests cover the 10,000-entry bound, transactional eviction and reopen, pairing/user/world isolation, gateway-only gaps, bounded schema exceptions, 25-second timeout/wakeup, metadata-only policy denial, revocation, cancellation and gateway dispatch without module forwarding. A policy read `allow` and enabled agent are required; ask/deny/disabled settings fail closed. `events_history` is omitted and direct calls refused until task29.
+
+Fresh consent is required before deterministic native temporary-Actor mutations or an owned transient reconnect. Use an isolated gateway database and exact native principals; inspect actual GM/player metadata without changing policy or settings. Existing Task27 native results remain historical, not protocol4/buffer proof. The active contract is `plan/tasks/28-gateway-event-buffer.md`; no new world effects, code audits or public evidence exports are claimed.
+
 ## Permission rules on the Mac (auto mode)
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:

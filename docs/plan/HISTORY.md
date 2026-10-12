@@ -17,6 +17,16 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Policy-gated gateway event buffer implemented; native acceptance pending (task 28)
+
+Task 28 source `5059015ce17480f65dbe3629bb8db3a1a60c9782` passed required build/lint/full verification (3,380 fast / 2,227 slow tests). The earlier focused suite passed 354 tests; later independent and targeted checks passed 71, six and 17 tests respectively. Production bundle SHA-256 is `8cf825b62772e7efd76a1b1d6162d8443b5047b90fa1c3fb8df05f06214b8dbf`. This is source verification only: native protocol4/buffering acceptance has not run, and the active contract is not archived. Publication is pending and no new PR is claimed. The completed archive remains at 23 contracts; task 18 stays architecture-blocked.
+
+The gateway stores at most 10,000 redacted events per world/user in SQLite, with pairing-agent isolation and durable gateway cursors distinct from module connection sequences. `events_poll` is a non-consuming online read with up to 100 entries and a 25-second wait, bounded to one waiting poll per session and 64 gateway-wide. Calls and waiting completions require the exact live connection, active pairing and fresh `eventReadAllowed` metadata from the existing policy evaluator's explicit read `allow`; ask/deny/disabled policies refuse reads. Metadata-only policy changes, revocation, disconnect, cancellation and shutdown release waiting requests. `events_history` has a validated schema/repository path but remains hidden and direct calls are refused until task 29 enables offline reading.
+
+Protocol **4.0.0** is required on both peers for strict hello resume and toolset authorization metadata. Reconnect gaps distinguish inferable trailing sent events from unknown loss; unobserved offline world activity is never counted. Evicted cursor intervals are explicitly marked. Gateway tools are excluded from module handler registration and the legacy MCP server. Only the two actual static core event definitions receive bounded output-union/depth validation; public/pack validators and all input limits retain their stricter boundary.
+
+**Cost:** The first full gate exposed a module-announcement fixture that included newly gateway-handled definitions; its fixture now filters module tools with all original assertions preserved. Seventeen targeted checks passed before the fresh full gate. Native WebSocket closing/closed sends do not advance resume metadata. Historical task 27 native proof remains pinned to its earlier source/bundle and cannot establish this protocol4 implementation. A future minimal native fixture/reconnect proof requires fresh scoped consent, isolated gateway state and exact cleanup; no deployment, world writes or new audit evidence is claimed here.
+
 ## 2026-10-12 — Visible-client event tap task merged and archived (task 27)
 
 Andrew merged PR #71 at 2026-10-12T12:24:20Z, exact head `e58590e9ea551587b920a1cfa740651887a82875`, as main `d0093d981dde04b31310822a355f0df689aaf902`. Task 27's contract moves to done with only its status changed. The archive now contains 23 contracts; 18 active contracts remain, task 28 is next and task 18 retains its architecture blocker. No other queued contract is archived.
