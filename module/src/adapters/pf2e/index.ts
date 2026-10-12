@@ -104,7 +104,7 @@ function summary(actor: any) {
     const m = num(actor.saves?.[save]?.mod ?? s.saves?.[save]?.mod ?? s.saves?.[save]?.value);
     add(save, save[0]!.toUpperCase() + save.slice(1), m === undefined ? undefined : signed(m));
   }
-  const per = num(s.perception?.mod ?? s.attributes?.perception?.value);
+  const per = num(actor.perception?.mod ?? s.perception?.mod ?? s.perception?.value);
   add('perception', 'Perception', per === undefined ? undefined : signed(per));
   const land = s.movement?.speeds?.land?.value ?? s.attributes?.speed?.value;
   add('speed', 'Speed', num(land) === undefined ? undefined : `${land} ft`);

@@ -224,14 +224,22 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         )
           expect(performed.result.structured?.completed).toBe(true);
         const found = (await page.evaluate(`(async () => {
+        const find = () => {
+          const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
+          const pages = journal ? [...journal.pages] : [];
+          return pages
+            .filter((p) => p.system.tool === 'action_perform' && p.system.args.includes(${JSON.stringify(
+              strike?.id,
+            )}))
+            .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
+        };
+        // The audit page is written after the tool returns: poll, bounded to 10 s.
+        let page = find();
+        for (let i = 0; i < 40 && !page; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+          page = find();
+        }
         const dialogs = window.__agentGatewayDialogs;
-        const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
-        const pages = journal ? [...journal.pages] : [];
-        const page = pages
-          .filter((p) => p.system.tool === 'action_perform' && p.system.args.includes(${JSON.stringify(
-            strike?.id,
-          )}))
-          .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
         const created = (page?.system.targets ?? []).filter(
           (t) => t.existed === false && t.undoable === true && t.uuid.startsWith('ChatMessage.'),
         );

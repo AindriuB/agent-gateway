@@ -41,10 +41,11 @@ const actor: any = {
   img: 'icons/v.webp',
   type: 'character',
   level: 5,
+  perception: { mod: 10 },
   saves: { fortitude: { mod: 11 }, reflex: { mod: 9 }, will: { mod: 7 } },
   system: {
     attributes: { hp: { value: 50, max: 62, temp: 5 }, ac: { value: 24 } },
-    perception: { mod: 10 },
+    perception: { slug: 'perception', value: 10, totalModifier: 10, dc: 20, rank: 1 },
     movement: { speeds: { land: { value: 25 } } },
     resources: { heroPoints: { value: 1, max: 3 } },
     actions: [
