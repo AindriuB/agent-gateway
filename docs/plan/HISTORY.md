@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — Offline event reading source merged; native pending, test repair archived (tasks 29, 28a)
+
+PR #76 merged at 15:22:24 UTC: head `88b27ca2b273d1f9778cc78a6e22967c2be2c9a8`, main `369a443f728d42e0019b2f116bdef02d95a509a7`. Task29 source `e28f836` passed build/lint and 3,427 fast / 2,227 slow tests, with 74 independent focused checks. Its required native settings/offline-read/purge acceptance remains unperformed, so Task29 stays active. Protocol5, cooperative paired-module authorization and last-known-policy limits remain explicit in `docs/security.md`.
+
+Task28a is archived with only completion status added to its contract. PR #75 merged the deterministic initial-binding test repair (`1eb9b08`, main `3cd5cb1`), verified by targeted 16-test checks and build/lint/full verification (3,393 fast / 2,227 slow). The derived inventory is 25 completed contracts and 17 active contracts. Task30 is ready for planning through merged dependencies 21 and 28; it has not started. Task18 remains architecture-blocked.
+
+**Cost:** Merging Task29 source is not native acceptance or permission to change live world settings. This record archives only the completed test repair, preserves Task28 historical native evidence separately, and exports no private artifacts. No new native actions, deployment or Task29 completion are claimed.
+
 ## 2026-10-12 — Offline event reading implemented and source verified; native pending (task 29)
 
 Task29 source `e28f836ae8a83116d59f0f75174d684c9917c5a7` passed build/lint and 3,427 fast / 2,227 slow tests. Rebase onto merged PR #75 main `3cd5cb1` preserved the exact gated tree `f45766b0a7f0181ccf59edf5fcac0e5adb80d501`. Bundle SHA-256 is `d19791ab8a7e38e365c4e84a76f4615fe80b99ec64f576b34bc331bff3b99101`. Independent focused review passed 74 tests; the earlier 241-test selection, later 32-test narrow selection and two registration-fixture checks remain separate results.
