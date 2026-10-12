@@ -128,6 +128,16 @@ function consumeTargets(entry: any, spell: any): string[] {
   return typeof target.uuid === 'string' ? [target.uuid] : [];
 }
 
+/** What casting spends natively without callOptions, for the result disclosure. */
+function spellSpends(entry: any, spell: any): string {
+  if (spell.atWill === true || entry.isRitual === true) return '';
+  const focus = num(spell.system?.cast?.focusPoints) ?? 0;
+  if (focus > 0) return 'focus point';
+  const targets = consumeTargets(entry, spell);
+  if (!targets.length) return '';
+  return targets[0] === spell.uuid ? 'innate spell use' : 'spell slot';
+}
+
 function strikes(actor: any): any[] {
   return list(actor.system?.actions).filter(
     (s) => s && (s.type === undefined || s.type === 'strike') && typeof s.slug === 'string',
@@ -247,6 +257,7 @@ async function performAction(
     // :20448-20499) call Check.roll without a callback, so their message is created natively
     // without callOptions and is neither attributable nor undoable: disclosed below.
     const supported = actor.type === 'character';
+    const spentAmmo = strikeWrites(strike.item).length > 0;
     let attributed = false;
     let noMessage = false;
     const rolled = await auditedChat(context, async (record) => {
@@ -279,14 +290,18 @@ async function performAction(
         message:
           `${text(strike.label, 200)} ${text(variant.label, 100)} was not rolled (no ammunition, out of range or no valid target)`.trim(),
       };
+    // Ammunition and thrown weapons are spent natively without callOptions (see strikeWrites).
+    const spent = spentAmmo
+      ? '. Ammunition or a thrown weapon was spent; that spend cannot be undone'
+      : '';
     const rolledLabel = `Rolled ${text(strike.label, 200)} ${text(variant.label, 100)}`.trim();
     if (!attributed && (noMessage || supported))
-      return done(`${rolledLabel}. No attack message was created`);
+      return done(`${rolledLabel}. No attack message was created${spent}`);
     if (!attributed)
       return done(
-        `${rolledLabel}. The attack message was posted but not audited and cannot be undone`,
+        `${rolledLabel}. The attack message was posted but not audited and cannot be undone${spent}`,
       );
-    return done(rolledLabel);
+    return done(`${rolledLabel}${spent}`);
   }
   if (parts[0] === 'action' && parts.length === 2) {
     const item = list(actor.itemTypes?.action).find((i) => i.id === parts[1]);
@@ -298,7 +313,9 @@ async function performAction(
         await item.toMessage(undefined, { create: false }),
         context,
         record,
-        { renderSheet: false },
+        // Native passes messageMode: eventToMessageMode(undefined), which is undefined
+        // (pf2e.mjs:13774-13775, :45495-45496).
+        { renderSheet: false, messageMode: undefined },
       );
       if (!made) throw new Error(`No chat message was created for ${text(item.name, 200)}`);
     });
@@ -333,6 +350,8 @@ async function performAction(
     // go stale rather than being restored wrongly). Focus points are on the Actor, already enrolled.
     for (const uuid of spell.atWill === true ? [] : consumeTargets(entry, spell))
       await context.snapshot(uuid);
+    const spends = spellSpends(entry, spell);
+    const spentNote = spends ? `. The ${spends} spent cannot be undone` : '';
     const cast = await auditedChat(context, async (record) => {
       // Consume first so a failed consumption (no focus point or slot) is reported, not hidden.
       let paid: boolean;
@@ -365,7 +384,7 @@ async function performAction(
           `Casting ${text(spell.name, 200)} failed after its slot or focus point was spent: ${text(
             (e as Error)?.message,
             300,
-          )}`,
+          )}${spentNote}`,
         );
       }
       return true;
@@ -375,7 +394,7 @@ async function performAction(
         completed: false,
         message: `Could not cast ${text(spell.name, 200)}: no slot or focus point available`,
       };
-    return done(`Cast ${text(spell.name, 200)}`);
+    return done(`Cast ${text(spell.name, 200)}${spentNote}`);
   }
   return invalid('Unknown action ID');
 }
@@ -446,52 +465,80 @@ function activeConditions(actor: any) {
     });
 }
 
+const CONDITION_NOTICE = {
+  id: 'audit-notice',
+  name: 'Notice: this condition change cannot be undone through the audit log',
+};
+
+/**
+ * The condition Item plus every Item pf2e will cascade-delete with it: items it granted and its
+ * granter when that grant cascades (processGrantDeletions, pf2e.mjs:45773-45789, :45387-45412).
+ */
+function cascadeTargets(actor: any, condition: any): string[] {
+  const seen = new Set<any>();
+  const visit = (item: any) => {
+    if (!item || seen.has(item) || seen.size >= 64) return;
+    seen.add(item);
+    const granter = actor.items?.get?.(item.flags?.pf2e?.grantedBy?.id ?? '');
+    const grant = Object.values(granter?.flags?.pf2e?.itemGrants ?? {}).find(
+      (g: any) => g?.id === item.id,
+    ) as any;
+    if (granter && grant?.onDelete === 'cascade') visit(granter);
+    for (const g of Object.values(item.flags?.pf2e?.itemGrants ?? {}) as any[]) {
+      const child = actor.items?.get?.(g?.id);
+      if (
+        child?.flags?.pf2e?.grantedBy?.id === item.id &&
+        child.flags.pf2e.grantedBy.onDelete === 'cascade'
+      )
+        visit(child);
+    }
+  };
+  visit(condition);
+  return [...seen].map((i) => i.uuid).filter((u): u is string => typeof u === 'string' && !!u);
+}
+
 async function conditions(actor: any, change?: ConditionChange, context?: AdapterExecutionContext) {
+  let changed = false;
   if (change !== undefined) {
     if (!SLUG.test(change.id)) return invalid('Unknown condition');
     if (change.id === 'persistent-damage')
       return invalid('Persistent damage cannot be changed through this tool');
     const known = game.pf2e?.ConditionManager?.getCondition?.(change.id);
     if (!known) return invalid('Unknown condition');
-    if (
-      typeof context?.snapshot !== 'function' ||
-      typeof context.intendCreate !== 'function' ||
-      typeof context.created !== 'function'
-    )
-      throw new Error('Audit context unavailable');
+    if (typeof context?.snapshot !== 'function') throw new Error('Audit context unavailable');
     const existing = list(actor.itemTypes?.condition).find(
       (c) => c.slug === change.id && c.active !== false,
     );
     const value = change.value;
-    // pf2e's increaseCondition, decreaseCondition and ConditionManager.updateConditionValue
-    // (pf2e.mjs:33531-33561, :48967) call createEmbeddedDocuments, deleteEmbeddedDocuments and
-    // Item#update/delete without accepting options, so callOptions cannot reach them. These are
-    // the same Foundry document operations they perform (same data and clamping), issued with
-    // callOptions the way core tools do (tools/_documents.ts:309).
+    // pf2e's condition API (increaseCondition, decreaseCondition, updateConditionValue;
+    // pf2e.mjs:33531-33561, :48967) accepts no document options, so callOptions cannot reach its
+    // writes and the change is not undoable. Enrol the Items it may change or cascade-delete so
+    // they go stale and Undo refuses them instead of half-restoring; the result says so.
+    const enrol = async () => {
+      for (const uuid of cascadeTargets(actor, existing)) await context.snapshot(uuid);
+    };
     if (!change.active || value === 0) {
       if (existing) {
-        await context.snapshot(existing.uuid);
-        await actor.deleteEmbeddedDocuments('Item', [existing.id], context.callOptions);
+        await enrol();
+        await actor.decreaseCondition(change.id, { forceRemove: true });
+        changed = true;
       }
     } else if (!existing) {
-      await context.intendCreate(actor);
-      const data = known.toObject();
-      const base = data.system?.value?.value;
-      if (data.system?.value)
-        data.system.value.value = typeof base === 'number' ? Math.max(base, value ?? 1) : null;
-      const made = (await actor.createEmbeddedDocuments('Item', [data], context.callOptions))?.[0];
-      if (typeof made?.uuid === 'string' && made.uuid) await context.created(made.uuid, actor);
+      await actor.increaseCondition(change.id, value ? { value } : {});
+      changed = true;
     } else if (value !== undefined && num(existing.system?.value?.value) !== undefined) {
-      let next = value;
-      if (['dying', 'wounded', 'doomed'].includes(existing.slug))
-        next = Math.min(next, num(actor.attributes?.[existing.slug]?.max) ?? next);
-      if (existing.system.value.value !== next) {
-        await context.snapshot(existing.uuid);
-        await existing.update({ 'system.value.value': next }, context.callOptions);
+      if (existing.system.value.value !== value) {
+        await enrol();
+        await game.pf2e.ConditionManager.updateConditionValue(existing.id, actor, value);
+        changed = true;
       }
     }
   }
-  return { supported: true, conditions: activeConditions(actor) };
+  const active = activeConditions(actor);
+  return {
+    supported: true,
+    conditions: changed ? [...active.slice(0, 127), CONDITION_NOTICE] : active,
+  };
 }
 
 export const pf2eAdapter: SystemAdapter = Object.freeze({

@@ -138,26 +138,12 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
     expect(r.structured?.supported).toBe(true);
   });
 
-  // Audit targets of the newest audit page for `tool` whose args match `argsPattern`. The page is
-  // written after the tool returns: poll, bounded to 10 s.
-  const auditTargets = async (tool: string, argsPattern: RegExp) =>
-    (await session.browser.page.evaluate(`(async () => {
-      const re = new RegExp(${JSON.stringify(argsPattern.source)});
-      const find = () => {
-        const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
-        return (journal ? [...journal.pages] : [])
-          .filter((p) => p.system.tool === ${JSON.stringify(tool)} && re.test(p.system.args))
-          .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
-      };
-      let page = find();
-      for (let i = 0; i < 40 && !page; i++) {
-        await new Promise((r) => setTimeout(r, 250));
-        page = find();
-      }
-      return (page?.system.targets ?? []).map((t) => ({
-        uuid: t.uuid, existed: t.existed, undoable: t.undoable,
-      }));
-    })()`)) as { uuid: string; existed: boolean; undoable: boolean }[];
+  const expectUndoDisclosure = (result: { structured?: Record<string, unknown>; text: string }) => {
+    const notice = ((result.structured?.conditions ?? []) as Row[]).find(
+      (c) => c.id === 'audit-notice',
+    );
+    expect(String(notice?.name), result.text).toMatch(/cannot be undone/);
+  };
 
   it(
     'applies frightened 2 via the system condition API and restores it',
@@ -176,13 +162,10 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         );
         expect(on.result.isError, on.result.text).toBe(false);
         expect((await frightened())?.value).toBe(2);
-        // The embedded condition Item is audited as an undoable target, not view-only.
-        const embedded = (await auditTargets('conditions', /"value":\s*2/)).filter((t) =>
-          t.uuid.includes('.Item.'),
-        );
-        expect(embedded.length, JSON.stringify(embedded)).toBeGreaterThan(0);
-        for (const t of embedded) expect(t.undoable, t.uuid).toBe(true);
-        expect(embedded.some((t) => t.existed === Boolean(prior))).toBe(true);
+        // pf2e's condition API takes no document options, so the change is not undoable and the
+        // result says so.
+        // A no-op (already frightened 2) changes nothing and carries no notice.
+        if (prior?.value !== 2) expectUndoDisclosure(on.result);
       } finally {
         const restore = await settle(
           session,
@@ -195,11 +178,7 @@ describe('pf2e adapter (set AGENT_GATEWAY_E2E_PF2E=1)', () => {
         expect(restore.result.isError, restore.result.text).toBe(false);
         // Assert against an actual read after the restore has completed.
         expect((await frightened())?.value).toBe(prior?.value);
-        const restored = (
-          await auditTargets('conditions', prior ? /"value":\s*\d/ : /"active":\s*false/)
-        ).filter((t) => t.uuid.includes('.Item.'));
-        expect(restored.length, JSON.stringify(restored)).toBeGreaterThan(0);
-        for (const t of restored) expect(t.undoable, t.uuid).toBe(true);
+        if (prior?.value !== 2) expectUndoDisclosure(restore.result);
       }
     },
     humanTimeout(2),
