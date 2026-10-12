@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 23, 20d, 20e
-**Status:** Implementation and bounded native v13/v14 acceptance verified; PR #67 awaits merge. Keep this contract active until merge.
+**Status:** Complete; PR #67 merged at `6ec99ff3d8d526e232b7b48e6cefb78e76f597ee`. Bounded native v13/v14 acceptance and coverage limits are recorded in PLAN and HISTORY.
 **Owns:**
 - protocol/src/tools/table-roll.ts
 - protocol/src/tools/playlist-control.ts
