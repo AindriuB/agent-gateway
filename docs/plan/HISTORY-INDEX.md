@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-12 | 30 | GM offline replay passes v13/v14; prior failures cleaned; validation publication pending | ## 2026-10-12 — Offline write replay bounded GM native acceptance passed (task 30) |
 | 2026-10-12 | 30 | bounded offline replay and execution-failure receipts verified; native acceptance pending | ## 2026-10-12 — Bounded offline write replay source verified (task 30) |
 | 2026-10-12 | 29 | Merged PR #78 bounded validation archived; 26 done / 16 active, Task30 next and Task18 blocked | ## 2026-10-12 — Offline event reading validation merged and task archived (task 29) |
 | 2026-10-12 | 29 | Both native GM worlds passed nine reads/four UI operations, isolated purge five and guarded restoration; combined gate 3,437/2,227 passed | ## 2026-10-12 — Offline reading GM native acceptance passed; validation publication pending (task 29) |

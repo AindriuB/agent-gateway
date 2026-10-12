@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 28
-**Status:** PR #80 source repair `57adb9ac24903db62a5ffc1d38887133dcda4d7c` and combined harness `acd25697fd44e881014d138f75066db0d67f53c0` verified (build/lint, 3,505 fast / 2,227 slow; both independent reviews passed). Updated publication and native acceptance pending; no Task30 native writes are authorized.
+**Status:** Source `57adb9ac24903db62a5ffc1d38887133dcda4d7c` / bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d` passed bounded GM native acceptance on Foundry 13.351/14.369. Final harness `682c2915d875db23d3ec222cbb5170a4afad2061` passed build/lint, 3,509 fast / 2,227 slow tests and both reviews. Final harness/validation publication pending; task remains active until merge. Further native writes require fresh scoped consent.
 **Owns:**
 - gateway/src/offline-queue/**
 - gateway/test/offline-queue/**
@@ -53,12 +53,12 @@ submits the queued calls, which go through normal policy and approval.
 - gateway/src/routing/** (11, 20, 28); module/src/approvals/** (16)
 
 ## Acceptance
-- [ ] Offline non-read calls are stored in SQLite (args capped by the frame limit) and return `{status:'pending_approval', id}` with text explaining the world is offline
-- [ ] On reconnect the gateway sends `queuedCalls [...]`; module submits each as an approval request (never auto-allowed, even if policy is `allow`) and keeps the same id so `approval_status` works across the gap
-- [ ] Ordinary module-owned reads while offline still return `WORLD_OFFLINE`; preserve Task29-authorized gateway event reads and owner-scoped queued `approval_status` as explicit exceptions.
-- [ ] Queue entries expire after 7 days (named constant) and report `expired`
-- [ ] Integration test with the fake module client from 11
-- [ ] `npm run verify` passes
+- [x] Offline non-read calls are stored in SQLite (args capped by the frame limit) and return `{status:'pending_approval', id}` with text explaining the world is offline
+- [x] On reconnect the gateway sends `queuedCalls [...]`; module submits each as an approval request (never auto-allowed, even if policy is `allow`) and keeps the same id so `approval_status` works across the gap
+- [x] Ordinary module-owned reads while offline still return `WORLD_OFFLINE`; preserve Task29-authorized gateway event reads and owner-scoped queued `approval_status` as explicit exceptions.
+- [x] Queue entries expire after 7 days (named constant) and report `expired`
+- [x] Integration test with the fake module client from 11
+- [x] `npm run verify` passes
 
 ## Out of scope
 - Event buffering (28, 29)
@@ -83,4 +83,12 @@ submits the queued calls, which go through normal policy and approval.
 
 ## Resolved review defect — queued result failure state
 
-PR #80 review identified that an explicitly approved replay whose handler fails loses the existing `storedResult.failed` flag across queued status, persistence and gateway `approval_status`. The repair preserves a strict optional boolean `resultFailed` through the correlated protocol, browser receipt/duplicate response, SQLite receipt and gateway status response. Approval state remains distinct from execution success: an approved failed call must retain its failure evidence. Static migration006 upgrades existing migration005 databases without rewriting their installed schema. Legacy receipts keep an unset failure flag instead of inventing success. Regression checks cover failed approved handlers, durable reopen and duplicate terminal responses, while successful/pending receipts retain their existing semantics. PR #80’s queued execution-failure repair is verified at source `57adb9ac24903db62a5ffc1d38887133dcda4d7c`. Combined source/harness `acd25697fd44e881014d138f75066db0d67f53c0` passed build/lint and 3,505 fast / 2,227 slow tests; both independent reviews passed. The prepared harness is pinned to that source and bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d`, with 13 offline harness checks including actual tsx browser-callback serialization. Native acceptance remains pending and no Task30 live writes are authorized.
+PR #80 review identified that an explicitly approved replay whose handler fails loses the existing `storedResult.failed` flag across queued status, persistence and gateway `approval_status`. The repair preserves a strict optional boolean `resultFailed` through the correlated protocol, browser receipt/duplicate response, SQLite receipt and gateway status response. Approval state remains distinct from execution success: an approved failed call must retain its failure evidence. Static migration006 upgrades existing migration005 databases without rewriting their installed schema. Legacy receipts keep an unset failure flag instead of inventing success. Regression checks cover failed approved handlers, durable reopen and duplicate terminal responses, while successful/pending receipts retain their existing semantics. PR #80’s queued execution-failure repair is verified at source `57adb9ac24903db62a5ffc1d38887133dcda4d7c`. Combined source/harness `acd25697fd44e881014d138f75066db0d67f53c0` passed build/lint and 3,505 fast / 2,227 slow tests; both independent reviews passed. The prepared harness is pinned to that source and bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d`, with 13 offline harness checks including actual tsx browser-callback serialization. At that source-only checkpoint, native acceptance was pending and Task30 live writes were not authorized. The later consented bounded runs are recorded below.
+
+## Bounded native acceptance record
+
+Human-approved bounded Task30 acceptance passed on Foundry 14.369 and 13.351 at source `57adb9ac24903db62a5ffc1d38887133dcda4d7c` / bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d`. Each passing run used one temporary GM-private NPC, two name-only offline queued updates and an isolated gateway database with read-only credential import. Twelve SDK calls settled: two queued intents, eight owner receipt reads, one cross-owner status refusal and one ordinary offline-read refusal. Receipts survived isolated database reopen before delivery. A fresh native once approval executed one rename and returned `resultFailed:false`; a deliberate native denial retained its complete reason identically in the gateway receipt. Exact duplicate terminal delivery and a final reconnect left the Actor version and single matched mutation audit unchanged. Exact fixtures were deleted, original documents/settings/views/world time and credential databases remained unchanged, and each passing run retained one audit.
+
+The initial v14 attempt failed before human approval because a 15-second harness pending wait was shorter than the real 25-second approval wait. No queued tool mutation or audit occurred; its two isolated receipts became unknown. The fenced recovery started no gateway, blocked every WebSocket except native Foundry Socket.IO, verified expired nonexecutable native metadata and exact unchanged fixture custody, then deleted only that fixture. The initial v13 attempt executed one approved rename and a deliberate denial, then failed a strict reason assertion because the human added a trailing comma. It retained one audit and cleaned up; duplicate/final-reconnect checks were not reached. The reviewed correction compares the full bounded native reason exactly with the gateway result and requires the run tag, preserving punctuation. Both failed attempts remain failures and are fully cleaned up. Total retained audits across failed and passing runs are one on v14 and two on v13.
+
+Native coverage uses the actual GM `ask_owner` policy. Forced approval under allow/session grants, TTL/caps, claimed-crash unknown recovery, policy/source/definition tightening and native failed-execution results remain offline-test coverage. No installed deployment, exactly-once crash guarantee or Task18 resolution is claimed. Final verification and exact per-version harness pins are recorded in `docs/plan/HISTORY.md`. Private fixture identifiers and raw evidence are not published.
