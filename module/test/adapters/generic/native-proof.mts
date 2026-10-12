@@ -189,6 +189,7 @@ try {
   );
   const installed = await browser.context.request.get(
       `${config.foundryOrigin}/modules/agent-gateway/dist/module/main.js`,
+      { ignoreHTTPSErrors: true },
     ),
     installedBytes = await installed.body();
   if (!installed.ok() || !installedBytes.length || installedBytes.length > 6000000)
