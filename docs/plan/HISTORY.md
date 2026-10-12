@@ -17,6 +17,14 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-12 — System adapter source merged; native acceptance pending (task 31)
+
+PR #82 merged at 2026-10-12T19:06:44Z, reviewed head `1d4743be65b6dbcdccd111c77af8f0ff44fccbab`, main `783ba3a512c81d654cc98d0b378498b99b3929ad`. Five fixed core tools and their internal generic fallback are now on main. Source verification remains pinned to combined `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests, both independent reviews and 113 independent focused tests across five files passed. The final merged head adds reviewed result documentation only.
+
+Task31 stays active because native acceptance remains pending; no contract is moved to done. The inventory remains 27 completed / 15 active contracts and Task18 stays architecture-blocked. Task32 — Add the dnd5e system adapter — is the next implementation contract, with its source dependency 31 merged; implementation has not started.
+
+**Cost:** Source tests do not establish native Actor access, approval or adapter compatibility. The contract requires fresh scoped consent before any native fixtures, actions or cleanup; none is authorized here. Generic mutation requests remain unsupported, and concrete dnd5e/pf2e behavior remains tasks32/33. No runtime changes, native validation, installed deployment or Task18 resolution are claimed by this merge record.
+
 ## 2026-10-12 — Bounded system adapter tools source verified (task 31)
 
 Task31 adds five fixed core tools behind an internal system-selected adapter interface. Generic fallback exposes bounded Actor identity/summary metadata, empty unsupported action/inventory/condition collections and no native mutation. Canonical top-level world Actor identity, current native user, ownership or GM status and current folder policy are checked before adapter invocation; writes recheck after audit snapshots. Trusted mutation context stays separate from caller options.

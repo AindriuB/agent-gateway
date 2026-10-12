@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 20d, 20e
-**Status:** Source verified at `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests and both independent reviews passed. Native acceptance and publication pending. Dependencies are merged. No Task31 native writes are authorized.
+**Status:** Source verified at `76a111cad1ea292fe33f6b79902e896fa4b01698`: build/lint, 3,580 fast / 2,227 slow tests and both independent reviews passed. Source merged in PR #82 (head `1d4743b`, main `783ba3a`); native acceptance remains pending, so this contract stays active. Dependencies are merged. No Task31 native writes are authorized.
 **Owns:**
 - module/src/adapters/index.ts
 - module/src/adapters/types.ts
