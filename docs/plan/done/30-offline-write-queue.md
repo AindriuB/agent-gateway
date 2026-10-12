@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 21, 28
-**Status:** Source `57adb9ac24903db62a5ffc1d38887133dcda4d7c` / bundle `84ea050e388ad8b105987ffd9cb988c5bc486c73181dbc005fe0bd7e1964cd0d` passed bounded GM native acceptance on Foundry 13.351/14.369. Final harness `682c2915d875db23d3ec222cbb5170a4afad2061` passed build/lint, 3,509 fast / 2,227 slow tests and both reviews. Final harness/validation publication pending; task remains active until merge. Further native writes require fresh scoped consent.
+**Status:** Complete; implementation, P2 result-failure repair and bounded GM native validation merged in PR #80 (head `232130f6da8c3900ff4113732083f332f561c375`, main `216e22a38fa62606109ff13059e36fcfcff0d386`) on 2026-10-12. Final gate: build/lint, 3,509 fast / 2,227 slow tests. Native source/bundle and per-version harness limits remain recorded below. Further native writes require fresh scoped consent.
 **Owns:**
 - gateway/src/offline-queue/**
 - gateway/test/offline-queue/**
