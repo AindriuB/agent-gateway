@@ -24,15 +24,15 @@ MVP A does not wait on Quench (39) or remote conformance (40).
 - examples/hello-pack/ — a separate module that must never ship in the core zip
 
 ## Acceptance
-- [ ] `module.json` `relationships.systems` has exactly two entries, `{ id: "pf2e", type: "system", compatibility: { minimum: <Andrew's decision, default "7.12">, verified: "8.6.0" } }` and `{ id: "dnd5e", type: "system", compatibility: { minimum: "6.0", verified: "6.0.6" } }`
-- [ ] `module.json` has no `relationships.requires` or `relationships.recommends` entry; `scripts/test/pack-module.test.mjs` asserts this, so the core never depends on a pack
+- [x] ~~`relationships.systems` lists pf2e and dnd5e~~ Replaced (Andrew, 2026-10-13): `module.json` declares no `relationships.systems`. Foundry v13/v14 core hides a module from every world whose system is not listed (World._initialize calls Module.getPackages({system, enforceCompatibility}), which calls supportsSystem) and force-disables it below the listed minimum version. The gateway must work on any system with the generic adapter as fallback. Supported pf2e/dnd5e versions go in the docs (task 65).
+- [ ] `module.json` has no `relationships.systems`, `relationships.requires` or `relationships.recommends` entry; `scripts/test/pack-module.test.mjs` asserts this, so the core never depends on a pack
 - [ ] `module.json` `download` is `https://github.com/AindriuB/agent-gateway/releases/download/v<version>/agent-gateway.zip`; the test asserts `<version>` equals `module.json` `version`
 - [ ] After `npm run build`, `node scripts/pack-module.mjs` writes `dist/release/agent-gateway.zip`; it exits non-zero with one stderr line naming the missing file if `dist/module/main.js` is absent
-- [ ] The test lists the zip: every entry is `module.json`, `LICENSE` or under `dist/module/`, `lang/`, `templates/` or `styles/`; no entry under `examples/`, `node_modules/` or `module/src/`, and no `*.ts` file
+- [ ] The zip has no `*.map` (source maps embed the full source) and no dotfile or dot-directory entry; the test uses decoys for both. The test lists the zip: every entry is `module.json`, `LICENSE` or under `dist/module/`, `lang/`, `templates/` or `styles/`; no entry under `examples/`, `node_modules/` or `module/src/`, and no `*.ts` file
 - [ ] The test asserts the zipped `module.json` is byte-identical to the repo's, and every path named in its `esmodules`, `styles` and `languages[].path` exists in the zip
 - [ ] No new npm dependency (system `zip`/`unzip` or Node built-ins only)
 - [ ] `node --test scripts/test/pack-module.test.mjs` passes and `npm run verify` passes
-- [ ] Manual check on foundry.local v14: the zip unpacked into `Data/modules/agent-gateway` enables in `test-world` (pf2e) and in the dnd5e world, and the GM tab's link connects. The PR also states, from a live check, whether Foundry lets the module be enabled in a world whose system is not listed (this answers the open decision on `relationships.systems`)
+- [x] Manual check answered from core source, not a live run (Andrew, 2026-10-13): Foundry does not let a module be enabled in a world whose system is not listed in `relationships.systems`; it is hidden (World._initialize -> Module.getPackages -> supportsSystem), hence the decision above. The unpack-and-enable check on foundry.local is still worth doing at release (task 66).
 
 ## Out of scope
 - `version` bumps and the root `package.json` scripts (64)

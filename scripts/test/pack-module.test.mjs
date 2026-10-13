@@ -29,6 +29,12 @@ function fakeRoot(name, withBuild) {
     mkdirSync(path.join(root, 'dist/module'), { recursive: true });
     writeFileSync(path.join(root, 'dist/module/main.js'), 'export {};');
     writeFileSync(path.join(root, 'dist/module/main.d.ts'), '');
+    writeFileSync(path.join(root, 'dist/module/main.js.map'), '{"sourcesContent":[]}');
+    writeFileSync(path.join(root, 'dist/module/.DS_Store'), '');
+    mkdirSync(path.join(root, 'lang/.hidden'));
+    writeFileSync(path.join(root, 'lang/.hidden/x.json'), '{}');
+    writeFileSync(path.join(root, '.DS_Store'), '');
+    writeFileSync(path.join(root, 'styles/.DS_Store'), '');
   }
   return root;
 }
@@ -36,20 +42,13 @@ function fakeRoot(name, withBuild) {
 const run = (root) => spawnSync('node', [script, '--root', root], { encoding: 'utf8' });
 
 describe('module.json', () => {
-  it('lists exactly pf2e and dnd5e systems', () => {
-    const systems = manifest.relationships.systems;
-    assert.deepEqual(
-      systems.map((s) => s.id),
-      ['pf2e', 'dnd5e'],
-    );
-    assert.deepEqual(systems[0].compatibility, { minimum: '7.12', verified: '8.6.0' });
-    assert.deepEqual(systems[1].compatibility, { minimum: '6.0', verified: '6.0.6' });
-    for (const s of systems) assert.equal(s.type, 'system');
+  it('declares no systems, so it loads in any world', () => {
+    assert.equal(manifest.relationships?.systems, undefined);
   });
 
   it('never requires or recommends a pack', () => {
-    assert.equal(manifest.relationships.requires, undefined);
-    assert.equal(manifest.relationships.recommends, undefined);
+    assert.equal(manifest.relationships?.requires, undefined);
+    assert.equal(manifest.relationships?.recommends, undefined);
   });
 
   it('download url matches the version', () => {
@@ -69,6 +68,12 @@ describe('pack-module', () => {
     assert.match(lines[0], /dist\/module\/main\.js/);
   });
 
+  it('gives a usage error when --root has no value', () => {
+    const r = spawnSync('node', [script, '--root'], { encoding: 'utf8' });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^pack-module: usage/);
+  });
+
   it('writes a zip with only the allowed entries', () => {
     const root = fakeRoot('build', true);
     const r = run(root);
@@ -81,7 +86,8 @@ describe('pack-module', () => {
     for (const n of names) {
       assert.match(n, allowed, n);
       assert.doesNotMatch(n, /^(examples|node_modules|module\/src)\//);
-      assert.doesNotMatch(n, /\.ts$/);
+      assert.doesNotMatch(n, /\.(ts|map)$/);
+      assert.doesNotMatch(n, /(^|\/)\./);
     }
     assert.ok(names.includes('dist/module/main.js'));
 
