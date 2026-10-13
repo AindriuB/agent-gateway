@@ -24,6 +24,28 @@ Options:
   --help              Print this help
 `;
 
+/** Reduce each --allow-origin to a bare origin (no path, no trailing slash); http(s) only. */
+function normalizeOrigins(values: readonly string[]): string[] {
+  return values.map((v) => {
+    let url: URL;
+    try {
+      url = new URL(v);
+    } catch {
+      process.stderr.write(
+        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+      );
+      process.exit(2);
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      process.stderr.write(
+        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+      );
+      process.exit(2);
+    }
+    return url.origin;
+  });
+}
+
 function main(): void {
   let values;
   try {
@@ -63,10 +85,12 @@ function main(): void {
     }
     throw err;
   }
+  // An empty value (a cleared host setting) means "use the defaults".
+  const allowOrigins = (values['allow-origin'] ?? []).filter((v) => v !== '');
   const app = createApp(config, {
     version: pkg.version,
     selector: { world: values.world, user: values.user },
-    ...(values['allow-origin']?.length ? { allowedOrigins: values['allow-origin'] } : {}),
+    ...(allowOrigins.length ? { allowedOrigins: normalizeOrigins(allowOrigins) } : {}),
     ...((values.db ?? process.env.AGENT_GATEWAY_DB)
       ? { dbPath: values.db ?? process.env.AGENT_GATEWAY_DB }
       : {}),

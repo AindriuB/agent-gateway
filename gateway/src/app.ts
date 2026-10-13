@@ -6,13 +6,32 @@ import { dirname, join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
+import { LinkListenError } from './link/server.js';
 import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 
 export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
+
+/** True for failures caused by another running gateway owning the link port or the db. */
+function isInstanceConflict(err: unknown): boolean {
+  if (err instanceof LinkListenError) return err.code === 'EADDRINUSE';
+  const e = err as { errcode?: number; message?: string } | null;
+  return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
+}
+
+const MAX_WARNED_ORIGINS = 20;
+const MAX_ORIGIN_CHARS = 100;
+
+/** Make an untrusted Origin header safe for a log line: printable ASCII only, bounded. */
+export function sanitizeOrigin(origin: string | undefined): string {
+  if (origin === undefined) return '(absent)';
+  const clean = origin.replace(/[^\x21-\x7e]/g, '?');
+  return clean.length > MAX_ORIGIN_CHARS ? `${clean.slice(0, MAX_ORIGIN_CHARS)}...` : clean;
+}
 
 export function defaultDbPath(): string {
   return join(homedir(), '.foundry-agent-gateway', 'gateway.db');
@@ -65,45 +84,23 @@ export function createApp(config: Config, deps: AppDeps): App {
   let queue: OfflineQueue | undefined;
   return {
     async start() {
-      const dbPath = deps.dbPath ?? defaultDbPath();
-      if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
-      store = openStore(dbPath);
-      const registry = new LinkRegistry();
-      const codes = new PairingCodes();
-      events = new EventBuffer(store, registry);
-      queue = new OfflineQueue(store, registry);
-      events.startRetention();
-      link = new LinkServer({
-        port: config.linkPort,
-        store,
-        codes,
-        registry,
-        allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
-        gatewayVersion: deps.version,
-        events,
-        queue,
-      });
-      const port = await link.listen();
-      writeStatus(
-        `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`,
-      );
-      writeStatus(`Link URL: ws://localhost:${port}`);
-      server = createSessionServer({
-        version: deps.version,
-        registry,
-        events,
-        queue,
-        ...(deps.selector ? { selector: deps.selector } : {}),
-        knownIdentities: () =>
-          store?.listActivePairings().map((p) => ({
-            worldId: p.worldId,
-            userId: p.userId,
-            userName: p.userName,
-          })) ?? [],
-        log: writeStatus,
-      });
-      await server.connect(new StdioServerTransport());
-      logger.info(`MCP stdio server started`);
+      try {
+        await startPrimary();
+      } catch (err) {
+        await this.stop();
+        // Only a conflict with another running gateway degrades. A real failure of the
+        // only instance (corrupt db, permissions) must still exit 1 via reportStartFailure.
+        if (!isInstanceConflict(err)) throw err;
+        const reason = (err as Error).message;
+        // One clear line; no pairing code, so only the instance that holds the port shows one.
+        logger.error(
+          err instanceof LinkListenError
+            ? `pid ${process.pid}: another gateway holds link port ${err.port}; this instance cannot pair`
+            : `pid ${process.pid}: another gateway holds the pairing database; this instance cannot pair`,
+        );
+        server = createDegradedServer({ version: deps.version, reason });
+        await server.connect(new StdioServerTransport());
+      }
     },
     async stop() {
       await server?.close();
@@ -118,4 +115,79 @@ export function createApp(config: Config, deps: AppDeps): App {
       store = undefined;
     },
   };
+
+  function openedStore(): Store {
+    if (!store) throw new Error('store is not open yet');
+    return store;
+  }
+
+  async function startPrimary(): Promise<void> {
+    // Hold the link port before touching the shared db: opening it runs migrations and
+    // retention deletes, which a secondary instance must never do. A loser fails here with
+    // EADDRINUSE. The store is opened in the same tick as listen resolves, before any
+    // connection can be handled, so the lazy getters below are never read while unset.
+    const registry = new LinkRegistry();
+    const codes = new PairingCodes();
+    const allowed = deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
+    const warned = new Set<string>();
+    link = new LinkServer({
+      port: config.linkPort,
+      onOriginRejected: (origin) => {
+        const shown = sanitizeOrigin(origin);
+        if (warned.has(shown) || warned.size >= MAX_WARNED_ORIGINS) return;
+        warned.add(shown);
+        writeStatus(
+          `rejected link connection from origin ${shown}; allowed: ${allowed.join(', ')}. Set the extension's Foundry URL to match, e.g. https://foundry.local`,
+        );
+      },
+      get store() {
+        return openedStore();
+      },
+      codes,
+      registry,
+      allowedOrigins: allowed,
+      gatewayVersion: deps.version,
+      get events() {
+        return events;
+      },
+      get queue() {
+        return queue;
+      },
+    });
+    const port = await link.listen();
+    const dbPath = deps.dbPath ?? defaultDbPath();
+    if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+    store = openStore(dbPath);
+    events = new EventBuffer(store, registry);
+    queue = new OfflineQueue(store, registry);
+    events.startRetention();
+    const pairingLine = `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`;
+    const linkLine = `Link URL: ws://localhost:${port} (pid ${process.pid} holds link port ${port})`;
+    writeStatus(pairingLine);
+    writeStatus(linkLine);
+    server = createSessionServer({
+      version: deps.version,
+      registry,
+      events,
+      queue,
+      ...(deps.selector ? { selector: deps.selector } : {}),
+      knownIdentities: () =>
+        store?.listActivePairings().map((p) => ({
+          worldId: p.worldId,
+          userId: p.userId,
+          userName: p.userName,
+        })) ?? [],
+      log: writeStatus,
+    });
+    await server.connect(new StdioServerTransport());
+    logger.info(`MCP stdio server started`);
+    // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
+    void server
+      .sendLoggingMessage({
+        level: 'notice',
+        logger: 'pairing',
+        data: `${pairingLine}. ${linkLine}`,
+      })
+      .catch(() => undefined);
+  }
 }

@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 37 done in `docs/plan/done/`, 29 active in `docs/plan/tasks/` (2026-10-13).
+Inventory: 38 done in `docs/plan/done/`, 28 active in `docs/plan/tasks/` (2026-10-13).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -22,13 +22,14 @@ then MVP B (VPS/hosted).
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
 - **A1: 60, 61, 63 (all done; wave A1 complete, archived in `docs/plan/done/`).** 60: release zip packer, `download` URL, and no `relationships` in `module.json` (Andrew, 2026-10-13: a `systems` list hides the module from every other system). 61: the gateway builds as one esbuild bundle at `dist/bin/cli.js` with the private protocol inlined, packs to 4 files, and installs from a packed tarball (not published). 63: stdio conformance, core and fixture-pack schema checks, `docs/compatibility.md`; nothing runs `scripts/conformance.sh` automatically (needs `npm run build` first), so 64 wires `scripts/conformance.sh` and `scripts/test/*.mjs` into the release gates.
-- **A2: 62** (after 61). Build the `.mcpb` bundle from the 61 output; unsigned, not uploaded.
-- **A3: 64, 65** (after A1 and A2). 64 local release script (version bump that also updates `module.json` `download`, gates, three artefacts, stops before anything irreversible; wire `scripts/conformance.sh` (needs `npm run build` first) and `scripts/test/*.mjs` into the release gates, since verify runs neither; verify the packed zip against the manifest paths, because zip "name not matched" warnings are now hidden); 65 local quick start, security model and privacy statement.
+- **A2: 62 (done on its branch; manual Claude Desktop check confirmed by Andrew, ready to merge).** `node scripts/build-mcpb.mjs` builds an unsigned `dist/release/foundry-agent-gateway.mcpb` (about 261 KB) with the pinned `@anthropic-ai/mcpb` 2.1.2. The manual check passed end to end: a normal chat is connected to world "till-dawn" as GM and used for real character building. It also drove gateway fixes: extra instances stay up as degraded MCP servers (`gateway_status`, `LINK_UNAVAILABLE`), only the port holder prints the pairing code, and `foundry_url` feeds `--allow-origin`. Limits 65 must document: the pairing code is in `~/Library/Logs/Claude/main.log`, the Foundry URL must include the scheme, and Foundry tools work in one Claude Desktop session at a time. A Cowork chat always gets a degraded instance (the normal-chat instance holds the port first), so Cowork can never use Foundry tools until 69.
+- **A3: 64, 65** (after A1 and A2). 64 local release script (version bump that also updates `module.json` `download`, gates, three artefacts, stops before anything irreversible; wire `scripts/conformance.sh` (needs `npm run build` first) and `scripts/test/*.mjs` into the release gates, since verify runs neither; verify the packed zip against the manifest paths, because zip "name not matched" warnings are now hidden); 65 local quick start, security model and privacy statement (must document the Claude Desktop limits listed in A2).
 - **A4: 66** (after 64 and 65). Cut 0.1.0 through a PR and the release script. It stops for Andrew at every irreversible step: GitHub draft release, publishing it, `npm publish`, any Foundry package listing. It also does the live unpack-and-enable check on foundry.local that 60 deferred.
 
 ## Next
 
 ### MVP B: VPS / hosted (starts after 0.1.0)
+- **34 and 69 go first.** 69 (planner writes the task file after 62 merges) lets degraded secondary gateway instances forward to the primary over 34's local transport, lifting the one-Claude-Desktop-session limit that 0.1.0 ships with (Andrew, 2026-10-13). More urgent after real use: Cowork chats never get Foundry tools without it. Andrew is deciding whether to pull 69 into MVP A.
 - **34** Local Streamable HTTP transport with bearer auth, size limits and a status page. Runs with 37.
 - **37** Headless runner (`playwright-core`, logs in as an agent user, follows world lifecycle). Owns are disjoint from 34.
 - **38** Headless agent configuration and enforcement (after 37, 34).

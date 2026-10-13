@@ -65,7 +65,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
   const server = new Server(
     { name: 'foundry-agent-gateway', version: opts.version },
-    { capabilities: { tools: { listChanged: true } } },
+    { capabilities: { tools: { listChanged: true }, logging: {} } },
   );
 
   const toolsets = opts.toolsets ?? sharedToolsets;
