@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { CallResult } from '../lib/gateway.js';
 import { loadContext } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
+import { WritePacer, pacedWrite } from './pacing.js';
 
 // Opt-in: set AGENT_GATEWAY_E2E_DND5E_WORLD=dnd5e-test (the dnd5e world that is currently running;
 // Foundry 14, dnd5e 6.0.6). Without it every test skips. The suite creates its own temporary
@@ -61,6 +62,11 @@ const q = (v: unknown): string => JSON.stringify(v);
 describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
   let session: UserSession;
   let actorUuid: string | undefined;
+  // Worlds that were not seeded keep the default limit of 10 write calls a minute: pace our own
+  // writes and retry RATE_LIMITED after the stated delay. The world's limits are never changed.
+  const pacer = new WritePacer();
+  const write = (name: string, args: Record<string, unknown>) =>
+    pacedWrite(() => session.gateway.call(name, args), pacer);
   const uuids: Record<string, string> = {};
   beforeAll(async () => {
     if (!enabled) return;
@@ -68,7 +74,7 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
     session = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
     const made = await settle(
       session,
-      await session.gateway.call('document_create', {
+      await write('document_create', {
         type: 'Actor',
         data: JSON.stringify({ name: 'agent-gateway e2e dnd5e (temporary)', type: 'character' }),
       }),
@@ -87,10 +93,7 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
     let failure: unknown;
     try {
       if (actorUuid) {
-        const del = await settle(
-          session,
-          await session.gateway.call('document_delete', { uuids: [actorUuid] }),
-        );
+        const del = await settle(session, await write('document_delete', { uuids: [actorUuid] }));
         if (del.result.isError) throw new Error(del.result.text);
       }
     } catch (e) {
@@ -110,8 +113,13 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
   beforeEach((ctx) => {
     if (!enabled) ctx.skip();
   });
+  const WRITES = new Set(['character_build', 'action_perform', 'conditions']);
+  // Reads go straight through; a character_build or conditions call that carries `changes` or
+  // `change`, and every action_perform, is a write and is paced.
   const call = (name: string, args: Record<string, unknown> = {}) =>
-    session.gateway.call(name, { actorUuid, ...args });
+    WRITES.has(name) && ('changes' in args || 'change' in args || name === 'action_perform')
+      ? write(name, { actorUuid, ...args })
+      : session.gateway.call(name, { actorUuid, ...args });
   const find = async (pack: string, name: string): Promise<string> => {
     const r = await session.gateway.call('compendium_search', { query: name, pack, limit: 20 });
     expect(r.isError, r.text).toBe(false);
@@ -122,7 +130,7 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
   const embed = async (key: string, pack: string, name: string, overrides?: Row) => {
     const done = await settle(
       session,
-      await session.gateway.call('compendium_import', {
+      await write('compendium_import', {
         uuid: await find(pack, name),
         actorUuid,
         ...(overrides ? { overrides } : {}),
