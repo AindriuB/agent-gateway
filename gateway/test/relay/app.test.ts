@@ -81,7 +81,7 @@ describe('relay mode in the app', () => {
     };
     // X's first attempt at the store fails as if another gateway held the db; it then relays to P.
     let failed = false;
-    const x = mk(7421, {
+    const x = mk(17555, {
       logger,
       openStore: (path: string) => {
         if (!failed) {
@@ -94,7 +94,7 @@ describe('relay mode in the app', () => {
     const starting = x.start();
     await until(() => failed, 10_000, 'X store conflict');
     await sleep(500); // X released the link port and is now looking for a relay
-    const p = mk(7421);
+    const p = mk(17555);
     await p.start();
     await starting;
     expect(infos.join('\n')).toContain('holds the pairing database');

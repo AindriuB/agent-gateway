@@ -1,4 +1,4 @@
-import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** A claim file is tiny; anything bigger is not ours. */
@@ -33,7 +33,10 @@ export function writeClaim(stateDir: string, linkPort: number, heir: number): vo
 export function readClaim(stateDir: string, linkPort: number): HeirClaim | undefined {
   try {
     const file = join(stateDir, heirFile(linkPort));
-    if (statSync(file).size > MAX_CLAIM_BYTES) return undefined;
+    // lstat, not stat: a FIFO, symlink or directory planted here is not a claim, and a FIFO
+    // must never be opened (a read would block the event loop).
+    const st = lstatSync(file);
+    if (!st.isFile() || st.size > MAX_CLAIM_BYTES) return undefined;
     const v = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown> | null;
     if (typeof v !== 'object' || v === null) return undefined;
     if (!Number.isFinite(v.heir) || !Number.isFinite(v.at)) return undefined;

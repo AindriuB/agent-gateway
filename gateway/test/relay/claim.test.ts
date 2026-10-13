@@ -1,14 +1,24 @@
-import { chmodSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { PassThrough } from 'node:stream';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   clearClaim,
   heirFile,
   readClaim,
   RELAY_CLAIM_SLACK_MS,
+  RELAY_TAKEOVER_DEADLINE_MS,
   RelaySecondary,
   STEPDOWN_GRACE_MS,
   writeClaim,
@@ -44,6 +54,22 @@ describe('handover claim file', () => {
     expect(readClaim(d, PORT + 1)).toBeUndefined(); // other ports are separate
   });
 
+  it('treats a directory, a symlink or a FIFO at the claim path as no claim, without reading it', () => {
+    const d = dir();
+    const file = join(d, heirFile(PORT));
+    mkdirSync(file);
+    expect(readClaim(d, PORT)).toBeUndefined();
+    rmSync(file, { recursive: true });
+    const real = join(d, 'real.json');
+    writeFileSync(real, JSON.stringify({ heir: 1, at: Date.now() }));
+    symlinkSync(real, file);
+    expect(readClaim(d, PORT)).toBeUndefined();
+    rmSync(file);
+    // A FIFO would block a read forever; it must be rejected before it is opened.
+    execFileSync('mkfifo', [file]);
+    expect(readClaim(d, PORT)).toBeUndefined();
+  });
+
   it.each(['', 'nope', '[]', 'null', '{"heir":"1","at":2}', '{"heir":1}', 'x'.repeat(5000)])(
     'treats %j as no claim',
     (text) => {
@@ -69,7 +95,7 @@ describe('a handover claim keeps older instances off the link port', () => {
       stateDir: dir,
       linkPort: PORT,
       selector: {},
-      config: makeRelayConfig([], 7421, 'info', startedAt),
+      config: makeRelayConfig([], 17555, 'info', startedAt),
       input: new PassThrough(),
       output: new PassThrough(),
       log: () => undefined,
@@ -135,7 +161,7 @@ describe('a STEPDOWN refusal does not spend a connect attempt', () => {
       stateDir: state.dir,
       linkPort: PORT,
       selector: {},
-      config: makeRelayConfig([], 7421, 'info', 9000),
+      config: makeRelayConfig([], 17555, 'info', 9000),
       input: new PassThrough(),
       output: new PassThrough(),
       log: () => undefined,
@@ -149,6 +175,52 @@ describe('a STEPDOWN refusal does not spend a connect attempt', () => {
       expect(s.currentRole).toBe('primary');
       expect(binds).toBe(15);
     } finally {
+      await s.stop();
+      await new Promise((r) => net.close(r));
+      state.cleanup();
+    }
+  }, 30_000);
+
+  it('counts STEPDOWN refusals as attempts again once the takeover deadline has passed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const state = tempState();
+    chmodSync(state.dir, 0o700);
+    const ep = relayEndpoint(state.dir, PORT);
+    if (!ep.ok) throw new Error(ep.reason);
+    writeSecret(state.dir, PORT, newSecret());
+    const net = createServer((sock) => {
+      sock.on('error', () => undefined);
+      sock.once('data', () => {
+        sock.end(`${JSON.stringify({ relay: 1, ok: false, code: 'RELAY_CONFIG_STEPDOWN' })}\n`);
+      });
+    });
+    await new Promise<void>((r) => net.listen(ep.path, () => r()));
+    let binds = 0;
+    const s = new RelaySecondary({
+      endpoint: ep.path,
+      stateDir: state.dir,
+      linkPort: PORT,
+      selector: {},
+      config: makeRelayConfig([], 17555, 'info', 9000),
+      input: new PassThrough(),
+      output: new PassThrough(),
+      log: () => undefined,
+      becomePrimary: () => Promise.resolve(void binds++ || false),
+      createDegraded: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
+      // Each wait moves the fake clock on by a tenth of the deadline.
+      sleep: async () => {
+        vi.setSystemTime(Date.now() + RELAY_TAKEOVER_DEADLINE_MS / 10);
+        await sleep(1);
+      },
+    });
+    try {
+      await s.start('startup');
+      // About ten uncounted tries before the deadline, then the ten-attempt budget, then it stops.
+      expect(s.currentRole).toBe('degraded');
+      expect(binds).toBeGreaterThanOrEqual(10);
+      expect(binds).toBeLessThanOrEqual(25);
+    } finally {
+      vi.useRealTimers();
       await s.stop();
       await new Promise((r) => net.close(r));
       state.cleanup();
