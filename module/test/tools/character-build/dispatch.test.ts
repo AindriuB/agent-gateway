@@ -60,7 +60,10 @@ beforeEach(() => {
   g.game.system = { id: 'pf2e' };
   actor = pf2eActor();
   Object.setPrototypeOf(actor, ActorClass.prototype);
-  g.CONFIG = { Actor: { documentClass: ActorClass } };
+  g.CONFIG = {
+    Actor: { documentClass: ActorClass },
+    PF2E: { skills: { acrobatics: {}, athletics: {} } },
+  };
   g.game.actors = new Map([['a', actor]]);
   g.fromUuid = vi.fn(async () => actor);
   records = [];

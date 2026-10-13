@@ -5,6 +5,8 @@ import type { AdapterExecutionContext } from '../types.js';
 import { AdapterUnsupportedError } from '../types.js';
 import { invalid } from '../../tools/_write.js';
 
+declare const CONFIG: any;
+
 const ATTRIBUTES = ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const;
 const LEVEL_BOOSTS = [1, 5, 10, 15, 20];
 const MAX_PER_LEVEL = 4;
@@ -161,7 +163,10 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
       }
     } else if (c.kind === 'skill_rank') {
       const skills = actor.system?.skills;
-      if (!c.skill || !own(skills, c.skill)) invalid('Unknown skill');
+      if (!c.skill || !own(CONFIG.PF2E?.skills, c.skill) || !own(skills, c.skill))
+        invalid('Unknown skill');
+      if (skills[c.skill]?.lore === true)
+        invalid('Lore skill ranks live on the lore Item and cannot be set here');
       if (c.rank === undefined) invalid('A skill rank is required');
       const cap = level < 7 ? 2 : level < 15 ? 3 : 4;
       if (c.rank! > cap) invalid(`Skill rank ${c.rank} exceeds the level ${level} cap of ${cap}`);

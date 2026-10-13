@@ -20,6 +20,7 @@ const context = () =>
 const apply = (changes: CharacterBuildChange[], ctx = context()) =>
   pf2eBuildHook.apply(actor, changes, ctx);
 beforeEach(() => {
+  (globalThis as any).CONFIG = { PF2E: { skills: { acrobatics: {}, athletics: {} } } };
   resetEvents();
   actor = pf2eActor();
 });
@@ -122,6 +123,15 @@ describe('pf2e validation refuses before any write', () => {
     expect(actor._source.system.skills.athletics).toBeUndefined();
     await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
     expect(actor.lastPatch).toEqual({ 'system.skills.athletics.rank': 1 });
+  });
+  it('rejects a lore skill present in the prepared skills, with no write', async () => {
+    actor.system.skills['esoteric-lore'] = { rank: 1, lore: true, itemId: 'lore1' };
+    const ctx = context();
+    await expect(
+      apply([{ kind: 'skill_rank', skill: 'esoteric-lore', rank: 2 }], ctx),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    expect(ctx.snapshot).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
   });
   it('allows rank 3 at level 7 and rank 4 at level 15', async () => {
     await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 3 }]);
