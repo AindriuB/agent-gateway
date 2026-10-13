@@ -13,6 +13,13 @@ export function actionCategory(tool: string, args: unknown, base: string, core =
     (args as { change?: unknown } | null)?.change !== undefined
   )
     return 'write';
+  if (
+    core &&
+    base === 'read' &&
+    tool === 'character_build' &&
+    (args as { changes?: unknown } | null)?.changes !== undefined
+  )
+    return 'write';
   return core &&
     base === 'write' &&
     ((tool === 'token_manage' && action === 'remove') ||
