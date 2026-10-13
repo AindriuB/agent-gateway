@@ -280,8 +280,8 @@ async function apply(
   }
   if (seen.added || seen.updated || seen.removed)
     notes.push(
-      `Native pf2e rule elements changed Items on this Actor (${seen.added} added, ${seen.updated} updated, ${seen.removed} removed) ` +
-        'outside this call\u2019s audit correlation. Those changes are not undoable.',
+      `Uncorrelated Item writes were observed on this Actor during the call (${seen.added} added, ${seen.updated} updated, ${seen.removed} removed). ` +
+        'They are not undoable here. The count may include concurrent writes by others.',
     );
   // Nothing written: report a failure so the audit entry is not recorded as ok.
   if (docs.length > 0 && failures.length === docs.length)

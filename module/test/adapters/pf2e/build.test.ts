@@ -210,7 +210,7 @@ describe('pf2e apply', () => {
     });
     const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
     expect(r.message).toMatch(/1 added, 0 updated, 0 removed/);
-    expect(r.message).toMatch(/not undoable/);
+    expect(r.message).toMatch(/not undoable here.*concurrent writes by others/);
   });
 });
 
@@ -312,7 +312,7 @@ describe('uncorrelated native Item writes', () => {
     });
     const r: any = await run();
     expect(r.message).toMatch(/0 added, 1 updated, 0 removed/);
-    expect(r.message).toMatch(/not undoable/);
+    expect(r.message).toMatch(/not undoable here.*concurrent writes by others/);
   });
   it('does not disclose a correlated update, or another Actor\u2019s Item', async () => {
     actor.class.update = vi.fn(async () => {
