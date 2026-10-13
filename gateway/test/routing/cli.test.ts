@@ -38,13 +38,68 @@ it('prints the pairing code and link URL to stderr and accepts link connections'
     }
     expect(err).toMatch(/Pairing code: [A-Z2-9]{4}-[A-Z2-9]{4} \(expires in 10 min\)/);
     expect(err).toContain(`ws://localhost:${port}`);
+    // Nothing is written to stdout before the client speaks: the notice waits for the handshake.
     expect(out).toBe('');
+    const rpc = (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`);
+    rpc({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    const waited = Date.now();
+    while (!out.includes('notifications/message')) {
+      if (Date.now() - waited > 5000) throw new Error(`no pairing notice: ${out}`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(out).toContain('Pairing code: ');
     const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'http://foundry.test' });
     await new Promise<void>((res, rej) => {
       ws.once('open', () => res());
       ws.once('error', rej);
     });
     ws.close();
+  } finally {
+    child.kill();
+    await new Promise((r) => child.once('close', r));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it('sends the pairing notice even when the handshake is already buffered on stdin at spawn', async () => {
+  const port = await freePort();
+  const dir = mkdtempSync(join(tmpdir(), 'ag-cli-'));
+  const child = spawn(
+    process.execPath,
+    [cli, '--link-port', String(port), '--db', join(dir, 'g.db')],
+    { stdio: ['pipe', 'pipe', 'pipe'] },
+  );
+  try {
+    let out = '';
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    const rpc = (m: object) => child.stdin.write(`${JSON.stringify(m)}\n`);
+    rpc({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    const start = Date.now();
+    while (!out.includes('notifications/message')) {
+      if (Date.now() - start > 8000) throw new Error(`no pairing notice: ${out}`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(out).toContain('Pairing code: ');
   } finally {
     child.kill();
     await new Promise((r) => child.once('close', r));

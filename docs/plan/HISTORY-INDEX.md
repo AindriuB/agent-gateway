@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-13 | 69 | secondary gateways relay stdio to the primary over a 0600 socket/pipe with per-boot secret; own session each; takeover; newer-config step-down; pairing notice after initialized; manual Cowork check pending | ## 2026-10-13 — secondary gateway relay to the primary (task 69) |
 | 2026-10-13 | 62 | unsigned Claude Desktop `.mcpb` (about 261 KB, mcpb 2.1.2) plus gateway degraded-secondary mode, single pairing-code holder and `foundry_url` origin allow; manual Desktop check passed end to end | ## 2026-10-13 — Claude Desktop .mcpb bundle (task 62) |
 | 2026-10-13 | 63 | `scripts/conformance.sh` (Inspector 2.10.1 over stdio, fake paired module, list and echo call), schema checks, `docs/compatibility.md` | ## 2026-10-13 — stdio MCP conformance and compatibility matrix (task 63) |
 | 2026-10-13 | 61 | gateway built as one esbuild bundle with protocol inlined, 4-file 37.7 kB npm package, pack allowlist test and packed-tarball smoke, not published | ## 2026-10-13 — gateway npm package (task 61) |

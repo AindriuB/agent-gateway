@@ -108,15 +108,11 @@ describe('second gateway instance (built cli)', () => {
     });
     expect((await second.reply(2)).result).toBeDefined();
     second.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
-    second.send({
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'tools/call',
-      params: { name: STATUS_TOOL, arguments: {} },
-    });
-    const call = await second.reply(3);
-    expect(call.result?.isError).toBe(true);
-    expect(JSON.stringify(call.result?.content)).toContain('LINK_UNAVAILABLE');
+    // The second instance relays to the primary, so it serves the full session, not gateway_status.
+    second.send({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
+    const list = await second.reply(3);
+    expect(JSON.stringify(list.result)).toContain('world_info');
+    expect(JSON.stringify(list.result)).not.toContain(STATUS_TOOL);
     expect(second.child.exitCode).toBeNull();
   }, 20_000);
 });
@@ -185,8 +181,8 @@ describe('startup failures and origins (built cli)', () => {
     child.stdout.on('data', (d: Buffer) => (out += d.toString()));
     return { child, err: () => err, out: () => out };
   };
-  const waitFor = async (cond: () => boolean) => {
-    for (let n = 0; n < 100 && !cond(); n++) await new Promise((r) => setTimeout(r, 50));
+  const waitFor = async (cond: () => boolean, ms = 5000) => {
+    for (let n = 0; n < ms / 50 && !cond(); n++) await new Promise((r) => setTimeout(r, 50));
     expect(cond()).toBe(true);
   };
 
@@ -221,13 +217,16 @@ describe('startup failures and origins (built cli)', () => {
         },
       })}\n`,
     );
-    await waitFor(() => r.out().includes('"id":1'));
-    expect(r.err()).toContain(
+    // The instance first tries to relay to whoever holds the port; a plain listener has no relay,
+    // so the bounded retries run out (about 11 s) before the degraded server answers.
+    await waitFor(() => r.out().includes('"id":1'), 20_000);
+    const errLines = r.err().trim().split('\n');
+    expect(errLines[0]).toBe(
       `[error] pid ${r.child.pid}: another gateway holds link port ${port}; this instance cannot pair`,
     );
     expect(r.err()).not.toContain('Pairing code');
     expect(r.err()).not.toContain('MCP stdio server started');
-    expect(r.err().trim().split('\n')).toHaveLength(1);
+    expect(r.err()).toContain('relay unavailable, serving gateway_status only');
     expect(r.child.exitCode).toBeNull();
     const after = statSync(db);
     expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
@@ -262,6 +261,27 @@ describe('startup failures and origins (built cli)', () => {
       await waitFor(() => rs.every((r) => /Pairing code|cannot pair/.test(r.err())));
       expect(rs.filter((r) => r.err().includes('Pairing code'))).toHaveLength(1);
       expect(rs.filter((r) => r.err().includes('cannot pair'))).toHaveLength(3);
+      // Every non-holder now serves the full tool set through the relay.
+      for (const r of rs.filter((x) => x.err().includes('cannot pair'))) {
+        r.child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '0' } } })}\n`,
+        );
+        r.child.stdin.write(
+          `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`,
+        );
+        r.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+      }
+      await waitFor(
+        () =>
+          rs
+            .filter((x) => x.err().includes('cannot pair'))
+            .every((x) => x.out().includes('"id":2')),
+        20_000,
+      );
+      for (const r of rs.filter((x) => x.err().includes('cannot pair'))) {
+        expect(r.out()).toContain('world_info');
+        expect(r.out()).not.toContain(STATUS_TOOL);
+      }
       for (const r of rs) expect(r.child.exitCode).toBeNull();
       for (const r of rs.splice(0)) {
         r.child.kill();
