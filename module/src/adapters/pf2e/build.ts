@@ -91,6 +91,18 @@ function describe(actor: any): BuildPayload {
   };
 }
 
+function sourceBuild(actor: any): Record<string, unknown> {
+  let build: unknown;
+  try {
+    build = typeof actor.toObject === 'function' ? actor.toObject().system?.build : undefined;
+  } catch {
+    build = undefined;
+  }
+  return build && typeof build === 'object'
+    ? structuredClone(build as Record<string, unknown>)
+    : {};
+}
+
 interface Plan {
   items: Map<any, Record<string, unknown>>;
   actor: Record<string, unknown>;
@@ -131,7 +143,13 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
         if (current.length >= MAX_PER_LEVEL) invalid('At most 4 boosts are allowed per level');
         current.push(c.attribute!);
         levelLists.set(lv!, current);
-        out.actor[`system.build.attributes.boosts.${lv}`] = current;
+        levelLists.set(lv!, current);
+        // Mirror the native AttributeBuilder (pf2e.mjs:23973-23975): merge into the Actor's own
+        // source `system.build` and update that object, never a dotted array path.
+        const base = out.actor['system.build'] ?? sourceBuild(actor);
+        const attrs = ((base as any).attributes ??= {});
+        (attrs.boosts ??= {})[lv!] = [...current];
+        out.actor['system.build'] = base;
       } else if (c.source === 'ancestry' || c.source === 'background') {
         const item = c.source === 'ancestry' ? actor.ancestry : actor.background;
         if (!item) invalid(`The Actor has no ${c.source}`);

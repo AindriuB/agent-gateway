@@ -184,11 +184,12 @@ describe('pf2e character_build (set AGENT_GATEWAY_E2E_PF2E=1 and AGENT_GATEWAY_E
       const state = await call('character_build');
       const s = state.structured as Row;
       const boosts = s.boosts as Row[];
+      const detail = `call: ${applied.result.text}\nboosts: ${JSON.stringify(boosts)}`;
       const has = (o: Row) => boosts.some((b) => Object.entries(o).every(([k, v]) => b[k] === v));
-      expect(has({ source: 'ancestry', slot: '0', attribute: 'str' })).toBe(true);
-      expect(has({ source: 'background', slot: '1', attribute: 'con' })).toBe(true);
-      expect(has({ source: 'level', level: 1, attribute: 'dex' })).toBe(true);
-      expect(has({ source: 'level', level: 5, attribute: 'wis' })).toBe(true);
+      expect(has({ source: 'ancestry', slot: '0', attribute: 'str' }), detail).toBe(true);
+      expect(has({ source: 'background', slot: '1', attribute: 'con' }), detail).toBe(true);
+      expect(has({ source: 'level', level: 1, attribute: 'dex' }), detail).toBe(true);
+      expect(has({ source: 'level', level: 5, attribute: 'wis' }), detail).toBe(true);
       expect((s.keyAttribute as Row).selected).toBe('str');
       expect(((s.skills as Row[]).find((k) => k.skill === 'athletics') ?? {}).rank).toBe(2);
       expect(((s.featSlots as Row[]).find((f) => f.slot === open!.slot) ?? {}).itemUuid).toBe(

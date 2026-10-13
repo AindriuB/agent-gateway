@@ -179,7 +179,7 @@ describe('pf2e apply', () => {
     expect(actor.class.lastPatch).toEqual({ 'system.keyAbility.selected': 'dex' });
     expect(actor.feat.lastPatch).toEqual({ 'system.location': 'class-1', 'system.level.taken': 1 });
     expect(actor.lastPatch).toEqual({
-      'system.build.attributes.boosts.5': ['con'],
+      'system.build': { attributes: { boosts: { 5: ['con'] } } },
       'system.skills.athletics.rank': 2,
     });
     expect(result.supported).toBe(true);
@@ -248,5 +248,38 @@ describe('post-write result is always reportable', () => {
     const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
     expect(r.skills.length).toBeLessThanOrEqual(128);
     passes(r);
+  });
+});
+
+describe('level boosts as pf2e stores them', () => {
+  it('merges into the source system.build and keeps its other data', async () => {
+    // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).
+    const source = {
+      attributes: { manual: false, boosts: { 1: ['str'], 5: [] }, keyOptions: ['str'] },
+      languages: { value: 0 },
+    };
+    actor.toObject = () => ({ system: { build: source } });
+    actor.update = vi.fn(async (patch: any) => {
+      const b = patch['system.build'];
+      actor.system.build.attributes.boosts = {
+        1: b.attributes.boosts[1].slice(0, 4),
+        5: b.attributes.boosts[5].slice(0, 4),
+        10: [],
+        15: [],
+        20: [],
+        ancestry: [],
+        class: null,
+      };
+    });
+    const r: any = await apply([
+      { kind: 'attribute_boost', source: 'level', level: 1, attribute: 'dex' },
+      { kind: 'attribute_boost', source: 'level', level: 5, attribute: 'wis' },
+    ]);
+    const sent = actor.update.mock.calls[0][0]['system.build'];
+    expect(sent.languages).toEqual({ value: 0 });
+    expect(sent.attributes.boosts).toEqual({ 1: ['str', 'dex'], 5: ['wis'] });
+    expect(source.attributes.boosts[1]).toEqual(['str']);
+    expect(r.boosts).toContainEqual({ source: 'level', level: 1, attribute: 'dex' });
+    expect(r.boosts).toContainEqual({ source: 'level', level: 5, attribute: 'wis' });
   });
 });
