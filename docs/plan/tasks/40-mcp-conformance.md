@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 63, 34, 35, 67
-**Status:** MVP B (after A). B order 8, after 67 (an OAuth run needs a consent step that can approve).
+**Status:** MVP B (after A). B order 8, after 67 (an OAuth run needs a consent step that can approve). Its local HTTP mode moved to 34 in MVP A (Andrew, 2026-10-13).
 **Owns:**
 - scripts/conformance.sh
 - gateway/test/conformance/**
@@ -29,4 +29,4 @@ Claude, ChatGPT and Gemini to tick before each release.
 - Per-client setup guides (43)
 
 ## MVP split (2026-10-13)
-Depends was `35, 20e` (20e is done). 63 (MVP A) creates `scripts/conformance.sh` with the stdio mode, the schema and name checks, and `docs/compatibility.md` with the Claude Desktop and Claude Code rows. This task adds the local HTTP and OAuth modes to that script and fills in the remote rows of the matrix; the stdio acceptance items are already met by 63.
+Depends was `35, 20e` (20e is done). 63 (MVP A) creates `scripts/conformance.sh` with the stdio mode, the schema and name checks, and `docs/compatibility.md` with the Claude Desktop and Claude Code rows. This task adds the local HTTP and OAuth modes to that script and fills in the remote rows of the matrix; the stdio acceptance items are already met by 63. Amended (Andrew, 2026-10-13): 34, now in MVP A, adds the local HTTP mode and the Claude Code / Local HTTP cell. This task keeps only the OAuth mode and the remote rows.

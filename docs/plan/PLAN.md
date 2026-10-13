@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 38 done in `docs/plan/done/`, 28 active in `docs/plan/tasks/` (2026-10-13).
+Inventory: 38 done in `docs/plan/done/`, 29 active in `docs/plan/tasks/` (2026-10-13).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -22,21 +22,22 @@ then MVP B (VPS/hosted).
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
 - **A1: 60, 61, 63 (all done; wave A1 complete, archived in `docs/plan/done/`).** 60: release zip packer, `download` URL, and no `relationships` in `module.json` (Andrew, 2026-10-13: a `systems` list hides the module from every other system). 61: the gateway builds as one esbuild bundle at `dist/bin/cli.js` with the private protocol inlined, packs to 4 files, and installs from a packed tarball (not published). 63: stdio conformance, core and fixture-pack schema checks, `docs/compatibility.md`; nothing runs `scripts/conformance.sh` automatically (needs `npm run build` first), so 64 wires `scripts/conformance.sh` and `scripts/test/*.mjs` into the release gates.
-- **A2: 62 (done on its branch; manual Claude Desktop check confirmed by Andrew, ready to merge).** `node scripts/build-mcpb.mjs` builds an unsigned `dist/release/foundry-agent-gateway.mcpb` (about 261 KB) with the pinned `@anthropic-ai/mcpb` 2.1.2. The manual check passed end to end: a normal chat is connected to world "till-dawn" as GM and used for real character building. It also drove gateway fixes: extra instances stay up as degraded MCP servers (`gateway_status`, `LINK_UNAVAILABLE`), only the port holder prints the pairing code, and `foundry_url` feeds `--allow-origin`. Limits 65 must document: the pairing code is in `~/Library/Logs/Claude/main.log`, the Foundry URL must include the scheme, and Foundry tools work in one Claude Desktop session at a time. A Cowork chat always gets a degraded instance (the normal-chat instance holds the port first), so Cowork can never use Foundry tools until 69.
-- **A3: 64, 65** (after A1 and A2). 64 local release script (version bump that also updates `module.json` `download`, gates, three artefacts, stops before anything irreversible; wire `scripts/conformance.sh` (needs `npm run build` first) and `scripts/test/*.mjs` into the release gates, since verify runs neither; verify the packed zip against the manifest paths, because zip "name not matched" warnings are now hidden); 65 local quick start, security model and privacy statement (must document the Claude Desktop limits listed in A2).
-- **A4: 66** (after 64 and 65). Cut 0.1.0 through a PR and the release script. It stops for Andrew at every irreversible step: GitHub draft release, publishing it, `npm publish`, any Foundry package listing. It also does the live unpack-and-enable check on foundry.local that 60 deferred.
+- **A2: 62 (done on its branch; manual Claude Desktop check confirmed by Andrew, ready to merge).** `node scripts/build-mcpb.mjs` builds an unsigned `dist/release/foundry-agent-gateway.mcpb` (about 261 KB) with the pinned `@anthropic-ai/mcpb` 2.1.2. The manual check passed end to end: a normal chat is connected to world "till-dawn" as GM and used for real character building. It also drove gateway fixes: extra instances stay up as degraded MCP servers (`gateway_status`, `LINK_UNAVAILABLE`), only the port holder prints the pairing code, and `foundry_url` feeds `--allow-origin`. Limits 65 must document: the pairing code is in `~/Library/Logs/Claude/main.log`, the Foundry URL must include the scheme, and Foundry tools work in one Claude Desktop session at a time. A Cowork chat always gets a degraded instance (the normal-chat instance holds the port first), so Cowork never gets Foundry tools until 69 lands (A3); Andrew hit this in a real Cowork chat on his Mac.
+- **A3: 69** (after A2). Secondary gateway instances relay their stdio MCP traffic to the primary over a private local socket (Unix socket on macOS, named pipe on Windows), so Cowork and extra Claude Desktop sessions get Foundry tools. Each relayed connection gets its own session on the primary, with per-session approvals and audit. Relayed sessions bind to the primary's `--user` and `--world` (Andrew, 2026-10-13). If the primary goes away, a secondary takes over. Lifts the one-Desktop-session limit that 65 would otherwise have to document.
+- **A4: 34** (after A3). Local Streamable HTTP on `127.0.0.1:7421`, loopback only, bearer token, size and rate limits, status page, for clients that prefer HTTP (Claude Code). It adds the local HTTP mode to `scripts/conformance.sh` and the Claude Code / Local HTTP cell of `docs/compatibility.md`; 40 keeps only OAuth and the remote rows. Only the primary serves HTTP.
+- **A5: 64, 65** (after A3 and A4). 64 local release script (version bump that also updates `module.json` `download`, gates, three artefacts, stops before anything irreversible; wire `scripts/conformance.sh` (needs `npm run build` first; the gate requires the `http` mode) and `scripts/test/*.mjs` into the release gates, since verify runs neither; verify the packed zip against the manifest paths, because zip "name not matched" warnings are now hidden); draft notes carry the "macOS verified; Windows untested in this release" line. 65 local quick start, security model and privacy statement; it must document the relay socket, the HTTP option and that `.mcpb` and `npx` installs are macOS-verified and Windows-untested, and the Claude Desktop pairing-code log location and Foundry URL scheme limits listed in A2.
+- **A6: 66** (after 64 and 65). Cut 0.1.0 through a PR and the release script. It stops for Andrew at every irreversible step: GitHub draft release, publishing it, `npm publish`, any Foundry package listing. It also does the live unpack-and-enable check on foundry.local that 60 deferred. 0.1.0 ships macOS-verified, Windows untested (Andrew, 2026-10-13).
 
 ## Next
 
 ### MVP B: VPS / hosted (starts after 0.1.0)
-- **34 and 69 go first.** 69 (planner writes the task file after 62 merges) lets degraded secondary gateway instances forward to the primary over 34's local transport, lifting the one-Claude-Desktop-session limit that 0.1.0 ships with (Andrew, 2026-10-13). More urgent after real use: Cowork chats never get Foundry tools without it. Andrew is deciding whether to pull 69 into MVP A.
-- **34** Local Streamable HTTP transport with bearer auth, size limits and a status page. Runs with 37.
+- **Order within MVP A:** A1 (60, 61, 63) and A2 (62) are done, then 69, 34, then 64 and 65, then 66. 69 and 34 left MVP B on 2026-10-13, so B starts directly at 37.
 - **37** Headless runner (`playwright-core`, logs in as an agent user, follows world lifecycle). Owns are disjoint from 34.
 - **38** Headless agent configuration and enforcement (after 37, 34).
-- **35** OAuth 2.1 authorization server for remote clients (after 34).
+- **35** OAuth 2.1 authorization server for remote clients (after 34, which lands in MVP A).
 - **67** OAuth consent page and self-service grant revocation (after 35); without it 35 auto-denies every authorization.
 - **68** Server-mode pairing confirmation (after 38, 67); the impersonation defence 42 needs.
-- **40** Full MCP conformance across stdio, local HTTP and OAuth (after 63, 34, 35, 67).
+- **40** MCP conformance for OAuth and the remote client rows (after 63, 34, 35, 67). The stdio and local HTTP modes are done by 63 and 34 in MVP A.
 - **42** Server-mode Docker image (after 38, 35, 64, 68).
 - **43** Full user documentation, headless and server-mode guides (last; after 65, 35, 38, 42, 67, 68).
 
