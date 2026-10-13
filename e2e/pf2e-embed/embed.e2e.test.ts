@@ -103,13 +103,15 @@ describe('pf2e compendium_import into an Actor (set AGENT_GATEWAY_E2E_PF2E=1 and
     if (!enabled) ctx.skip();
   });
 
-  /** The audit page the call wrote, polled for up to 10 s; its created Item targets. */
-  const auditedItems = async (compendiumUuid: string): Promise<Array<Row>> =>
+  /** The audit page for this actor and created Item (older runs' pages are ignored), polled for up to 10 s; its created Item targets. */
+  const auditedItems = async (compendiumUuid: string, createdUuid: string): Promise<Array<Row>> =>
     (await session.browser.page.evaluate(`(async () => {
       const find = () => {
         const journal = game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'));
         return [...(journal?.pages ?? [])]
-          .filter((p) => p.system.tool === 'compendium_import' && p.system.args.includes(${q(compendiumUuid)}))
+          .filter((p) => p.system.tool === 'compendium_import' && p.system.args.includes(${q(compendiumUuid)}) &&
+            p.system.args.includes(${q(actorUuid)}) &&
+            (p.system.targets ?? []).some((t) => t.uuid === ${q(createdUuid)}))
           .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
       };
       let page = find();
@@ -157,7 +159,7 @@ describe('pf2e compendium_import into an Actor (set AGENT_GATEWAY_E2E_PF2E=1 and
         carryType: 'held',
         handsHeld: 1,
       });
-      const targets = await auditedItems(hit?.uuid as string);
+      const targets = await auditedItems(hit?.uuid as string, weaponUuid);
       expect(targets.map((t) => t.uuid)).toContain(weaponUuid);
       for (const t of targets) expect(t).toMatchObject({ existed: false, undoable: true });
     },
@@ -196,7 +198,7 @@ describe('pf2e compendium_import into an Actor (set AGENT_GATEWAY_E2E_PF2E=1 and
       expect(slotId, 'the class should grant an open ancestry feat slot').not.toBeNull();
       const created = await embed(featUuid as string, { slot: slotId });
       expect(await itemState(created)).toMatchObject({ type: 'feat', location: slotId });
-      const targets = await auditedItems(featUuid as string);
+      const targets = await auditedItems(featUuid as string, created);
       expect(targets.map((t) => t.uuid)).toContain(created);
       for (const t of targets) expect(t).toMatchObject({ existed: false, undoable: true });
     },
