@@ -5,6 +5,7 @@ import type { AdapterExecutionContext } from '../types.js';
 import { AdapterUnsupportedError } from '../types.js';
 import { invalid } from '../../tools/_write.js';
 import { boundedAdapterData } from '../../tools/_adapters.js';
+import { listChoices } from './embed.js';
 
 declare const CONFIG: any;
 declare const Hooks: any;
@@ -498,4 +499,5 @@ export const pf2eBuildHook: BuildHook = Object.freeze({
   systemId: 'pf2e',
   describe: (actor: unknown) => (isCharacter(actor) ? finish(actor, []) : describe(actor)),
   apply,
+  listChoices: (source: unknown, uuid: string) => listChoices(source, uuid),
 });

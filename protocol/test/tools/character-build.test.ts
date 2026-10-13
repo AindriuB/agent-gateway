@@ -80,4 +80,46 @@ describe('character_build schema', () => {
       false,
     );
   });
+
+  describe('listChoices', () => {
+    const parse = (a: unknown) => characterBuild.input.safeParse(a);
+    it('takes a compendium UUID instead of an actor', () => {
+      expect(parse({ listChoices: 'Compendium.pf2e.classes.Item.abc' }).success).toBe(true);
+      expect(parse({ listChoices: 'a'.repeat(500) }).success).toBe(true);
+      expect(parse({ listChoices: 'a'.repeat(501) }).success).toBe(false);
+      expect(parse({ listChoices: '' }).success).toBe(false);
+    });
+    it('needs exactly one of actorUuid and listChoices and refuses changes with it', () => {
+      expect(parse({}).success).toBe(false);
+      expect(parse({ actorUuid: 'Actor.a', listChoices: 'Compendium.a.b.Item.c' }).success).toBe(
+        false,
+      );
+      expect(parse({ listChoices: 'Compendium.a.b.Item.c', changes: [] }).success).toBe(false);
+    });
+    it('bounds the choices output', () => {
+      const choice = (n: number, opts = 1) => ({
+        flag: `f${n}`,
+        itemUuid: 'u',
+        prompt: 'p',
+        options: Array.from({ length: opts }, (_, i) => ({ value: `v${i}`, label: 'l' })),
+        truncated: false,
+      });
+      const out = (choices: unknown[]) =>
+        characterBuild.output.safeParse({
+          systemId: 'pf2e',
+          supported: true,
+          boosts: [],
+          skills: [],
+          featSlots: [],
+          choices,
+        });
+      expect(out(Array.from({ length: 64 }, (_, i) => choice(i))).success).toBe(true);
+      expect(out(Array.from({ length: 65 }, (_, i) => choice(i))).success).toBe(false);
+      expect(out([choice(1, 50)]).success).toBe(true);
+      expect(out([choice(1, 51)]).success).toBe(false);
+      expect(
+        out([{ ...choice(1), options: [{ value: 'v', label: 'l'.repeat(201) }] }]).success,
+      ).toBe(false);
+    });
+  });
 });

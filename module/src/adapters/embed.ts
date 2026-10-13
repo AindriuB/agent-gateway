@@ -8,6 +8,17 @@ export interface EmbedOverrides {
   readonly equipped?: boolean;
   readonly slot?: string;
 }
+/** One answer to a ChoiceSet prompt; validated by the protocol before it gets here. */
+export interface ChoiceDecision {
+  readonly flag: string;
+  readonly itemUuid?: string;
+  readonly value: string;
+}
+export interface ChoiceReportEntry {
+  readonly flag: string;
+  readonly itemUuid?: string;
+  readonly status: 'answered' | 'unanswered' | 'rejected' | 'unsupported';
+}
 export interface EmbedInput {
   readonly systemId: string;
   readonly actor: any;
@@ -16,6 +27,16 @@ export interface EmbedInput {
   /** A fresh, owned copy of the converted source; a hook may return it modified. */
   readonly source: Record<string, any>;
   readonly overrides: EmbedOverrides;
+  /** Optional answers to the item's (and its grants') ChoiceSet prompts. */
+  readonly choices?: readonly ChoiceDecision[];
+  /** `reject` (default) refuses unanswered choices before any write; `ignore` reports them. */
+  readonly onUnanswered?: 'reject' | 'ignore';
+}
+export interface EmbedRunInput {
+  readonly actor: any;
+  /** The audit call id carried in the native create options (`agentGateway.callId`). */
+  readonly callId: string;
+  readonly choices?: readonly ChoiceDecision[];
 }
 export interface EmbedObservation {
   /** Native writes made without audit callOptions while the embed ran. */
@@ -28,6 +49,14 @@ export interface EmbedObservation {
 export interface EmbedHook {
   readonly systemId: string;
   prepare(input: EmbedInput): Promise<Record<string, any>> | Record<string, any>;
+  /**
+   * Run the native create with the choice answers in force. The returned report lists every
+   * ChoiceSet the system raised during the call. Absent: the create runs as-is, no report.
+   */
+  run?<T>(
+    input: EmbedRunInput,
+    create: () => Promise<T>,
+  ): Promise<{ value: T; report: ChoiceReportEntry[] }>;
   /** Start counting native writes that carry no audit callOptions. */
   observe?(actor: any): EmbedObservation;
 }

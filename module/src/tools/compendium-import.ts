@@ -55,19 +55,37 @@ async function embed(
     entry,
     source: converted,
     overrides: args.overrides ?? {},
+    ...(args.choices ? { choices: args.choices } : {}),
+    ...(args.onUnanswered ? { onUnanswered: args.onUnanswered } : {}),
   });
   bounded(data);
-  const batch = await createEmbeddedBatch(
-    ctx,
-    'Item',
-    data,
-    actor,
-    () => {
-      check(entry);
-      checkDocument(ctx, actor);
-    },
-    hook.observe,
-  );
+  // The audit call id rides in ctx.callOptions (agentGateway.callId); a hook that answers choices
+  // keys its per-call decisions on it, and removes them when the create ends.
+  const create = () =>
+    createEmbeddedBatch(
+      ctx,
+      'Item',
+      data,
+      actor,
+      () => {
+        check(entry);
+        checkDocument(ctx, actor);
+      },
+      hook.observe,
+    );
+  const ran = hook.run
+    ? await hook.run(
+        {
+          actor,
+          callId: ctx.callOptions.agentGateway!.callId,
+          ...(args.choices ? { choices: args.choices } : {}),
+        },
+        create,
+      )
+    : { value: await create(), report: [] };
+  const batch = ran.value;
+  const report = ran.report.slice(0, 64);
+  const incomplete = report.some((r) => r.status !== 'answered');
   const lines = [`Compendium entry embedded: ${batch.uuids[0]}`];
   if (batch.uuids.length > 1)
     lines.push(`Created ${batch.uuids.length} documents including grants.`);
@@ -79,9 +97,25 @@ async function embed(
     lines.push(
       `${batch.uncorrelated} native write(s) made by the system during creation are uncorrelated with this audit entry and are not undoable here (task 44 owns that). The count may include concurrent writes to the same Actor, and a possible unawaited Actor update after creation is not counted.`,
     );
+  if (report.length) {
+    lines.push(
+      `Choices: ${report.map((r) => `${r.flag} ${r.status}`).join(', ')}.`,
+      ...(incomplete
+        ? ['The build is incomplete: some choices were left unanswered, rejected or unsupported.']
+        : []),
+    );
+  }
+  if (args.choices?.length)
+    lines.push(
+      'pf2e follow-up item updates made while answering choices are not correlated with this audit entry (task 44).',
+    );
   return {
     text: lines.join('\n'),
-    structured: { uuid: batch.uuids[0]!, created: batch.uuids.slice(0, AUDIT_LIMITS.targets) },
+    structured: {
+      uuid: batch.uuids[0]!,
+      created: batch.uuids.slice(0, AUDIT_LIMITS.targets),
+      ...(report.length ? { choiceReport: report, incomplete } : {}),
+    },
   };
 }
 export const compendiumImportHandler = defineWriteHandler({
