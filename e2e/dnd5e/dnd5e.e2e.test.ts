@@ -73,8 +73,13 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
         data: JSON.stringify({ name: 'agent-gateway e2e dnd5e (temporary)', type: 'character' }),
       }),
     );
-    expect(made.result.isError, made.result.text).toBe(false);
     actorUuid = made.uuid;
+    // An approved create whose UUID could not be read must not pass silently: say what may remain.
+    if (!made.result.isError && !actorUuid)
+      throw new Error(
+        `RESIDUE: the temporary actor was created but its UUID was not parsed from: ${made.result.text.slice(0, 200)}`,
+      );
+    expect(made.result.isError, made.result.text).toBe(false);
     expect(typeof actorUuid).toBe('string');
   }, humanTimeout(1));
   afterAll(async () => {

@@ -158,7 +158,11 @@ describe('dnd5e adapter', () => {
     chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
     const r: any = await dnd5eAdapter.performAction(actor, 'use:s1:a2', { level: 3 }, ctx);
     expect(use).toHaveBeenCalledWith(
-      { subsequentActions: false, create: { measuredTemplate: false }, spell: { slot: 'spell3' } },
+      {
+        subsequentActions: false,
+        create: { measuredTemplate: false, summons: false },
+        spell: { slot: 'spell3' },
+      },
       { configure: false },
       { create: false },
     );
@@ -227,5 +231,127 @@ describe('dnd5e adapter', () => {
     await expect(
       dnd5eAdapter.conditions(actor, { id: 'poisoned', active: true, value: 2 }, ctx),
     ).rejects.toBeDefined();
+  });
+
+  describe('headless safety', () => {
+    const withActs = (acts: any[]) => {
+      const it: any = {
+        id: 'x1',
+        uuid: 'Actor.a.Item.x1',
+        name: 'Thing',
+        type: 'feat',
+        system: { activities: coll(acts) },
+      };
+      return { ...actor, items: coll([it]), concentration: undefined } as any;
+    };
+    const base = (id: string, type: string, extra: any = {}) => ({
+      id,
+      name: 'Thing',
+      type,
+      use,
+      ...extra,
+    });
+    it('refuses cast and order, and transform that opens a compendium browser', async () => {
+      for (const [type, extra] of [
+        ['cast', {}],
+        ['order', {}],
+        ['transform', { transform: { mode: 'cr' } }],
+        ['mystery', {}],
+      ] as const) {
+        const a = withActs([base('q1', type, extra)]);
+        expect(((await dnd5eAdapter.listActions(a)) as any).actions).toEqual([]);
+        await expect(dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx)).rejects.toBeDefined();
+      }
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('allows form and empty-mode transform, and neutralises summons', async () => {
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      for (const mode of ['form', '']) {
+        const a = withActs([base('q1', 'transform', { transform: { mode } })]);
+        await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx);
+      }
+      await dnd5eAdapter.performAction(withActs([base('q2', 'summon')]), 'use:x1:q2', {}, ctx);
+      expect(use).toHaveBeenCalledTimes(3);
+      expect(use.mock.calls[2]![0].create).toEqual({ measuredTemplate: false, summons: false });
+    });
+    it('checks the target of a forward activity', async () => {
+      const cast = base('c1', 'cast');
+      const ok = base('u1', 'utility');
+      const a = withActs([
+        cast,
+        ok,
+        base('f1', 'forward', { activity: { id: 'c1' } }),
+        base('f2', 'forward', { activity: { id: 'u1' } }),
+      ]);
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:f1', {}, ctx)).rejects.toBeDefined();
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:f2', {}, ctx)).resolves.toBeDefined();
+    });
+    const conc = (name: string, activityId: string) => ({
+      uuid: 'Actor.a.ActiveEffect.c1',
+      name: 'Concentrating',
+      flags: { dnd5e: { item: { id: 'zz', data: { name, _id: activityId } } } },
+    });
+    const spellWithConc = () => {
+      const a = withActs([base('q1', 'utility', { requiresConcentration: true })]);
+      a.system = {
+        ...actor.system,
+        attributes: { ...actor.system.attributes, concentration: { limit: 1 } },
+      };
+      return a;
+    };
+    it('refuses to end a different concentration, naming it escaped', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('<b>Hold</b>', 'other')]) };
+      const err: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx).catch((e) => e);
+      expect(String(err.message ?? JSON.stringify(err))).toContain('&#60;b&#62;Hold');
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('snapshots and discloses replacing its own concentration', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const r: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx);
+      expect(snapshot).toHaveBeenCalledWith('Actor.a.ActiveEffect.c1');
+      expect(r.message).toContain('concentration on Bless ended');
+    });
+    it('serialises roll actions per actor so captures cannot cross', async () => {
+      const order: string[] = [];
+      let release!: () => void;
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        order.push('a:start');
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: { n: 'A' }, create: m.create },
+        );
+        await new Promise<void>((r) => (release = r));
+        order.push('a:end');
+        return [{ total: 1 }];
+      });
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        order.push('b:start');
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: { n: 'B' }, create: m.create },
+        );
+        return [{ total: 2 }];
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+      const first = dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+      const second = dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+      await vi.waitFor(() => expect(order).toEqual(['a:start']));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(order).toEqual(['a:start']);
+      release();
+      await Promise.all([first, second]);
+      expect(order).toEqual(['a:start', 'a:end', 'b:start']);
+      expect(chatCreate.mock.calls.map((c) => c[0].n)).toEqual(['A', 'B']);
+      expect(hooks.size).toBe(0);
+    });
   });
 });

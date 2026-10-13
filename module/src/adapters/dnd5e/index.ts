@@ -107,6 +107,57 @@ function castable(actor: any, spell: any): boolean {
   return (num(spell.system?.prepared) ?? 0) > 0;
 }
 
+/**
+ * Activity types whose `use` is safe to run headless in 6.0.6, from reading each class:
+ *  - attack, damage, heal: only the base flow; their follow-up (attack dialog) is behind
+ *    `subsequentActions`, which we turn off (dnd5e.mjs:17728, :21468, :23524, :37064).
+ *  - check, save, utility, teleport, enchant: base flow; enchant and teleport act in
+ *    `_triggerSubsequentActions` (:36534, :41145), which we skip, so only the card is posted.
+ *  - summon: `_finalizeUsage` places tokens (:40481-40483, TokenPlacement :40883 or the actor
+ *    picker :40522) only when `create.summons` is set; we pass false.
+ *  - transform: `_finalizeUsage` (:41893-41904) opens CompendiumBrowser.selectOne through
+ *    queryActor (:41907) for every mode except "form" and the empty mode, so those two only.
+ *  - forward: delegates to another activity of the same item (:36881), which is checked too.
+ * Refused: cast (creates an Item and uses it, which can open the activity chooser; :22017,
+ * :35538) and order (a bastion facility flow that always needs its dialog and updates the Item;
+ * :37750-37770), and any type this adapter has not been checked against.
+ */
+const SAFE_TYPES = new Set([
+  'attack',
+  'check',
+  'damage',
+  'enchant',
+  'forward',
+  'heal',
+  'save',
+  'summon',
+  'teleport',
+  'transform',
+  'utility',
+]);
+/** Why `use` is refused for this activity, or undefined when it can run without a prompt. */
+function refusal(item: any, activity: any, depth = 0): string | undefined {
+  const type = text(activity?.type, 40);
+  if (!SAFE_TYPES.has(type)) return `${type || 'this'} activities may prompt and are not supported`;
+  if (type === 'transform') {
+    const mode = activity.transform?.mode;
+    if (mode && mode !== 'form')
+      return 'transform activities that choose a creature open a compendium browser';
+  }
+  if (type === 'forward') {
+    if (depth > 0) return 'nested forward activities are not supported';
+    const target = item?.system?.activities?.get?.(activity.activity?.id);
+    if (!target || target === activity) return 'the forwarded activity is missing';
+    return refusal(item, target, depth + 1);
+  }
+  return undefined;
+}
+/** The activity whose own `use` finally runs (forward activities delegate). */
+const effectiveActivity = (item: any, activity: any): any =>
+  activity?.type === 'forward'
+    ? (item?.system?.activities?.get?.(activity.activity?.id) ?? activity)
+    : activity;
+
 type Kind = 'use' | 'attack' | 'damage';
 const DAMAGING = new Set(['attack', 'damage', 'save']);
 
@@ -148,7 +199,12 @@ function listActions(actor: any) {
             description,
           },
         });
-      add('use', '', `Use (${text(act.type, 100)} activity): posts the card and spends resources`);
+      if (!refusal(item, act))
+        add(
+          'use',
+          '',
+          `Use (${text(act.type, 100)} activity): posts the card and spends resources`,
+        );
       if (act.type === 'attack' && typeof act.rollAttack === 'function')
         add('attack', ' (attack roll)', 'Roll the attack without a dialog');
       if (DAMAGING.has(act.type) && typeof act.rollDamage === 'function')
@@ -181,8 +237,10 @@ async function postData(
 
 /**
  * attack/damage rolls return the rolls, not the message. The roll workflow hands one message
- * config to the `dnd5e.preRoll` hook (dnd5e.mjs:72012-72014, hook name '' appended at :72005);
- * keep the one whose subject is this activity and read the unsaved data from it afterwards.
+ * config to the `dnd5e.preRollV2` hook (dnd5e.mjs:72012-72014; the hook name '' is appended at
+ * :72005, giving `preRoll` + '' + `V2`). The listener keeps the first config whose subject is this
+ * activity and unregisters at once, so a later roll of the same activity (our own, queued behind
+ * `exclusive`, or the user's) can never be captured; the data is read after the roll finishes.
  */
 async function rollUnsaved(
   activity: any,
@@ -190,7 +248,10 @@ async function rollUnsaved(
 ): Promise<{ rolls: any; data: unknown }> {
   let config: any;
   const id = Hooks.on('dnd5e.preRollV2', (c: any, _d: unknown, m: any) => {
-    if (c?.subject === activity) config = m;
+    if (config === undefined && c?.subject === activity) {
+      config = m;
+      Hooks.off('dnd5e.preRollV2', id);
+    }
   });
   try {
     const rolls = await roll({ create: false });
@@ -199,6 +260,60 @@ async function rollUnsaved(
     Hooks.off('dnd5e.preRollV2', id);
   }
 }
+
+/** Roll actions run one at a time per Actor in this client, so captures cannot cross. */
+const queues = new Map<string, Promise<unknown>>();
+async function exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = queues.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  const tail = run.catch(() => undefined);
+  queues.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (queues.get(key) === tail) queues.delete(key);
+  }
+}
+
+/** Escape and bound a name that goes into a result message. */
+const safeName = (v: unknown, max = 80): string =>
+  text(v, max * 2)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+    .slice(0, max);
+
+/**
+ * The concentration effect that using this activity would end: at the concentration limit,
+ * `_prepareUsageConfig` (dnd5e.mjs:17919-17923) picks the effect of this same activity, or else the
+ * first one, and `use` deletes it (:17696) without caller options.
+ */
+function concentrationEnded(actor: any, activity: any): any {
+  if (activity?.requiresConcentration !== true) return undefined;
+  let disabled = false;
+  try {
+    disabled = Boolean((globalThis as any).game?.settings?.get('dnd5e', 'disableConcentration'));
+  } catch {
+    disabled = false;
+  }
+  if (disabled) return undefined;
+  const limit = num(actor.system?.attributes?.concentration?.limit) ?? 0;
+  const effects = list(actor.concentration?.effects);
+  if (!limit || limit > effects.length) return undefined;
+  return (
+    effects.find((e) => {
+      const data = e?.flags?.dnd5e?.item?.data ?? {};
+      return data === activity.id || data?._id === activity.id;
+    }) ?? effects[0]
+  );
+}
+const concentrationLabel = (actor: any, effect: any): string =>
+  safeName(
+    effect?.flags?.dnd5e?.item?.data?.name ??
+      actor.items?.get?.(effect?.flags?.dnd5e?.item?.id)?.name ??
+      effect?.name ??
+      'a spell',
+  );
 
 /**
  * Activity#use (dnd5e.mjs:17634), Activity#rollAttack (:21483) and Activity#rollDamage (:18274) are
@@ -235,6 +350,10 @@ async function performAction(
   )
     return invalid('Unknown action');
   if (activity.canUse === false) return invalid('This activity cannot be used');
+  if (kind === 'use') {
+    const why = refusal(item, activity);
+    if (why) return invalid(`Cannot use ${text(item.name, 100)}: ${why}`);
+  }
   const level = options.level;
   let slot: string | undefined;
   if (level !== undefined) {
@@ -263,7 +382,22 @@ async function performAction(
     typeof context.snapshot !== 'function'
   )
     throw new Error('Audit context unavailable');
-  for (const uuid of [item.uuid, actor.uuid])
+  // Using a concentration spell at the limit ends another concentration. Ending a different
+  // spell's concentration is refused (the safer choice); recasting the same one replaces its own
+  // effect, which is snapshotted and disclosed.
+  let ended: any;
+  if (kind === 'use') {
+    ended = concentrationEnded(actor, effectiveActivity(item, activity));
+    if (ended) {
+      const own = effectiveActivity(item, activity).id;
+      const data = ended.flags?.dnd5e?.item?.data ?? {};
+      if (data !== own && data?._id !== own && ended.flags?.dnd5e?.item?.id !== item.id)
+        return invalid(
+          `Cannot use ${text(item.name, 100)}: it would end your concentration on ${concentrationLabel(actor, ended)}. End that first.`,
+        );
+    }
+  }
+  for (const uuid of [item.uuid, actor.uuid, ended?.uuid])
     if (typeof uuid === 'string') await context.snapshot(uuid);
   await context.intendCreate();
   let recorded: string | undefined;
@@ -273,11 +407,12 @@ async function performAction(
     if (kind === 'use') {
       // configure: false skips the dialog; subsequentActions: false stops an attack activity
       // opening its own attack dialog (:21468, :17728); measuredTemplate: false skips template
-      // placement (:17866, :18222); create: false returns the card data unsaved.
+      // placement (:17866, :18222); summons: false skips token placement (:40481-40483);
+      // create: false returns the card data unsaved.
       outcome = await activity.use(
         {
           subsequentActions: false,
-          create: { measuredTemplate: false },
+          create: { measuredTemplate: false, summons: false },
           ...(slot ? { spell: { slot } } : {}),
         },
         { configure: false },
@@ -286,10 +421,12 @@ async function performAction(
       const results = outcome as any;
       if (results) recorded = await postData(results.message, context);
     } else {
-      const rolled = await rollUnsaved(activity, (message) =>
-        kind === 'attack'
-          ? activity.rollAttack({}, { configure: false }, message)
-          : activity.rollDamage({}, { configure: false }, message),
+      const rolled = await exclusive(String(actor.uuid), () =>
+        rollUnsaved(activity, (message) =>
+          kind === 'attack'
+            ? activity.rollAttack({}, { configure: false }, message)
+            : activity.rollDamage({}, { configure: false }, message),
+        ),
       );
       outcome = Array.isArray(rolled.rolls) && rolled.rolls.length ? rolled.rolls : undefined;
       if (outcome) {
@@ -316,9 +453,13 @@ async function performAction(
     };
   const verb =
     kind === 'use' ? 'Used' : kind === 'attack' ? 'Rolled attack for' : 'Rolled damage for';
-  const note = recorded
-    ? '. Resources spent natively cannot be undone'
-    : '. No chat message was created; resources spent natively cannot be undone';
+  const replaced = ended
+    ? `. Your concentration on ${concentrationLabel(actor, ended)} ended and cannot be undone`
+    : '';
+  const note =
+    (recorded
+      ? '. Resources spent natively cannot be undone'
+      : '. No chat message was created; resources spent natively cannot be undone') + replaced;
   return {
     completed: true,
     message: `${verb} ${text(item.name, 200)}${summary}${note}`.slice(0, 2000),
