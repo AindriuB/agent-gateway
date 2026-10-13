@@ -165,7 +165,7 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
       const skills = actor.system?.skills;
       if (!c.skill || !own(CONFIG.PF2E?.skills, c.skill) || !own(skills, c.skill))
         invalid('Unknown skill');
-      if (skills[c.skill]?.lore === true)
+      if (skills[c.skill!]?.lore === true)
         invalid('Lore skill ranks live on the lore Item and cannot be set here');
       if (c.rank === undefined) invalid('A skill rank is required');
       const cap = level < 7 ? 2 : level < 15 ? 3 : 4;
