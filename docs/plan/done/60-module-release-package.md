@@ -25,13 +25,13 @@ MVP A does not wait on Quench (39) or remote conformance (40).
 
 ## Acceptance
 - [x] ~~`relationships.systems` lists pf2e and dnd5e~~ Replaced (Andrew, 2026-10-13): `module.json` declares no `relationships.systems`. Foundry v13/v14 core hides a module from every world whose system is not listed (World._initialize calls Module.getPackages({system, enforceCompatibility}), which calls supportsSystem) and force-disables it below the listed minimum version. The gateway must work on any system with the generic adapter as fallback. Supported pf2e/dnd5e versions go in the docs (task 65).
-- [ ] `module.json` has no `relationships.systems`, `relationships.requires` or `relationships.recommends` entry; `scripts/test/pack-module.test.mjs` asserts this, so the core never depends on a pack
-- [ ] `module.json` `download` is `https://github.com/AindriuB/agent-gateway/releases/download/v<version>/agent-gateway.zip`; the test asserts `<version>` equals `module.json` `version`
-- [ ] After `npm run build`, `node scripts/pack-module.mjs` writes `dist/release/agent-gateway.zip`; it exits non-zero with one stderr line naming the missing file if `dist/module/main.js` is absent
-- [ ] The zip has no `*.map` (source maps embed the full source) and no dotfile or dot-directory entry; the test uses decoys for both. The test lists the zip: every entry is `module.json`, `LICENSE` or under `dist/module/`, `lang/`, `templates/` or `styles/`; no entry under `examples/`, `node_modules/` or `module/src/`, and no `*.ts` file
-- [ ] The test asserts the zipped `module.json` is byte-identical to the repo's, and every path named in its `esmodules`, `styles` and `languages[].path` exists in the zip
-- [ ] No new npm dependency (system `zip`/`unzip` or Node built-ins only)
-- [ ] `node --test scripts/test/pack-module.test.mjs` passes and `npm run verify` passes
+- [x] `module.json` has no `relationships.systems`, `relationships.requires` or `relationships.recommends` entry; `scripts/test/pack-module.test.mjs` asserts this, so the core never depends on a pack
+- [x] `module.json` `download` is `https://github.com/AindriuB/agent-gateway/releases/download/v<version>/agent-gateway.zip`; the test asserts `<version>` equals `module.json` `version`
+- [x] After `npm run build`, `node scripts/pack-module.mjs` writes `dist/release/agent-gateway.zip`; it exits non-zero with one stderr line naming the missing file if `dist/module/main.js` is absent
+- [x] The zip has no `*.map` (source maps embed the full source) and no dotfile or dot-directory entry; the test uses decoys for both. The test lists the zip: every entry is `module.json`, `LICENSE` or under `dist/module/`, `lang/`, `templates/` or `styles/`; no entry under `examples/`, `node_modules/` or `module/src/`, and no `*.ts` file
+- [x] The test asserts the zipped `module.json` is byte-identical to the repo's, and every path named in its `esmodules`, `styles` and `languages[].path` exists in the zip
+- [x] No new npm dependency (system `zip`/`unzip` or Node built-ins only)
+- [x] `node --test scripts/test/pack-module.test.mjs` passes and `npm run verify` passes
 - [x] Manual check answered from core source, not a live run (Andrew, 2026-10-13): Foundry does not let a module be enabled in a world whose system is not listed in `relationships.systems`; it is hidden (World._initialize -> Module.getPackages -> supportsSystem), hence the decision above. The unpack-and-enable check on foundry.local is still worth doing at release (task 66).
 
 ## Out of scope
@@ -39,3 +39,6 @@ MVP A does not wait on Quench (39) or remote conformance (40).
 - `documentTypes` and any other `module.json` field
 - Uploading anything, or the Foundry package listing (66, Andrew)
 - The gateway npm package and `.mcpb` (61, 62)
+
+## Attempt 1 — passed
+Head `8770991`: `scripts/test/pack-module.test.mjs` 6/6; `npm run verify` green (3,878 fast / 2,227 slow). No `relationships` in `module.json` (decision above). Live unpack-and-enable check deferred to task 66.
