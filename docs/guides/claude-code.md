@@ -1,13 +1,15 @@
 # Connect Claude Code
 
-Claude Code can run the gateway itself over stdio, or talk to a gateway you start yourself over local HTTP. Pick one. Before you start, install and enable the module and keep a logged-in Foundry tab open, as in the [README quick start](../../README.md#quick-start). Needs Node 22.13 or newer.
+> Pre-release: not yet published. Install from source.
+
+Claude Code can run the gateway itself over stdio, or talk to a gateway you start yourself over local HTTP. Pick one. Before you start, build from source (`npm install` and `npm run build` in your clone), install and enable the module and keep a logged-in Foundry tab open, as in the [README quick start](../../README.md#quick-start). Needs Node 22.13 or newer. In the commands below, `<repo>` is the full path of your clone; the gateway is `<repo>/gateway/dist/bin/cli.js`.
 
 ## Option 1: stdio (simplest)
 
 Claude Code starts the gateway when a session opens and stops it when the session ends:
 
 ```
-claude mcp add foundry -- npx -y foundry-agent-gateway
+claude mcp add foundry -- node <repo>/gateway/dist/bin/cli.js
 ```
 
 Add `--scope user` to make it available in every project, or `--scope project` to share it in `.mcp.json`. Then run `/mcp` inside Claude Code and check that `foundry` is connected.
@@ -17,7 +19,7 @@ Add `--scope user` to make it available in every project, or `--scope project` t
 Use this if you want the gateway to keep running between Claude Code sessions. Start it yourself with `--http`:
 
 ```
-npx foundry-agent-gateway --http
+node <repo>/gateway/dist/bin/cli.js --http
 ```
 
 On the first run it prints a bearer token, once. The gateway stores only a hash of the token, so it cannot show it again. Copy it now. The HTTP endpoint is `http://127.0.0.1:7421/mcp`, and it binds to the loopback address only; the gateway refuses any other address. Then register it, putting your token where `<token>` is:
@@ -28,7 +30,7 @@ claude mcp add --transport http foundry http://127.0.0.1:7421/mcp --header "Auth
 
 Every request must carry the token. Treat it like a password: anything on your machine that has it can use the gateway as your paired Foundry user. Do not paste it into chats or commit it.
 
-If you lose the token, or want to cut off a client, run `npx foundry-agent-gateway --http-rotate-token`. It prints a new token once and exits, and the old token stops working at once, even in a gateway that is already running. Register the new token with `claude mcp remove foundry` and the command above. A status page is at `http://127.0.0.1:7421/status` (loopback only, no secrets).
+If you lose the token, or want to cut off a client, run `node <repo>/gateway/dist/bin/cli.js --http-rotate-token`. It prints a new token once and exits, and the old token stops working at once, even in a gateway that is already running. Register the new token with `claude mcp remove foundry` and the command above. A status page is at `http://127.0.0.1:7421/status` (loopback only, no secrets).
 
 To use another port, pass `--http-port <n>` and put the same port in the URL.
 

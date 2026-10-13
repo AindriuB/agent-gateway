@@ -1,13 +1,15 @@
 # Connect Claude Desktop
 
-Claude Desktop starts the gateway for you and talks to it over stdio. Use one of the two installs below, not both. Before you start, install and enable the module and keep a logged-in Foundry tab open, as in the [README quick start](../../README.md#quick-start).
+> Pre-release: not yet published. Install from source.
 
-The `.mcpb` and `npx` installs are verified on macOS and untested on Windows in this release.
+Claude Desktop starts the gateway for you and talks to it over stdio. Use one of the two installs below, not both. Before you start, build from source, install and enable the module and keep a logged-in Foundry tab open, as in the [README quick start](../../README.md#quick-start).
+
+The `.mcpb` and from-source installs are verified on macOS and untested on Windows in this release.
 
 ## Install the extension (.mcpb)
 
-1. Download `foundry-agent-gateway.mcpb` from the [releases page](https://github.com/AindriuB/agent-gateway/releases).
-2. Open it with Claude Desktop, or go to Settings, then Extensions, and drag the file in. Confirm the install.
+1. Build it in your clone (see the [README quick start](../../README.md#quick-start); you need git access to the private repository and Node 22.13 or newer): `npm install`, `npm run build`, then `npm run pack:mcpb`. The file is `dist/release/foundry-agent-gateway.mcpb`.
+2. Double-click it to open it with Claude Desktop, or go to Settings, then Extensions, and drag the file in. Confirm the install.
 3. Leave the settings alone. The extension has only three, all optional and advanced: the link port (default 7420), the HTTP port (default 7421) and the log level. There is no Foundry URL and no role setting. Your Foundry user's role decides which tools you get.
 
 ## Or add it to the config file
@@ -23,16 +25,16 @@ Add the server under `mcpServers`:
 {
   "mcpServers": {
     "foundry": {
-      "command": "npx",
-      "args": ["-y", "foundry-agent-gateway"]
+      "command": "node",
+      "args": ["<repo>/gateway/dist/bin/cli.js"]
     }
   }
 }
 ```
 
-To fix the gateway to one Foundry user, add `"--user", "<name>"` to `args` (a Foundry user name or id). Without it, a chat follows the connected pairing and can move to a different user or world that you pair later. See the [security model](../security.md). The extension has no setting for this.
+Replace `<repo>` with the full path of your clone, after `npm run build`. To fix the gateway to one Foundry user, add `"--user", "<name>"` to `args` (a Foundry user name or id). Without it, a chat follows the connected pairing and can move to a different user or world that you pair later. See the [security model](../security.md). The extension has no setting for this.
 
-Node 22.13 or newer must be installed. If Claude Desktop cannot find `npx`, give the full path to it as `command`.
+Node 22.13 or newer must be installed. If Claude Desktop cannot find `node`, give the full path to it as `command`.
 
 ## Pair
 
