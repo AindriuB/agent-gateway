@@ -107,6 +107,8 @@ describe('follow mode', () => {
     expect((await answer(b, call(s))).res.isError).toBeFalsy();
   });
 
+  // End to end, and timing-dependent: the real flush timer may clear the clock before the second
+  // drop. The deterministic check is in binding.test.ts.
   it('every outage gets the full grace period, even with no call between drop and reconnect', async () => {
     h = await startServer();
     let t = 1_000_000;

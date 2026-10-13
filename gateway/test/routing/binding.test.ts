@@ -4,7 +4,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashToken } from '../../src/link/index.js';
+import { LinkConnection, LinkRegistry, hashToken } from '../../src/link/index.js';
+import { REBIND_GRACE_MS, SessionBinding, type Identity } from '../../src/routing/index.js';
 import m001 from '../../src/store/migrations/001-pairings.js';
 import { openStore } from '../../src/store/index.js';
 import { startServer, type Harness } from '../link/helpers.js';
@@ -281,5 +282,52 @@ describe('store upgrade from version 1', () => {
     const frame = (await tc.next('call')) as { id: string };
     tc.send({ type: 'result', id: frame.id, ok: true, text: 't', structured: { b: 'A' } });
     expect((await p).isError).toBeFalsy();
+  });
+});
+
+describe('follow-mode grace clock (SessionBinding driven directly, no session flush)', () => {
+  const conn = (user: string, n: number) =>
+    new LinkConnection(
+      `c${n}`,
+      `a${user}`,
+      'w1',
+      user,
+      { send() {}, close() {} },
+      { userName: user, isGM: false },
+    );
+  const ids: Identity[] = ['uA', 'uB'].map((u) => ({ worldId: 'w1', userId: u, userName: u }));
+
+  it('every outage of the bound pair gets the full grace period', () => {
+    let t = 0;
+    const registry = new LinkRegistry();
+    const binding = new SessionBinding(registry, {}, () => ids, undefined, { now: () => t });
+    const a1 = conn('uA', 1);
+    registry.add(a1);
+    expect(binding.resolve()).toMatchObject({ kind: 'bound', pair: { userId: 'uA' } });
+    registry.add(conn('uB', 2));
+
+    registry.remove(a1);
+    binding.noteDisconnected(a1); // outage 1 starts at t = 0
+    t = REBIND_GRACE_MS - 1;
+    const a2 = conn('uA', 3);
+    registry.add(a2);
+    binding.noteConnected(a2); // back just inside the grace period
+    registry.remove(a2);
+    binding.noteDisconnected(a2); // outage 2 starts at 29,999
+
+    t = REBIND_GRACE_MS + 1; // 2 ms into outage 2
+    expect(binding.resolve()).toMatchObject({
+      kind: 'bound',
+      pair: { userId: 'uA' },
+      conn: undefined,
+    });
+    t = REBIND_GRACE_MS - 1 + REBIND_GRACE_MS - 1;
+    expect(binding.resolve()).toMatchObject({
+      kind: 'bound',
+      pair: { userId: 'uA' },
+      conn: undefined,
+    });
+    t = REBIND_GRACE_MS - 1 + REBIND_GRACE_MS; // a full grace period after outage 2 began
+    expect(binding.resolve()).toMatchObject({ kind: 'bound', pair: { userId: 'uB' } });
   });
 });
