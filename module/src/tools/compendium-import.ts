@@ -73,7 +73,7 @@ async function embed(
     );
   if (batch.uncorrelated > 0)
     lines.push(
-      `${batch.uncorrelated} native write(s) made by the system during creation are uncorrelated with this audit entry and are not undoable here (task 44 owns that).`,
+      `${batch.uncorrelated} native write(s) made by the system during creation are uncorrelated with this audit entry and are not undoable here (task 44 owns that). The count may include concurrent writes to the same Actor, and a possible unawaited Actor update after creation is not counted.`,
     );
   return {
     text: lines.join('\n'),

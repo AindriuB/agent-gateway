@@ -98,8 +98,10 @@ async function scanHeadless(root: any): Promise<void> {
 }
 
 function carryFor(source: any, equipped: boolean): Record<string, unknown> | undefined {
-  // Armor's usage is forced to `wornarmor` by pf2e's prepareBaseData; other types keep their source.
-  const usage = source.type === 'armor' ? 'wornarmor' : String(source?.system?.usage?.value ?? '');
+  // pf2e does not persist usage for armor (`wornarmor`) or shields (`held-in-one-hand`); it
+  // forces them in prepareBaseData (pf2e.mjs:11338-11346, :50938, :51334). Others keep their source.
+  const forced: Record<string, string> = { armor: 'wornarmor', shield: 'held-in-one-hand' };
+  const usage = forced[source.type] ?? String(source?.system?.usage?.value ?? '');
   if (/^held-in-/.test(usage))
     return equipped
       ? { carryType: 'held', handsHeld: usage === 'held-in-two-hands' ? 2 : 1 }

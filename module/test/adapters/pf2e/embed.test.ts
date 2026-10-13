@@ -243,6 +243,17 @@ describe('pf2e headless safety', () => {
 });
 
 describe('pf2e physical types, selections and kits', () => {
+  it('forces a shield without persisted usage to held in one hand', async () => {
+    const shield = () => ({ name: 'Shield', type: 'shield', system: { rules: [] } });
+    expect((await prepare(shield(), { equipped: true })).system.equipped).toEqual({
+      carryType: 'held',
+      handsHeld: 1,
+    });
+    expect((await prepare(shield(), { equipped: false })).system.equipped).toEqual({
+      carryType: 'worn',
+      handsHeld: 0,
+    });
+  });
   it('accepts a quantity override on ammunition (a physical type, pf2e.mjs:3173)', async () => {
     const arrows = {
       name: 'Arrows',

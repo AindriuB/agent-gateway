@@ -179,6 +179,9 @@ describe('uncorrelated native writes', () => {
   it('names them only when they happened', async () => {
     const plain = { render: false };
     expect((await run([['updateItem', 'actor', plain]])).text).toMatch(/1 native.*task 44/);
+    expect((await run([['updateItem', 'actor', plain]])).text).toMatch(
+      /concurrent writes.*unawaited Actor update/,
+    );
     expect((await run([])).text).not.toMatch(/uncorrelated/);
   });
   it('ignores writes that carry an audit callId or touch another Actor', async () => {
