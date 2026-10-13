@@ -46,3 +46,10 @@ Nothing about remote, HTTP, headless or Docker; those docs stay in 43.
 - `docs/releasing.md` (64), `docs/compatibility.md` (63)
 - Foundry listing text and submission (Andrew)
 - Any code change, including the trust-assumption code comment (36)
+
+## Outcome
+Landed on `claude/task-65` (docs only).
+
+- Review: one round requested changes (an overclaim about destructive approvals, the off-by-one on the code limit, and the LINK_UNAVAILABLE framing). Fixed in 89f70be and checked.
+- Not verified live: the `.mcpb` install in Claude Desktop, the module menu path in a live Foundry, and Windows paths.
+- Manual check pending (Andrew): follow the README quick start end to end.
