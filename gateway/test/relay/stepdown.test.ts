@@ -123,6 +123,34 @@ describe('a stepped-down gateway stays alive', () => {
     expect(await worldInfoEventually(a)).toContain('echo:');
   }, 120_000);
 
+  it('A with --user is refused for its selector by a newer B, stays a standby, and takes over when B is killed', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    const httpPort = await freePort();
+    const a = await startCli(port, state.db, ['--user', 'gm']);
+    clis.push(a);
+    await until(() => /Pairing code: /.test(a.stderr()), 10_000, 'A pairing code');
+    const module = new FakeModule(port);
+    await module.connect({ code: /Pairing code: (\S+)/.exec(a.stderr())![1]! });
+    module.keepAlive();
+    modules.push(module);
+
+    const b = await startCli(port, state.db, ['--http', '--http-port', String(httpPort)]);
+    clis.push(b);
+    await until(() => b.stderr().includes('MCP HTTP at'), 30_000, 'B serving HTTP');
+    await until(() => a.stderr().includes('is a standby and cannot pair'), 30_000, 'A standby');
+    expect(a.stderr()).toContain('selector mismatch');
+    expect(alive(a.pid)).toBe(true);
+    const status = await a.client.callTool({ name: STATUS_TOOL, arguments: {} });
+    expect(JSON.stringify(status.content)).toContain('selector mismatch');
+
+    process.kill(b.pid, 'SIGKILL');
+    await until(() => count(a.stderr(), 'holds link port') >= 2, 30_000, 'A takes back over');
+    await until(() => module.ready, 30_000, 'module reconnect');
+    expect(await worldInfoEventually(a)).toContain('echo:');
+  }, 120_000);
+
   it('A (oldest), B and C with different settings settle on C without a step-down cycle', async () => {
     const state = tempState();
     cleanups.push(state.cleanup);

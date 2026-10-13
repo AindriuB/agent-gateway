@@ -254,10 +254,9 @@ export class RelaySecondary {
       }
       if (r.kind === 'refused') {
         if (r.code === 'RELAY_SELECTOR_MISMATCH')
-          return {
-            kind: 'degraded',
-            reason: `the primary gateway refused this instance: selector mismatch (this instance: ${describe(this.opts.selector)}; primary: ${describe(r.selector)})`,
-          };
+          return this.blocked(
+            `the primary gateway refused this instance: selector mismatch (this instance: ${describe(this.opts.selector)}; primary: ${describe(r.selector)})`,
+          );
         if (r.code === 'RELAY_CONFIG_MISMATCH')
           return {
             kind: 'standby',
@@ -268,10 +267,7 @@ export class RelaySecondary {
           takeOver = true;
           last = 'waiting for the older gateway to step down';
         } else if (r.code !== 'RELAY_AUTH' && r.code !== 'RELAY_FULL')
-          return {
-            kind: 'degraded',
-            reason: `the primary gateway refused the relay: ${safeText(String(r.code))}`,
-          };
+          return this.blocked(`the primary gateway refused the relay: ${safeText(String(r.code))}`);
         if (r.code !== 'RELAY_CONFIG_STEPDOWN')
           last = `the primary gateway refused the relay: ${safeText(String(r.code))}`;
       } else {
@@ -283,7 +279,15 @@ export class RelaySecondary {
       }
     }
     const reason = `could not relay to the gateway holding link port ${this.opts.linkPort} after ${RELAY_CONNECT_ATTEMPTS} attempts: ${last}`;
-    // A demoted primary has a live client and must be able to take over once the port frees up.
+    return this.blocked(reason);
+  }
+
+  /**
+   * Relaying is not possible. A demoted primary has a live client and must be able to take over
+   * once the port frees up, so it waits as a standby, whatever the reason; a fresh instance
+   * settles for the degraded server.
+   */
+  private blocked(reason: string): Outcome {
     return this.demoted ? { kind: 'standby', reason } : { kind: 'degraded', reason };
   }
 }

@@ -375,6 +375,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       return;
     }
     steppingDown = true;
+    // Whatever stopped this instance at startup no longer applies: it now yields to a newer one.
+    holds = `another gateway holds link port ${config.linkPort}`;
     try {
       secondary ??= makeSecondary(ep.path, proxy);
       await secondary.demote(`a newer gateway took over (${why})`, teardown);

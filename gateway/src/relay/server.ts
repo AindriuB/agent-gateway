@@ -73,6 +73,8 @@ export class RelayServer {
   private socketIno: number | undefined;
   private bindPath = '';
   private steppingDown = false;
+  /** The last refusal logged; a standby re-asks every few seconds and must not flood the log. */
+  private lastRefusal = '';
   private endpoint: string;
 
   constructor(private readonly opts: RelayServerOptions) {
@@ -283,9 +285,14 @@ export class RelayServer {
       const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
       const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
       if (newer || !neutralOnly) {
-        this.opts.log(
-          `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
-        );
+        const code = newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH';
+        const key = `${code} ${JSON.stringify(theirConfig ?? null)}`;
+        if (key !== this.lastRefusal) {
+          this.lastRefusal = key;
+          this.opts.log(
+            `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
+          );
+        }
         this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
           config: this.opts.config,
         });

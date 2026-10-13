@@ -238,6 +238,20 @@ describe('relay config fingerprint', () => {
     expect(r.create).not.toHaveBeenCalled();
   });
 
+  it('logs a repeated refusal for the same peer config once, and again when it changes', async () => {
+    const r = await rig();
+    const ask = async (config: object) =>
+      JSON.parse((await rawHello(r, withConfig(config)(r))).reply).code;
+    const refusals = () => r.logs.filter((l) => l.startsWith('relay refused')).length;
+    const other = { ...CFG, allowOrigins: ['https://foundry.local'] };
+    for (let i = 0; i < 5; i++) expect(await ask(other)).toBe('RELAY_CONFIG_MISMATCH');
+    expect(refusals()).toBe(1);
+    expect(await ask({ ...CFG, allowOrigins: ['https://other.local'] })).toBe(
+      'RELAY_CONFIG_MISMATCH',
+    );
+    expect(refusals()).toBe(2);
+  });
+
   it('serves a caller that is not newer and differs only in the http port or log level', async () => {
     const r = await rig();
     const ups: SocketUpstream[] = [];
