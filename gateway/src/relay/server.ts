@@ -41,6 +41,7 @@ export interface RelayServerOptions {
 }
 
 const REFUSAL_GRACE_MS = 500;
+const MAX_LOGGED_REFUSALS = 20;
 
 /** True when something accepts connections at `path`. */
 function isLive(path: string): Promise<boolean> {
@@ -73,8 +74,8 @@ export class RelayServer {
   private socketIno: number | undefined;
   private bindPath = '';
   private steppingDown = false;
-  /** The last refusal logged; a standby re-asks every few seconds and must not flood the log. */
-  private lastRefusal = '';
+  /** Refusals already logged; a standby re-asks every few seconds and must not flood the log. */
+  private readonly loggedRefusals = new Set<string>();
   private endpoint: string;
 
   constructor(private readonly opts: RelayServerOptions) {
@@ -285,13 +286,14 @@ export class RelayServer {
       const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
       const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
       if (newer || !neutralOnly) {
-        const code = newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH';
-        const key = `${code} ${JSON.stringify(theirConfig ?? null)}`;
-        if (key !== this.lastRefusal) {
-          this.lastRefusal = key;
-          this.opts.log(
-            `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
-          );
+        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`;
+        // Keyed on the logged text, not the peer's start time: peers with the same settings but
+        // different start times must not take turns defeating the dedup. Bounded; cleared when full.
+        const key = `${newer ? 'STEPDOWN' : 'MISMATCH'} ${text}`;
+        if (!this.loggedRefusals.has(key)) {
+          if (this.loggedRefusals.size >= MAX_LOGGED_REFUSALS) this.loggedRefusals.clear();
+          this.loggedRefusals.add(key);
+          this.opts.log(text);
         }
         this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
           config: this.opts.config,

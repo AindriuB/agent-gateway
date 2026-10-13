@@ -252,6 +252,19 @@ describe('relay config fingerprint', () => {
     expect(refusals()).toBe(2);
   });
 
+  it('logs one refusal for standbys with the same settings and different start times', async () => {
+    const r = await rig();
+    const other = { ...CFG, allowOrigins: ['https://foundry.local'] };
+    for (let i = 0; i < 6; i++) {
+      const res = await rawHello(
+        r,
+        withConfig({ ...other, startedAt: CFG.startedAt - 1 - (i % 2) })(r),
+      );
+      expect(JSON.parse(res.reply).code).toBe('RELAY_CONFIG_MISMATCH');
+    }
+    expect(r.logs.filter((l) => l.startsWith('relay refused'))).toHaveLength(1);
+  });
+
   it('serves a caller that is not newer and differs only in the http port or log level', async () => {
     const r = await rig();
     const ups: SocketUpstream[] = [];
