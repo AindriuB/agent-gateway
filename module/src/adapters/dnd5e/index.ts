@@ -641,8 +641,31 @@ function knownStatuses(): Map<string, string> {
 /** Leveled conditions (exhaustion, ...) are ActiveEffects with system.level (dnd5e.mjs:7095-7115). */
 const hasLevels = (id: string): boolean =>
   Number.isFinite(CONFIG?.DND5E?.conditionTypes?.[id]?.levels);
-const effectsFor = (actor: any, id: string): any[] =>
-  list(actor.effects).filter((e) => list(e?.statuses).includes(id));
+/** dnd5e.utils.staticID (dnd5e.mjs:656-659): truncate or zero-pad to 16 characters. */
+const staticId = (id: string): string => (id.length >= 16 ? id.slice(0, 16) : id.padEnd(16, '0'));
+/**
+ * The effects Actor5e#toggleStatusEffect acts on for a status, not merely every effect that
+ * carries it. A leveled status is the one effect with the static id `dnd5e<status>`
+ * (ConditionData._applyDelta, dnd5e.mjs:7225). Otherwise core's toggleStatusEffect uses the
+ * status's own static `_id` when CONFIG.statusEffects defines one (dnd5e.mjs:7641, :96394), else
+ * the effects whose only status is this one. An item or feature effect that merely lists the
+ * status among others is not touched by it.
+ */
+function effectsFor(actor: any, id: string): any[] {
+  if (hasLevels(id)) {
+    const e = actor.effects?.get?.(staticId(`dnd5e${id}`));
+    return e ? [e] : [];
+  }
+  const fixed = CONFIG?.statusEffects?.[id]?._id;
+  if (typeof fixed === 'string') {
+    const e = actor.effects?.get?.(fixed);
+    return e ? [e] : [];
+  }
+  return list(actor.effects).filter((e) => {
+    const statuses = list(e?.statuses);
+    return statuses.length === 1 && statuses[0] === id;
+  });
+}
 
 function activeConditions(actor: any) {
   const known = knownStatuses();
@@ -652,7 +675,8 @@ function activeConditions(actor: any) {
   for (const [id, name] of known) {
     if (!active.has(id) || out.length >= MAX_CONDITIONS) continue;
     const row: any = { id, name };
-    const lvl = hasLevels(id) ? num(effectsFor(actor, id)[0]?.system?.level) : undefined;
+    // No static-id effect means level 0, as _applyDelta treats it.
+    const lvl = hasLevels(id) ? (num(effectsFor(actor, id)[0]?.system?.level) ?? 0) : undefined;
     if (lvl !== undefined && lvl >= 0) row.value = lvl;
     out.push(row);
   }
@@ -685,7 +709,9 @@ function stepFor(actor: any, change: ConditionChange, leveled: boolean): Step | 
       return { error: 'Condition level must be an integer from 0 to 10' };
     return target === current ? undefined : { levels: target - current };
   }
-  return change.active !== list(actor.statuses).includes(change.id)
+  // toggleStatusEffect decides from the effects it finds (see effectsFor), so the request is
+  // compared with those, not with the Actor's whole status set.
+  return change.active !== effectsFor(actor, change.id).length > 0
     ? { active: change.active }
     : undefined;
 }

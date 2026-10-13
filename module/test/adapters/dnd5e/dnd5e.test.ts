@@ -120,7 +120,7 @@ describe('dnd5e adapter', () => {
     hooks.clear();
     poisoned.statuses = new Set(['poisoned']);
     actor.statuses = new Set(['poisoned']);
-    actor.effects = [poisoned];
+    actor.effects = coll([poisoned]);
   });
   it('is registered', () => expect(selectAdapter('dnd5e')).toBe(dnd5eAdapter));
   it('summarises HP, AC, level, ability mods and speed', async () => {
@@ -219,7 +219,7 @@ describe('dnd5e adapter', () => {
     ).rejects.toBeDefined();
   });
   describe('condition races', () => {
-    const exhaustion = (level: number, id = 'x1') => ({
+    const exhaustion = (level: number, id = 'dnd5eexhaustion0') => ({
       id,
       uuid: `Actor.a.ActiveEffect.${id}`,
       statuses: new Set(['exhaustion']),
@@ -227,8 +227,46 @@ describe('dnd5e adapter', () => {
     });
     const set = (...effects: any[]) => {
       actor.statuses = new Set(effects.length ? ['exhaustion'] : []);
-      actor.effects = effects;
+      actor.effects = coll(effects);
     };
+    it('reads the level from dnd5e own static-id effect, not an item effect listing the status', async () => {
+      const mine = exhaustion(3);
+      const itemEffect = {
+        id: 'itemfx0000000001',
+        uuid: 'Actor.a.Item.i.ActiveEffect.f',
+        statuses: new Set(['exhaustion']),
+        system: {},
+      };
+      set(itemEffect, mine); // the item effect is ordered first
+      expect(((await dnd5eAdapter.conditions(actor)) as any).conditions).toContainEqual({
+        id: 'exhaustion',
+        name: 'Exhaustion',
+        value: 3,
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 2 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -1 });
+      toggle.mockClear();
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -3 });
+      expect(snapshot).not.toHaveBeenCalledWith('Actor.a.Item.i.ActiveEffect.f');
+    });
+    it('reports level 0 when only an item effect carries the status', async () => {
+      actor.statuses = new Set(['exhaustion']);
+      actor.effects = coll([
+        { id: 'itemfx0000000001', statuses: new Set(['exhaustion']), system: {} },
+      ]);
+      const c: any = ((await dnd5eAdapter.conditions(actor)) as any).conditions;
+      expect(c).toContainEqual({ id: 'exhaustion', name: 'Exhaustion', value: 0 });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 2 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 2 });
+    });
+    it('a non-leveled toggle acts on single-status effects only, as core does', async () => {
+      const multi = { id: 'm', uuid: 'u.m', statuses: new Set(['poisoned', 'blinded']) };
+      actor.statuses = new Set(['poisoned']);
+      actor.effects = coll([multi]);
+      await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
+      expect(toggle).not.toHaveBeenCalled(); // core would find nothing to remove
+    });
     it('recomputes the delta from the target after the snapshots', async () => {
       const e = exhaustion(2);
       set(e);
@@ -256,11 +294,12 @@ describe('dnd5e adapter', () => {
       await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
       expect(toggle).not.toHaveBeenCalled();
     });
-    it('refuses when an effect it did not enrol appears during the wait', async () => {
-      const e = exhaustion(2);
-      set(e);
+    it('refuses when the effect it will change is replaced by an unenrolled one during the wait', async () => {
+      set(exhaustion(2));
       snapshot.mockImplementationOnce(async () => {
-        actor.effects = [e, exhaustion(1, 'x2')];
+        const replacement = exhaustion(2);
+        replacement.uuid = 'Actor.a.ActiveEffect.replacement';
+        actor.effects = coll([replacement]);
       });
       await expect(
         dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx),
@@ -271,7 +310,7 @@ describe('dnd5e adapter', () => {
       // poisoned is active; removal requested; someone else removes it during the wait
       snapshot.mockImplementationOnce(async () => {
         actor.statuses = new Set();
-        actor.effects = [];
+        actor.effects = coll([]);
       });
       await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
       expect(toggle).not.toHaveBeenCalled();
@@ -279,9 +318,14 @@ describe('dnd5e adapter', () => {
   });
   it('moves leveled conditions by a level delta', async () => {
     actor.statuses = new Set(['exhaustion']);
-    actor.effects = [
-      { uuid: 'Actor.a.ActiveEffect.x', statuses: new Set(['exhaustion']), system: { level: 2 } },
-    ];
+    actor.effects = coll([
+      {
+        id: 'dnd5eexhaustion0',
+        uuid: 'Actor.a.ActiveEffect.x',
+        statuses: new Set(['exhaustion']),
+        system: { level: 2 },
+      },
+    ]);
     await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
     expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 2 });
     toggle.mockClear();
