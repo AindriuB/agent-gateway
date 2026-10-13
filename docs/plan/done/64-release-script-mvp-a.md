@@ -41,3 +41,14 @@ conformance (40) are not gates in MVP A.
 - Docker image build or push (42)
 - Quench gate (39, 41) and OAuth conformance (40)
 - Changing `scripts/pack-module.mjs`, `scripts/build-mcpb.mjs` or `scripts/conformance.sh` (60, 62, 63); call them as they are
+
+## Review
+Round 1 (at fa7f4d0) requested changes: the version bump missed the internal `@agent-gateway/protocol` pin, and the `SKIP:` match for v13 was too broad. Fixed in 61d2bdd, which also added "land only the bump PR" and "reset after abort" to `docs/releasing.md`. Round 2 approved 61d2bdd after mutation checks.
+Round 3 (external review of PR #112) found a P1: `bump-version.test.mjs` assumed the repo was at 0.1.0. `release -- 0.2.0` bumps first and then runs the `test:scripts` gate, so that gate would fail for every version other than 0.1.0; the release tests missed it because their stub npm always passes. Fixed in 0fa9d30: the tests read the starting version from the fixture, and a regression test bumps a copy to 9.9.9 and re-runs the suite against it (the old test fails that scenario). Verified on a scratch copy bumped to 0.2.0: bump-version and release tests pass 19/19; `test:scripts` passes 31/31.
+
+## Known gaps
+- `bump-version --check` skips non-exact internal pins such as `^0.1.0`; none exist today.
+- Piped `yes` counts as consent, which the tests rely on.
+
+## Manual check
+The first real run is task 66, with Andrew present at every irreversible step (draft release, publishing it, `npm publish`, Foundry listing).
