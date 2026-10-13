@@ -1,7 +1,7 @@
 # 34 — Add local Streamable HTTP transport with bearer auth and defences
 
 **Repo:** .
-**Depends on:** 13
+**Depends on:** 13, 69
 **Status:** MVP B (after A). B order 1.
 **Owns:**
 - gateway/src/http/**
@@ -20,6 +20,7 @@ self-protection rate limit and a minimal status page.
 - docs/plan/specs/2026-10-09-agent-gateway.md:48-56 — local reach mode
 - docs/plan/specs/2026-10-09-agent-gateway.md:103-109 — auth, defences, status page only
 - gateway/src/mcp/** (05, 20)
+- docs/plan/tasks/69-secondary-relay-to-primary.md — 69 already serves one session server per relayed connection from `app.ts`; build the HTTP sessions the same way, and keep relaying working (69 also owns `app.ts` and `cli.ts`, hence the dependency)
 
 ## Acceptance
 - [ ] `--http` serves MCP Streamable HTTP at `/mcp` on `127.0.0.1:<default HTTP port>`; any other bind address is refused unless OAuth is configured (35)

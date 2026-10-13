@@ -1,7 +1,7 @@
 # 64 — Add the local release script for module zip, npm package and `.mcpb`
 
 **Repo:** .
-**Depends on:** 60, 61, 62, 63
+**Depends on:** 60, 61, 62, 63, 69
 **Status:** MVP A
 **Owns:**
 - scripts/release.mjs

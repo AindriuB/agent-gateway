@@ -1,7 +1,7 @@
 # 65 — Write the local quick start, security model and privacy statement
 
 **Repo:** .
-**Depends on:** 60, 61, 62
+**Depends on:** 60, 61, 62, 69
 **Status:** MVP A
 **Owns:**
 - README.md
@@ -25,6 +25,7 @@ Nothing about remote, HTTP, headless or Docker; those docs stay in 43.
 - gateway/src/link/server.ts:180-200 — first pairing trusts the `hello` world/user ids (local-mode trust assumption)
 - docs/packs/README.md (20f)
 - docs/plan/done/28-gateway-event-buffer.md, 29-offline-event-reading.md, 30-offline-write-queue.md — what the gateway stores
+- docs/plan/tasks/69-secondary-relay-to-primary.md "Design" — secondary instances relay to the primary over a user-only local socket (named pipe on Windows) with a per-boot secret in the state dir; the security model must state this, and the Claude Desktop guide must no longer say Foundry tools work in only one Desktop session
 
 ## Acceptance
 - [ ] README quick start: install the module from `https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`; enable it in a pf2e or dnd5e world (versions from `module.json`); keep a Foundry browser tab logged in as the agent's user open (no headless in this release); run `npx foundry-agent-gateway` or install the `.mcpb`; pair; connect Claude Desktop or Claude Code; MIT licence
