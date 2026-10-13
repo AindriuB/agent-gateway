@@ -22,11 +22,11 @@ same stdio gateway that 61 makes installable from npm. Built locally from the
 - package.json:12 — Node >=22.13; gateway/src/store/store.ts:3 uses `node:sqlite`
 
 ## Acceptance
-- [ ] `gateway/mcpb/manifest.json` passes `mcpb validate`; `server.type` is `node`; `version` equals `gateway/package.json` version (test asserts); `compatibility.runtimes.node` is `>=22.13`; `compatibility.platforms` lists `darwin` and `win32`; tools are declared as generated, not a static list
-- [ ] `user_config` exposes only settings already read from env in `ENV_KEYS` (named in the PR), maps each to its env var, and contains no secret
-- [ ] `node scripts/build-mcpb.mjs` (after `npm run build`) writes `dist/release/foundry-agent-gateway.mcpb` using the pinned `@anthropic-ai/mcpb` devDependency
-- [ ] `scripts/test/build-mcpb.test.mjs` unpacks the bundle and asserts it contains `manifest.json` and the entry point the manifest names, and that `node <unpacked entry> --version` with a temp `HOME` prints the version (proves no unresolved workspace import)
-- [ ] `node --test scripts/test/build-mcpb.test.mjs` passes and `npm run verify` passes
+- [x] `gateway/mcpb/manifest.json` passes `mcpb validate`; `server.type` is `node`; `version` equals `gateway/package.json` version (test asserts); `compatibility.runtimes.node` is `>=22.13`; `compatibility.platforms` lists `darwin` and `win32`; tools are declared as generated, not a static list
+- [x] `user_config` exposes only settings already read from env in `ENV_KEYS` (named in the PR), maps each to its env var, and contains no secret
+- [x] `node scripts/build-mcpb.mjs` (after `npm run build`) writes `dist/release/foundry-agent-gateway.mcpb` using the pinned `@anthropic-ai/mcpb` devDependency
+- [x] `scripts/test/build-mcpb.test.mjs` unpacks the bundle and asserts it contains `manifest.json` and the entry point the manifest names, and that `node <unpacked entry> --version` with a temp `HOME` prints the version (proves no unresolved workspace import)
+- [x] `node --test scripts/test/build-mcpb.test.mjs` passes and `npm run verify` passes
 - [ ] Manual check on the Mac: install the bundle in Claude Desktop, pair with foundry.local v14 with the GM tab open, and call `world_info` successfully; PR includes the log or screenshot. If Claude Desktop's built-in Node cannot load `node:sqlite`, stop and report the exact error; do not change runtime type or storage engine
 
 ## Out of scope
@@ -34,3 +34,6 @@ same stdio gateway that 61 makes installable from npm. Built locally from the
 - Signing with `mcpb sign`: MVP A ships the bundle unsigned (Andrew, 2026-10-13); signing is for a later release
 - Changes to gateway source or `gateway/package.json` (61)
 - Root `package.json` `scripts` (64)
+
+## Attempt 1 — implemented, manual check pending (Andrew)
+Bundle, manifest and tests done and reviewed in one round; the last acceptance box (install in Claude Desktop, pair with foundry.local, call `world_info`) is unticked on purpose: manual check pending (Andrew), before merge. Electron 44.4.3 in Claude Desktop contains `node:sqlite` (binary inspected, not run). If the check fails on `node:sqlite`, stop and report the exact error.
