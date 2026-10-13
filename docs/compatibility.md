@@ -11,7 +11,7 @@ name (`^[a-zA-Z0-9_-]{1,64}$`, at most 36 characters).
 | Client         | stdio                                 | `.mcpb` | Local HTTP                            | OAuth                                 |
 | -------------- | ------------------------------------- | ------- | ------------------------------------- | ------------------------------------- |
 | Claude Desktop | MVP A                                 | MVP A   | not supported in this release (MVP B) | not supported in this release (MVP B) |
-| Claude Code    | MVP A                                 | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
+| Claude Code    | MVP A                                 | n/a     | MVP A                                 | not supported in this release (MVP B) |
 | claude.ai      | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
 | ChatGPT        | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
 | Gemini CLI     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
@@ -36,3 +36,8 @@ Claude Code (stdio):
 - [ ] Tool names appear as `mcp__<server>__<tool>` and none is truncated or rejected.
 - [ ] A read tool call and a write tool call behave as above.
 - [ ] Ending the session stops the gateway process.
+
+Claude Code (Local HTTP):
+
+- [ ] `claude mcp add --transport http` with `http://127.0.0.1:7421/mcp` and the bearer header connects; `/mcp` shows it healthy.
+- [ ] A read tool call works over HTTP; a request without the token is refused with 401.

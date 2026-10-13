@@ -17,6 +17,14 @@ import {
   type PairingCodesOptions,
 } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import {
+  HTTP_BIND_HOST,
+  HTTP_SESSION_IDLE_MS,
+  MAX_HTTP_SESSIONS,
+  MAX_REQUEST_BYTES,
+  SELF_PROTECT_RPS,
+} from './config/index.js';
+import { HttpServer, loadOrCreateToken } from './http/index.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
@@ -37,6 +45,9 @@ function isInstanceConflict(err: unknown): boolean {
   return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
 }
 
+/** Backoff for retrying HTTP after a takeover could not bind it. */
+const HTTP_RETRY_MIN_MS = 5_000;
+const HTTP_RETRY_MAX_MS = 60_000;
 const MAX_WARNED_ORIGINS = 20;
 const MAX_ORIGIN_CHARS = 100;
 
@@ -88,6 +99,20 @@ export interface AppDeps {
   onStepDown?: (why: string) => void;
   /** Clock and timers for pairing-code expiry; injectable so tests need not wait ten minutes. */
   codeClock?: Pick<PairingCodesOptions, 'now' | 'setTimer' | 'clearTimer'>;
+  /** Serve MCP over local Streamable HTTP (primary only). */
+  http?: boolean;
+  /** Timers for the takeover HTTP retry; injectable so tests need not wait. */
+  httpRetryTimers?: {
+    setTimer: (fn: () => void, ms: number) => unknown;
+    clearTimer: (handle: unknown) => void;
+  };
+  /** Overrides for the HTTP limits; tests shorten them. */
+  httpLimits?: Partial<{
+    maxRequestBytes: number;
+    rps: number;
+    maxSessions: number;
+    idleMs: number;
+  }>;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -99,6 +124,10 @@ export function createApp(config: Config, deps: AppDeps): App {
   let events: EventBuffer | undefined;
   let queue: OfflineQueue | undefined;
   let relay: RelayServer | undefined;
+  let httpServer: HttpServer | undefined;
+  let httpRetryTimer: unknown;
+  // Bumped synchronously by stop() and teardown(): work begun under an older value is stale.
+  let httpGen = 0;
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
@@ -138,10 +167,14 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
     },
     async stop() {
+      httpGen++;
+      cancelHttpRetry();
       stdioProxy?.stop();
       stdioProxy = undefined;
       codes?.stop();
       codes = undefined;
+      await httpServer?.close();
+      httpServer = undefined;
       await secondary?.stop();
       secondary = undefined;
       await relay?.close();
@@ -216,10 +249,50 @@ export function createApp(config: Config, deps: AppDeps): App {
     }
   }
 
+  function cancelHttpRetry(): void {
+    if (httpRetryTimer !== undefined)
+      (deps.httpRetryTimers?.clearTimer ?? ((h) => clearTimeout(h as NodeJS.Timeout)))(
+        httpRetryTimer,
+      );
+    httpRetryTimer = undefined;
+  }
+
+  /** At most one timer is ever armed; each failed attempt re-arms it with a longer, capped delay. */
+  function scheduleHttpRetry(
+    gen: number,
+    attempt: () => Promise<void>,
+    delay: number,
+    lastReason: string,
+  ): void {
+    cancelHttpRetry();
+    const set = deps.httpRetryTimers?.setTimer ?? ((fn, ms) => setTimeout(fn, ms).unref());
+    httpRetryTimer = set(() => {
+      httpRetryTimer = undefined;
+      if (gen !== httpGen) return;
+      attempt().catch((err: unknown) => {
+        // Never re-arm for an app that was stopped while the attempt was in flight.
+        if (gen !== httpGen) return;
+        const reason = httpFailure(err);
+        if (reason !== lastReason) writeStatus(`HTTP still off: ${reason}; retrying`);
+        scheduleHttpRetry(gen, attempt, Math.min(delay * 2, HTTP_RETRY_MAX_MS), reason);
+      });
+    }, delay);
+  }
+
+  function httpFailure(err: unknown): string {
+    return (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
+      ? `${HTTP_BIND_HOST}:${config.httpPort} in use`
+      : (err as Error).message;
+  }
+
   /** Undo a failed or finished startPrimary. */
   async function teardown(): Promise<void> {
+    httpGen++;
+    cancelHttpRetry();
     codes?.stop();
     codes = undefined;
+    await httpServer?.close();
+    httpServer = undefined;
     await relay?.close();
     relay = undefined;
     await server?.close();
@@ -235,6 +308,10 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startSecondary(reason: string): Promise<void> {
+    if (deps.http)
+      writeStatus(
+        'HTTP is served only by the primary gateway instance; if that was started without --http, restart it with --http',
+      );
     const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
     if (!stateDir || !ep?.ok) {
       const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
@@ -260,7 +337,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         // Outside the try: teardown must never run against a live primary.
         if (link) throw new Error('this process already holds the link');
         try {
-          await startPrimary(transport);
+          await startPrimary(transport, true);
           return true;
         } catch (err) {
           await teardown();
@@ -277,7 +354,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     await secondary.start(reason);
   }
 
-  async function startPrimary(transport: Transport): Promise<void> {
+  async function startPrimary(transport: Transport, retryHttp = false): Promise<void> {
     // Never start over a live primary: it would replace `link` and orphan the original.
     if (link) throw new Error('this process already holds the link');
     // Hold the link port before touching the shared db: opening it runs migrations and
@@ -391,6 +468,62 @@ export function createApp(config: Config, deps: AppDeps): App {
     await startRelay(port, () =>
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
+    const gen = httpGen;
+    const startHttp = async (): Promise<void> => {
+      const token = loadOrCreateToken(openedStore());
+      const lim = deps.httpLimits ?? {};
+      const candidate = new HttpServer({
+        host: HTTP_BIND_HOST,
+        port: config.httpPort,
+        token,
+        registry,
+        version: deps.version,
+        startedAt,
+        createSession: () => track(createSessionServer(sessionOptions(ready.events, ready.queue))),
+        maxRequestBytes: lim.maxRequestBytes ?? MAX_REQUEST_BYTES,
+        rps: lim.rps ?? SELF_PROTECT_RPS,
+        maxSessions: lim.maxSessions ?? MAX_HTTP_SESSIONS,
+        idleMs: lim.idleMs ?? HTTP_SESSION_IDLE_MS,
+      });
+      const httpPort = await candidate.listen();
+      // The app was stopped while the listen was pending: commit and print nothing.
+      if (gen !== httpGen) {
+        await candidate.close();
+        return;
+      }
+      // Anything failing after a successful listen must release the port, or every retry
+      // would hit EADDRINUSE against our own listener.
+      let stored: boolean;
+      try {
+        stored = token.commit();
+      } catch (err) {
+        await candidate.close().catch(() => undefined);
+        throw err;
+      }
+      httpServer = candidate;
+      if (token.created && stored) {
+        writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
+      } else if (token.created) {
+        writeStatus(
+          "HTTP bearer token: a rotated token is already in effect; this instance's own token was discarded",
+        );
+      }
+      writeStatus(
+        `MCP HTTP at http://${HTTP_BIND_HOST}:${httpPort}/mcp (Authorization: Bearer <token>)`,
+      );
+    };
+    if (deps.http) {
+      try {
+        await startHttp();
+      } catch (err) {
+        // First start exits at once so the user sees the conflict. A takeover keeps Foundry
+        // working and retries HTTP in the background.
+        if (!retryHttp) throw err;
+        const why = httpFailure(err);
+        writeStatus(`HTTP off: ${why}; retrying`);
+        if (gen === httpGen) scheduleHttpRetry(gen, startHttp, HTTP_RETRY_MIN_MS, why);
+      }
+    }
     logger.info(`MCP stdio server started`);
   }
 }

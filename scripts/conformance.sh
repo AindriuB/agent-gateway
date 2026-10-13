@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MCP conformance over stdio: `scripts/conformance.sh`. Needs a built tree (npm run build).
+# MCP conformance over stdio, then over local Streamable HTTP: `scripts/conformance.sh`. Needs a built tree (npm run build).
 # Starts the gateway under the MCP Inspector CLI with a fake Foundry module attached to the
 # link, then runs tools/list and one tools/call that round-trips through the link.
 # Uses a temp HOME, a temp database and a non-default link port; ~/.foundry-agent-gateway
@@ -9,11 +9,13 @@ cd "$(dirname "$0")/.."
 
 INSPECTOR_VERSION="2.10.1"
 LINK_PORT="${CONFORMANCE_LINK_PORT:-17420}"
+HTTP_PORT="${CONFORMANCE_HTTP_PORT:-17421}"
 [ -f gateway/dist/bin/cli.js ] || { echo "conformance: run npm run build first" >&2; exit 2; }
 
 REAL_HOME="$HOME"
 work="$(mktemp -d)"
 module_pid=""
+gateway_pid=""
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -21,6 +23,7 @@ cleanup() {
       [ -s "$work/$f" ] && { echo "--- conformance: $f ---" >&2; cat "$work/$f" >&2; }
     done
   fi
+  if [ -n "$gateway_pid" ]; then kill "$gateway_pid" 2>/dev/null || true; wait "$gateway_pid" 2>/dev/null || true; fi
   if [ -n "$module_pid" ]; then kill "$module_pid" 2>/dev/null || true; wait "$module_pid" 2>/dev/null || true; fi
   rm -rf "$work"
   exit "$status"
@@ -61,5 +64,33 @@ grep -q '"actor_summary"' <<<"$list" || { echo "conformance: tools/list missing 
 call="$(inspect --method tools/call --tool-name demo-echo --tool-arg value=conformance)"
 grep -q 'echo:conformance' <<<"$call" || { echo "conformance: tools/call did not round-trip" >&2; exit 1; }
 
+# --- local HTTP mode: the real gateway with --http, driven by the inspector over the URL ---
+rm -f "$ready"
+mkfifo "$work/stdin"
+exec 3<>"$work/stdin" # holds the gateway's stdin open; it exits when the script does
+node gateway/dist/bin/cli.js --http --http-port "$HTTP_PORT" --link-port "$LINK_PORT" --db "$db" \
+  <"$work/stdin" >/dev/null 2>"$work/gateway.log" &
+gateway_pid=$!
+http_token=""
+for _ in $(seq 1 300); do
+  http_token="$(sed -n 's/^HTTP bearer token[^:]*: \([0-9a-f]\{64\}\)$/\1/p' "$work/gateway.log" | head -n1)"
+  [ -n "$http_token" ] && grep -q "MCP HTTP at" "$work/gateway.log" && break
+  kill -0 "$gateway_pid" 2>/dev/null || { echo "conformance: http gateway exited early" >&2; exit 1; }
+  sleep 0.1
+done
+[ -n "$http_token" ] || { echo "conformance: http gateway never printed its token" >&2; exit 1; }
+# the fake module reconnects to the new primary and announces its tools
+for _ in $(seq 1 150); do [ -e "$ready" ] && break; sleep 0.1; done
+[ -e "$ready" ] || { echo "conformance: fake module never reconnected for http" >&2; exit 1; }
+url="http://127.0.0.1:$HTTP_PORT/mcp"
+inspect_http() {
+  npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$url" --transport http \
+    --header "Authorization: Bearer $http_token" "$@" 2>>"$work/gateway.log"
+}
+hlist="$(inspect_http --method tools/list)"
+grep -q '"demo-echo"' <<<"$hlist" || { echo "conformance: http tools/list missing demo-echo" >&2; exit 1; }
+hcall="$(inspect_http --method tools/call --tool-name demo-echo --tool-arg value=conformance)"
+grep -q 'echo:conformance' <<<"$hcall" || { echo "conformance: http tools/call did not round-trip" >&2; exit 1; }
+
 [ ! -e "$HOME/.foundry-agent-gateway" ] || { echo "conformance: default store was created" >&2; exit 1; }
-echo "conformance: ok (inspector $INSPECTOR_VERSION, stdio)"
+echo "conformance: ok (inspector $INSPECTOR_VERSION, stdio, http)"

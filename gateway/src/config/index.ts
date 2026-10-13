@@ -74,3 +74,12 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   }
   return result.data;
 }
+
+/** Local HTTP transport limits (task 34). */
+export const MAX_REQUEST_BYTES = 1_000_000;
+/** Requests per second per token before the gateway answers 429; coarse self-protection only. */
+export const SELF_PROTECT_RPS = 50;
+export const MAX_HTTP_SESSIONS = 16;
+export const HTTP_SESSION_IDLE_MS = 30 * 60_000;
+/** The only address the local HTTP transport may bind in this release. */
+export const HTTP_BIND_HOST = '127.0.0.1';
