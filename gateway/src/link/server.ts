@@ -41,6 +41,26 @@ export interface LinkServerOptions {
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
 
+export class LinkListenError extends Error {
+  constructor(
+    readonly code: 'EADDRINUSE' | 'EACCES',
+    readonly port: number,
+  ) {
+    super(
+      code === 'EADDRINUSE'
+        ? `link port ${port} is in use; is another gateway running?`
+        : `permission denied binding link port ${port}`,
+    );
+    this.name = 'LinkListenError';
+  }
+}
+
+/** Map a bind failure to a typed error; other errors pass through unchanged. */
+export function mapListenError(err: Error, port: number): Error {
+  const code = (err as NodeJS.ErrnoException).code;
+  return code === 'EADDRINUSE' || code === 'EACCES' ? new LinkListenError(code, port) : err;
+}
+
 export class LinkServer {
   private readonly http: Server;
   private readonly wss: WebSocketServer;
@@ -61,9 +81,10 @@ export class LinkServer {
 
   listen(): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.http.once('error', reject);
+      const onError = (err: Error) => reject(mapListenError(err, this.opts.port));
+      this.http.once('error', onError);
       this.http.listen(this.opts.port, this.host, () => {
-        this.http.off('error', reject);
+        this.http.off('error', onError);
         const addr = this.http.address();
         resolve(typeof addr === 'object' && addr ? addr.port : this.opts.port);
       });
