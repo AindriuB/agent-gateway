@@ -282,12 +282,13 @@ export function createApp(config: Config, deps: AppDeps): App {
     await startRelay(port, () => createSessionServer(sessionOptions(ready.events, ready.queue)));
     logger.info(`MCP stdio server started`);
     // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
-    void server
-      .sendLoggingMessage({
-        level: 'notice',
-        logger: 'pairing',
-        data: `${pairingLine}. ${linkLine}`,
-      })
-      .catch(() => undefined);
+    // Only after the client has finished its handshake: a notification before `initialize` is
+    // out of order and some clients drop or reject it. Relayed sessions never send it.
+    const notice = `${pairingLine}. ${linkLine}`;
+    const primarySession = server;
+    primarySession.oninitialized = () =>
+      void primarySession
+        .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: notice })
+        .catch(() => undefined);
   }
 }
