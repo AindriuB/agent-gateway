@@ -218,6 +218,65 @@ describe('dnd5e adapter', () => {
       dnd5eAdapter.conditions(actor, { id: 'dead', active: true }, ctx),
     ).rejects.toBeDefined();
   });
+  describe('condition races', () => {
+    const exhaustion = (level: number, id = 'x1') => ({
+      id,
+      uuid: `Actor.a.ActiveEffect.${id}`,
+      statuses: new Set(['exhaustion']),
+      system: { level },
+    });
+    const set = (...effects: any[]) => {
+      actor.statuses = new Set(effects.length ? ['exhaustion'] : []);
+      actor.effects = effects;
+    };
+    it('recomputes the delta from the target after the snapshots', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 3; // another update lands during the wait
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 1 }); // 3 + 1 = the target 4
+    });
+    it('a removal racing an add still removes whatever level it finds', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 5;
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -5 });
+    });
+    it('does nothing when the target was reached during the wait', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 4;
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+      expect(toggle).not.toHaveBeenCalled();
+    });
+    it('refuses when an effect it did not enrol appears during the wait', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        actor.effects = [e, exhaustion(1, 'x2')];
+      });
+      await expect(
+        dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx),
+      ).rejects.toBeDefined();
+      expect(toggle).not.toHaveBeenCalled();
+    });
+    it('a non-leveled toggle follows the live state after the wait', async () => {
+      // poisoned is active; removal requested; someone else removes it during the wait
+      snapshot.mockImplementationOnce(async () => {
+        actor.statuses = new Set();
+        actor.effects = [];
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
+      expect(toggle).not.toHaveBeenCalled();
+    });
+  });
   it('moves leveled conditions by a level delta', async () => {
     actor.statuses = new Set(['exhaustion']);
     actor.effects = [
@@ -409,6 +468,41 @@ describe('dnd5e adapter', () => {
       await expect(
         dnd5eAdapter.performAction(a, 'attack:w1:a1', { level: 3 }, ctx),
       ).rejects.toBeDefined();
+    });
+    it('refuses a queued roll whose item was removed while it waited', async () => {
+      const a: any = { ...actor, items: coll([sword]) };
+      let release!: () => void;
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: {}, create: m.create },
+        );
+        await new Promise<void>((r) => (release = r));
+        return [{ total: 1 }];
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+      const first = dnd5eAdapter.performAction(a, 'attack:w1:a1', {}, ctx);
+      const second = dnd5eAdapter.performAction(a, 'attack:w1:a1', {}, ctx).catch((e) => e);
+      await vi.waitFor(() => expect(rollAttack).toHaveBeenCalledTimes(1));
+      a.items = coll([]);
+      release();
+      await first;
+      expect(String((await second).message)).toContain('changed while the action was queued');
+      expect(rollAttack).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a use whose spell slots disappear during the awaited audit steps', async () => {
+      const a = withActs([base('q1', 'utility')]);
+      a.items[0].type = 'spell';
+      a.items[0].system.level = 3;
+      a.system = { ...actor.system, spells: { spell4: { value: 1, max: 1, level: 4 } } };
+      snapshot.mockImplementationOnce(async () => {
+        a.system = { ...actor.system, spells: {} };
+      });
+      await expect(
+        dnd5eAdapter.performAction(a, 'use:x1:q1', { level: 4 }, ctx),
+      ).rejects.toBeDefined();
+      expect(use).not.toHaveBeenCalled();
     });
     it('serialises roll actions per actor so captures cannot cross', async () => {
       const order: string[] = [];

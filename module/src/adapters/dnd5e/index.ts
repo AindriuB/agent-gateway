@@ -358,6 +358,45 @@ const concentrationLabel = (actor: any, effect: any): string =>
       'a spell',
   );
 
+/** Validate options.level against the spell and the Actor's slot capacity (live state). */
+function checkLevel(
+  actor: any,
+  item: any,
+  kind: string,
+  options: Readonly<Record<string, unknown>>,
+): { level?: number; slot?: string; error?: string } {
+  const level = options.level;
+  if (level === undefined) return {};
+  if (
+    (kind !== 'use' && kind !== 'damage') ||
+    item.type !== 'spell' ||
+    spellLevel(item) < 1 ||
+    typeof level !== 'number' ||
+    !Number.isInteger(level) ||
+    level < 1 ||
+    level > 9
+  )
+    return {
+      error:
+        'Spell level must be an integer from 1 to 9 and only applies to using a spell or rolling its damage (cantrips scale with character level)',
+    };
+  if (level < Math.max(1, spellLevel(item)))
+    return { error: `Spell level must be at least ${Math.max(1, spellLevel(item))}` };
+  const spells = actor.system?.spells ?? {};
+  // Capacity (max), not remaining slots: the damage roll follows a `use` that may have spent the
+  // last slot of this level. A pact slot also covers any lower level it can be cast at.
+  const slot = spells[`spell${level}`]?.max
+    ? `spell${level}`
+    : Object.keys(spells).find(
+        (k) =>
+          num(spells[k]?.max) &&
+          (spells[k]?.level === level ||
+            (kind === 'damage' && k === 'pact' && (num(spells[k]?.level) ?? 0) >= level)),
+      );
+  if (!slot) return { error: `No spell slots of level ${level}` };
+  return { level, slot };
+}
+
 /**
  * Activity#use (dnd5e.mjs:17634), Activity#rollAttack (:21483) and Activity#rollDamage (:18274) are
  * the system's own APIs; no dice are rolled here. Each posts a card natively, which is created here
@@ -397,36 +436,9 @@ async function performAction(
     const why = refusal(item, activity);
     if (why) return invalid(`Cannot use ${text(item.name, 100)}: ${why}`);
   }
-  const level = options.level;
-  let slot: string | undefined;
-  if (level !== undefined) {
-    if (
-      (kind !== 'use' && kind !== 'damage') ||
-      item.type !== 'spell' ||
-      spellLevel(item) < 1 ||
-      typeof level !== 'number' ||
-      !Number.isInteger(level) ||
-      level < 1 ||
-      level > 9
-    )
-      return invalid(
-        'Spell level must be an integer from 1 to 9 and only applies to using a spell or rolling its damage (cantrips scale with character level)',
-      );
-    if (level < Math.max(1, spellLevel(item)))
-      return invalid(`Spell level must be at least ${Math.max(1, spellLevel(item))}`);
-    const spells = actor.system?.spells ?? {};
-    // Capacity (max), not remaining slots: the damage roll follows a `use` that may have spent the
-    // last slot of this level. A pact slot also covers any lower level it can be cast at.
-    slot = spells[`spell${level}`]?.max
-      ? `spell${level}`
-      : Object.keys(spells).find(
-          (k) =>
-            num(spells[k]?.max) &&
-            (spells[k]?.level === level ||
-              (kind === 'damage' && k === 'pact' && (num(spells[k]?.level) ?? 0) >= level)),
-        );
-    if (!slot) return invalid(`No spell slots of level ${level}`);
-  }
+  const checked = checkLevel(actor, item, kind, options);
+  if (checked.error) return invalid(checked.error);
+  const { level, slot } = checked;
   if (
     typeof context?.intendCreate !== 'function' ||
     typeof context.created !== 'function' ||
@@ -454,6 +466,10 @@ async function performAction(
     item.system?.activities?.get?.(activity.id) !== activity
   )
     return invalid('The item changed while the action was being checked; try again');
+  const again = checkLevel(actor, item, kind, options);
+  if (again.error) return invalid(again.error);
+  if (again.slot !== slot || again.level !== level)
+    return invalid('The spell slots changed while the action was being checked; try again');
   if (kind === 'use') {
     const now = refusal(item, activity);
     if (now) return invalid(`Cannot use ${text(item.name, 100)}: ${now}`);
@@ -469,6 +485,7 @@ async function performAction(
     if (effectiveActivity(item, activity)?.requiresConcentration === true)
       concentrationEnd = decided.effect ? String(decided.effect.id) : false;
   }
+  let refusedWhileQueued: string | undefined;
   let recorded: string | undefined;
   let outcome: unknown;
   let summary = '';
@@ -493,21 +510,37 @@ async function performAction(
       const results = outcome as any;
       if (results) recorded = await postData(results.message, context);
     } else {
-      // Upcast damage: dnd5e scales on a temporary clone of the Item whose flags.dnd5e.scaling is
-      // set, exactly as Activity#_prepareUsageScaling does for `use` (dnd5e.mjs:17946-17963); the
-      // clone's own activity rolls the scaled damage. Nothing is written for the clone.
-      const scaling = level === undefined ? 0 : (level as number) - spellLevel(item);
-      const rolling = scaling > 0 ? scaledActivity(item, activity, scaling) : activity;
-      if (!rolling) return invalid('Could not prepare the upcast damage roll');
-      const rolled = await exclusive(String(actor.uuid), () =>
-        rollUnsaved(rolling, (message) =>
+      // Roll actions wait in a per-Actor queue, which is an await: everything they decide is
+      // decided again inside it, with no await before the native roll. Upcast damage: dnd5e
+      // scales on a temporary clone of the Item whose flags.dnd5e.scaling is set, exactly as
+      // Activity#_prepareUsageScaling does for `use` (dnd5e.mjs:17946-17963); the clone's own
+      // activity rolls the scaled damage. Nothing is written for the clone.
+      const rolled = await exclusive(String(actor.uuid), async () => {
+        if (
+          actor.items?.get?.(item.id) !== item ||
+          item.system?.activities?.get?.(activity.id) !== activity
+        )
+          return { refused: 'The item changed while the action was queued; try again' } as const;
+        const live = checkLevel(actor, item, kind, options);
+        if (live.error || live.slot !== slot || live.level !== level)
+          return {
+            refused: live.error ?? 'The spell slots changed while queued; try again',
+          } as const;
+        const scaling = level === undefined ? 0 : level - spellLevel(item);
+        const rolling = scaling > 0 ? scaledActivity(item, activity, scaling) : activity;
+        if (!rolling) return { refused: 'Could not prepare the upcast damage roll' } as const;
+        return rollUnsaved(rolling, (message) =>
           kind === 'attack'
             ? rolling.rollAttack({}, { configure: false }, message)
             : rolling.rollDamage({}, { configure: false }, message),
-        ),
-      );
-      outcome = Array.isArray(rolled.rolls) && rolled.rolls.length ? rolled.rolls : undefined;
-      if (outcome) {
+        );
+      });
+      if ('refused' in rolled) refusedWhileQueued = rolled.refused;
+      outcome =
+        !('refused' in rolled) && Array.isArray(rolled.rolls) && rolled.rolls.length
+          ? rolled.rolls
+          : undefined;
+      if (outcome && !('refused' in rolled)) {
         recorded = await postData(rolled.data, context);
         summary = ` (total ${(outcome as any[]).map((r) => text(num(r?.total))).join(', ')})`;
       }
@@ -524,6 +557,7 @@ async function performAction(
   } finally {
     if (recorded) await context.created(recorded);
   }
+  if (refusedWhileQueued) return invalid(refusedWhileQueued);
   if (!outcome)
     return {
       completed: false,
@@ -625,6 +659,37 @@ function activeConditions(actor: any) {
   return out;
 }
 
+/**
+ * Effects a change to this condition would touch: the ones carrying the status and, when adding,
+ * those of other statuses in the same exclusive group, which dnd5e deletes (dnd5e.mjs:46068-46072).
+ */
+function touched(actor: any, id: string, adding: boolean): any[] {
+  const out = new Set<any>(effectsFor(actor, id));
+  const group = CONFIG?.statusEffects?.[id]?.exclusiveGroup;
+  if (adding && group)
+    for (const e of Object.values<any>(CONFIG?.statusEffects ?? {}))
+      if (e?.id !== id && e?.exclusiveGroup === group)
+        for (const x of effectsFor(actor, text(e.id, 64))) out.add(x);
+  return [...out];
+}
+type Step = { levels: number } | { active: boolean } | undefined;
+/** What to ask Actor5e#toggleStatusEffect for, from live state, so the request is a target. */
+function stepFor(actor: any, change: ConditionChange, leveled: boolean): Step | { error: string } {
+  if (leveled) {
+    // For leveled statuses toggleStatusEffect applies a level delta and ignores `active`
+    // (:46060-46062, ConditionData._applyDelta :7224-7250); the delta is derived from the live
+    // level and the requested target level, never stored across an await.
+    const current = num(effectsFor(actor, change.id)[0]?.system?.level) ?? 0;
+    const target = !change.active ? 0 : (change.value ?? Math.max(current, 1));
+    if (!Number.isInteger(target) || target < 0 || target > 10)
+      return { error: 'Condition level must be an integer from 0 to 10' };
+    return target === current ? undefined : { levels: target - current };
+  }
+  return change.active !== list(actor.statuses).includes(change.id)
+    ? { active: change.active }
+    : undefined;
+}
+
 async function conditions(actor: any, change?: ConditionChange, context?: AdapterExecutionContext) {
   if (change !== undefined) {
     if (!STATUS.test(change.id) || !knownStatuses().has(change.id))
@@ -633,29 +698,30 @@ async function conditions(actor: any, change?: ConditionChange, context?: Adapte
     const leveled = hasLevels(change.id);
     if (change.value !== undefined && !leveled)
       return invalid('Only conditions with levels, such as exhaustion, take a value in dnd5e');
-    const existing = effectsFor(actor, change.id);
-    const isActive = list(actor.statuses).includes(change.id);
+    const first = stepFor(actor, change, leveled);
+    if (first && 'error' in first) return invalid(first.error);
     // Actor5e#toggleStatusEffect (dnd5e.mjs:46059-46075) takes no document options, so its writes
     // cannot carry callOptions. Enrol the effects it changes so Undo refuses them instead of
     // half-restoring.
-    const enrol = async () => {
-      for (const e of existing) if (typeof e.uuid === 'string') await context.snapshot(e.uuid);
-    };
-    if (leveled) {
-      // For leveled statuses toggleStatusEffect applies a level delta and ignores `active`
-      // (:46060-46062, ConditionData._applyDelta :7224-7250).
-      const current = num(existing[0]?.system?.level) ?? 0;
-      const target = !change.active ? 0 : (change.value ?? Math.max(current, 1));
-      if (!Number.isInteger(target) || target < 0 || target > 10)
-        return invalid('Condition level must be an integer from 0 to 10');
-      const delta = target - current;
-      if (delta !== 0) {
-        await enrol();
-        await actor.toggleStatusEffect(change.id, { levels: delta });
-      }
-    } else if (change.active !== isActive) {
-      await enrol();
-      await actor.toggleStatusEffect(change.id, { active: change.active });
+    const enrolled = new Set<string>();
+    if (first)
+      for (const e of touched(actor, change.id, change.active))
+        if (typeof e.uuid === 'string') {
+          enrolled.add(e.uuid);
+          await context.snapshot(e.uuid);
+        }
+    // The snapshots may have taken a round trip. Decide again from live state, with no await
+    // before the native call: the step is recomputed from the target, and it may only touch effects
+    // that were enrolled.
+    const step = stepFor(actor, change, leveled);
+    if (step && 'error' in step) return invalid(step.error);
+    if (step) {
+      const unenrolled = touched(actor, change.id, change.active).some(
+        (e) => typeof e.uuid !== 'string' || !enrolled.has(e.uuid),
+      );
+      if (unenrolled)
+        return invalid('The condition changed while it was being checked; read it and try again');
+      await actor.toggleStatusEffect(change.id, step);
     }
   }
   return { supported: true, conditions: activeConditions(actor) };
