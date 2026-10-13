@@ -267,17 +267,57 @@ async function rollUnsaved(
   }
 }
 
-/** Roll actions run one at a time per Actor in this client, so captures cannot cross. */
-const queues = new Map<string, Promise<unknown>>();
+interface LockState {
+  queue: Array<() => void>;
+}
+const locks = new Map<string, LockState>();
+/** Number of Actors with an action queued or running (for tests). */
+export const pendingActionLocks = (): number => locks.size;
+/** How long a waiter queues before it is refused; under the gateway's 30 s call limit. */
+export const ACTION_LOCK_WAIT_MS = 25_000;
+/** Callers allowed to queue behind the holder; further callers are refused at once. */
+export const ACTION_LOCK_MAX_WAITING = 4;
+const BUSY = 'Another action is still running on this Actor; retry shortly.';
+/**
+ * Actions run one at a time per Actor in this client, so overlapping uses cannot both spend the
+ * last slot and roll captures cannot cross. As in the pf2e build lock, waiters are refused (before
+ * any snapshot or write) after ACTION_LOCK_WAIT_MS or when ACTION_LOCK_MAX_WAITING are already
+ * queued. The holder is never timed out, because a native write may still land after an early
+ * release. Known limit: a holder whose native call never settles keeps refusing actions on that
+ * Actor until the page reloads. Writers on other clients are not covered.
+ */
 async function exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const previous = queues.get(key) ?? Promise.resolve();
-  const run = previous.then(fn, fn);
-  const tail = run.catch(() => undefined);
-  queues.set(key, tail);
+  let state = locks.get(key);
+  if (!state) {
+    state = { queue: [] };
+    locks.set(key, state);
+  } else {
+    if (state.queue.length >= ACTION_LOCK_MAX_WAITING) invalid(BUSY);
+    const queue = state.queue;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let granted = false;
+    await new Promise<void>((resolve) => {
+      const grant = () => {
+        granted = true;
+        resolve();
+      };
+      queue.push(grant);
+      timer = setTimeout(() => {
+        const at = queue.indexOf(grant);
+        if (at >= 0) queue.splice(at, 1);
+        resolve();
+      }, ACTION_LOCK_WAIT_MS);
+    });
+    clearTimeout(timer);
+    if (!granted) invalid(BUSY);
+  }
   try {
-    return await run;
+    return await fn();
   } finally {
-    if (queues.get(key) === tail) queues.delete(key);
+    // Hand the lock to the next waiter, or forget the Actor when nobody is queued.
+    const next = state.queue.shift();
+    if (next) next();
+    else locks.delete(key);
   }
 }
 

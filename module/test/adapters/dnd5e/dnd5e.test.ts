@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { dnd5eAdapter } from '../../../src/adapters/dnd5e/index.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ACTION_LOCK_MAX_WAITING,
+  ACTION_LOCK_WAIT_MS,
+  dnd5eAdapter,
+  pendingActionLocks,
+} from '../../../src/adapters/dnd5e/index.js';
 import { selectAdapter } from '../../../src/adapters/index.js';
 import type { AdapterExecutionContext } from '../../../src/adapters/types.js';
 import { adapterContract } from '../contract.js';
@@ -115,6 +120,7 @@ const ctx = { intendCreate, created, snapshot, callOptions } as unknown as Adapt
 adapterContract(dnd5eAdapter, { actor, actorUuid: 'Actor.a', systemId: 'dnd5e' });
 
 describe('dnd5e adapter', () => {
+  afterEach(() => expect(pendingActionLocks(), 'a test leaked the action lock').toBe(0));
   beforeEach(() => {
     vi.clearAllMocks();
     hooks.clear();
@@ -569,6 +575,67 @@ describe('dnd5e adapter', () => {
       expect(slots.value).toBe(0);
       expect([one.completed, two.completed].sort()).toEqual([false, true]);
       expect(String([one, two].find((r) => !r.completed).message)).toContain('was not used');
+    });
+    describe('action lock', () => {
+      const gated = () => {
+        const releases: Array<() => void> = [];
+        const order: string[] = [];
+        use.mockImplementation(async () => {
+          order.push('start');
+          await new Promise<void>((r) => releases.push(r));
+          order.push('end');
+          return { message: { type: 'usage' } };
+        });
+        chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+        return { releases, order };
+      };
+      const act = (a: any, label = '') =>
+        dnd5eAdapter.performAction(a, 'use:x1:q1', { label } as any, ctx).catch((e) => e);
+      it('refuses the waiter past the cap, and cleans the map up after the last one', async () => {
+        const g = gated();
+        const a = withActs([base('q1', 'utility')]);
+        const holder = act(a);
+        await vi.waitFor(() => expect(g.releases).toHaveLength(1));
+        const waiting = Array.from({ length: ACTION_LOCK_MAX_WAITING }, () => act(a));
+        const fifth: any = await act(a);
+        expect(String(fifth.message)).toContain('Another action is still running');
+        expect(pendingActionLocks()).toBe(1);
+        for (let i = 0; i < 1 + ACTION_LOCK_MAX_WAITING; i++) {
+          await vi.waitFor(() => expect(g.releases.length).toBeGreaterThan(i));
+          g.releases[i]!();
+        }
+        await Promise.all([holder, ...waiting]);
+        expect(use).toHaveBeenCalledTimes(1 + ACTION_LOCK_MAX_WAITING);
+        expect(pendingActionLocks()).toBe(0);
+      });
+      it('refuses a timed-out waiter before any write and still runs the next one in order', async () => {
+        vi.useFakeTimers();
+        try {
+          const g = gated();
+          const a = withActs([base('q1', 'utility')]);
+          const holder = act(a);
+          await vi.advanceTimersByTimeAsync(0);
+          expect(g.releases).toHaveLength(1);
+          const early = act(a);
+          await vi.advanceTimersByTimeAsync(ACTION_LOCK_WAIT_MS - 1000);
+          const late = act(a); // queued 1 s before the early one times out... after it
+          await vi.advanceTimersByTimeAsync(1001);
+          const refused: any = await early;
+          expect(String(refused.message)).toContain('Another action is still running');
+          snapshot.mockClear();
+          g.releases[0]!();
+          await vi.advanceTimersByTimeAsync(0);
+          await holder;
+          await vi.advanceTimersByTimeAsync(0);
+          expect(g.releases).toHaveLength(2); // the late waiter was granted next, in order
+          g.releases[1]!();
+          expect(((await late) as any).completed).toBe(true);
+          expect(use).toHaveBeenCalledTimes(2); // the refused waiter never reached the native call
+          expect(pendingActionLocks()).toBe(0);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
     it('serialises roll actions per actor so captures cannot cross', async () => {
       const order: string[] = [];
