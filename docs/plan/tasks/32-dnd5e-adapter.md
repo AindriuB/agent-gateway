@@ -1,8 +1,8 @@
 # 32 — Add the dnd5e system adapter
 
 **Repo:** .
-**Depends on:** 31
-**Status:** Next; starting 2026-10-13. Dependency 31 is done and the pf2e adapter (33) is merged. Not complete.
+**Depends on:** 31, 45, 46
+**Status:** Queued after 45, 46, 49 (Andrew, 2026-10-13)
 **Owns:**
 - module/src/adapters/dnd5e/**
 - module/test/adapters/dnd5e/**
@@ -16,6 +16,7 @@ conditions. Record any abstraction leak found as a note in the PR so 31's
 interface can be adjusted.
 
 ## Context
+- Depends on 45 and 46 (Andrew, 2026-10-13): dnd5e extends 45's embed hook (`module/src/adapters/embed.ts`) and 46's build interface (`module/src/adapters/build.ts`) for dnd5e, so those must be merged first. Dnd5e hook files fall under this task's existing `module/src/adapters/dnd5e/**` Owns.
 - docs/plan/specs/2026-10-09-agent-gateway.md:159-161 — two adapters deliberately, to expose abstraction leaks
 - module/src/adapters/types.ts, module/test/adapters/contract.ts (31)
 - This adapter is internal to the core, not a tool pack (see 31); it adds no tool names and nothing to the pack API

@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 33
+**Status:** Queued after 32 (Andrew, 2026-10-13). Must not be in flight alongside 45, 46 or 49, which add files under `module/src/adapters/pf2e/**`.
 **Owns:**
 - module/src/audit/**
 - module/test/audit/**
