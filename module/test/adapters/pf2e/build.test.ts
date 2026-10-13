@@ -582,6 +582,35 @@ describe('staleness covers everything the plan read', () => {
   });
 });
 
+describe('mixed Item and Actor batches', () => {
+  it('succeeds and writes both when no rival writes', async () => {
+    const r: any = await apply([
+      { kind: 'attribute_boost', source: 'background', slot: '0', attribute: 'str' },
+      { kind: 'key_attribute', attribute: 'dex' },
+      { kind: 'feat_slot', slot: 'class-1', itemUuid: 'Actor.a.Item.feat1' },
+      { kind: 'skill_rank', skill: 'athletics', rank: 1 },
+    ]);
+    expect(r.message).toBeUndefined();
+    expect(actor.background.update).toHaveBeenCalled();
+    expect(actor.class.update).toHaveBeenCalled();
+    expect(actor.feat.update).toHaveBeenCalled();
+    expect(actor.update).toHaveBeenCalledWith(
+      { 'system.skills.athletics.rank': 1 },
+      expect.anything(),
+    );
+  });
+  it('rejects a rival selecting a non-targeted slot of the same background to the same attribute', async () => {
+    const ctx = context();
+    ctx.snapshot = vi.fn(async () => {
+      actor.background.system.boosts[2].selected = 'str';
+    });
+    await expect(
+      apply([{ kind: 'attribute_boost', source: 'background', slot: '0', attribute: 'str' }], ctx),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/changed during this call/) });
+    expect(actor.background.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('level boosts as pf2e stores them', () => {
   it('merges into the source system.build and keeps its other data', async () => {
     // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).

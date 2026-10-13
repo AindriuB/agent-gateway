@@ -296,8 +296,15 @@ async function withActorLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 const itemLocation = (item: any): unknown =>
   (item?._source?.system ?? item?.system)?.location ?? null;
 
+interface Fingerprint {
+  /** Actor-level inputs: source build, level and the skill ranks being set. */
+  actor: string;
+  /** Per-document inputs, keyed by the Item the call will write. */
+  items: Map<unknown, string>;
+}
+
 /** What the plan was built from: everything `plan()` read that another writer could change. */
-function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): string {
+function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): Fingerprint {
   let source: any;
   try {
     source = typeof actor.toObject === 'function' ? actor.toObject().system : undefined;
@@ -309,34 +316,37 @@ function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): stri
     .map((c) => [c.skill, source?.skills?.[c.skill!]?.rank ?? null]);
   const items = list(actor.items);
   const sourced = (item: any): any => item?._source?.system ?? item?.system;
-  const picks = changes.map((c) => {
-    if (c.kind === 'attribute_boost' && (c.source === 'ancestry' || c.source === 'background'))
-      return [
-        c.source,
-        c.slot,
-        sourced(c.source === 'ancestry' ? actor.ancestry : actor.background)?.boosts?.[c.slot!]
-          ?.selected ?? null,
-      ];
-    if (c.kind === 'key_attribute')
-      return ['key', sourced(actor.class)?.keyAbility?.selected ?? null];
-    if (c.kind === 'feat_slot')
-      return [
-        'feat',
-        c.itemUuid,
-        itemLocation(items.find((i) => i?.uuid === c.itemUuid)),
-        items
-          .filter((i) => itemLocation(i) === c.slot)
-          .map((i) => i?.uuid)
-          .sort(),
-      ];
-    return null;
-  });
-  return JSON.stringify([
-    source?.build ?? null,
-    source?.details?.level?.value ?? null,
-    ranks,
-    picks,
-  ]);
+  const picked = new Map<unknown, string>();
+  for (const c of changes) {
+    if (c.kind === 'attribute_boost' && (c.source === 'ancestry' || c.source === 'background')) {
+      const item = c.source === 'ancestry' ? actor.ancestry : actor.background;
+      // plan() checks duplicates across every slot, so all of them are inputs.
+      const all = Object.entries<any>(sourced(item)?.boosts ?? {}).map(([k, v]) => [
+        k,
+        v?.selected ?? null,
+      ]);
+      picked.set(item ?? c.source, JSON.stringify(all));
+    } else if (c.kind === 'key_attribute') {
+      picked.set(
+        actor.class ?? 'class',
+        JSON.stringify(sourced(actor.class)?.keyAbility?.selected ?? null),
+      );
+    } else if (c.kind === 'feat_slot') {
+      const feat = items.find((i) => i?.uuid === c.itemUuid);
+      const occupants = items
+        .filter((i) => itemLocation(i) === c.slot)
+        .map((i) => i?.uuid)
+        .sort();
+      picked.set(
+        feat ?? String(c.itemUuid),
+        JSON.stringify([c.slot, itemLocation(feat), occupants]),
+      );
+    }
+  }
+  return {
+    actor: JSON.stringify([source?.build ?? null, source?.details?.level?.value ?? null, ranks]),
+    items: picked,
+  };
 }
 
 async function apply(
@@ -358,8 +368,17 @@ async function applyLocked(
   const p = plan(actor, changes);
   const planned = fingerprint(actor, changes);
   const applied: string[] = [];
+  const written = new Set<unknown>();
+  /**
+   * Re-read the plan's inputs. Inputs of documents this call has already written are skipped:
+   * they changed because of us, not because of a rival writer.
+   */
   const stale = () => {
-    if (fingerprint(actor, changes) === planned) return;
+    const now = fingerprint(actor, changes);
+    let changed = now.actor !== planned.actor;
+    for (const [key, value] of planned.items)
+      if (!written.has(key) && now.items.get(key) !== value) changed = true;
+    if (!changed) return;
     invalid(
       'The build changed during this call; read it again and retry.' +
         (applied.length ? ` Already applied: ${applied.join(', ').slice(0, 300)}.` : ''),
@@ -388,6 +407,7 @@ async function applyLocked(
         };
         await doc.update(patch, options);
         applied.push(str(doc.name, 60) ?? 'a document');
+        written.add(doc);
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error);
         failures.push(

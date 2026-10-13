@@ -14,9 +14,20 @@ export function item(id: string, type: string, system: Record<string, unknown> =
     uuid: `Actor.a.Item.${id}`,
     parent: actor,
     system,
+    // The source data is the data the Item reads from, as after a Foundry update.
+    get _source() {
+      return { system: doc.system };
+    },
     update: vi.fn(async (patch: any, options: any) => {
       events.push(`update:${doc.uuid}`);
       doc.lastOptions = { ...options };
+      // Like Foundry, apply the patch to the source data the Item reads from.
+      for (const [path, value] of Object.entries(patch)) {
+        const keys = path.split('.').slice(1);
+        let node = doc.system;
+        for (const k of keys.slice(0, -1)) node = node[k] ??= {};
+        node[keys.at(-1)!] = value;
+      }
       // Foundry writes the operation context into the options object it is handed.
       if (options && typeof options === 'object') Object.assign(options, { parent: actor });
       doc.lastPatch = patch;
