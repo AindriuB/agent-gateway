@@ -396,7 +396,7 @@ async function applyLocked(
   try {
     stale();
     for (const [doc, patch] of docs) {
-      if (doc === actor) stale();
+      stale();
       try {
         // Foundry's update() writes `parent` etc. into the operation object it is given, so a
         // shared options object would turn a later Actor update into an "embedded" one. Hand

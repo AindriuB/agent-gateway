@@ -611,6 +611,27 @@ describe('mixed Item and Actor batches', () => {
   });
 });
 
+describe('staleness before every document write', () => {
+  it('rejects a later Item when a rival fills its slot during an earlier Item update', async () => {
+    const realUpdate = actor.background.update;
+    actor.background.update = vi.fn(async (patch: any, options: any) => {
+      await realUpdate(patch, options);
+      actor.items = [...actor.itemList, item('rival', 'feat', { location: 'class-1' }, actor)];
+    });
+    await expect(
+      apply([
+        { kind: 'attribute_boost', source: 'background', slot: '0', attribute: 'str' },
+        { kind: 'feat_slot', slot: 'class-1', itemUuid: 'Actor.a.Item.feat1' },
+      ]),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/changed during this call.*Already applied: bg/),
+    });
+    expect(actor.background.update).toHaveBeenCalledTimes(1);
+    expect(actor.feat.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('level boosts as pf2e stores them', () => {
   it('merges into the source system.build and keeps its other data', async () => {
     // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).
