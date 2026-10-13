@@ -14,6 +14,7 @@ export default defineConfig({
           name: 'e2e-unit',
           root: import.meta.dirname,
           include: [
+            'run.test.ts',
             'lib/**/*.test.ts',
             'fixtures/**/*.test.ts',
             'setup/**/*.test.ts',

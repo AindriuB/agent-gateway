@@ -10,6 +10,7 @@
 - e2e/dnd5e/**
 - module/src/adapters/embed.ts and module/src/adapters/build.ts (registry insertion only, one line each) (Andrew, 2026-10-13)
 - e2e/vitest.e2e.config.ts (one include line for dnd5e) (Andrew, 2026-10-13)
+- e2e/run.ts and e2e/run.test.ts (opt-in AGENT_GATEWAY_E2E_SKIP_FIXTURES; docs/testing.md needs a line, scribe) (Andrew, 2026-10-13)
 - module/test/adapters/pf2e/{build,choices,embed}.test.ts, module/test/tools/character-build/dispatch.test.ts, module/test/tools/compendium-embed/embed.test.ts ('dnd5e' to 'starfinder' as the unregistered-system example only) (Andrew, 2026-10-13)
 - module/src/adapters/embed.ts (EmbedHook `note` seam) and module/src/tools/compendium-import.ts (append the note to the result text) (Andrew, 2026-10-13)
 

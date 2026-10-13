@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ArgError, parseRunArgs } from './lib/args.js';
 import {
   ConfigError,
@@ -34,15 +35,43 @@ import { FIXTURE } from './fixtures/spec.js';
 
 class PreflightError extends Error {}
 
+export const SKIP_FIXTURES_ENV = 'AGENT_GATEWAY_E2E_SKIP_FIXTURES';
+export const FIXTURES_SKIPPED_LINE =
+  `fixtures skipped (${SKIP_FIXTURES_ENV}=1): the seeded-fixture and limited-pack checks did not run; ` +
+  'only suites that do not use the fixtures may be run';
+
+/**
+ * Opt-in `AGENT_GATEWAY_E2E_SKIP_FIXTURES=1` skips only the fixture and limited-pack preflight
+ * checks (the connection and Foundry version are still checked). It needs a vitest file filter,
+ * so the fixture suites (which also fail by themselves when the fixture state or the recorded
+ * limited-pack entry is missing) are never run wholesale without their preflight.
+ */
+export function fixturePolicy(
+  env: Readonly<Record<string, string | undefined>>,
+  rest: readonly string[],
+): { skip: boolean } {
+  if (env[SKIP_FIXTURES_ENV] !== '1') return { skip: false };
+  if (!rest.some((a) => !a.startsWith('-')))
+    throw new PreflightError(
+      `${SKIP_FIXTURES_ENV}=1 needs a suite filter, for example: npm run test:e2e -- --foundry v14 dnd5e`,
+    );
+  return { skip: true };
+}
+
 async function livePreflight(
   config: E2eConfig,
   paths: E2ePaths,
   connectDeadlineAt: number,
+  skipFixtures = false,
 ): Promise<string> {
   let version = 'unknown';
   const gm = await openUserSession(config, paths, config.gmUser, { connectDeadlineAt });
   try {
     version = gm.foundryVersion;
+    if (skipFixtures) {
+      process.stdout.write(`${FIXTURES_SKIPPED_LINE}\n`);
+      return await finishPreflight(config, paths, connectDeadlineAt, version);
+    }
     const found = await gm.gateway.call('document_search', {
       type: 'JournalEntry',
       query: FIXTURE.names.publicEntry,
@@ -66,6 +95,15 @@ async function livePreflight(
   } finally {
     await gm.close();
   }
+  return finishPreflight(config, paths, connectDeadlineAt, version);
+}
+
+async function finishPreflight(
+  config: E2eConfig,
+  paths: E2ePaths,
+  connectDeadlineAt: number,
+  version: string,
+): Promise<string> {
   const player = await openUserSession(config, paths, config.playerUser, { connectDeadlineAt });
   await player.close();
   return version;
@@ -105,6 +143,7 @@ function runVitest(
 async function main(): Promise<number> {
   const startedAt = Date.now();
   const args = parseRunArgs(process.argv.slice(2));
+  const policy = fixturePolicy(process.env, args.rest);
   const paths = e2ePaths();
   const base = loadE2eConfig({
     testEnvText: existsSync(paths.testEnv) ? readFileSync(paths.testEnv, 'utf8') : undefined,
@@ -126,7 +165,7 @@ async function main(): Promise<number> {
   if (!existsSync(GATEWAY_CLI)) throw new PreflightError('gateway is not built; run npm run build');
 
   resetRunData(paths.runData);
-  const version = await livePreflight(config, paths, startedAt + CONNECT_BUDGET_MS);
+  const version = await livePreflight(config, paths, startedAt + CONNECT_BUDGET_MS, policy.skip);
   recordRunData(paths.runData, { kind: 'foundry', version });
 
   const reportPath = join(paths.stateDir, 'vitest-report.json');
@@ -146,18 +185,21 @@ async function main(): Promise<number> {
   return code !== 0 || totalFailures(summary) > 0 ? 1 : 0;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    const known =
-      err instanceof PreflightError || err instanceof ConfigError || err instanceof ArgError;
-    // A failure that reached here without the setup hint is still an operator-facing failure.
-    const hint =
-      err instanceof NotConnectedError || known || msg.includes(SETUP_HINT)
-        ? ''
-        : `\n${SETUP_HINT}`;
-    process.stderr.write(`${msg}${hint}\n`);
-    process.exit(1);
-  },
-);
+// Only run as the entry point, so the helpers above can be imported by tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      const known =
+        err instanceof PreflightError || err instanceof ConfigError || err instanceof ArgError;
+      // A failure that reached here without the setup hint is still an operator-facing failure.
+      const hint =
+        err instanceof NotConnectedError || known || msg.includes(SETUP_HINT)
+          ? ''
+          : `\n${SETUP_HINT}`;
+      process.stderr.write(`${msg}${hint}\n`);
+      process.exit(1);
+    },
+  );
+}
