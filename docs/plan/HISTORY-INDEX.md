@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-13 | 63 | `scripts/conformance.sh` (Inspector 2.10.1 over stdio, fake paired module, list and echo call), schema checks, `docs/compatibility.md` | ## 2026-10-13 — stdio MCP conformance and compatibility matrix (task 63) |
 | 2026-10-13 | 32 | dnd5e adapter (summary, use/attack/damage actions, conditions, embed hook, skill_rank build hook), native v14 7/7, advancements not applied | ## 2026-10-13 — dnd5e system adapter (task 32) |
 | 2026-10-13 | 57 | LinkListenError for EADDRINUSE/EACCES on the link port; CLI prints one stderr line and exits 1, stdout untouched | ## 2026-10-13 — link port bind failures reported as one stderr line (task 57) |
 | 2026-10-13 | 49 | pf2e ChoiceSet answered headlessly (compendium_import choices, character_build listChoices), call-keyed preCreate wrapper, bounded filter resolution, native v14 2/2 | ## 2026-10-13 — pf2e ChoiceSet answered headlessly (task 49) |

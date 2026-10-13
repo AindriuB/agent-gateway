@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 34 done in `docs/plan/done/`, 32 active in `docs/plan/tasks/` (2026-10-13).
+Inventory: 35 done in `docs/plan/done/`, 31 active in `docs/plan/tasks/` (2026-10-13).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -21,7 +21,7 @@ then MVP B (VPS/hosted).
 ### MVP A: someone else can install it locally
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
-- **A1: 60, 61, 63** (parallel; Owns are disjoint). 60 module zip and `relationships.systems`; 61 npm-installable gateway (bundle or publish the private protocol workspace); 63 stdio conformance, cross-vendor schema checks and the compatibility matrix.
+- **A1: 60, 61, 63** (parallel; Owns are disjoint). 60 module zip and `relationships.systems`; 61 npm-installable gateway (bundle or publish the private protocol workspace); 63 done (stdio conformance, schema checks, `docs/compatibility.md`; 64 wires `scripts/conformance.sh` into the release gates).
 - **A2: 62** (after 61). Build the `.mcpb` bundle from the 61 output; unsigned, not uploaded.
 - **A3: 64, 65** (after A1 and A2). 64 local release script (version bump, gates, three artefacts, stops before anything irreversible); 65 local quick start, security model and privacy statement.
 - **A4: 66** (after 64 and 65). Cut 0.1.0 through a PR and the release script. It stops for Andrew at every irreversible step: GitHub draft release, publishing it, `npm publish`, any Foundry package listing. The open `relationships.systems` question from 60 must be answered first.
@@ -58,6 +58,7 @@ Every item below has its evidence in `HISTORY.md`; find it through `docs/plan/HI
 - Tasks 27-30 (28a): visible-client event tap, gateway event buffer, offline event reading and retention, offline write queue.
 - Tasks 31-33: adapter interface, pf2e adapter, dnd5e adapter (native v14 7/7 each; v13 not run for adapters).
 - Tasks 45, 46, 49, 57: compendium embed in an actor, character-build interface, pf2e ChoiceSet answers, link port bind error.
+- Task 63: stdio MCP conformance script, tool schema checks, compatibility matrix.
 - Verified bundle for the player-write wave: `d0a11fb`, SHA-256 `9151dcaece963660a3c93039613b4580ded558f9c9f0d5546f4e9f59cecb33c4`, native on v14.369 and v13.351 (see the 2026-10-11 policy entry).
 
 ## Carried notes
