@@ -42,6 +42,8 @@ function grantUuids(src: any, rules: any[]): string[] {
     if (typeof entry?.uuid === 'string') out.push(entry.uuid);
     if (isPlain(entry?.items)) pending.push(...Object.values(entry.items));
   }
+  // Fail closed: an unscanned entry could hide a ChoiceSet that would open a prompt.
+  if (pending.length) invalid(`${label(src)}: more than 256 grant entries cannot be scanned`);
   return out;
 }
 /** `{item|flags.pf2e.rulesSelections.x}` resolves to a preselected ChoiceSet; otherwise refuse. */

@@ -202,6 +202,6 @@ describe('pf2e compendium_import into an Actor (set AGENT_GATEWAY_E2E_PF2E=1 and
       expect(targets.map((t) => t.uuid)).toContain(created);
       for (const t of targets) expect(t).toMatchObject({ existed: false, undoable: true });
     },
-    humanTimeout(1),
+    humanTimeout(2),
   );
 });

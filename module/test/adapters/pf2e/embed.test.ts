@@ -294,4 +294,15 @@ describe('pf2e physical types, selections and kits', () => {
     };
     await refused(kit, {}, /"G": ChoiceSet/);
   });
+  it('refuses a kit with more than 256 entries instead of dropping the rest', async () => {
+    docs.set(
+      'Compendium.p.c.Item.late',
+      choiceDoc({ name: 'Late', system: { rules: [{ key: 'ChoiceSet', flag: 'x' }] } }),
+    );
+    // Entries are popped from the end, so the ChoiceSet item (first) is reached after the limit.
+    const items: Record<string, unknown> = { first: { uuid: 'Compendium.p.c.Item.late' } };
+    for (let i = 0; i < 300; i++) items[`n${i}`] = { uuid: 'Compendium.p.c.Item.none' };
+    await refused({ name: 'Kit', type: 'kit', system: { rules: [], items } }, {}, /more than 256/);
+    expect(g.fromUuid).not.toHaveBeenCalled();
+  });
 });
