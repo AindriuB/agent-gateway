@@ -90,13 +90,16 @@ export class PairingCodes {
     return this.timer !== undefined;
   }
 
-  /** Single use: the live code is spent by a correct guess, valid or just expired. */
+  /** Single use: a correct, unexpired guess spends the live code. An expired one is only refused. */
   consume(code: string): boolean {
     const live = this.live;
     if (!live || live.code !== code.trim().toUpperCase()) return false;
+    // An expired code is rejected but left to the refresh timer: clearing it here would leave no
+    // code and no timer.
+    if (live.expiresAt <= this.now()) return false;
     this.live = undefined;
     this.disarm();
-    return live.expiresAt > this.now();
+    return true;
   }
 
   stop(): void {

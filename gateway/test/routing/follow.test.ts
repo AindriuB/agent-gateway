@@ -107,6 +107,27 @@ describe('follow mode', () => {
     expect((await answer(b, call(s))).res.isError).toBeFalsy();
   });
 
+  it('every outage gets the full grace period, even with no call between drop and reconnect', async () => {
+    h = await startServer();
+    let t = 1_000_000;
+    const a = await add('uA');
+    const s = await openSession(h, {}, undefined, 5000, { now: () => t });
+    sessions.push(s);
+    await answer(a, call(s));
+    const b = await add('uB');
+    await drop(a);
+    t += REBIND_GRACE_MS - 1;
+    const a2 = await reconnectModule(h, a);
+    modules.push(a2);
+    await drop(a2);
+    t += 2;
+    // 2 ms into the second outage, not 30 s: still A's.
+    expectErrorCode(await call(s), 'WORLD_OFFLINE');
+    await silent(b);
+    t += REBIND_GRACE_MS;
+    expect((await answer(b, call(s))).res.isError).toBeFalsy();
+  });
+
   it('stays bound to a connected pair while another is also connected', async () => {
     h = await startServer();
     const a = await add('uA');

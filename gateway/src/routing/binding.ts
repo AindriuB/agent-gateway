@@ -99,7 +99,12 @@ export class SessionBinding {
    * connected pairing in the pool, the user has moved (another world): re-bind at once.
    */
   noteConnected(c: LinkConnection): void {
-    if (!this.follow || !this.bound || this.live(this.bound)) return;
+    if (!this.follow || !this.bound) return;
+    // The bound pair is back: its next outage starts a fresh grace period.
+    if (this.live(this.bound)) {
+      if (idOf(c) === idOf(this.bound)) this.lostAt = undefined;
+      return;
+    }
     const only = this.connectedPool();
     if (only.length === 1 && idOf(only[0]!) === idOf(c)) this.rebind(only[0]!);
   }

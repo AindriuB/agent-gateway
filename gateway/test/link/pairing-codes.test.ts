@@ -117,6 +117,18 @@ describe('PairingCodes: one live code, one timer', () => {
     expect(m.timers.size).toBe(1);
   });
 
+  it('submitting the expired code before the refresh callback runs does not kill the refresh', () => {
+    const m = manual();
+    const first = m.codes.issue('startup');
+    m.setNow(first.expiresAt);
+    expect(m.codes.consume(first.code)).toBe(false);
+    expect(m.timers.size).toBe(1);
+    m.advance(1);
+    expect(m.issued.map((i) => i.reason)).toEqual(['startup', 'expired']);
+    expect(m.codes.current()?.code).not.toBe(first.code);
+    expect(m.timers.size).toBe(1);
+  });
+
   it('an expired code that is asked for again is replaced even if the timer has not fired', () => {
     const m = manual();
     const old = m.codes.issue('startup');
