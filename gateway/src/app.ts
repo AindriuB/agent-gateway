@@ -17,6 +17,14 @@ import {
   type PairingCodesOptions,
 } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import {
+  HTTP_BIND_HOST,
+  HTTP_SESSION_IDLE_MS,
+  MAX_HTTP_SESSIONS,
+  MAX_REQUEST_BYTES,
+  SELF_PROTECT_RPS,
+} from './config/index.js';
+import { HttpServer, loadOrCreateToken } from './http/index.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
@@ -88,6 +96,15 @@ export interface AppDeps {
   onStepDown?: (why: string) => void;
   /** Clock and timers for pairing-code expiry; injectable so tests need not wait ten minutes. */
   codeClock?: Pick<PairingCodesOptions, 'now' | 'setTimer' | 'clearTimer'>;
+  /** Serve MCP over local Streamable HTTP (primary only). */
+  http?: boolean;
+  /** Overrides for the HTTP limits; tests shorten them. */
+  httpLimits?: Partial<{
+    maxRequestBytes: number;
+    rps: number;
+    maxSessions: number;
+    idleMs: number;
+  }>;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -99,6 +116,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let events: EventBuffer | undefined;
   let queue: OfflineQueue | undefined;
   let relay: RelayServer | undefined;
+  let httpServer: HttpServer | undefined;
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
@@ -142,6 +160,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       stdioProxy = undefined;
       codes?.stop();
       codes = undefined;
+      await httpServer?.close();
+      httpServer = undefined;
       await secondary?.stop();
       secondary = undefined;
       await relay?.close();
@@ -220,6 +240,8 @@ export function createApp(config: Config, deps: AppDeps): App {
   async function teardown(): Promise<void> {
     codes?.stop();
     codes = undefined;
+    await httpServer?.close();
+    httpServer = undefined;
     await relay?.close();
     relay = undefined;
     await server?.close();
@@ -235,6 +257,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startSecondary(reason: string): Promise<void> {
+    if (deps.http) writeStatus('HTTP is served by the primary gateway instance, not this one');
     const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
     if (!stateDir || !ep?.ok) {
       const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
@@ -391,6 +414,31 @@ export function createApp(config: Config, deps: AppDeps): App {
     await startRelay(port, () =>
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
+    if (deps.http) {
+      const token = loadOrCreateToken(stateDir);
+      const lim = deps.httpLimits ?? {};
+      const candidate = new HttpServer({
+        host: HTTP_BIND_HOST,
+        port: config.httpPort,
+        token,
+        registry,
+        version: deps.version,
+        startedAt,
+        createSession: () => track(createSessionServer(sessionOptions(ready.events, ready.queue))),
+        maxRequestBytes: lim.maxRequestBytes ?? MAX_REQUEST_BYTES,
+        rps: lim.rps ?? SELF_PROTECT_RPS,
+        maxSessions: lim.maxSessions ?? MAX_HTTP_SESSIONS,
+        idleMs: lim.idleMs ?? HTTP_SESSION_IDLE_MS,
+      });
+      const httpPort = await candidate.listen();
+      httpServer = candidate;
+      if (token.created) {
+        writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
+      }
+      writeStatus(
+        `MCP HTTP at http://${HTTP_BIND_HOST}:${httpPort}/mcp (Authorization: Bearer <token>)`,
+      );
+    }
     logger.info(`MCP stdio server started`);
   }
 }

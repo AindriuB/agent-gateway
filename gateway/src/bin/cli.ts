@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { createApp } from '../app.js';
-import { ConfigError, loadConfig } from '../config/index.js';
+import { ConfigError, HTTP_BIND_HOST, loadConfig } from '../config/index.js';
 import { reportStartFailure } from './start-failure.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
@@ -14,6 +14,10 @@ const USAGE = `Usage: foundry-agent-gateway [options]
 Options:
   --config <path>     Config file (JSON, must be chmod 600)
   --link-port <n>     Port for the module link (default 7420)
+  --http              Also serve MCP over Streamable HTTP at http://127.0.0.1:7421/mcp
+                      (bearer token printed once on first run)
+  --http-port <n>     Port for --http (default 7421)
+  --http-host <addr>  Only 127.0.0.1 is accepted
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -56,6 +60,9 @@ function main(): void {
         help: { type: 'boolean' },
         config: { type: 'string' },
         'link-port': { type: 'string' },
+        http: { type: 'boolean' },
+        'http-port': { type: 'string' },
+        'http-host': { type: 'string' },
         world: { type: 'string' },
         user: { type: 'string' },
         'allow-origin': { type: 'string', multiple: true },
@@ -75,11 +82,17 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
+  if (values['http-host'] !== undefined && values['http-host'] !== HTTP_BIND_HOST) {
+    process.stderr.write(
+      `Refusing --http-host ${values['http-host']}: local HTTP binds ${HTTP_BIND_HOST} only\n`,
+    );
+    process.exit(2);
+  }
   let config;
   try {
     config = loadConfig({
       configPath: values.config,
-      flags: { linkPort: values['link-port'] },
+      flags: { linkPort: values['link-port'], httpPort: values['http-port'] },
       onIgnored: (m) => process.stderr.write(`${m}\n`),
     });
   } catch (err) {
@@ -93,6 +106,7 @@ function main(): void {
   const allowOrigins = (values['allow-origin'] ?? []).filter((v) => v !== '');
   const app = createApp(config, {
     version: pkg.version,
+    ...(values.http ? { http: true } : {}),
     selector: { world: values.world, user: values.user },
     ...(allowOrigins.length ? { allowedOrigins: normalizeOrigins(allowOrigins) } : {}),
     ...((values.db ?? process.env.AGENT_GATEWAY_DB)
