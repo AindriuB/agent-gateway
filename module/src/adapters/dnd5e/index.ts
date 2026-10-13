@@ -395,9 +395,16 @@ async function performAction(
     if (level < Math.max(1, spellLevel(item)))
       return invalid(`Spell level must be at least ${Math.max(1, spellLevel(item))}`);
     const spells = actor.system?.spells ?? {};
+    // Capacity (max), not remaining slots: the damage roll follows a `use` that may have spent the
+    // last slot of this level. A pact slot also covers any lower level it can be cast at.
     slot = spells[`spell${level}`]?.max
       ? `spell${level}`
-      : Object.keys(spells).find((k) => spells[k]?.level === level && num(spells[k]?.max));
+      : Object.keys(spells).find(
+          (k) =>
+            num(spells[k]?.max) &&
+            (spells[k]?.level === level ||
+              (kind === 'damage' && k === 'pact' && (num(spells[k]?.level) ?? 0) >= level)),
+        );
     if (!slot) return invalid(`No spell slots of level ${level}`);
   }
   if (

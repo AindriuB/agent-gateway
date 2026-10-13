@@ -362,7 +362,11 @@ describe('dnd5e adapter', () => {
       await dnd5eAdapter.performAction(a, 'damage:s1:a2', {}, ctx);
       await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 3 }, ctx);
       await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 4 }, ctx);
-      expect(rolled).toEqual(['8d6', '8d6', '9d6']);
+      expect(rolled).toEqual(['8d6', '8d6', '9d6']); // level 4: its last slot is already spent
+      // A pact slot of level 5 covers damage rolled at level 4 (but is not a slot to spend at 4).
+      a.system.spells.pact = { value: 0, max: 1, level: 5, type: 'pact' };
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 5 }, ctx);
+      delete a.system.spells.pact;
       for (const level of [2, 5, 10, 'x', 4.5])
         await expect(
           dnd5eAdapter.performAction(a, 'damage:s1:a2', { level }, ctx),
