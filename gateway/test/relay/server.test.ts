@@ -19,6 +19,13 @@ import {
 } from '../../src/relay/index.js';
 import { sleep, until } from './harness.js';
 
+// Deterministic session ids: the Nth session server made in this file is `sess-N`.
+const ids = vi.hoisted(() => ({ n: 0, on: false }));
+vi.mock('node:crypto', async (orig) => {
+  const real = await orig<typeof import('node:crypto')>();
+  return { ...real, randomUUID: () => (ids.on ? `sess-${++ids.n}` : real.randomUUID()) };
+});
+
 const PORT = 7777;
 
 interface Rig {
@@ -180,6 +187,17 @@ describe('relay handshake', () => {
 });
 
 describe('relay security', () => {
+  it('destroys a refused peer that keeps its side open, freeing the pre-auth slot', async () => {
+    const r = await rig();
+    const s = connect({ path: r.sock, allowHalfOpen: true });
+    sockets.push(s);
+    s.on('error', () => undefined);
+    s.write('not json\n');
+    s.resume();
+    await until(() => r.server.socketCount === 1, 2000, 'socket accepted');
+    await until(() => r.server.socketCount === 0, 3000, 'refused socket destroyed');
+  });
+
   it('keeps the socket and secret at 0600 and the state dir at 0700 while running', async () => {
     if (process.platform === 'win32') return;
     const r = await rig();
@@ -260,15 +278,18 @@ describe('relay session isolation', () => {
       if (c.kind !== 'ok') throw new Error(JSON.stringify(c));
       return c.upstream;
     };
-    const a = await open();
-    const b = await open();
+    ids.on = true;
+    ids.n = 0;
+    const a = await open(); // sess-1
+    const b = await open(); // sess-2
     expect(cancelled).toEqual([]);
-    a.close();
-    await until(() => cancelled.length === 1);
-    expect(r.server.sessionCount).toBe(1);
     b.close();
+    await until(() => cancelled.length === 1);
+    expect(cancelled).toEqual(['sess-2']);
+    expect(r.server.sessionCount).toBe(1);
+    a.close();
     await until(() => cancelled.length === 2);
-    expect(new Set(cancelled).size).toBe(2);
+    expect(cancelled).toEqual(['sess-2', 'sess-1']);
 
     for (let i = 0; i < 20; i++) (await open()).close();
     await until(() => r.server.sessionCount === 0 && cancelled.length === 22);
@@ -278,6 +299,7 @@ describe('relay session isolation', () => {
       toolset: toolsets.listenerCount('changed'),
       events: events.listenerCount('changed'),
     }).toEqual(base);
+    ids.on = false;
     expect(r.logs.filter((l) => /^relay session \d+ opened$/.test(l))).toHaveLength(22);
     expect(r.logs.filter((l) => /^relay session \d+ closed$/.test(l))).toHaveLength(22);
   });

@@ -67,22 +67,32 @@ export class StdioRelayProxy {
       return;
     }
     this.up = up;
+    // Back-pressure belongs to one upstream. A swap must never inherit a pause that only the
+    // old upstream's drain could have lifted.
+    this.input.resume();
     up.onMessage = (m) => {
       if (this.up !== up) return;
       this.fromUpstream(m);
     };
-    up.onClose = () => {
-      if (this.up !== up) return;
-      this.up = undefined;
-      this.failPending(RELAY_LOST, 'the gateway instance serving this session went away');
-      this.onLost?.();
+    up.onClose = () => this.lose(up);
+    up.onDrain = () => {
+      if (this.up === up) this.input.resume();
     };
-    up.onDrain = () => this.input.resume();
     if (this.initialize) {
       up.send({ ...this.initialize, id: REPLAY_ID });
       if (this.initialized) up.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
       this.write({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
     }
+  }
+
+  /** `up` is gone (or being dropped): answer what was in flight and let the owner replace it. */
+  private lose(up: Upstream): void {
+    if (this.up !== up) return;
+    this.up = undefined;
+    this.input.resume();
+    this.failPending(RELAY_LOST, 'the gateway instance serving this session went away');
+    up.close();
+    this.onLost?.();
   }
 
   private write(m: RpcMessage): void {
@@ -125,8 +135,19 @@ export class StdioRelayProxy {
     try {
       lines = this.splitter.push(chunk);
     } catch {
-      this.log('dropped an oversized line from the client; reconnecting the relay session');
-      this.up?.close();
+      // Reject just that request when its id is visible at the start of the line; otherwise
+      // the stream can no longer be trusted, so replace the upstream (pending ids get RELAY_LOST).
+      const id = /"id"\s*:\s*(-?\d+|"[^"\\]{0,200}")/.exec(this.splitter.droppedHead)?.[1];
+      this.log(`dropped a client line over ${MAX_RELAY_LINE_BYTES} bytes`);
+      if (id !== undefined) {
+        this.write({
+          jsonrpc: '2.0',
+          id: JSON.parse(id) as string | number,
+          error: { code: -32600, message: `request line over ${MAX_RELAY_LINE_BYTES} bytes` },
+        });
+      } else if (this.up) {
+        this.lose(this.up);
+      }
       return;
     }
     for (const line of lines) this.handleLine(line);
@@ -158,8 +179,6 @@ export class StdioRelayProxy {
       }
       this.pending.add(key(msg.id));
     }
-    if (!up.send(msg)) {
-      this.input.pause();
-    }
+    if (!up.send(msg) && this.up === up) this.input.pause();
   }
 }

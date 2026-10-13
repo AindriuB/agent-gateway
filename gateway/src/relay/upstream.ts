@@ -13,6 +13,7 @@ import {
 } from './constants.js';
 import { SECRET_FILE } from './endpoint.js';
 import { LineSplitter } from './lines.js';
+import { parseSecretFile } from './secret.js';
 
 export type RpcMessage = Record<string, unknown>;
 
@@ -106,11 +107,7 @@ export class LocalUpstream implements Upstream {
 
   constructor(private readonly transport: InMemoryTransport) {
     transport.onmessage = (m) => this.onMessage?.(m as unknown as RpcMessage);
-    transport.onclose = () => {
-      if (this.closed) return;
-      this.closed = true;
-      this.onClose?.();
-    };
+    transport.onclose = () => this.finish();
   }
 
   start(): Promise<void> {
@@ -123,8 +120,14 @@ export class LocalUpstream implements Upstream {
   }
 
   close(): void {
-    this.closed = true;
     void this.transport.close();
+    this.finish();
+  }
+
+  private finish(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.onClose?.();
   }
 }
 
@@ -143,8 +146,11 @@ export interface ConnectOptions {
 /** One relay connect attempt: read the secret, dial, handshake. Never throws. */
 export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
   let secret: string;
+  let endpoint = opts.endpoint;
   try {
-    secret = readFileSync(join(opts.stateDir, SECRET_FILE), 'utf8').trim();
+    const file = parseSecretFile(readFileSync(join(opts.stateDir, SECRET_FILE), 'utf8'));
+    secret = file.secret;
+    if (file.pipe) endpoint = file.pipe;
   } catch (err) {
     return Promise.resolve({
       kind: 'failed',
@@ -152,7 +158,7 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
     });
   }
   return new Promise<ConnectResult>((resolve) => {
-    const socket = connect(opts.endpoint);
+    const socket = connect(endpoint);
     const splitter = new LineSplitter(MAX_RELAY_LINE_BYTES);
     let settled = false;
     const settle = (r: ConnectResult) => {

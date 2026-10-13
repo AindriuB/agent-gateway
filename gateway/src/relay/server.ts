@@ -28,6 +28,8 @@ export interface RelayServerOptions {
   platform?: NodeJS.Platform;
 }
 
+const REFUSAL_GRACE_MS = 500;
+
 const norm = (s: UserSelector | undefined) => ({ world: s?.world || '', user: s?.user || '' });
 
 /**
@@ -43,14 +45,21 @@ export class RelayServer {
   private readonly platform: NodeJS.Platform;
   private readonly isWin: boolean;
   private secret = '';
+  private endpoint: string;
 
   constructor(private readonly opts: RelayServerOptions) {
     this.platform = opts.platform ?? process.platform;
     this.isWin = this.platform === 'win32';
+    this.endpoint = opts.endpoint;
   }
 
   get sessionCount(): number {
     return this.active;
+  }
+
+  /** Open sockets of any state, including ones still awaiting their handshake. */
+  get socketCount(): number {
+    return this.sockets.size;
   }
 
   async listen(): Promise<void> {
@@ -65,26 +74,32 @@ export class RelayServer {
       rmSync(endpoint, { force: true });
     }
     this.secret = newSecret();
-    this.secretFile = writeSecret(stateDir, this.secret);
+    // win32: a random per-boot pipe name, published only in the secret file (see relayEndpoint).
+    if (this.isWin) this.endpoint = `${endpoint}-${newSecret().slice(0, 16)}`;
+    this.secretFile = writeSecret(stateDir, this.secret, this.isWin ? this.endpoint : undefined);
     const net = createServer((s) => this.onConnection(s));
     this.net = net;
     const oldMask = this.isWin ? undefined : process.umask(0o177);
+    let listening: Promise<void>;
     try {
-      await new Promise<void>((resolve, reject) => {
+      listening = new Promise<void>((resolve, reject) => {
         net.once('error', reject);
-        net.listen(endpoint, () => {
+        net.listen(this.endpoint, () => {
           net.off('error', reject);
           resolve();
         });
-        // Back to the previous umask as soon as bind has happened (it is synchronous).
-        if (oldMask !== undefined) process.umask(oldMask);
       });
+    } finally {
+      // Bind happens synchronously inside listen(); put the old mask back unconditionally.
+      if (oldMask !== undefined) process.umask(oldMask);
+    }
+    try {
+      await listening;
     } catch (err) {
-      if (oldMask !== undefined && process.umask() !== oldMask) process.umask(oldMask);
       await this.close();
       throw err;
     }
-    if (!this.isWin) chmodSync(endpoint, 0o600);
+    if (!this.isWin) chmodSync(this.endpoint, 0o600);
   }
 
   async close(): Promise<void> {
@@ -101,6 +116,10 @@ export class RelayServer {
 
   private refuse(socket: Socket, code: RelayRefusal, extra: object = {}): void {
     socket.end(`${JSON.stringify({ relay: RELAY_VERSION, ok: false, code, ...extra })}\n`);
+    // A peer that never closes its side must not hold a pre-auth slot.
+    const grace = setTimeout(() => socket.destroy(), REFUSAL_GRACE_MS);
+    grace.unref();
+    socket.once('close', () => clearTimeout(grace));
   }
 
   private onConnection(socket: Socket): void {

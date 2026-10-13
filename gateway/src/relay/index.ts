@@ -14,3 +14,4 @@ export {
   type RpcMessage,
   type Upstream,
 } from './upstream.js';
+export * from './secret.js';

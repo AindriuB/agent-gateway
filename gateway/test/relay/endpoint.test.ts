@@ -78,3 +78,15 @@ describe('LineSplitter', () => {
     expect(s.push(Buffer.from('fine\n'))).toEqual(['fine']);
   });
 });
+
+describe('secret file', () => {
+  it('carries the per-boot pipe name on win32 and ignores foreign pipe names', async () => {
+    const { parseSecretFile, PIPE_PREFIX } = await import('../../src/relay/index.js');
+    expect(parseSecretFile('abc')).toEqual({ secret: 'abc' });
+    expect(parseSecretFile(`abc\n${PIPE_PREFIX}1234-ffff\n`)).toEqual({
+      secret: 'abc',
+      pipe: `${PIPE_PREFIX}1234-ffff`,
+    });
+    expect(parseSecretFile('abc\n\\\\.\\pipe\\evil\n')).toEqual({ secret: 'abc' });
+  });
+});

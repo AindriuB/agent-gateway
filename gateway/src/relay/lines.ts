@@ -1,3 +1,5 @@
+const HEAD_BYTES = 512;
+
 export class LineTooLongError extends Error {
   constructor(readonly limit: number) {
     super(`line over ${limit} bytes`);
@@ -12,6 +14,9 @@ export class LineSplitter {
   private parts: Buffer[] = [];
   private len = 0;
   private skipping = false;
+  private head = '';
+  /** First bytes of the most recent line dropped for size, so a caller can find its request id. */
+  droppedHead = '';
   constructor(private maxBytes: number) {}
 
   /** Raise or lower the limit for lines that have not started yet (after the handshake line). */
@@ -27,10 +32,13 @@ export class LineSplitter {
     for (;;) {
       const i = chunk.indexOf(10, start);
       if (i < 0) break;
+      if (this.len === 0 && !this.skipping)
+        this.head = chunk.subarray(start, Math.min(i, start + HEAD_BYTES)).toString('utf8');
       if (this.skipping) {
         this.skipping = false;
       } else if (this.len + (i - start) > this.maxBytes) {
         overflow = true;
+        this.droppedHead = this.head;
         this.parts = [];
         this.len = 0;
       } else {
@@ -43,8 +51,11 @@ export class LineSplitter {
     }
     if (!this.skipping) {
       const rest = chunk.length - start;
+      if (this.len === 0 && rest > 0)
+        this.head = chunk.subarray(start, start + HEAD_BYTES).toString('utf8');
       if (this.len + rest > this.maxBytes) {
         overflow = true;
+        this.droppedHead = this.head;
         this.parts = [];
         this.len = 0;
         this.skipping = true;

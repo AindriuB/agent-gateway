@@ -114,4 +114,29 @@ describe('relay between built CLI instances', () => {
     expect(await echo(s1, 'again1')).toContain('echo:again1');
     expect(await echo(s2, 'again2')).toContain('echo:again2');
   }, 90_000);
+
+  it('(c2) a large request in flight when the primary dies does not wedge the client', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    const { cli: primary, module } = await pairedPrimary(port, state.db);
+    clis.push(primary);
+    module.keepAlive();
+    modules.push(module);
+    const s1 = track(await startCli(port, state.db));
+    expect(await echo(s1, 'warm')).toContain('echo:warm');
+    const big = 'x'.repeat(600_000);
+    module.hang = big;
+    const inflight = s1.client.callTool({ name: 'demo-echo', arguments: { value: big } }).then(
+      () => 'ok',
+      (e: Error) => e.message,
+    );
+    await until(() => module.calls.some((c) => c.value === big), 10_000, 'big call');
+    process.kill(primary.pid, 'SIGKILL');
+    expect(await inflight).toContain('RELAY_LOST');
+    module.hang = undefined;
+    await until(() => s1.listChanged() >= 1, 15_000, 'list_changed');
+    await until(() => module.ready, 15_000, 'module reconnect');
+    expect(await echo(s1, 'after')).toContain('echo:after');
+  }, 90_000);
 });
