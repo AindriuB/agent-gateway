@@ -14,6 +14,7 @@ import {
   relayEndpoint,
   LineSplitter,
   LineTooLongError,
+  TopLevelIdScanner,
 } from '../../src/relay/index.js';
 
 describe('relay constants', () => {
@@ -88,5 +89,33 @@ describe('secret file', () => {
       pipe: `${PIPE_PREFIX}1234-ffff`,
     });
     expect(parseSecretFile('abc\n\\\\.\\pipe\\evil\n')).toEqual({ secret: 'abc' });
+  });
+});
+
+describe('TopLevelIdScanner', () => {
+  const idOf = (json: string) => {
+    const s = new TopLevelIdScanner();
+    // fed in awkward pieces to prove it is streaming
+    const b = Buffer.from(json);
+    for (let i = 0; i < b.length; i += 7) s.feed(b.subarray(i, i + 7));
+    return s.result();
+  };
+  it('finds a top-level id wherever it sits', () => {
+    expect(idOf('{"id":12,"method":"x"}')).toBe(12);
+    expect(idOf('{"method":"x","params":{},"id":"abc"}')).toBe('abc');
+    expect(idOf('{ "jsonrpc": "2.0", "id" : -4 , "method": "x" }')).toBe(-4);
+    expect(idOf('{"id":7}')).toBe(7);
+  });
+  it('ignores nested ids, ids in arrays and ids inside strings', () => {
+    expect(idOf('{"params":{"id":99},"id":1}')).toBe(1);
+    expect(idOf('{"params":[{"id":99}],"method":"x"}')).toBeUndefined();
+    expect(idOf('{"s":"x\\" , \\"id\\":5","id":2}')).toBe(2);
+    expect(idOf('{"s":"\\\\","id":3}')).toBe(3);
+    expect(idOf('{"method":"x","params":{"id":1}}')).toBeUndefined();
+  });
+  it('bounds string ids and rejects non-scalar ids', () => {
+    expect(idOf(`{"id":"${'a'.repeat(300)}"}`)).toBeUndefined();
+    expect(idOf('{"id":{"a":1}}')).toBeUndefined();
+    expect(idOf('{"id":null}')).toBeUndefined();
   });
 });

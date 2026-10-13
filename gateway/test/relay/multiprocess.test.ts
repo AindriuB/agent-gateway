@@ -139,4 +139,36 @@ describe('relay between built CLI instances', () => {
     await until(() => module.ready, 15_000, 'module reconnect');
     expect(await echo(s1, 'after')).toContain('echo:after');
   }, 90_000);
+
+  it('(c3) a taken-over instance survives a 5 MiB id-last request; the fleet keeps working', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    const { cli: primary, module } = await pairedPrimary(port, state.db);
+    clis.push(primary);
+    module.keepAlive();
+    modules.push(module);
+    const s1 = track(await startCli(port, state.db));
+    const s2 = track(await startCli(port, state.db));
+    process.kill(primary.pid, 'SIGKILL');
+    await until(() => s1.listChanged() >= 1 && s2.listChanged() >= 1, 15_000, 'takeover');
+    await until(() => module.ready, 15_000, 'module reconnect');
+    // The SDK writes `id` last, so the id sits after the oversized params.
+    const huge = 'x'.repeat(5 * 1024 * 1024);
+    for (const c of [s1, s2]) {
+      const err = await c.client.callTool({ name: 'demo-echo', arguments: { value: huge } }).then(
+        () => 'ok',
+        (e: Error) => e.message,
+      );
+      expect(err).toContain('request line over');
+    }
+    expect(await echo(s1, 'next1')).toContain('echo:next1');
+    expect(await echo(s2, 'next2')).toContain('echo:next2');
+    expect(existsSync(join(state.dir, 'relay.sock'))).toBe(true);
+    expect(existsSync(join(state.dir, 'relay.secret'))).toBe(true);
+    expect(s1.stderr() + s2.stderr()).not.toContain('already holds the link');
+    // A third instance can still join the new primary's relay.
+    const s3 = track(await startCli(port, state.db));
+    expect(await echo(s3, 'late')).toContain('echo:late');
+  }, 90_000);
 });

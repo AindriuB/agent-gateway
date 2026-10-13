@@ -41,6 +41,8 @@ const describe = (s: UserSelector | undefined) =>
 export class RelaySecondary {
   private readonly proxy: StdioRelayProxy;
   private stopped = false;
+  /** Only a relay may recover; a process that holds the link, or is degraded, never re-runs startup. */
+  private role: 'relay' | 'primary' | 'degraded' = 'relay';
   private local: Server | undefined;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -68,6 +70,10 @@ export class RelaySecondary {
 
   private async recover(): Promise<void> {
     if (this.stopped) return;
+    if (this.role !== 'relay') {
+      this.opts.log(`the ${this.role} session ended; not re-running startup`);
+      return;
+    }
     this.opts.log('the primary gateway went away; trying to take over or reconnect');
     const outcome = await this.acquire(true, 'the primary gateway went away');
     if (this.stopped) {
@@ -79,6 +85,7 @@ export class RelaySecondary {
   }
 
   private async serveDegraded(reason: string): Promise<void> {
+    this.role = 'degraded';
     this.opts.log(`relay unavailable, serving gateway_status only: ${reason}`);
     const server = this.opts.createDegraded(reason);
     this.local = server;
@@ -100,6 +107,7 @@ export class RelaySecondary {
         const [a, b] = InMemoryTransport.createLinkedPair();
         try {
           if (await this.opts.becomePrimary(a)) {
+            this.role = 'primary';
             const up = new LocalUpstream(b);
             await up.start();
             return { kind: 'upstream', upstream: up };

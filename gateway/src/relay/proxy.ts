@@ -31,7 +31,7 @@ export class StdioRelayProxy {
   private readonly pending = new Set<string>();
   private initialize: RpcMessage | undefined;
   private initialized = false;
-  private readonly splitter = new LineSplitter(MAX_RELAY_LINE_BYTES);
+  private readonly splitter = new LineSplitter(MAX_RELAY_LINE_BYTES, true);
   private started = false;
   private stopped = false;
   private readonly onData = (chunk: Buffer) => this.handleChunk(chunk);
@@ -131,24 +131,17 @@ export class StdioRelayProxy {
   }
 
   private handleChunk(chunk: Buffer): void {
-    let lines: string[];
-    try {
-      lines = this.splitter.push(chunk);
-    } catch {
-      // Reject just that request when its id is visible at the start of the line; otherwise
-      // the stream can no longer be trusted, so replace the upstream (pending ids get RELAY_LOST).
-      const id = /"id"\s*:\s*(-?\d+|"[^"\\]{0,200}")/.exec(this.splitter.droppedHead)?.[1];
+    const lines = this.splitter.push(chunk);
+    // An oversized line is dropped on its own: the upstream and every other request carry on.
+    // Reply only when its top-level id was found reliably; otherwise there is nobody to tell.
+    for (const id of this.splitter.overflows.splice(0)) {
       this.log(`dropped a client line over ${MAX_RELAY_LINE_BYTES} bytes`);
-      if (id !== undefined) {
+      if (id !== undefined)
         this.write({
           jsonrpc: '2.0',
-          id: JSON.parse(id) as string | number,
+          id,
           error: { code: -32600, message: `request line over ${MAX_RELAY_LINE_BYTES} bytes` },
         });
-      } else if (this.up) {
-        this.lose(this.up);
-      }
-      return;
     }
     for (const line of lines) this.handleLine(line);
   }

@@ -153,7 +153,7 @@ describe('StdioRelayProxy back-pressure and oversized lines', () => {
     expect(out.at(-1)).toMatchObject({ id: 8, result: {} });
   });
 
-  it('replaces the upstream when an oversized line has no visible id', async () => {
+  it('answers an id-last oversized request by its top-level id and keeps the upstream', async () => {
     const { proxy, write, out, tick, input } = rig();
     const up = new FakeUpstream();
     let lost = 0;
@@ -161,11 +161,27 @@ describe('StdioRelayProxy back-pressure and oversized lines', () => {
     proxy.attach(up);
     write({ jsonrpc: '2.0', id: 3, method: 'pending' });
     input.write(
-      `{"jsonrpc":"2.0","params":"${'a'.repeat(MAX_RELAY_LINE_BYTES + 5)}","id":4,"method":"x"}\n`,
+      `{"jsonrpc":"2.0","method":"x","params":{"id":99,"s":"${'a'.repeat(MAX_RELAY_LINE_BYTES + 5)}","t":"q\\"id\\":5"},"id":4}\n`,
     );
+    write({ jsonrpc: '2.0', id: 5, method: 'next' });
     await tick();
-    expect(lost).toBe(1);
-    expect(JSON.stringify(out.find((m) => m.id === 3))).toContain('RELAY_LOST');
+    expect(lost).toBe(0);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ id: 4, error: { code: -32600 } });
+    expect(up.sent.map((m) => m.id)).toEqual([3, 5]);
+  });
+
+  it('drops an oversized line with no top-level id silently and keeps going', async () => {
+    const { proxy, write, out, tick, input } = rig();
+    const up = new FakeUpstream();
+    proxy.attach(up);
+    input.write(
+      `{"jsonrpc":"2.0","method":"x","params":{"id":99,"s":"${'a'.repeat(MAX_RELAY_LINE_BYTES + 5)}"}}\n`,
+    );
+    write({ jsonrpc: '2.0', id: 6, method: 'next' });
+    await tick();
+    expect(out).toHaveLength(0);
+    expect(up.sent.map((m) => m.id)).toEqual([6]);
   });
 
   it('LocalUpstream.close tells the proxy', async () => {

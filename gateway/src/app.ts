@@ -200,6 +200,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       output: deps.stdout ?? process.stdout,
       log: writeStatus,
       async becomePrimary(transport) {
+        // Outside the try: teardown must never run against a live primary.
+        if (link) throw new Error('this process already holds the link');
         try {
           await startPrimary(transport);
           return true;
@@ -215,6 +217,8 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startPrimary(transport: Transport): Promise<void> {
+    // Never start over a live primary: it would replace `link` and orphan the original.
+    if (link) throw new Error('this process already holds the link');
     // Hold the link port before touching the shared db: opening it runs migrations and
     // retention deletes, which a secondary instance must never do. A loser fails here with
     // EADDRINUSE. The store is opened in the same tick as listen resolves, before any
