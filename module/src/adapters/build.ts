@@ -22,7 +22,10 @@ export interface BuildHook {
     context: AdapterExecutionContext,
   ): BuildPayload | Promise<BuildPayload>;
   /** Optional: the choices a compendium Item source (and its grants) will ask for. Reads only. */
-  listChoices?(source: unknown, uuid: string): Promise<ChoiceListing[]>;
+  listChoices?(
+    source: unknown,
+    uuid: string,
+  ): Promise<{ choices: ChoiceListing[]; message?: string }>;
 }
 /** Bundled hooks only. Future system tasks insert entries here; no public registration. */
 const hooks: ReadonlyMap<string, BuildHook> = new Map([[pf2eBuildHook.systemId, pf2eBuildHook]]);

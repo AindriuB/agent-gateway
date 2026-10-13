@@ -43,7 +43,7 @@ async function listChoices(ctx: OpContext, uuid: string): Promise<DispatchResult
     if (!doc || doc.documentName !== 'Item' || doc.uuid !== uuid || doc.pack !== pack.collection)
       invalid('Compendium entry not found.');
     const source = typeof doc.toObject === 'function' ? doc.toObject() : doc._source;
-    const choices = await build.listChoices(source, uuid);
+    const { choices, message } = await build.listChoices(source, uuid);
     const structured = characterBuildOutput.parse({
       systemId,
       supported: true,
@@ -51,6 +51,7 @@ async function listChoices(ctx: OpContext, uuid: string): Promise<DispatchResult
       skills: [],
       featSlots: [],
       choices,
+      ...(message ? { message } : {}),
     });
     return { text: JSON.stringify(structured), structured };
   } catch (error) {

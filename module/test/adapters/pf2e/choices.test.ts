@@ -9,6 +9,8 @@ import {
   resetChoicesForTest,
   withChoiceCall,
   choiceFlag,
+  choiceTombstones,
+  MAX_TOMBSTONES,
 } from '../../../src/adapters/pf2e/choices.js';
 import { listChoices, pf2eEmbedHook } from '../../../src/adapters/pf2e/embed.js';
 import { HANDLERS } from '../../../src/tools/index.js';
@@ -280,7 +282,7 @@ describe('listing and preflight', () => {
       toObject: () => ({ name: 'G', system: { rules: [choiceRule({ flag: 'inner' })] } }),
       write: writes,
     });
-    const out = await listChoices(
+    const { choices: out } = await listChoices(
       {
         name: 'Top',
         type: 'class',
@@ -304,7 +306,7 @@ describe('listing and preflight', () => {
     expect(writes).not.toHaveBeenCalled();
   });
   it('marks unsupported kinds and refuses more than 32 documents', async () => {
-    const out = await listChoices(
+    const { choices: out } = await listChoices(
       { name: 'T', system: { rules: [choiceRule({ choices: { query: {} } })] } },
       'u',
     );
@@ -482,5 +484,223 @@ describe('character_build listChoices handler', () => {
     g.game.system = { id: 'dnd5e' };
     const { entry } = entryWith([]);
     expect((await list(entry.uuid)) as any).toMatchObject({ structured: { supported: false } });
+  });
+});
+
+describe('review fixes', () => {
+  it('matches pf2e sluggify for default flags', () => {
+    expect(choiceFlag({}, "Rogue's Racket")).toBe('roguesRacket');
+    expect(choiceFlag({}, 'Armor-Master Of_Things')).toBe('armorMasterOfThings');
+    expect(choiceFlag({}, 'x', 'some-slug')).toBe('someSlug');
+    expect(choiceFlag({ slug: 'my-slug' }, 'x')).toBe('mySlug');
+  });
+
+  describe('compendium filter and owned-item choices', () => {
+    const uuids = Array.from({ length: 60 }, (_, i) => `Compendium.p.c.Item.f${i}`);
+    beforeEach(() => {
+      installChoiceWrapper();
+      class FakeActor {
+        constructor(public data: unknown) {}
+        getRollOptions() {
+          return ['actor'];
+        }
+      }
+      class FakeItem {
+        constructor(
+          public data: unknown,
+          public opts: unknown,
+        ) {}
+        getRollOptions() {
+          return ['item'];
+        }
+      }
+      class FakeRule {
+        constructor(public source: any) {}
+        async inflateChoices() {
+          return this.source.choices.filter
+            ? uuids.map((u, i) => ({ value: u, label: `F${i}` }))
+            : [];
+        }
+      }
+      g.CONFIG = { Actor: { documentClass: FakeActor }, Item: { documentClass: FakeItem } };
+      (FakeRule.prototype as any).preCreate = vi.fn();
+      g.game.pf2e.RuleElements.builtin.ChoiceSet = FakeRule;
+      installChoiceWrapper();
+      g.fromUuid = vi.fn(async () => undefined);
+    });
+    afterEach(() => {
+      delete g.CONFIG;
+      delete g.fromUuid;
+    });
+    const filterRule = { key: 'ChoiceSet', flag: 'pick', choices: { filter: ['x'] } };
+    const feat = (rule: object) => ({ name: 'F', type: 'feat', system: { rules: [rule] } });
+    const prep = (source: any, extra: object = {}) =>
+      pf2eEmbedHook.prepare({
+        systemId: 'pf2e',
+        actor: { feats: new Map() },
+        entry: { uuid: 'Compendium.p.c.Top' },
+        source,
+        overrides: {},
+        ...extra,
+      });
+    it('lists an inflated filter choice (cut at 50, flagged truncated)', async () => {
+      const { choices } = await listChoices(feat(filterRule), 'Compendium.p.c.Top');
+      expect(choices[0]).toMatchObject({ flag: 'pick', truncated: true });
+      expect(choices[0]!.options).toHaveLength(50);
+      expect(choices[0]).not.toHaveProperty('values');
+      expect(choices[0]).not.toHaveProperty('unsupported');
+    });
+    it('accepts a UUID in the full inflated set and rejects one outside it', async () => {
+      await expect(
+        prep(feat(filterRule), { choices: [{ flag: 'pick', value: uuids[59] }] }),
+      ).resolves.toBeDefined();
+      await expect(
+        prep(feat(filterRule), { choices: [{ flag: 'pick', value: 'Compendium.p.c.Item.zzz' }] }),
+      ).rejects.toThrow(/not one of its options/);
+    });
+    it('treats owned-item choices with types as dynamic, and without types as unsupported', async () => {
+      const owned = {
+        key: 'ChoiceSet',
+        flag: 'pick',
+        choices: { ownedItems: true, types: ['weapon'] },
+      };
+      const { choices } = await listChoices(feat(owned), 'u');
+      expect(choices[0]).toMatchObject({ dynamic: true, options: [] });
+      await expect(
+        prep(feat(owned), { choices: [{ flag: 'pick', value: 'anything' }] }),
+      ).resolves.toBeDefined();
+      const bare = { key: 'ChoiceSet', flag: 'pick', choices: { ownedItems: true } };
+      const out = await listChoices(feat(bare), 'u');
+      expect(out.choices[0]).toMatchObject({ unsupported: expect.stringMatching(/without types/) });
+    });
+  });
+
+  describe('GrantItem placeholders', () => {
+    beforeEach(() => {
+      installChoiceWrapper();
+      g.fromUuid = vi.fn(async (u: string) =>
+        u === 'Compendium.p.c.Item.granted'
+          ? {
+              toObject: () => ({
+                name: 'G',
+                system: { rules: [{ key: 'ChoiceSet', flag: 'inner', choices: OPTIONS }] },
+              }),
+            }
+          : undefined,
+      );
+    });
+    afterEach(() => {
+      delete g.fromUuid;
+    });
+    const src = {
+      name: 'F',
+      type: 'feat',
+      system: {
+        rules: [
+          {
+            key: 'ChoiceSet',
+            flag: 'pick',
+            choices: [{ value: 'Compendium.p.c.Item.granted', label: 'G' }],
+          },
+          { key: 'GrantItem', uuid: '{item|flags.pf2e.rulesSelections.pick}' },
+        ],
+      },
+    };
+    const prep = (extra: object) =>
+      pf2eEmbedHook.prepare({
+        systemId: 'pf2e',
+        actor: { feats: new Map() },
+        entry: { uuid: 'Compendium.p.c.Top' },
+        source: structuredClone(src),
+        overrides: {},
+        ...extra,
+      });
+    it('resolves the grant from the decision and then needs the granted choice answered', async () => {
+      const decisions = [{ flag: 'pick', value: 'Compendium.p.c.Item.granted' }];
+      await expect(prep({ choices: decisions })).rejects.toThrow(/"inner"/);
+      await expect(
+        prep({ choices: [...decisions, { flag: 'inner', value: 'a' }] }),
+      ).resolves.toBeDefined();
+      expect(g.fromUuid).toHaveBeenCalledWith('Compendium.p.c.Item.granted');
+    });
+    it('is skipped (with a note) when listing, refused when importing without a decision', async () => {
+      const out = await listChoices(structuredClone(src), 'Compendium.p.c.Top');
+      expect(out.choices.map((c) => c.flag)).toEqual(['pick']);
+      expect(out.message).toMatch(/1 grant/);
+      await expect(prep({ onUnanswered: 'ignore' })).rejects.toThrow(/cannot be resolved headless/);
+    });
+  });
+
+  describe('wrapper marker', () => {
+    it('does not rewrap its own marked method, and survives a module wrapping on top', async () => {
+      installChoiceWrapper();
+      const ours = (cls.ChoiceSet.prototype as any).preCreate;
+      installChoiceWrapper();
+      expect((cls.ChoiceSet.prototype as any).preCreate).toBe(ours);
+      // A copy of this wrapper from an older load keeps its marker: left alone.
+      const marked: any = vi.fn();
+      marked[Symbol.for('agent-gateway.pf2e.choiceSetWrapper')] = true;
+      (cls.ChoiceSet.prototype as any).preCreate = marked;
+      installChoiceWrapper();
+      expect((cls.ChoiceSet.prototype as any).preCreate).toBe(marked);
+      // Another module wraps on top of ours: a reinstall terminates and the chain still answers.
+      (cls.ChoiceSet.prototype as any).preCreate = ours;
+      const outer = vi.fn(function (this: any, a: any) {
+        return ours.call(this, a);
+      });
+      (cls.ChoiceSet.prototype as any).preCreate = outer;
+      expect(installChoiceWrapper()).toBe(true);
+      const rule = rules(cls)('pick');
+      await call('c1', [{ flag: 'pick', value: 'b' }], async () => {
+        await fire(rule, 'c1');
+      });
+      expect(rule.selection).toBe('b');
+      expect(prompt).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('timed-out calls', () => {
+    beforeEach(() => {
+      installChoiceWrapper();
+    });
+    it('keeps a bounded tombstone so a late ChoiceSet never prompts, then clears it', async () => {
+      let finish!: () => void;
+      const gate = new Promise<void>((r) => (finish = r));
+      await expect(
+        withChoiceCall('c1', 'act', [{ flag: 'pick', value: 'a' }], () => gate, 10),
+      ).rejects.toThrow(/Timed out/);
+      expect(liveChoiceCalls()).toBe(0);
+      expect(choiceTombstones()).toBe(1);
+      const late = rules(cls)('pick');
+      const args = await fire(late, 'c1');
+      expect(args.ruleSource.ignored).toBe(true);
+      expect(late.selection).toBeNull();
+      expect(cls.original).not.toHaveBeenCalled();
+      expect(prompt).not.toHaveBeenCalled();
+      // Another actor's native ChoiceSet with the same id is not swallowed.
+      await fire(rules(cls, 'other')('pick'), 'c1');
+      expect(cls.original).toHaveBeenCalledTimes(1);
+      finish();
+      await gate;
+      await Promise.resolve();
+      expect(choiceTombstones()).toBe(0);
+    });
+    it('refuses new calls once the tombstone bound is reached', async () => {
+      const gates: Array<() => void> = [];
+      for (let i = 0; i < MAX_TOMBSTONES; i++) {
+        await expect(
+          withChoiceCall(`t${i}`, 'act', [], () => new Promise<void>((r) => gates.push(r)), 1),
+        ).rejects.toThrow(/Timed out/);
+      }
+      expect(choiceTombstones()).toBe(MAX_TOMBSTONES);
+      const write = vi.fn();
+      await expect(call('next', [], async () => write())).rejects.toMatchObject({
+        code: 'INVALID_ARGS',
+      });
+      expect(write).not.toHaveBeenCalled();
+      gates.forEach((r) => r());
+      await new Promise((r) => setTimeout(r, 0));
+      expect(choiceTombstones()).toBe(0);
+    });
   });
 });

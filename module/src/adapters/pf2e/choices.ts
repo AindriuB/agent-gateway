@@ -29,7 +29,14 @@ export interface ListedChoice {
   truncated: boolean;
   /** Set when the gateway cannot answer this kind of choice. */
   unsupported?: string;
+  /** True when the options depend on the Actor and are checked when the item is created. */
+  dynamic?: boolean;
 }
+/** A listed choice plus, internally, every valid value (the listing itself is cut at 50). */
+export interface FoundChoice extends ListedChoice {
+  values?: ReadonlySet<string>;
+}
+const MAX_VALUES = 5000;
 
 const G = globalThis as any;
 const isPlain = (v: unknown): v is Record<string, any> =>
@@ -40,16 +47,48 @@ const localize = (text: unknown): string => {
   return String(out).slice(0, MAX_LABEL);
 };
 
-/** pf2e's default flag (`#setDefaultFlag`): the rule's own, stripped, else the camel-cased slug. */
+// pf2e's `sluggify` (pf2e.mjs:210-221), copied so that default flags agree exactly.
+const kt = String.raw`[\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Join_Control}]`;
+const At = String.raw`[^\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Join_Control}]`;
+const jt = String.raw`(?=^|$|${kt})`;
+const Mt = String.raw`\p{Lowercase_Letter}`;
+const Nt = String.raw`\p{Uppercase_Letter}`;
+const Pt = new RegExp(At, 'gu');
+const Ft = new RegExp(`(${Mt})(${Nt}${jt})`, 'gu');
+const It = /[^-\p{White_Space}\p{Alphabetic}\p{Mark}\p{Decimal_Number}\p{Join_Control}]/gu;
+const Lt = new RegExp(`${Nt}|${At}${Mt}`, 'gu');
+export function sluggify(text: string, camel: 'dromedary' | null = null): string {
+  if (text === '-') return text;
+  if (camel === 'dromedary')
+    return text
+      .replace(It, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(Lt, (m, offset: number) => (offset === 0 ? m.toLowerCase() : m.toUpperCase()))
+      .replace(/\s+/g, '');
+  return text
+    .replace(Ft, '$1-$2')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(Pt, ' ')
+    .trim()
+    .replace(/[-\s]+/g, '-');
+}
+
+/**
+ * pf2e's default flag (`#setDefaultFlag`, pf2e.mjs:32053): the rule's own flag stripped to
+ * `[-a-z0-9]`, else the dromedary slug of `rule.slug ?? item.slug ?? item.name`. An item without a
+ * stored slug has the slug `sluggify(name)`.
+ */
 export function choiceFlag(rule: any, itemName: unknown, itemSlug?: unknown): string {
   if (typeof rule?.flag === 'string' && rule.flag.length > 0)
     return rule.flag.replace(/[^-a-z0-9]/gi, '').slice(0, 64);
-  const base = String(rule?.slug ?? itemSlug ?? itemName ?? '');
-  const words = base.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  return words
-    .map((w, i) => (i === 0 ? w : w[0]!.toUpperCase() + w.slice(1)))
-    .join('')
-    .slice(0, 64);
+  const slug =
+    typeof rule?.slug === 'string' && rule.slug
+      ? rule.slug
+      : typeof itemSlug === 'string' && itemSlug
+        ? itemSlug
+        : sluggify(String(itemName ?? ''));
+  return sluggify(slug, 'dromedary').slice(0, 64);
 }
 
 /** Why a ChoiceSet cannot be answered by value, or undefined when it can. */
@@ -57,8 +96,8 @@ function unsupportedKind(rule: any): string | undefined {
   const c = rule?.choices;
   if (isPlain(c) && 'query' in c) return 'query choices';
   if (rule?.allowedDrops) return 'drop-in choices';
-  if (isPlain(c) && 'attacks' in c) return 'attack choices';
-  if (isPlain(c) && 'ownedItems' in c) return 'owned-item choices';
+  if (isPlain(c) && c.ownedItems && !(Array.isArray(c.types) && c.types.length))
+    return 'owned-item choices without types';
   return undefined;
 }
 
@@ -86,8 +125,35 @@ function staticOptions(rule: any): Array<{ value: string; label: string }> | und
   return out;
 }
 
+/** Inflates a rule's choices on a temporary Actor and Item. Nothing is written or persisted. */
+export type Inflater = (rule: any, source: any) => Promise<unknown[] | undefined>;
+export function makeInflater(): Inflater {
+  let actor: any;
+  return async (rule, source) => {
+    try {
+      const ActorClass = G.CONFIG?.Actor?.documentClass;
+      const ItemClass = G.CONFIG?.Item?.documentClass;
+      const RuleClass = target();
+      if (!ActorClass || !ItemClass || typeof RuleClass !== 'function') return undefined;
+      actor ??= new ActorClass({ name: 'agent-gateway temporary', type: 'character' });
+      const item = new ItemClass(structuredClone(source), { parent: actor });
+      const instance = new RuleClass(structuredClone(rule), { parent: item });
+      const rollOptions = new Set([actor.getRollOptions(), item.getRollOptions('parent')].flat());
+      const out = await instance.inflateChoices(rollOptions, []);
+      return Array.isArray(out) ? out : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+}
+
 /** Describe one unselected ChoiceSet rule of an item source. */
-export function describeChoice(rule: any, source: any, itemUuid: string): ListedChoice {
+export async function describeChoice(
+  rule: any,
+  source: any,
+  itemUuid: string,
+  inflate?: Inflater,
+): Promise<FoundChoice> {
   const flag = choiceFlag(rule, source?.name, source?.system?.slug);
   const base = {
     flag,
@@ -95,18 +161,35 @@ export function describeChoice(rule: any, source: any, itemUuid: string): Listed
     prompt: localize(rule?.prompt ?? 'PF2E.UI.RuleElements.ChoiceSet.Prompt'),
   };
   const kind = unsupportedKind(rule);
-  const options = kind ? undefined : staticOptions(rule);
-  if (!options)
-    return {
-      ...base,
-      options: [],
-      truncated: false,
-      unsupported: kind ?? 'choices that cannot be resolved without an Actor',
-    };
+  if (kind) return { ...base, options: [], truncated: false, unsupported: kind };
+  let all = staticOptions(rule);
+  if (!all) {
+    // Owned items and attacks depend on the real Actor: checked when the item is created.
+    const c = rule?.choices;
+    const onActor = isPlain(c) && (c.ownedItems || c.attacks || c.unarmedAttacks);
+    // A compendium filter: ask pf2e itself, on temporary documents.
+    const inflated = onActor ? undefined : await inflate?.(rule, source);
+    const list = inflated?.map((o: any) => ({
+      value: o?.value,
+      label: o?.label,
+    }));
+    if (
+      list &&
+      list.length <= MAX_VALUES &&
+      list.every((o) => typeof o.value === 'string' || typeof o.value === 'number')
+    ) {
+      all = list.map((o) => ({
+        value: String(o.value).slice(0, 500),
+        label: localize(o.label ?? o.value),
+      }));
+    }
+  }
+  if (!all) return { ...base, options: [], truncated: false, dynamic: true };
   return {
     ...base,
-    options: options.slice(0, MAX_OPTIONS),
-    truncated: options.length > MAX_OPTIONS,
+    options: all.slice(0, MAX_OPTIONS),
+    truncated: all.length > MAX_OPTIONS,
+    values: new Set(all.map((o) => o.value)),
   };
 }
 
@@ -116,12 +199,12 @@ export function describeChoice(rule: any, source: any, itemUuid: string): Listed
  * names a value outside the options, and, unless `onUnanswered` is `ignore`, any unanswered choice.
  */
 export function resolveChoices(
-  found: readonly ListedChoice[],
+  found: readonly FoundChoice[],
   decisions: readonly ChoiceDecision[],
   onUnanswered: 'reject' | 'ignore',
-  labelOf: (choice: ListedChoice) => string,
+  labelOf: (choice: FoundChoice) => string,
 ): void {
-  const answered = new Set<ListedChoice>();
+  const answered = new Set<FoundChoice>();
   for (const d of decisions) {
     const hits = found.filter(
       (c) => c.flag === d.flag && (d.itemUuid === undefined || c.itemUuid === d.itemUuid),
@@ -133,7 +216,8 @@ export function resolveChoices(
     for (const c of hits) {
       if (c.unsupported)
         invalid(`${labelOf(c)}: choice "${c.flag}" cannot be answered (${c.unsupported})`);
-      if (!c.options.some((o) => o.value === d.value))
+      // A dynamic choice (depends on the Actor) is checked exactly when the item is created.
+      if (!c.dynamic && !(c.values ?? new Set(c.options.map((o) => o.value))).has(d.value))
         invalid(`${labelOf(c)}: value for choice "${c.flag}" is not one of its options`);
       answered.add(c);
     }
@@ -159,16 +243,26 @@ interface CallEntry {
   readonly actorId: string;
   readonly decisions: readonly ChoiceDecision[];
   readonly report: ChoiceReportEntry[];
-  readonly expires: number;
 }
-const registry = new Map<string, CallEntry>();
+/**
+ * Live calls, and tombstones for calls that timed out while their native create still runs. They
+ * live on globalThis so that a wrapper left by an earlier copy of this module reads the same state.
+ */
+const SHARED = Symbol.for('agent-gateway.pf2e.choiceState');
+const shared: { registry: Map<string, CallEntry>; tombstones: Map<string, string> } = (G[SHARED] ??=
+  { registry: new Map(), tombstones: new Map() });
+const registry = shared.registry;
+const tombstones = shared.tombstones;
+export const MAX_TOMBSTONES = 32;
 const MARK = Symbol.for('agent-gateway.pf2e.choiceSetWrapper');
-const state: { original?: (...a: any[]) => any; error?: string } = {};
+const HANDLED = Symbol('agent-gateway.pf2e.choiceHandled');
+const state: { error?: string } = {};
 
-const target = (): any => G.game?.pf2e?.RuleElements?.builtin?.ChoiceSet;
-const purge = (now = Date.now()): void => {
-  for (const [id, e] of registry) if (e.expires <= now) registry.delete(id);
-};
+function target(): any {
+  return G.game?.pf2e?.RuleElements?.builtin?.ChoiceSet;
+}
+/** Timed-out calls whose create is still running (for tests and diagnostics). */
+export const choiceTombstones = (): number => tombstones.size;
 /** Live call count (for tests and diagnostics). */
 export const liveChoiceCalls = (): number => registry.size;
 
@@ -188,8 +282,13 @@ const sourceUuid = (rule: any, args: any): string | undefined => {
   return typeof v === 'string' ? v : undefined;
 };
 
-async function answer(self: any, args: any, entry: CallEntry): Promise<unknown> {
-  const original = state.original!;
+async function answer(
+  self: any,
+  args: any,
+  entry: CallEntry,
+  original: (...a: any[]) => any,
+): Promise<unknown> {
+  args[HANDLED] = true;
   const rule = args.ruleSource;
   const uuid = sourceUuid(self, args);
   const ignore = (flag: string, status: ChoiceReportEntry['status']): undefined => {
@@ -249,24 +348,29 @@ async function answer(self: any, args: any, entry: CallEntry): Promise<unknown> 
   return ignore(flag, 'unanswered');
 }
 
-function wrapper(this: any, args: any): unknown {
-  const callId = args?.operation?.agentGateway?.callId;
-  const entry = typeof callId === 'string' ? registry.get(callId) : undefined;
-  if (
-    !entry ||
-    entry.expires <= Date.now() ||
-    typeof this?.actor?.id !== 'string' ||
-    this.actor.id !== entry.actorId
-  )
-    return state.original!.call(this, args);
-  return answer(this, args, entry);
+function makeWrapper(original: (...a: any[]) => any): (...a: any[]) => unknown {
+  const wrapper = function (this: any, args: any): unknown {
+    if (args?.[HANDLED]) return original.call(this, args);
+    const callId = args?.operation?.agentGateway?.callId;
+    const actorId = this?.actor?.id;
+    if (typeof callId !== 'string' || typeof actorId !== 'string') return original.call(this, args);
+    // A call that timed out while its create still runs: never prompt, never answer.
+    if (tombstones.get(callId) === actorId) {
+      if (isPlain(args?.ruleSource)) args.ruleSource.ignored = true;
+      return undefined;
+    }
+    const entry = registry.get(callId);
+    if (!entry || entry.actorId !== actorId) return original.call(this, args);
+    return answer(this, args, entry, original);
+  };
+  (wrapper as any)[MARK] = true;
+  return wrapper;
 }
-(wrapper as any)[MARK] = true;
 
 /**
- * Install the one wrapper. Idempotent: the class is re-resolved each time, a method that is
- * already the wrapper is left alone, and a swapped method is stored as the new original and
- * wrapped. Returns whether it is in place.
+ * Install the one wrapper. Idempotent: the class is re-resolved each time, a method that already
+ * carries the wrapper marker is left alone (even if it is another copy of this module's), and a
+ * swapped method is wrapped as the new original. Returns whether it is in place.
  */
 export function installChoiceWrapper(): boolean {
   const proto = target()?.prototype;
@@ -275,29 +379,29 @@ export function installChoiceWrapper(): boolean {
     state.error = 'ChoiceSet.prototype.preCreate is not available';
     return false;
   }
-  if (current !== wrapper) {
-    state.original = current;
-    proto.preCreate = wrapper;
-  }
+  if (!current[MARK]) proto.preCreate = makeWrapper(current);
   state.error = undefined;
   return true;
 }
-/** True while the wrapper is the live method (checked per call; never installs). */
+/** True while the live method carries the wrapper marker (checked per call; never installs). */
 export const choiceWrapperInstalled = (): boolean =>
-  typeof state.original === 'function' && target()?.prototype?.preCreate === wrapper;
+  typeof target()?.prototype?.preCreate === 'function' &&
+  target().prototype.preCreate[MARK] === true;
 export const choiceWrapperError = (): string =>
   state.error ?? 'the ChoiceSet wrapper is not installed';
 
 /** Test hook: forget all module state. */
 export function resetChoicesForTest(): void {
   registry.clear();
-  state.original = undefined;
+  tombstones.clear();
   state.error = undefined;
 }
 
 /**
  * Run `create` with these decisions registered for `callId` and `actorId`, and return its result
- * with the report. The entry is removed on every exit, including a throw or the TTL expiring.
+ * with the report. The entry is removed on every exit. When the time limit passes while `create`
+ * is still running, the call becomes a tombstone (bounded, see MAX_TOMBSTONES): the wrapper then
+ * ignores every remaining ChoiceSet of that call, so none can prompt, until `create` settles.
  */
 export async function withChoiceCall<T>(
   callId: string,
@@ -308,30 +412,35 @@ export async function withChoiceCall<T>(
 ): Promise<{ value: T; report: ChoiceReportEntry[] }> {
   if (!choiceWrapperInstalled())
     invalid(`Choice answering is unavailable: ${choiceWrapperError()}`);
-  purge();
-  if (registry.has(callId)) invalid('This call is already registered for choice answering');
+  if (registry.has(callId) || tombstones.has(callId))
+    invalid('This call is already registered for choice answering');
   if (registry.size >= MAX_LIVE_CALLS)
     invalid('Too many concurrent imports are answering choices; try again shortly');
-  const entry: CallEntry = {
-    callId,
-    actorId,
-    decisions,
-    report: [],
-    expires: Date.now() + ttlMs,
-  };
+  if (tombstones.size >= MAX_TOMBSTONES)
+    invalid('Earlier imports that timed out are still finishing; try again shortly');
+  const entry: CallEntry = { callId, actorId, decisions, report: [] };
   registry.set(callId, entry);
+  const created = (async () => create())();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   try {
     const value = await Promise.race([
-      create(),
+      created,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('Timed out while creating with choice answers')),
-          ttlMs,
-        );
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error('Timed out while creating with choice answers'));
+        }, ttlMs);
       }),
     ]);
     return { value, report: entry.report };
+  } catch (error) {
+    if (timedOut) {
+      tombstones.set(callId, actorId);
+      const done = () => void tombstones.delete(callId);
+      created.then(done, done);
+    }
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
     registry.delete(callId);

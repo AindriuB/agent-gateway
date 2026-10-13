@@ -16,6 +16,10 @@ export const choiceListing = z.strictObject({
     .max(50)
     .describe('Selectable options (empty when unsupported)'),
   truncated: z.boolean().describe('Whether the option list was cut at 50'),
+  dynamic: z
+    .boolean()
+    .optional()
+    .describe('Options depend on the Actor and are checked exactly when the item is created'),
   unsupported: z
     .string()
     .max(100)
