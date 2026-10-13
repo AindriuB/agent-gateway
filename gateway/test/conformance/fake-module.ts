@@ -98,8 +98,13 @@ async function serveOnce(port: number, token: string, readyFile: string): Promis
   ws.on('message', (d) => {
     const m = JSON.parse(d.toString()) as { type: string; id?: string; args?: { value?: string } };
     if (m.type === 'welcome') {
+      ws.send(JSON.stringify({ type: 'eventPolicy', enabled: true, retentionDays: 7 }));
       ws.send(
-        JSON.stringify({ type: 'toolset', tools: [...coreAnnouncements(), FIXTURE_PACK_TOOL] }),
+        JSON.stringify({
+          type: 'toolset',
+          eventReadAllowed: true,
+          tools: [...coreAnnouncements(), FIXTURE_PACK_TOOL],
+        }),
       );
       // The gateway handles frames in order, so its pong to this ping means the toolset is applied.
       ws.send(JSON.stringify({ type: 'ping' }));

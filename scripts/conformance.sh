@@ -53,6 +53,9 @@ inspect() {
 # gateway-wrapper.mjs holds the request until the fake module has announced its tools.
 list="$(inspect --method tools/list)"
 grep -q '"demo-echo"' <<<"$list" || { echo "conformance: tools/list missing demo-echo" >&2; exit 1; }
+for t in events_poll events_history; do
+  grep -q "\"$t\"" <<<"$list" || { echo "conformance: tools/list missing $t" >&2; exit 1; }
+done
 grep -q '"actor_summary"' <<<"$list" || { echo "conformance: tools/list missing core tools" >&2; exit 1; }
 
 call="$(inspect --method tools/call --tool-name demo-echo --tool-arg value=conformance)"
