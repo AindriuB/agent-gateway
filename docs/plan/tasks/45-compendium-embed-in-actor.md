@@ -112,3 +112,8 @@ Head `7d2eb54`. Tester PASS: one `serialise-scaling` timing flake, then two clea
 - Apply in the result text:
   - The uncorrelated-write count may include concurrent writes to the same Actor.
   - pf2e `ItemPF2e._onCreate` (:45816-45822) may make an unawaited Actor update without callOptions, which is not counted (task 44).
+
+## Attempt 3 — live e2e failed
+Head `d11bbd9`, bundle `14860134…` deployed to homelab; Foundry 14.369, pf2e 8.6.0, `test-world`, approved by Andrew 2026-10-13. Both write tests failed. A read-only check afterwards found no leftover actors.
+- **Real bug:** "embeds a weapon…" returned `INVALID_ARGS: Use the explicit folder argument`. A pf2e compendium source from `toObject()` has the keys `_id, img, name, system, type, _stats, effects, folder, sort, ownership, flags` (probed live; Dagger has `folder: null`). The embed path passes `folder` (and `sort`) through to the create-data check, which rejects it. Strip compendium-only root keys (`folder`, `sort`, plus any other key the existing `checkCreate`/`bounded` rejects for embedded Items) from the source before embedding. Add a unit test that uses a source carrying `folder: null` and `sort`.
+- **Spec bug:** "embeds a feat into a free slot" returned `Unknown feat slot "ancestry-1"`. Probed live: a bare character's slotted groups (`ancestry`, `class`, `skill`, `general`) have **no** slots until it has an ancestry or class. Fix the spec: first give the temporary actor an ancestry, for example by embedding the compendium Human ancestry through this same tool if its rules are prompt-free, or by creating a minimal custom ancestry with `document_create` as `e2e/pf2e-build` does. Then pick an open `ancestry-*` slot that actually exists rather than hard-coding one.
