@@ -1,8 +1,8 @@
 # 43 — Write user documentation, security model and privacy statement
 
 **Repo:** .
-**Depends on:** 65, 35, 38, 42
-**Status:** MVP B (after A), last.
+**Depends on:** 65, 35, 38, 42, 67, 68
+**Status:** MVP B (after A). B order 9, last.
 **Owns:**
 - README.md
 - docs/guides/**
@@ -20,7 +20,7 @@ statement that says exactly what data goes where, ready for the Foundry listing.
 - docs/plan/specs/2026-10-09-agent-gateway.md:197-201 — submission checklist and docs list
 - docs/security.md (29), docs/server-mode.md (42), docs/compatibility.md (40)
 - docs/packs/** (20f) — pack-author docs; spec section 1 "Tool packs" (trust model) and section 6
-- docs/spikes/foundry-socket-identity.md (10b); task 11 isolation tests (`gateway/test/routing/isolation.test.ts`); task 36 server-mode pairing confirmation and the local-mode trust assumption recorded in its PR
+- docs/spikes/foundry-socket-identity.md (10b); task 11 isolation tests (`gateway/test/routing/isolation.test.ts`); task 68 server-mode pairing confirmation and the local-mode trust comment in `gateway/src/link/server.ts`
 
 ## Acceptance
 - [ ] README quick start: install module from manifest URL, `npx foundry-agent-gateway`, pair, connect Claude Desktop; plus Ko-fi and GitHub Sponsors links and the MIT licence
@@ -37,4 +37,4 @@ statement that says exactly what data goes where, ready for the Foundry listing.
 - Foundry listing text and submission (manual, Andrew)
 
 ## MVP split (2026-10-13)
-Depends was `29, 32, 33, 36, 38, 41, 20f, 35b`. 65 (MVP A) writes the README quick start, the Claude Desktop and Claude Code guides, `docs/privacy.md` and the base security model. This task extends them with the ChatGPT-with-tunnel, Gemini CLI, Gemini app and headless/server-mode guides, and `.github/FUNDING.yml`. The items that need 36 (server-mode pairing confirmation in "Multi-user isolation") and 35b (links to `docs/audit-trail.md`, audit-trail privacy) move with those tasks beyond B unless they land first.
+Depends was `29, 32, 33, 36, 38, 41, 20f, 35b`. 65 (MVP A) writes the README quick start, the Claude Desktop and Claude Code guides, `docs/privacy.md` and the base security model. This task extends them with the ChatGPT-with-tunnel, Gemini CLI, Gemini app and headless/server-mode guides, and `.github/FUNDING.yml`. The server-mode pairing confirmation in "Multi-user isolation" now comes from 68 and the consent and revocation flow from 67 (split from 36), so those items stay in scope. Items that need 35b (links to `docs/audit-trail.md`, audit-trail privacy) move with 35b beyond B unless it lands first.

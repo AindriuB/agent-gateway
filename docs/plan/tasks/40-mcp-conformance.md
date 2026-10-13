@@ -1,8 +1,8 @@
 # 40 — Add MCP conformance and cross-vendor schema checks
 
 **Repo:** .
-**Depends on:** 63, 34, 35
-**Status:** MVP B (after A), after 35.
+**Depends on:** 63, 34, 35, 67
+**Status:** MVP B (after A). B order 8, after 67 (an OAuth run needs a consent step that can approve).
 **Owns:**
 - scripts/conformance.sh
 - gateway/test/conformance/**

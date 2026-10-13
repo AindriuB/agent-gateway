@@ -31,6 +31,6 @@ same stdio gateway that 61 makes installable from npm. Built locally from the
 
 ## Out of scope
 - Uploading the bundle or any GitHub release (64, 66)
-- Signing with `mcpb sign` (Andrew's decision; unsigned by default)
+- Signing with `mcpb sign`: MVP A ships the bundle unsigned (Andrew, 2026-10-13); signing is for a later release
 - Changes to gateway source or `gateway/package.json` (61)
 - Root `package.json` `scripts` (64)

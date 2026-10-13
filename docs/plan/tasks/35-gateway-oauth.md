@@ -30,8 +30,8 @@ short-lived access tokens stored hashed, and scopes that form permission layer 1
 - [ ] `npm run verify` passes
 
 ## Out of scope
-- Consent page UI and in-Foundry revocation (36)
+- Consent page UI and in-Foundry revocation (67)
 - Tunnel setup (documented in 43)
 
 ## MVP split (2026-10-13)
-With 36 deferred beyond B, the consent step stays the auto-deny placeholder named in the Acceptance list, so no remote client can complete authorization in MVP B. Andrew decides how B gets a working consent step (see the MVP split note in 36).
+The consent step stays the auto-deny placeholder named in the Acceptance list. 67 (MVP B, next after this task) replaces it with the real consent page and adds self-service grant revocation, so remote clients can authorize in MVP B once 67 lands.
