@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Written against dnd5e 5.1 (Foundry v13): Activity#use, ItemDataModel activities, toggleStatusEffect.
+// Written against dnd5e 6.0.6 on Foundry 14; line references are to systems/dnd5e/dnd5e.mjs of that release.
 import type { SystemAdapter, ConditionChange, AdapterExecutionContext } from '../types.js';
 import { invalid } from '../../tools/_write.js';
 
-declare const game: any;
 declare const CONFIG: any;
 declare const ChatMessage: any;
+declare const Hooks: any;
 
 const MAX_ACTIONS = 128;
 const MAX_ITEMS = 256;
@@ -27,15 +27,6 @@ const list = (v: unknown): any[] => {
     return [];
   }
 };
-const localize = (v: unknown): string => {
-  const s = text(v, 400);
-  try {
-    return game?.i18n?.localize ? text(game.i18n.localize(s), 1000) : s;
-  } catch {
-    return s;
-  }
-};
-
 function summary(actor: any) {
   const s = actor.system ?? {};
   const attributes: { key: string; label: string; value: string }[] = [];
@@ -50,17 +41,17 @@ function summary(actor: any) {
       `${hp.value}/${num(hp.max) ?? '?'}` + (num(hp.temp) ? ` (+${hp.temp} temp)` : ''),
     );
   add('ac', 'Armor Class', text(s.attributes?.ac?.value));
+  // Level is derived on characters (dnd5e.mjs:11587, details.level, persisted: false); the Challenge
+  // Rating is stored on NPCs (dnd5e.mjs:85320, details.cr).
   if (actor.type === 'npc') {
     const cr = s.details?.cr;
     add('cr', 'Challenge Rating', cr === null || cr === undefined ? undefined : text(cr));
   } else {
     add('level', 'Level', text(num(s.details?.level)));
   }
-  add(
-    'prof',
-    'Proficiency Bonus',
-    num(s.attributes?.prof) === undefined ? undefined : signed(s.attributes.prof),
-  );
+  const prof = num(s.attributes?.prof);
+  add('prof', 'Proficiency Bonus', prof === undefined ? undefined : signed(prof));
+  // abilities.<key>.mod is derived (dnd5e.mjs:11314).
   for (const key of ABILITIES) {
     const a = s.abilities?.[key];
     const mod = num(a?.mod);
@@ -71,8 +62,9 @@ function summary(actor: any) {
         `${signed(mod)}${num(a.value) === undefined ? '' : ` (${a.value})`}`,
       );
   }
+  // Speeds live in attributes.movement.speeds.<type> (dnd5e.mjs:5476, :7419 migrates the old path).
   const mv = s.attributes?.movement;
-  const walk = num(mv?.walk);
+  const walk = num(mv?.speeds?.walk);
   if (walk !== undefined) add('speed', 'Speed', `${walk} ${text(mv.units, 8) || 'ft'}`);
   return {
     name: text(actor.name, 1000),
@@ -82,28 +74,41 @@ function summary(actor: any) {
   };
 }
 
+/** system.activities is an ActivityCollection, a Collection keyed by activity id (dnd5e.mjs:28454). */
 const activitiesOf = (item: any): any[] => list(item?.system?.activities).filter((a) => a?.id);
+/** Item uses: value is derived from max - spent (dnd5e.mjs:14286-14298). */
 const usesLabel = (item: any): string | undefined => {
   const max = num(item.system?.uses?.max);
   const value = num(item.system?.uses?.value);
   return max && value !== undefined ? `${value}/${max} uses` : undefined;
 };
 const spellLevel = (item: any): number => num(item.system?.level) ?? 0;
+/**
+ * actor.system.spells maps a slot key (spell1..spell9, pact, ...) to { value, max, level, type }
+ * (dnd5e.mjs:17951, :17997-17998, :18060-18061).
+ */
 function slotLabel(actor: any, level: number): string | undefined {
-  const sp = actor.system?.spells?.[`spell${level}`];
-  if (num(sp?.max) && num(sp?.value) !== undefined) return `${sp.value}/${sp.max} slots`;
-  const pact = actor.system?.spells?.pact;
-  if (num(pact?.max) && num(pact?.value) !== undefined && pact.level === level)
-    return `${pact.value}/${pact.max} pact slots`;
+  const spells = actor.system?.spells ?? {};
+  const own = spells[`spell${level}`];
+  const slot = num(own?.max)
+    ? own
+    : Object.values<any>(spells).find((x) => x?.level === level && num(x.max));
+  if (num(slot?.max) && num(slot?.value) !== undefined) return `${slot.value}/${slot.max} slots`;
   return undefined;
 }
-/** Spells an Actor can cast now: always, at will, innate and pact, plus prepared ones that are. */
+/**
+ * Spells in 6.0 carry system.method and a numeric system.prepared: 0 unprepared, 1 prepared,
+ * 2 always (dnd5e.mjs:33892-33893, :53536-53548). Methods that do not prepare (innate, pact,
+ * at will) are always castable (canPrepare, :34033).
+ */
 function castable(actor: any, spell: any): boolean {
-  if (actor.type === 'npc') return true;
-  const p = spell.system?.preparation;
-  if (spellLevel(spell) === 0) return true;
-  return p?.mode !== 'prepared' || p?.prepared === true;
+  if (actor.type === 'npc' || spellLevel(spell) === 0) return true;
+  if (spell.system?.canPrepare !== true) return true;
+  return (num(spell.system?.prepared) ?? 0) > 0;
 }
+
+type Kind = 'use' | 'attack' | 'damage';
+const DAMAGING = new Set(['attack', 'damage', 'save']);
 
 function listActions(actor: any) {
   const rows: { order: number; level: number; action: any }[] = [];
@@ -128,20 +133,26 @@ function listActions(actor: any) {
     for (const act of acts) {
       if (typeof act.use !== 'function') continue;
       const uses = item.type === 'spell' && level > 0 ? slotLabel(actor, level) : usesLabel(item);
-      const name =
+      const base =
         text(act.name, 400) && act.name !== item.name ? `${item.name}: ${act.name}` : item.name;
-      rows.push({
-        order,
-        level,
-        action: {
-          id: `activity:${text(item.id, 64)}:${text(act.id, 64)}`,
-          name: text(name, 1000),
-          group,
-          cost: text(act.activation?.type, 100) || undefined,
-          uses,
-          description: text(act.type, 100) ? `${text(act.type, 100)} activity` : undefined,
-        },
-      });
+      const add = (kind: Kind, label: string, description: string) =>
+        rows.push({
+          order,
+          level,
+          action: {
+            id: `${kind}:${text(item.id, 64)}:${text(act.id, 64)}`,
+            name: text(`${base}${label}`, 1000),
+            group,
+            cost: text(act.activation?.type, 100) || undefined,
+            uses,
+            description,
+          },
+        });
+      add('use', '', `Use (${text(act.type, 100)} activity): posts the card and spends resources`);
+      if (act.type === 'attack' && typeof act.rollAttack === 'function')
+        add('attack', ' (attack roll)', 'Roll the attack without a dialog');
+      if (DAMAGING.has(act.type) && typeof act.rollDamage === 'function')
+        add('damage', ' (damage roll)', 'Roll the damage without a dialog');
     }
   }
   rows.sort((a, b) => a.order - b.order || a.level - b.level);
@@ -154,10 +165,46 @@ function listActions(actor: any) {
 }
 
 /**
- * Activity#use posts its own chat card and spends uses, quantity and slots natively. The message
- * is created here with callOptions (create: false) so the audit witness can correlate it; the
- * resource spend carries no callOptions, so the owning Item and the Actor are snapshotted and the
- * spend is disclosed as not undoable.
+ * Create the usage message with the audit callOptions. Activity#use builds its card with
+ * messageConfig.create = false returning the card data unsaved (dnd5e.mjs:18216), and the roll
+ * builders do the same through buildPost (dnd5e.mjs:72090-72095).
+ */
+async function postData(
+  data: unknown,
+  context: AdapterExecutionContext,
+): Promise<string | undefined> {
+  const raw = (data as any)?.toObject ? (data as any).toObject() : data;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const made = await ChatMessage.create(raw, { ...context.callOptions });
+  return typeof made?.uuid === 'string' ? made.uuid : undefined;
+}
+
+/**
+ * attack/damage rolls return the rolls, not the message. The roll workflow hands one message
+ * config to the `dnd5e.preRoll` hook (dnd5e.mjs:72012-72014, hook name '' appended at :72005);
+ * keep the one whose subject is this activity and read the unsaved data from it afterwards.
+ */
+async function rollUnsaved(
+  activity: any,
+  roll: (message: { create: false }) => Promise<unknown>,
+): Promise<{ rolls: any; data: unknown }> {
+  let config: any;
+  const id = Hooks.on('dnd5e.preRollV2', (c: any, _d: unknown, m: any) => {
+    if (c?.subject === activity) config = m;
+  });
+  try {
+    const rolls = await roll({ create: false });
+    return { rolls, data: config?.data };
+  } finally {
+    Hooks.off('dnd5e.preRollV2', id);
+  }
+}
+
+/**
+ * Activity#use (dnd5e.mjs:17634), Activity#rollAttack (:21483) and Activity#rollDamage (:18274) are
+ * the system's own APIs; no dice are rolled here. Each posts a card natively, which is created here
+ * instead with callOptions. Resource spend (uses, quantity, slots, ammunition) carries none, so the
+ * Item and Actor are snapshotted and the spend is disclosed as not undoable.
  */
 async function performAction(
   actor: any,
@@ -166,54 +213,95 @@ async function performAction(
   context: AdapterExecutionContext,
 ) {
   const parts = actionId.split(':');
-  if (parts[0] !== 'activity' || parts.length !== 3 || !ID.test(parts[1]!) || !ID.test(parts[2]!))
+  const kind = parts[0] as Kind;
+  if (
+    parts.length !== 3 ||
+    !['use', 'attack', 'damage'].includes(kind) ||
+    !ID.test(parts[1]!) ||
+    !ID.test(parts[2]!)
+  )
     return invalid('Unknown action ID');
   const item = actor.items?.get?.(parts[1]);
   const activity = item?.system?.activities?.get?.(parts[2]);
   if (!item || !activity || typeof activity.use !== 'function') return invalid('Unknown action');
-  const level = options.level;
   if (
-    level !== undefined &&
-    (item.type !== 'spell' ||
+    kind === 'attack' &&
+    (activity.type !== 'attack' || typeof activity.rollAttack !== 'function')
+  )
+    return invalid('Unknown action');
+  if (
+    kind === 'damage' &&
+    (!DAMAGING.has(activity.type) || typeof activity.rollDamage !== 'function')
+  )
+    return invalid('Unknown action');
+  if (activity.canUse === false) return invalid('This activity cannot be used');
+  const level = options.level;
+  let slot: string | undefined;
+  if (level !== undefined) {
+    if (
+      kind !== 'use' ||
+      item.type !== 'spell' ||
       typeof level !== 'number' ||
       !Number.isInteger(level) ||
       level < 1 ||
-      level > 9)
+      level > 9
+    )
+      return invalid(
+        'Spell level must be an integer from 1 to 9 and only applies to using a spell',
+      );
+    if (level < Math.max(1, spellLevel(item)))
+      return invalid(`Spell level must be at least ${Math.max(1, spellLevel(item))}`);
+    const spells = actor.system?.spells ?? {};
+    slot = spells[`spell${level}`]?.max
+      ? `spell${level}`
+      : Object.keys(spells).find((k) => spells[k]?.level === level && num(spells[k]?.max));
+    if (!slot) return invalid(`No spell slots of level ${level}`);
+  }
+  if (
+    typeof context?.intendCreate !== 'function' ||
+    typeof context.created !== 'function' ||
+    typeof context.snapshot !== 'function'
   )
-    return invalid('Spell level must be an integer from 1 to 9 and only applies to spells');
-  if (level !== undefined && (level as number) < Math.max(1, spellLevel(item)))
-    return invalid(`Spell level must be at least ${Math.max(1, spellLevel(item))}`);
-  if (typeof context?.intendCreate !== 'function' || typeof context.created !== 'function')
     throw new Error('Audit context unavailable');
-  if (typeof context.snapshot !== 'function') throw new Error('Audit context unavailable');
   for (const uuid of [item.uuid, actor.uuid])
     if (typeof uuid === 'string') await context.snapshot(uuid);
   await context.intendCreate();
   let recorded: string | undefined;
-  let result: any;
+  let outcome: unknown;
+  let summary = '';
   try {
-    // configure: false skips the dialog; the usage message is returned unsaved (create: false).
-    result = await activity.use(
-      level === undefined ? {} : { spell: { slot: `spell${level}` } },
-      { configure: false },
-      { create: false },
-    );
-    const message = result?.message ?? result;
-    const data =
-      typeof message?.toObject === 'function'
-        ? message.toObject()
-        : message && typeof message === 'object' && message.content !== undefined
-          ? message
-          : undefined;
-    if (data) {
-      const made = await ChatMessage.create(data, { ...context.callOptions });
-      if (typeof made?.uuid === 'string') recorded = made.uuid;
+    if (kind === 'use') {
+      // configure: false skips the dialog; subsequentActions: false stops an attack activity
+      // opening its own attack dialog (:21468, :17728); measuredTemplate: false skips template
+      // placement (:17866, :18222); create: false returns the card data unsaved.
+      outcome = await activity.use(
+        {
+          subsequentActions: false,
+          create: { measuredTemplate: false },
+          ...(slot ? { spell: { slot } } : {}),
+        },
+        { configure: false },
+        { create: false },
+      );
+      const results = outcome as any;
+      if (results) recorded = await postData(results.message, context);
+    } else {
+      const rolled = await rollUnsaved(activity, (message) =>
+        kind === 'attack'
+          ? activity.rollAttack({}, { configure: false }, message)
+          : activity.rollDamage({}, { configure: false }, message),
+      );
+      outcome = Array.isArray(rolled.rolls) && rolled.rolls.length ? rolled.rolls : undefined;
+      if (outcome) {
+        recorded = await postData(rolled.data, context);
+        summary = ` (total ${(outcome as any[]).map((r) => text(num(r?.total))).join(', ')})`;
+      }
     }
   } catch (e) {
     return {
       completed: false,
       message:
-        `Using ${text(item.name, 200)} failed; uses, quantity or a spell slot may already have been spent and that cannot be undone: ${text((e as Error)?.message, 300)}`.slice(
+        `Using ${text(item.name, 200)} failed; uses, quantity, ammunition or a spell slot may already have been spent and that cannot be undone: ${text((e as Error)?.message, 300)}`.slice(
           0,
           2000,
         ),
@@ -221,18 +309,25 @@ async function performAction(
   } finally {
     if (recorded) await context.created(recorded);
   }
-  if (result === null || result === undefined)
+  if (!outcome)
     return {
       completed: false,
-      message: `${text(item.name, 200)} was not used (cancelled or no resources)`,
+      message: `${text(item.name, 200)} was not used (cancelled, unavailable or no resources)`,
     };
+  const verb =
+    kind === 'use' ? 'Used' : kind === 'attack' ? 'Rolled attack for' : 'Rolled damage for';
   const note = recorded
-    ? '. Uses or slots spent natively cannot be undone'
-    : '. No usage message was created; uses or slots spent natively cannot be undone';
-  return { completed: true, message: `Used ${text(item.name, 200)}${note}`.slice(0, 2000) };
+    ? '. Resources spent natively cannot be undone'
+    : '. No chat message was created; resources spent natively cannot be undone';
+  return {
+    completed: true,
+    message: `${verb} ${text(item.name, 200)}${summary}${note}`.slice(0, 2000),
+  };
 }
 
 function inventory(actor: any) {
+  // Equippable data (dnd5e.mjs:29263-29265) carries `attunement` (required/optional), `attuned` and
+  // `equipped`; physical data (:29532-29540) carries quantity and weight { value, units }.
   const items = list(actor.items)
     .filter((i) => i && num(i.system?.quantity) !== undefined)
     .slice(0, MAX_ITEMS)
@@ -244,28 +339,30 @@ function inventory(actor: any) {
       };
       const q = num(i.system.quantity);
       if (q !== undefined && q >= 0) out.quantity = q;
-      const w = num(i.system?.weight?.value ?? i.system?.weight);
+      const w = num(i.system?.weight?.value);
       if (w !== undefined) out.weight = `${w} ${text(i.system?.weight?.units, 8) || 'lb'}`;
       if (typeof i.system?.equipped === 'boolean') out.equipped = i.system.equipped;
       // dnd5e attunement is the nearest analogue of the interface's `invested`.
-      if (i.system?.attuned === true || i.system?.attunement === 'required')
+      if (i.system?.attuned === true || (i.system?.attunement && i.system.attunement !== ''))
         out.invested = i.system?.attuned === true;
       return out;
     });
   const totals: { key: string; label: string; value: string }[] = [];
+  // encumbrance.value and thresholds.maximum are derived (dnd5e.mjs:9969-9976).
   const enc = actor.system?.attributes?.encumbrance;
+  const maxWeight = num(enc?.thresholds?.maximum);
   if (num(enc?.value) !== undefined)
     totals.push({
       key: 'weight',
       label: 'Carried weight',
-      value: `${enc.value}${num(enc.max) === undefined ? '' : `/${enc.max}`}`,
+      value: `${enc.value}${maxWeight === undefined ? '' : `/${maxWeight}`}`,
     });
-  const att = num(actor.system?.attributes?.attunement?.value);
-  if (att !== undefined)
+  const att = actor.system?.attributes?.attunement;
+  if (num(att?.value) !== undefined)
     totals.push({
       key: 'attuned',
       label: 'Attuned items',
-      value: `${att}/${num(actor.system.attributes.attunement.max) ?? '?'}`,
+      value: `${att.value}/${num(att.max) ?? '?'}`,
     });
   for (const [k, v] of Object.entries(actor.system?.currency ?? {}))
     if (/^[a-z]{2}$/.test(k) && num(v) !== undefined && totals.length < 16)
@@ -273,28 +370,36 @@ function inventory(actor: any) {
   return { supported: true, items, totals };
 }
 
-/** Status ids the system defines as conditions; falls back to every registered status. */
+/**
+ * Statuses dnd5e defines as conditions (CONFIG.DND5E.conditionTypes, dnd5e.mjs:53941). In v14
+ * CONFIG.statusEffects is keyed by id (dnd5e.mjs:46066) with names already localized (:1381).
+ */
 function knownStatuses(): Map<string, string> {
   const out = new Map<string, string>();
   const allowed = CONFIG?.DND5E?.conditionTypes
     ? new Set(Object.keys(CONFIG.DND5E.conditionTypes))
     : undefined;
-  for (const e of list(CONFIG?.statusEffects)) {
+  for (const e of Object.values<any>(CONFIG?.statusEffects ?? {})) {
     const id = text(e?.id, 64);
-    if (STATUS.test(id) && (!allowed || allowed.has(id)))
-      out.set(id, localize(e.name ?? e.label ?? id));
+    if (STATUS.test(id) && (!allowed || allowed.has(id))) out.set(id, text(e.name ?? id, 1000));
   }
   return out;
 }
+/** Leveled conditions (exhaustion, ...) are ActiveEffects with system.level (dnd5e.mjs:7095-7115). */
+const hasLevels = (id: string): boolean =>
+  Number.isFinite(CONFIG?.DND5E?.conditionTypes?.[id]?.levels);
+const effectsFor = (actor: any, id: string): any[] =>
+  list(actor.effects).filter((e) => list(e?.statuses).includes(id));
 
 function activeConditions(actor: any) {
   const known = knownStatuses();
+  // Actor#statuses is core's Set of status ids from active effects.
   const active = new Set<string>(list(actor.statuses).map((s) => text(s, 64)));
   const out: any[] = [];
   for (const [id, name] of known) {
     if (!active.has(id) || out.length >= MAX_CONDITIONS) continue;
     const row: any = { id, name };
-    const lvl = id === 'exhaustion' ? num(actor.system?.attributes?.exhaustion) : undefined;
+    const lvl = hasLevels(id) ? num(effectsFor(actor, id)[0]?.system?.level) : undefined;
     if (lvl !== undefined && lvl >= 0) row.value = lvl;
     out.push(row);
   }
@@ -306,24 +411,31 @@ async function conditions(actor: any, change?: ConditionChange, context?: Adapte
     if (!STATUS.test(change.id) || !knownStatuses().has(change.id))
       return invalid('Unknown condition');
     if (typeof context?.snapshot !== 'function') throw new Error('Audit context unavailable');
-    if (change.value !== undefined && change.id !== 'exhaustion')
-      return invalid('Only exhaustion takes a value in dnd5e');
+    const leveled = hasLevels(change.id);
+    if (change.value !== undefined && !leveled)
+      return invalid('Only conditions with levels, such as exhaustion, take a value in dnd5e');
+    const existing = effectsFor(actor, change.id);
     const isActive = list(actor.statuses).includes(change.id);
-    if (change.id === 'exhaustion' && change.value !== undefined) {
-      if (!Number.isInteger(change.value) || change.value < 0 || change.value > 10)
-        return invalid('Exhaustion must be an integer from 0 to 10');
-      // A plain Actor update, so it carries the audit callOptions.
-      await actor.update(
-        { 'system.attributes.exhaustion': change.active ? change.value : 0 },
-        { ...context.callOptions },
-      );
+    // Actor5e#toggleStatusEffect (dnd5e.mjs:46059-46075) takes no document options, so its writes
+    // cannot carry callOptions. Enrol the effects it changes so Undo refuses them instead of
+    // half-restoring.
+    const enrol = async () => {
+      for (const e of existing) if (typeof e.uuid === 'string') await context.snapshot(e.uuid);
+    };
+    if (leveled) {
+      // For leveled statuses toggleStatusEffect applies a level delta and ignores `active`
+      // (:46060-46062, ConditionData._applyDelta :7224-7250).
+      const current = num(existing[0]?.system?.level) ?? 0;
+      const target = !change.active ? 0 : (change.value ?? Math.max(current, 1));
+      if (!Number.isInteger(target) || target < 0 || target > 10)
+        return invalid('Condition level must be an integer from 0 to 10');
+      const delta = target - current;
+      if (delta !== 0) {
+        await enrol();
+        await actor.toggleStatusEffect(change.id, { levels: delta });
+      }
     } else if (change.active !== isActive) {
-      // toggleStatusEffect takes no document options, so its writes cannot carry callOptions.
-      // Enrol the effects a removal deletes so Undo refuses them instead of half-restoring.
-      if (!change.active)
-        for (const e of list(actor.effects))
-          if (list(e.statuses).includes(change.id) && typeof e.uuid === 'string')
-            await context.snapshot(e.uuid);
+      await enrol();
       await actor.toggleStatusEffect(change.id, { active: change.active });
     }
   }

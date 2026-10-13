@@ -7,15 +7,18 @@ import { adapterContract } from '../contract.js';
 
 const chatCreate = vi.fn();
 const toggle = vi.fn();
-const actorUpdate = vi.fn();
 const use = vi.fn();
+const rollAttack = vi.fn();
+const rollDamage = vi.fn();
 const coll = (rows: any[]) =>
   Object.assign(rows, { get: (id: string) => rows.find((r) => r.id === id) });
-const act = (id: string, name: string) => ({
+const act = (id: string, name: string, type = 'attack') => ({
   id,
   name,
-  type: 'attack',
+  type,
   use,
+  rollAttack,
+  rollDamage,
   activation: { type: 'action' },
 });
 const sword: any = {
@@ -37,29 +40,31 @@ const fireball: any = {
   type: 'spell',
   system: {
     level: 3,
-    preparation: { mode: 'prepared', prepared: true },
-    activities: coll([act('a2', 'Fireball')]),
+    method: 'spell',
+    canPrepare: true,
+    prepared: 1,
+    activities: coll([act('a2', 'Fireball', 'save')]),
   },
 };
 const unprepared: any = {
   ...fireball,
   id: 's3',
   name: 'Wish',
-  system: { ...fireball.system, preparation: { mode: 'prepared', prepared: false } },
+  system: { ...fireball.system, prepared: 0 },
 };
 const rage: any = {
   id: 'f1',
   uuid: 'Actor.a.Item.f1',
   name: 'Rage',
   type: 'feat',
-  system: { uses: { value: 2, max: 3 }, activities: coll([act('a3', 'Rage')]) },
+  system: { uses: { value: 2, max: 3 }, activities: coll([act('a3', 'Rage', 'utility')]) },
 };
 const ring: any = {
   id: 'r1',
   uuid: 'Actor.a.Item.r1',
   name: 'Ring',
   type: 'equipment',
-  system: { quantity: 1, equipped: true, attuned: true },
+  system: { quantity: 1, equipped: true, attuned: true, attunement: 'required' },
 };
 const poisoned = { uuid: 'Actor.a.ActiveEffect.e1', statuses: new Set(['poisoned']) };
 const actor: any = {
@@ -72,30 +77,33 @@ const actor: any = {
   effects: [poisoned],
   items: coll([sword, fireball, unprepared, rage, ring]),
   toggleStatusEffect: toggle,
-  update: actorUpdate,
   system: {
     attributes: {
       hp: { value: 30, max: 40, temp: 2 },
       ac: { value: 18 },
       prof: 3,
-      movement: { walk: 30, units: 'ft' },
-      encumbrance: { value: 40, max: 150 },
-      exhaustion: 0,
+      movement: { speeds: { walk: 30 }, units: 'ft' },
+      encumbrance: { value: 40, thresholds: { maximum: 150 } },
+      attunement: { value: 1, max: 3 },
     },
     details: { level: 5 },
     abilities: { str: { value: 16, mod: 3 }, dex: { value: 10, mod: 0 } },
-    spells: { spell3: { value: 2, max: 3 } },
+    spells: { spell3: { value: 2, max: 3, level: 3, type: 'spell' } },
     currency: { gp: 12 },
   },
 };
-(globalThis as any).game = { i18n: { localize: (s: string) => s } };
+const hooks = new Map<string, (...a: any[]) => void>();
+(globalThis as any).Hooks = {
+  on: (name: string, fn: any) => (hooks.set(name, fn), name),
+  off: (name: string) => hooks.delete(name),
+};
 (globalThis as any).CONFIG = {
-  DND5E: { conditionTypes: { poisoned: {}, exhaustion: {} } },
-  statusEffects: [
-    { id: 'poisoned', name: 'Poisoned' },
-    { id: 'exhaustion', name: 'Exhaustion' },
-    { id: 'dead', name: 'Dead' },
-  ],
+  DND5E: { conditionTypes: { poisoned: {}, exhaustion: { levels: 6 } } },
+  statusEffects: {
+    poisoned: { id: 'poisoned', name: 'Poisoned' },
+    exhaustion: { id: 'exhaustion', name: 'Exhaustion' },
+    dead: { id: 'dead', name: 'Dead' },
+  },
 };
 (globalThis as any).ChatMessage = { create: chatCreate };
 const callOptions = { agentGateway: { callId: 'call1' } };
@@ -107,14 +115,17 @@ const ctx = { intendCreate, created, snapshot, callOptions } as unknown as Adapt
 adapterContract(dnd5eAdapter, { actor, actorUuid: 'Actor.a', systemId: 'dnd5e' });
 
 describe('dnd5e adapter', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    hooks.clear();
+    poisoned.statuses = new Set(['poisoned']);
+    actor.statuses = new Set(['poisoned']);
+    actor.effects = [poisoned];
+  });
   it('is registered', () => expect(selectAdapter('dnd5e')).toBe(dnd5eAdapter));
-  it('summarises HP, AC, level, ability mods and speed', () => {
-    const a = Object.fromEntries(
-      dnd5eAdapter.actorSummary(actor) instanceof Promise
-        ? []
-        : (dnd5eAdapter.actorSummary(actor) as any).attributes.map((x: any) => [x.key, x.value]),
-    );
+  it('summarises HP, AC, level, ability mods and speed', async () => {
+    const out: any = await dnd5eAdapter.actorSummary(actor);
+    const a = Object.fromEntries(out.attributes.map((x: any) => [x.key, x.value]));
     expect(a).toMatchObject({
       hp: '30/40 (+2 temp)',
       ac: '18',
@@ -126,39 +137,60 @@ describe('dnd5e adapter', () => {
   it('lists weapons, spells by level with slots, features with uses; skips unprepared', async () => {
     const { actions } = (await dnd5eAdapter.listActions(actor)) as any;
     expect(actions.map((x: any) => x.id)).toEqual([
-      'activity:w1:a1',
-      'activity:s1:a2',
-      'activity:f1:a3',
+      'use:w1:a1',
+      'attack:w1:a1',
+      'damage:w1:a1',
+      'use:s1:a2',
+      'damage:s1:a2',
+      'use:f1:a3',
     ]);
-    expect(actions[1]).toMatchObject({ group: 'Level 3 spells', uses: '2/3 slots' });
-    expect(actions[2]).toMatchObject({ group: 'Features', uses: '2/3 uses' });
+    expect(actions.find((x: any) => x.id === 'use:s1:a2')).toMatchObject({
+      group: 'Level 3 spells',
+      uses: '2/3 slots',
+    });
+    expect(actions.find((x: any) => x.id === 'use:f1:a3')).toMatchObject({
+      group: 'Features',
+      uses: '2/3 uses',
+    });
   });
-  it('performs through Activity#use and creates the message with callOptions', async () => {
-    use.mockResolvedValue({ message: { toObject: () => ({ content: 'x' }) } });
+  it('uses an activity headlessly and creates the card with callOptions', async () => {
+    use.mockResolvedValue({ message: { type: 'usage' } });
     chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
-    const r = await dnd5eAdapter.performAction(actor, 'activity:s1:a2', { level: 4 }, ctx);
+    const r: any = await dnd5eAdapter.performAction(actor, 'use:s1:a2', { level: 3 }, ctx);
     expect(use).toHaveBeenCalledWith(
-      { spell: { slot: 'spell4' } },
+      { subsequentActions: false, create: { measuredTemplate: false }, spell: { slot: 'spell3' } },
       { configure: false },
       { create: false },
     );
-    expect(chatCreate).toHaveBeenCalledWith({ content: 'x' }, { ...callOptions });
+    expect(chatCreate).toHaveBeenCalledWith({ type: 'usage' }, { ...callOptions });
     expect(created).toHaveBeenCalledWith('ChatMessage.m');
     expect(snapshot).toHaveBeenCalledWith('Actor.a.Item.s1');
-    expect((r as any).completed).toBe(true);
+    expect(r.completed).toBe(true);
+  });
+  it('rolls an attack without a dialog and posts the captured message with callOptions', async () => {
+    rollAttack.mockImplementation(async (_c: any, _d: any, m: any) => {
+      const config = { data: { type: 'attack' }, create: m.create };
+      hooks.get('dnd5e.preRollV2')?.({ subject: sword.system.activities[0] }, {}, config);
+      return [{ total: 17 }];
+    });
+    chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+    const r: any = await dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+    expect(rollAttack).toHaveBeenCalledWith({}, { configure: false }, { create: false });
+    expect(chatCreate).toHaveBeenCalledWith({ type: 'attack' }, { ...callOptions });
+    expect(r.message).toContain('total 17');
+    expect(hooks.size).toBe(0);
   });
   it('rejects unknown ids and a slot below the spell level', async () => {
+    await expect(dnd5eAdapter.performAction(actor, 'use:zz:a2', {}, ctx)).rejects.toBeDefined();
     await expect(
-      dnd5eAdapter.performAction(actor, 'activity:zz:a2', {}, ctx),
+      dnd5eAdapter.performAction(actor, 'use:s1:a2', { level: 2 }, ctx),
     ).rejects.toBeDefined();
-    await expect(
-      dnd5eAdapter.performAction(actor, 'activity:s1:a2', { level: 2 }, ctx),
-    ).rejects.toBeDefined();
+    await expect(dnd5eAdapter.performAction(actor, 'attack:s1:a2', {}, ctx)).rejects.toBeDefined();
     expect(use).not.toHaveBeenCalled();
   });
   it('reports a thrown use without hiding the spend', async () => {
     use.mockRejectedValue(new Error('boom'));
-    const r = (await dnd5eAdapter.performAction(actor, 'activity:f1:a3', {}, ctx)) as any;
+    const r = (await dnd5eAdapter.performAction(actor, 'use:f1:a3', {}, ctx)) as any;
     expect(r.completed).toBe(false);
     expect(r.message).toContain('cannot be undone');
   });
@@ -169,6 +201,7 @@ describe('dnd5e adapter', () => {
       invested: true,
     });
     expect(inv.items.find((i: any) => i.name === 'Longsword').weight).toBe('3 lb');
+    expect(inv.totals[0]).toMatchObject({ key: 'weight', value: '40/150' });
   });
   it('reads conditions and toggles through toggleStatusEffect', async () => {
     expect(((await dnd5eAdapter.conditions(actor)) as any).conditions).toEqual([
@@ -181,11 +214,18 @@ describe('dnd5e adapter', () => {
       dnd5eAdapter.conditions(actor, { id: 'dead', active: true }, ctx),
     ).rejects.toBeDefined();
   });
-  it('sets exhaustion with callOptions', async () => {
-    await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 2 }, ctx);
-    expect(actorUpdate).toHaveBeenCalledWith(
-      { 'system.attributes.exhaustion': 2 },
-      { ...callOptions },
-    );
+  it('moves leveled conditions by a level delta', async () => {
+    actor.statuses = new Set(['exhaustion']);
+    actor.effects = [
+      { uuid: 'Actor.a.ActiveEffect.x', statuses: new Set(['exhaustion']), system: { level: 2 } },
+    ];
+    await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+    expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 2 });
+    toggle.mockClear();
+    await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+    expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -2 });
+    await expect(
+      dnd5eAdapter.conditions(actor, { id: 'poisoned', active: true, value: 2 }, ctx),
+    ).rejects.toBeDefined();
   });
 });
