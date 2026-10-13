@@ -129,12 +129,12 @@ Native coverage uses the actual GM `ask_owner` policy. Forced approval under all
 ## Next
 
 ### System adapters: pf2e complete; character-creation gaps (45, 46, 49) come before dnd5e and write-audit correlation
-Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 29 done / 13 active; Task18 stays blocked.
+Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 30 done / 12 active; Task18 stays blocked.
 
 Next (Andrew, 2026-10-13), in order: character-creation gaps from the 2026-10-13 usability session come before dnd5e, because dnd5e needs the same interfaces.
-1. Tasks 45 (embed a compendium entry in an owned actor) and 46 (character-build interface, pf2e first): wave 1, in parallel; their shared files are insert-only.
-2. Task 49 (answer pf2e ChoiceSet choices headlessly): its architect design gate may run during wave 1, but no implementation until the gate passes and 45 and 46 are merged.
-3. Task 32 (dnd5e adapter): extends 45's embed hook and 46's build interface; depends on 31, 45, 46.
+1. Task 45 (embed a compendium entry in an owned actor) is complete and archived in `docs/plan/done/45-compendium-embed-in-actor.md` (native v14 2/2; ChoiceSet items refused until 49). Task 46 (character-build interface, pf2e first) is in progress on its own branch; it shares one line in `e2e/vitest.e2e.config.ts` with 45, so expect a conflict to resolve when 46 lands.
+2. Task 49 (answer pf2e ChoiceSet choices headlessly): its architect design gate may run during wave 1, but no implementation until the gate passes and 46 is merged (45 is merged).
+3. Task 32 (dnd5e adapter): extends 45's embed hook and 46's build interface; depends on 31, 45 (done), 46.
 4. Task 44 (native write audit correlation; architect design gate first): queued after 32, because 45, 46 and 49 add files under `module/src/adapters/pf2e/**`, which 44 owns, so 44 must not be in flight alongside them.
 5. Planned, do not start: 47, 48 (encounter tools), 50-56 (GM builder, including 53 image upload and portraits), plus 34/35 and 18 as already recorded. Task files are under `docs/plan/tasks/`.
 

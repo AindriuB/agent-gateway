@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 29 contracts have merged implementations and recorded evidence. Task 19's
+These 30 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -30,6 +30,7 @@ over unchecked historical boxes.
 
 | 31 | Complete; bounded generic native validation (v13 automated, v14 reviewed reconciliation) | PR #82 (`1d4743b`, merged `783ba3a`); validation PR #84 (merged `3868bfe`) |
 | 33 | Complete; native v14 pf2e 7/7 acceptance incl. audited undoable strike and costed feat; v13 not run; Undo limits in task 44 | PR #86 (`9918aae`, merged `899e89a`); final gate 3,644 fast / 2,227 slow |
+| 45 | Complete; native v14 pf2e 2/2 (Dagger with quantity and equipped, feat into a class-granted slot, both audited undoable); v13 not run; ChoiceSet items refused until task 49 | Task 45 PR (number added on merge); gate ~3,681 fast / 2,227 slow at `ccddcbd` |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains

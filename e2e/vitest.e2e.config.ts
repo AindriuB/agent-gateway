@@ -33,6 +33,7 @@ export default defineConfig({
             'packs/**/*.e2e.test.ts',
             'pf2e/**/*.e2e.test.ts',
             'pf2e-build/**/*.e2e.test.ts',
+            'pf2e-embed/**/*.e2e.test.ts',
           ],
           testTimeout: 120_000,
           hookTimeout: 240_000,
