@@ -6,6 +6,7 @@ import type {
 import type { AdapterExecutionContext, AdapterPayload } from './types.js';
 import { genericBuildHook } from './generic/build.js';
 import { pf2eBuildHook } from './pf2e/build.js';
+import { dnd5eBuildHook } from './dnd5e/build.js';
 
 export type BuildPayload = AdapterPayload<CharacterBuildOutput>;
 /**
@@ -29,7 +30,10 @@ export interface BuildHook {
   ): Promise<{ choices: ChoiceListing[]; message?: string }>;
 }
 /** Bundled hooks only. Future system tasks insert entries here; no public registration. */
-const hooks: ReadonlyMap<string, BuildHook> = new Map([[pf2eBuildHook.systemId, pf2eBuildHook]]);
+const hooks: ReadonlyMap<string, BuildHook> = new Map([
+  [pf2eBuildHook.systemId, pf2eBuildHook],
+  [dnd5eBuildHook.systemId, dnd5eBuildHook],
+]);
 export function selectBuildHook(systemId: string): BuildHook {
   return hooks.get(systemId) ?? genericBuildHook;
 }

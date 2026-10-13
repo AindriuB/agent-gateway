@@ -80,7 +80,7 @@ const choiceDoc = (source: any) => ({ toObject: () => source });
 describe('embed hook registry', () => {
   it('maps pf2e and falls back to the generic hook', () => {
     expect(embedHookFor('pf2e')).toBe(pf2eEmbedHook);
-    expect(embedHookFor('dnd5e').systemId).toBe('generic');
+    expect(embedHookFor('starfinder').systemId).toBe('generic');
     expect(embedHookFor('__proto__').systemId).toBe('generic');
   });
 });

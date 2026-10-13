@@ -106,14 +106,14 @@ describe('character_build through the dispatcher', () => {
     expect(events.indexOf('snapshot-read:Actor.a')).toBeLessThan(events.indexOf('update:Actor.a'));
   });
   it('answers unsupported on a system without a hook: read false, change INVALID_ARGS', async () => {
-    g.game.system = { id: 'dnd5e' };
+    g.game.system = { id: 'starfinder' };
     expect(await dispatcher()(call(), user)).toMatchObject({
       structured: { supported: false, boosts: [], skills: [], featSlots: [] },
     });
     expect(
       await dispatcher()(call({ actorUuid: 'Actor.a', changes: [change] }), user),
     ).toMatchObject({
-      error: { code: 'INVALID_ARGS', message: 'Operation not supported for dnd5e' },
+      error: { code: 'INVALID_ARGS', message: 'Operation not supported for starfinder' },
     });
     expect(actor.update).not.toHaveBeenCalled();
   });

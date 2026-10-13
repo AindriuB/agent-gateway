@@ -8,6 +8,7 @@
 - module/test/adapters/dnd5e/**
 - module/src/adapters/index.ts (registry insertion only)
 - e2e/dnd5e/**
+- module/src/adapters/embed.ts and module/src/adapters/build.ts (registry insertion only, one line each) (Andrew, 2026-10-13)
 
 ## Goal
 Implement the adapter for dnd5e: summaries, actions from items and activities,

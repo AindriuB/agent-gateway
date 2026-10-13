@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { genericEmbedHook } from './generic/embed.js';
 import { pf2eEmbedHook } from './pf2e/embed.js';
+import { dnd5eEmbedHook } from './dnd5e/embed.js';
 
 /** The bounded, system-neutral overrides compendium_import accepts for an embedded Item. */
 export interface EmbedOverrides {
@@ -63,6 +64,9 @@ export interface EmbedHook {
   observe?(actor: any): EmbedObservation;
 }
 
-const HOOKS: Readonly<Record<string, EmbedHook>> = Object.freeze({ pf2e: pf2eEmbedHook });
+const HOOKS: Readonly<Record<string, EmbedHook>> = Object.freeze({
+  pf2e: pf2eEmbedHook,
+  dnd5e: dnd5eEmbedHook,
+});
 export const embedHookFor = (systemId: string): EmbedHook =>
   Object.hasOwn(HOOKS, systemId) ? HOOKS[systemId]! : genericEmbedHook;

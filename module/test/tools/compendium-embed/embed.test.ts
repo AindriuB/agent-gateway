@@ -8,7 +8,7 @@ let f: ReturnType<typeof setup>;
 let entry: any;
 beforeEach(() => {
   f = setup();
-  g.game.system = { id: 'dnd5e' };
+  g.game.system = { id: 'starfinder' };
   ({ entry } = f.pack('Item'));
   entry.toObject = () => ({ _id: 'source', name: 'Sword', type: 'weapon', system: {}, flags: {} });
 });
@@ -150,7 +150,7 @@ describe('compendium_import with actorUuid', () => {
     });
     expect(refused.error).toEqual({
       code: 'INVALID_ARGS',
-      message: 'Override not supported for dnd5e',
+      message: 'Override not supported for starfinder',
     });
     expect(embeds()).toHaveLength(0);
     const ok: any = await call({ uuid: entry.uuid, actorUuid: actor.uuid, overrides: {} });
