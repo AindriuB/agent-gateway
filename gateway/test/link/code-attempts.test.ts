@@ -4,6 +4,7 @@ import {
   CodeAttempts,
   MAX_FAILED_CODE_ATTEMPTS,
   MAX_PENDING_HANDSHAKES,
+  MAX_PENDING_PER_ORIGIN,
   PairingCodes,
 } from '../../src/link/index.js';
 import { TestClient, hello, startServer, type Harness } from './helpers.js';
@@ -71,29 +72,54 @@ describe('failed pairing code limit', () => {
 });
 
 describe('pre-hello socket cap', () => {
+  const spread = (i: number) => `http://page${i}.example`;
+
   it('answers 503 to the 17th socket that has not sent hello, and frees a slot on close', async () => {
-    h = await startServer({ helloTimeoutMs: 60_000 });
+    h = await startServer({ helloTimeoutMs: 60_000, allowedOrigins: undefined });
     const idle: TestClient[] = [];
     for (let i = 0; i < MAX_PENDING_HANDSHAKES; i++) {
-      const c = await TestClient.connect(h.port);
+      const c = await TestClient.connect(h.port, spread(i));
       clients.push(c);
       idle.push(c);
     }
-    await expect(TestClient.connect(h.port)).rejects.toThrow(/503/);
+    await expect(TestClient.connect(h.port, spread(99))).rejects.toThrow(/503/);
     idle[0]!.ws.close();
     await idle[0]!.untilClosed();
     await new Promise((r) => setTimeout(r, 50));
-    clients.push(await TestClient.connect(h.port));
+    clients.push(await TestClient.connect(h.port, spread(99)));
   });
 
   it('frees the slot once hello arrives', async () => {
-    h = await startServer({ helloTimeoutMs: 60_000 });
+    h = await startServer({ helloTimeoutMs: 60_000, allowedOrigins: undefined });
     for (let i = 0; i < MAX_PENDING_HANDSHAKES - 1; i++)
-      clients.push(await TestClient.connect(h.port));
-    const c = await TestClient.connect(h.port);
+      clients.push(await TestClient.connect(h.port, spread(i)));
+    const c = await TestClient.connect(h.port, spread(50));
     clients.push(c);
     c.send(hello({ kind: 'pairingCode', code: h.codes.generate() }));
     await c.next('welcome');
-    clients.push(await TestClient.connect(h.port));
+    clients.push(await TestClient.connect(h.port, spread(51)));
+  });
+
+  it('one origin at its cap cannot block another origin, including a token reconnect', async () => {
+    const seen: [string | undefined, string][] = [];
+    h = await startServer({
+      helloTimeoutMs: 60_000,
+      allowedOrigins: undefined,
+      onOriginRejected: (o, r) => seen.push([o, r]),
+    });
+    const gm = await TestClient.connect(h.port, 'https://foundry.local');
+    clients.push(gm);
+    gm.send(hello({ kind: 'pairingCode', code: h.codes.generate() }));
+    const token = ((await gm.next('welcome')) as { pairingToken: string }).pairingToken;
+    for (let i = 0; i < MAX_PENDING_PER_ORIGIN; i++)
+      clients.push(await TestClient.connect(h.port, 'https://evil.example'));
+    await expect(TestClient.connect(h.port, 'https://evil.example')).rejects.toThrow(/503/);
+    await expect(TestClient.connect(h.port, 'https://evil.example')).rejects.toThrow(/503/);
+    const again = await TestClient.connect(h.port, 'https://foundry.local');
+    clients.push(again);
+    again.send(hello({ kind: 'pairingToken', token }));
+    expect(await again.next()).toMatchObject({ type: 'welcome' });
+    expect(seen.filter(([, r]) => r.startsWith('too many sockets'))).toHaveLength(2);
+    expect(seen[0]![0]).toBe('https://evil.example');
   });
 });

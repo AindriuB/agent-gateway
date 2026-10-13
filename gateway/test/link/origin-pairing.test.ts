@@ -146,6 +146,23 @@ describe('pairings are bound to the origin they were made from', () => {
     expect(await c.next()).toMatchObject({ type: 'welcome' });
   });
 
+  it('logs token refusals with a token reason while the peer sees the same message', async () => {
+    const seen: string[] = [];
+    h = await startServer({ allowedOrigins: undefined, onOriginRejected: (_o, r) => seen.push(r) });
+    const unknown = await tokenHello(FOUNDRY, 'never-issued');
+    const bad = await (async () => {
+      const c = await connect(FOUNDRY);
+      c.send(hello({ kind: 'pairingCode', code: 'AAAA-AAAA' }));
+      return c.next();
+    })();
+    expect(unknown).toMatchObject({ code: 'PAIRING_INVALID', message: 'no valid pairing code' });
+    expect(bad).toMatchObject({ code: 'PAIRING_INVALID', message: 'no valid pairing code' });
+    expect(seen).toEqual([
+      'pairing token is unknown, revoked, or for another world or user',
+      'no valid pairing code',
+    ]);
+  });
+
   it('reports each refusal with its origin and reason', async () => {
     const seen: [string | undefined, string][] = [];
     h = await startServer({

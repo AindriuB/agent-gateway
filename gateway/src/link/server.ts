@@ -24,15 +24,19 @@ export const HEARTBEAT_INTERVAL_MS = 15_000;
 export const MAX_MISSED_PONGS = 2;
 /** Sockets that have upgraded but not yet sent `hello`; the next upgrade gets a 503. */
 export const MAX_PENDING_HANDSHAKES = 16;
+/** Within the global cap, so one page cannot starve every other origin's reconnects. */
+export const MAX_PENDING_PER_ORIGIN = 4;
 
-/** Why a connection attempt was refused; the text is for the local log, never sent to the peer. */
+/** Why a connection attempt was refused; the text goes to the local log; the peer sees only the message built from it. */
 export type OriginRejection =
   | 'origin is not an allowed browser origin'
   | 'host header is not loopback'
   | 'no valid pairing code'
   | 'pairing was made from a different origin'
   | 'pairing predates origin binding; pair again with a code'
-  | 'too many failed pairing codes';
+  | 'too many failed pairing codes'
+  | 'pairing token is unknown, revoked, or for another world or user'
+  | 'too many sockets waiting to say hello; close this page';
 
 export interface LinkServerOptions {
   port: number;
@@ -88,6 +92,7 @@ export class LinkServer {
   private readonly host: string;
   private readonly attempts: CodeAttempts;
   private pending = 0;
+  private readonly pendingByOrigin = new Map<string, number>();
   private boundPort = 0;
 
   constructor(private readonly opts: LinkServerOptions) {
@@ -141,17 +146,28 @@ export class LinkServer {
       refuse('403 Forbidden', 'origin is not an allowed browser origin');
       return;
     }
-    if (this.pending >= MAX_PENDING_HANDSHAKES) {
+    if (
+      this.pending >= MAX_PENDING_HANDSHAKES ||
+      (this.pendingByOrigin.get(origin) ?? 0) >= MAX_PENDING_PER_ORIGIN
+    ) {
+      this.opts.onOriginRejected?.(
+        origin,
+        'too many sockets waiting to say hello; close this page',
+      );
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       return;
     }
     // Held until hello arrives or the socket closes, whichever comes first.
     this.pending++;
+    this.pendingByOrigin.set(origin, (this.pendingByOrigin.get(origin) ?? 0) + 1);
     let released = false;
     const release = (): void => {
       if (released) return;
       released = true;
       this.pending--;
+      const n = (this.pendingByOrigin.get(origin) ?? 1) - 1;
+      if (n <= 0) this.pendingByOrigin.delete(origin);
+      else this.pendingByOrigin.set(origin, n);
     };
     socket.once('close', release);
     this.wss.handleUpgrade(req, socket, head, (ws) => this.onConnection(ws, origin, release));
@@ -325,9 +341,13 @@ export class LinkServer {
       return undefined;
     }
     const { store, codes } = this.opts;
-    const invalid = (reason: OriginRejection, code: ErrorCode = 'PAIRING_INVALID'): undefined => {
+    const invalid = (
+      reason: OriginRejection,
+      code: ErrorCode = 'PAIRING_INVALID',
+      peerMessage: string = reason,
+    ): undefined => {
       this.opts.onOriginRejected?.(origin, reason);
-      reject(code, reason);
+      reject(code, peerMessage);
       return undefined;
     };
     let agentId: string;
@@ -359,7 +379,11 @@ export class LinkServer {
         row.worldId !== hello.world.id ||
         row.userId !== hello.user.id
       ) {
-        return invalid('no valid pairing code');
+        return invalid(
+          'pairing token is unknown, revoked, or for another world or user',
+          'PAIRING_INVALID',
+          'no valid pairing code',
+        );
       }
       if (row.origin === null)
         return invalid('pairing predates origin binding; pair again with a code');
