@@ -33,6 +33,35 @@ describe('compendium_import with actorUuid', () => {
     expect(result.text).not.toMatch(/uncorrelated|incomplete/);
   });
 
+  it('drops pack-only root keys a real compendium source carries (folder: null, sort)', async () => {
+    // Live pf2e shape, probed 2026-10-13: _id, img, name, system, type, _stats, effects, folder, sort, ownership, flags.
+    entry.toObject = () => ({
+      _id: 'source',
+      img: 'icons/x.webp',
+      name: 'Dagger',
+      type: 'weapon',
+      system: {},
+      _stats: { compendiumSource: null },
+      effects: [],
+      folder: null,
+      sort: 100000,
+      ownership: { default: 0 },
+      flags: {},
+    });
+    f.collections.get('Item').fromCompendium.mockImplementation((e: any, o: any) => {
+      const data = structuredClone(e.toObject());
+      if (!o.keepId) delete data._id;
+      return data;
+    });
+    const actor = f.doc('Actor', { _id: 'a1', name: 'PC' });
+    const result: any = await call({ uuid: entry.uuid, actorUuid: actor.uuid });
+    expect(result.error).toBeUndefined();
+    const sent = embeds()[0].entries[0];
+    expect(sent).not.toHaveProperty('folder');
+    expect(sent).not.toHaveProperty('sort');
+    expect(sent.name).toBe('Dagger');
+  });
+
   it('records every document the native call returns', async () => {
     const actor = f.doc('Actor', { _id: 'a1', name: 'PC' });
     actor.createEmbeddedDocuments.mockImplementation(async () => [

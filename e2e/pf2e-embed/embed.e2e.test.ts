@@ -176,8 +176,26 @@ describe('pf2e compendium_import into an Actor (set AGENT_GATEWAY_E2E_PF2E=1 and
         return hit?.uuid ?? null;
       })()`)) as string | null;
       expect(featUuid).not.toBeNull();
-      const created = await embed(featUuid as string, { slot: 'ancestry-1' });
-      expect(await itemState(created)).toMatchObject({ type: 'feat', location: 'ancestry-1' });
+      // A bare character has no feat slots: pf2e derives them from its class (CharacterFeats takes
+      // `class.grantedFeatSlots`, pf2e.mjs:35015). Give it a minimal custom class, then use a slot
+      // that exists and is open instead of hard-coding one.
+      const madeClass = await settle(
+        session,
+        await session.gateway.call('document_create', {
+          type: 'Item',
+          parentUuid: actorUuid,
+          data: JSON.stringify({ name: 'agent-gateway e2e class (temporary)', type: 'class' }),
+        }),
+      );
+      expect(madeClass.result.isError, madeClass.result.text).toBe(false);
+      const slotId = (await session.browser.page.evaluate(`(async () => {
+        const actor = await fromUuid(${q(actorUuid)});
+        const group = actor.feats.get('ancestry');
+        return Object.values(group?.slots ?? {}).find((s) => !s.feat)?.id ?? null;
+      })()`)) as string | null;
+      expect(slotId, 'the class should grant an open ancestry feat slot').not.toBeNull();
+      const created = await embed(featUuid as string, { slot: slotId });
+      expect(await itemState(created)).toMatchObject({ type: 'feat', location: slotId });
       const targets = await auditedItems(featUuid as string);
       expect(targets.map((t) => t.uuid)).toContain(created);
       for (const t of targets) expect(t).toMatchObject({ existed: false, undoable: true });

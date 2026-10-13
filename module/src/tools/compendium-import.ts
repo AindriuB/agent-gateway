@@ -42,6 +42,10 @@ async function embed(
   )
     forbid('Native world import conversion is unavailable');
   const converted = collection.fromCompendium(entry, { keepId: false });
+  // Compendium sources keep pack-only root keys (a pf2e source has `folder: null` and `sort`);
+  // an embedded Item has neither a folder nor a pack sort position.
+  delete converted.folder;
+  delete converted.sort;
   bounded(converted);
   const systemId = String(game.system?.id ?? 'generic');
   const hook = embedHookFor(systemId);
