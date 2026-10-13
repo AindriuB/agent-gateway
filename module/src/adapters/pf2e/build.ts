@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { CharacterBuildChange } from '@agent-gateway/protocol';
+import { characterBuildOutput, type CharacterBuildChange } from '@agent-gateway/protocol';
 import type { BuildHook, BuildPayload } from '../build.js';
 import type { AdapterExecutionContext } from '../types.js';
 import { AdapterUnsupportedError } from '../types.js';
@@ -208,20 +208,59 @@ async function apply(
   const docs: [any, Record<string, unknown>][] = [...p.items];
   if (Object.keys(p.actor).length) docs.push([actor, p.actor]);
   for (const [doc] of docs) await context.snapshot(doc.uuid);
-  for (const [doc, patch] of docs) await doc.update(patch, context.callOptions);
-  const after = list(actor.items).map((i) => i?.id);
-  const created = after.filter((id) => !before.has(id)).length;
-  const removed = [...before].filter((id) => !after.includes(id)).length;
-  const result = describe(actor);
-  if (created || removed)
-    result.message =
-      `Native pf2e rule elements changed Items on this Actor (${created} added, ${removed} removed) ` +
-      'outside this call’s audit correlation. Those changes are not undoable.';
-  return result;
+  // Once a write has happened the result must never be lost: failures are reported, not thrown.
+  const notes: string[] = [];
+  for (const [doc, patch] of docs) {
+    try {
+      await doc.update(patch, context.callOptions);
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      notes.push(`Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`);
+    }
+  }
+  try {
+    const after = list(actor.items).map((i) => i?.id);
+    const created = after.filter((id) => !before.has(id)).length;
+    const removed = [...before].filter((id) => !after.includes(id)).length;
+    if (created || removed)
+      notes.push(
+        `Native pf2e rule elements changed Items on this Actor (${created} added, ${removed} removed) ` +
+          'outside this call\u2019s audit correlation. Those changes are not undoable.',
+      );
+  } catch {
+    notes.push('The Actor Items could not be compared after the update.');
+  }
+  return finish(actor, notes);
+}
+
+const EMPTY: BuildPayload = { supported: true, boosts: [], skills: [], featSlots: [] };
+/** Describe after a write, bounding every field so the result always passes the output schema. */
+function finish(actor: any, notes: string[]): BuildPayload {
+  let state: any;
+  try {
+    state = describe(actor);
+  } catch {
+    state = { ...EMPTY };
+    notes.push('The resulting build state could not be read; read it again with character_build.');
+  }
+  const shape = characterBuildOutput.shape;
+  const out: any = { supported: true };
+  for (const key of ['boosts', 'skills', 'featSlots'] as const) {
+    const parsed = shape[key].safeParse(state?.[key]);
+    if (parsed.success) out[key] = parsed.data;
+    else {
+      out[key] = [];
+      notes.push(`The ${key} state was not reportable; read it again with character_build.`);
+    }
+  }
+  const key = shape.keyAttribute.safeParse(state?.keyAttribute);
+  if (key.success && key.data) out.keyAttribute = key.data;
+  if (notes.length) out.message = notes.join(' ').slice(0, 2000);
+  return out;
 }
 
 export const pf2eBuildHook: BuildHook = Object.freeze({
   systemId: 'pf2e',
-  describe,
+  describe: (actor: unknown) => (isCharacter(actor) ? finish(actor, []) : describe(actor)),
   apply,
 });

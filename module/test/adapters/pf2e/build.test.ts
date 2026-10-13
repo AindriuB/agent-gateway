@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterBuildChange } from '@agent-gateway/protocol';
+import { characterBuild } from '@agent-gateway/protocol';
+import { boundedAdapterData } from '../../../src/tools/_adapters.js';
 import { pf2eBuildHook } from '../../../src/adapters/pf2e/build.js';
 import { selectBuildHook } from '../../../src/adapters/build.js';
 import { genericBuildHook } from '../../../src/adapters/generic/build.js';
@@ -198,5 +200,53 @@ describe('pf2e apply', () => {
     const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
     expect(r.message).toMatch(/1 added, 0 removed/);
     expect(r.message).toMatch(/not undoable/);
+  });
+});
+
+describe('post-write result is always reportable', () => {
+  const passes = (r: unknown) =>
+    characterBuild.output.parse({
+      ...(boundedAdapterData(r) as object),
+      actorUuid: 'Actor.a',
+      systemId: 'pf2e',
+    });
+  it('a full real-shaped result passes bounding and the output schema', async () => {
+    actor.system.skills = Object.fromEntries(
+      ['acrobatics', 'arcana', 'athletics', 'crafting', 'deception', 'diplomacy'].map((k) => [
+        k,
+        { rank: 1, lore: false, label: 'x'.repeat(300), modifiers: [{ a: 1 }] },
+      ]),
+    );
+    passes(await apply([{ kind: 'key_attribute', attribute: 'dex' }]));
+  });
+  it('reports a failed update instead of throwing, keeping the other writes', async () => {
+    actor.update = vi.fn(async () => {
+      throw new Error('x'.repeat(5000));
+    });
+    const r: any = await apply([
+      { kind: 'key_attribute', attribute: 'dex' },
+      { kind: 'skill_rank', skill: 'athletics', rank: 1 },
+    ]);
+    expect(actor.class.update).toHaveBeenCalled();
+    expect(r.message).toMatch(/Update of Hero failed/);
+    expect(r.message.length).toBeLessThanOrEqual(2000);
+    passes(r);
+  });
+  it('drops malformed fields rather than losing the result', async () => {
+    actor.system.skills = { athletics: { rank: 2 }, bad: { rank: 9 } };
+    actor.feats[0].slots['class-1'].level = 'one';
+    actor.feats[0].slots['class-3'] = { id: 'class-3', level: 3, feat: { uuid: {}, name: 5 } };
+    actor.class.system.keyAbility.selected = { weird: true };
+    const r: any = await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
+    passes(r);
+    passes(pf2eBuildHook.describe(actor));
+  });
+  it('replaces a field that cannot satisfy the schema with an empty list and says so', async () => {
+    actor.system.build.attributes.boosts[1] = ['str'];
+    const huge = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`s${i}`, { rank: 1 }]));
+    actor.system.skills = huge;
+    const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
+    expect(r.skills.length).toBeLessThanOrEqual(128);
+    passes(r);
   });
 });
