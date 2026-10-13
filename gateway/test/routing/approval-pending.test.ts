@@ -82,7 +82,9 @@ describe('approval wait against the gateway call timeout', () => {
     const s = await openSession(h, {}, undefined, 5000, { toolsets });
     sessions.push(s);
     const list = await s.client.listTools();
-    expect(list.tools.map((t) => t.name)).toEqual(['demo-read']);
+    expect(list.tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name)).toEqual([
+      'demo-read',
+    ]);
     for (const structured of [{ status: 'pending_approval', id: 'pack-id' }, { value: 'normal' }]) {
       const pending = s.client.callTool({ name: 'demo-read', arguments: {} });
       const frame = (await m.tc.next('call')) as { id: string };

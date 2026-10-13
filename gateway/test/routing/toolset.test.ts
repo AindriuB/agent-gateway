@@ -38,7 +38,8 @@ const definition = (name: string): AnnouncedTool => {
 const set = (store: ToolsetStore, conn: Parameters<ToolsetStore['set']>[0], names: string[]) =>
   store.set(conn, names.map(definition));
 
-const names = async (s: McpSession) => (await s.client.listTools()).tools.map((t) => t.name);
+const names = async (s: McpSession) =>
+  (await s.client.listTools()).tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name);
 
 async function start(isGM: boolean, selector: { user?: string } = {}) {
   h = await startServer();

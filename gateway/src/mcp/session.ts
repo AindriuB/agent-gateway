@@ -9,6 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import { validateArgs, type AnnouncedTool, type ErrorCode } from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
+import { STATUS_TOOL, statusText, statusToolListing, type GatewayStatus } from './status-tool.js';
 import {
   SessionBinding,
   describePairs,
@@ -38,7 +39,18 @@ export interface SessionServerOptions {
   toolsets?: ToolsetStore;
   /** Minimum gap between `list_changed` notifications. */
   listChangedIntervalMs?: number;
+  /**
+   * The pairing code to show a user whose session is not connected, or nothing when pairing is
+   * not on offer. Called only when a result needs it, so it must be cheap and return the live code.
+   */
+  pairingHint?: () => { code: string; expiresInMin: number } | undefined;
+  /** Clock for the re-bind grace period and notice limit; injectable for tests. */
+  now?: () => number;
 }
+
+/** At most this many MCP re-bind notices per window per session; the stderr line is never capped. */
+export const MAX_REBIND_NOTICES = 5;
+export const REBIND_NOTICE_WINDOW_MS = 60_000;
 
 const failure = (code: ErrorCode | 'UNKNOWN_TOOL', text: string) => ({
   isError: true as const,
@@ -46,8 +58,10 @@ const failure = (code: ErrorCode | 'UNKNOWN_TOOL', text: string) => ({
   content: [{ type: 'text' as const, text: `${code}: ${text}` }],
 });
 
-const offline = () =>
-  failure('WORLD_OFFLINE', 'world offline: the bound Foundry user is not connected to the gateway');
+const pairingClause = (hint: ReturnType<NonNullable<SessionServerOptions['pairingHint']>>) =>
+  hint
+    ? `enter code ${hint.code} in the Agent Gateway pairing prompt (expires in ${hint.expiresInMin} min)`
+    : undefined;
 
 /**
  * One MCP session: bound to a single (world, user) pair for its whole life, with a tool list
@@ -56,10 +70,51 @@ const offline = () =>
 export function createSessionServer(opts: SessionServerOptions): Server {
   const all = opts.tools ?? TOOLS;
   const sessionId = randomUUID();
-  const binding = new SessionBinding(opts.registry, opts.selector, opts.knownIdentities, (who) =>
-    opts.log?.(
-      `Bound MCP session to ${safeText(who.userName || who.userId)} in ${safeText(who.worldId)}; start with --user to choose.`,
-    ),
+  const now = opts.now ?? Date.now;
+  let noticeWindowStart = Number.NEGATIVE_INFINITY;
+  let noticesInWindow = 0;
+  const notice = (text: string): void => {
+    if (now() - noticeWindowStart >= REBIND_NOTICE_WINDOW_MS) {
+      noticeWindowStart = now();
+      noticesInWindow = 0;
+    }
+    noticesInWindow++;
+    // The stderr line is the audit trail across a pairing switch: always written. Only the
+    // MCP notice is capped.
+    opts.log?.(text);
+    if (noticesInWindow > MAX_REBIND_NOTICES) return;
+    void server
+      .sendLoggingMessage({ level: 'notice', logger: 'binding', data: text })
+      .catch(() => undefined);
+  };
+  const named = (i: { userName: string; userId: string; worldId: string }) =>
+    `${safeText(i.userName || i.userId)} in ${safeText(i.worldId)}`;
+  // Drops everything that was pinned to the old pairing and tells the client its tools may differ.
+  const leftPairing = (): void => {
+    eventOwner = undefined;
+    queueOwner = undefined;
+    opts.events?.cancelSession(sessionId);
+    lastSig = 'rebound';
+    scheduleFlush();
+  };
+  const binding = new SessionBinding(
+    opts.registry,
+    opts.selector,
+    opts.knownIdentities,
+    (who) =>
+      opts.log?.(
+        `Bound MCP session to ${safeText(who.userName || who.userId)} in ${safeText(who.worldId)}; start with --user to choose.`,
+      ),
+    {
+      now,
+      onRebind: (from, to) => {
+        leftPairing();
+        notice(
+          `MCP session ${sessionId.slice(0, 8)} re-bound from ${named(from)} to ${named(to)} (the only connected pairing).`,
+        );
+      },
+      onUnbind: leftPairing,
+    },
   );
   let queueOwner: QueueOwner | undefined;
   const timeoutMs = opts.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -168,13 +223,15 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return r.kind === 'bound' ? r.conn : undefined;
   };
 
-  const listed = (conn: LinkConnection | undefined) =>
-    visibleFor(conn).map(({ definition: t }) => ({
+  const listed = (conn: LinkConnection | undefined) => [
+    ...visibleFor(conn).map(({ definition: t }) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema as { type: 'object' },
       outputSchema: projectOutputSchema(t.outputSchema),
-    }));
+    })),
+    statusToolListing,
+  ];
   const signature = (conn: LinkConnection | undefined): string =>
     createHash('sha256')
       .update(JSON.stringify(listed(conn)))
@@ -186,7 +243,57 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return { tools: listed(conn) };
   });
 
+  const notConnected = (): ReturnType<typeof failure> => {
+    const clause = pairingClause(opts.pairingHint?.());
+    const who = binding.identity;
+    if (!who)
+      return failure(
+        'WORLD_OFFLINE',
+        `Not connected to Foundry yet. Open your world in a browser${clause ? ` and ${clause}` : ''}.`,
+      );
+    const name = safeText(who.userName || who.userId);
+    return failure(
+      'WORLD_OFFLINE',
+      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : ''}.`,
+    );
+  };
+
+  const statusResult = () => {
+    const r = binding.resolve(true, !!opts.queue);
+    let status: GatewayStatus;
+    if (r.kind === 'ambiguous')
+      status = {
+        state: 'ambiguous',
+        candidates: r.available.map(
+          (i) => `world ${safeText(i.worldId)} / user ${safeText(i.userName || i.userId)}`,
+        ),
+      };
+    else if (r.kind === 'bound' && r.conn)
+      status = {
+        state: 'connected',
+        world: safeText(r.pair.worldId),
+        user: safeText(binding.identity?.userName || r.pair.userId),
+      };
+    else {
+      status = { state: 'not_connected' };
+      if (r.kind === 'bound') {
+        status.world = safeText(r.pair.worldId);
+        status.user = safeText(binding.identity?.userName || r.pair.userId);
+      }
+      const hint = opts.pairingHint?.();
+      if (hint) {
+        status.pairingCode = hint.code;
+        status.codeExpiresInMin = hint.expiresInMin;
+      }
+    }
+    return {
+      content: [{ type: 'text' as const, text: statusText(status) }],
+      structuredContent: status as unknown as Record<string, unknown>,
+    };
+  };
+
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
+    if (req.params.name === STATUS_TOOL) return statusResult();
     if (!req.params.name.includes('-') && !all.some((t) => t.name === req.params.name))
       return failure('UNKNOWN_TOOL', `Unknown tool: ${req.params.name}`);
     const gatewayTool = all.find((t) => t.name === req.params.name && t.handledBy === 'gateway');
@@ -199,7 +306,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
           : `Several Foundry users are paired; start the gateway with --world and --user to choose one. Available: ${describePairs(r.available)}`,
       );
     }
-    if (r.kind === 'unbound') return offline();
+    if (r.kind === 'unbound') return notConnected();
     if (gatewayTool && opts.events) {
       const parsed = gatewayTool.input.safeParse(req.params.arguments ?? {});
       if (!parsed.success) return failure('INVALID_ARGS', parsed.error.message);
@@ -294,7 +401,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
           : failure('INTERNAL', 'Offline queue storage failed');
       }
     }
-    if (!r.conn) return offline();
+    if (!r.conn) return notConnected();
     const conn = r.conn;
     const visible = visibleFor(conn).find((t) => t.definition.name === req.params.name);
     if (!visible) {
@@ -357,6 +464,11 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     lastSent = Date.now();
     void server.sendToolListChanged().catch(() => {});
   };
+  const scheduleFlush = (): void => {
+    if (timer) return;
+    timer = setTimeout(flush, Math.max(0, lastSent + interval - Date.now()));
+    timer.unref();
+  };
   const changed = (allowBind: boolean) => (c: LinkConnection) => {
     const pair = binding.pair;
     if (pair) {
@@ -364,12 +476,18 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     } else if (!allowBind || binding.resolve(true).kind !== 'bound') {
       return;
     }
-    if (timer) return;
-    timer = setTimeout(flush, Math.max(0, lastSent + interval - Date.now()));
-    timer.unref();
+    scheduleFlush();
   };
-  const onConnected = changed(true);
-  const onDisconnected = changed(false);
+  const onConnectedChanged = changed(true);
+  const onConnected = (c: LinkConnection): void => {
+    binding.noteConnected(c);
+    onConnectedChanged(c);
+  };
+  const onDisconnectedChanged = changed(false);
+  const onDisconnected = (c: LinkConnection): void => {
+    binding.noteDisconnected(c);
+    onDisconnectedChanged(c);
+  };
   opts.registry.on('connected', onConnected);
   opts.registry.on('disconnected', onDisconnected);
   const onToolset = changed(false);

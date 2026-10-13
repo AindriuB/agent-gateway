@@ -1,7 +1,10 @@
 import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  LoggingMessageNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { defineTool, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import { expect } from 'vitest';
 import { z } from 'zod';
@@ -108,6 +111,8 @@ export async function reconnectModule(
 export interface McpSession {
   client: Client;
   listChanged: { count: number };
+  /** `notifications/message` the server sent, in order. */
+  notices: { logger: string | undefined; level: string; data: unknown }[];
   close(): Promise<void>;
 }
 
@@ -120,6 +125,8 @@ export async function openSession(
     log?: (line: string) => void;
     listChangedIntervalMs?: number;
     toolsets?: ToolsetStore;
+    now?: () => number;
+    pairingHint?: () => { code: string; expiresInMin: number } | undefined;
   } = {},
 ): Promise<McpSession> {
   const server = createSessionServer({
@@ -136,12 +143,16 @@ export async function openSession(
   });
   const client = new Client({ name: 't', version: '0' });
   const listChanged = { count: 0 };
+  const notices: McpSession['notices'] = [];
+  client.setNotificationHandler(LoggingMessageNotificationSchema, (n) => {
+    notices.push({ logger: n.params.logger, level: n.params.level, data: n.params.data });
+  });
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
     listChanged.count++;
   });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
-  return { client, listChanged, close: () => client.close() };
+  return { client, listChanged, notices, close: () => client.close() };
 }
 
 export const tick = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms));

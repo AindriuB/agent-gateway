@@ -35,7 +35,7 @@ const answer = async (m: FakeModule, p: Promise<unknown>) => {
 };
 
 describe('implicit binding does not depend on connection timing', () => {
-  it('two paired, only A connected: ambiguity error and nothing sent to A', async () => {
+  it('two paired, only A connected: follows A and nothing is sent to B', async () => {
     h = await startServer();
     const a = await pairModule(h, 'uA', { userName: 'alice' });
     const b = await pairModule(h, 'uB', { userName: 'bob' });
@@ -44,34 +44,33 @@ describe('implicit binding does not depend on connection timing', () => {
     await until(() => h!.registry.get('w1', 'uB') === undefined);
     const s = await openSession(h);
     sessions.push(s);
-    const res = await call(s);
-    expectErrorCode(res, 'INVALID_ARGS');
-    const text = JSON.stringify(res.content);
-    expect(text).toContain('alice');
-    expect(text).toContain('bob');
-    await silent(a);
+    expect((await answer(a, call(s))).isError).toBeFalsy();
+    await silent(b);
   });
 
   for (const order of [
     ['uA', 'uB'],
     ['uB', 'uA'],
   ] as const) {
-    it(`two paired, both reconnect (${order.join(' then ')}): ambiguity`, async () => {
+    it(`two paired, both reconnect (${order.join(' then ')}) before the session starts: ambiguity`, async () => {
       h = await startServer();
       const a = await pairModule(h, 'uA', { userName: 'alice' });
       const b = await pairModule(h, 'uB', { userName: 'bob' });
       a.tc.ws.close();
       b.tc.ws.close();
       await until(() => h!.registry.list().length === 0);
-      const s = await openSession(h);
-      sessions.push(s);
       const mods: FakeModule[] = [];
       for (const id of order) {
         const m = await reconnectModule(h, id === 'uA' ? a : b);
         mods.push(m);
         modules.push(m);
-        expectErrorCode(await call(s), 'INVALID_ARGS');
       }
+      const s = await openSession(h);
+      sessions.push(s);
+      const res = await call(s);
+      expectErrorCode(res, 'INVALID_ARGS');
+      expect(JSON.stringify(res.content)).toContain('alice');
+      expect(JSON.stringify(res.content)).toContain('bob');
       await silent(...mods);
     });
   }
@@ -110,7 +109,7 @@ describe('implicit binding does not depend on connection timing', () => {
     await silent(b);
   });
 
-  it('a session bound to an offline single pairing stays bound when another user pairs', async () => {
+  it('a session bound to an offline single pairing moves to another user who pairs and connects', async () => {
     h = await startServer();
     const a = await pairModule(h, 'uA', { userName: 'alice' });
     a.tc.ws.close();
@@ -120,12 +119,12 @@ describe('implicit binding does not depend on connection timing', () => {
     expectErrorCode(await call(s), 'WORLD_OFFLINE');
     const b = await pairModule(h, 'uB', { userName: 'bob' });
     modules.push(b);
-    expectErrorCode(await call(s), 'WORLD_OFFLINE');
-    await silent(b);
+    expect((await answer(b, call(s))).isError).toBeFalsy();
+    // A coming back does not pull the session away from the connected B.
     const a2 = await reconnectModule(h, a);
     modules.push(a2);
-    expect((await answer(a2, call(s))).isError).toBeFalsy();
-    await silent(b);
+    expect((await answer(b, call(s))).isError).toBeFalsy();
+    await silent(a2);
   });
 
   it('does not bind implicitly to a pairing revoked while still connected', async () => {

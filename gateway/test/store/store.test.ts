@@ -142,11 +142,11 @@ describe('store', () => {
     }
   });
 
-  it('has seven migrations', () => {
-    expect(MIGRATIONS).toHaveLength(7);
+  it('has eight migrations', () => {
+    expect(MIGRATIONS).toHaveLength(8);
   });
 
-  it('migrates a version 6 database with one pairing: origin reads back null, not revoked', () => {
+  it('migrates a version 6 database with one pairing: origin reads back null, and 008 revokes it', () => {
     const d = dir();
     const path = join(d, 'g.db');
     const old = new DatabaseSync(path);
@@ -162,12 +162,12 @@ describe('store', () => {
     expect(s.findPairingByHash('hash-old')).toMatchObject({
       id: 'old',
       origin: null,
-      revokedAt: null,
+      revokedAt: expect.any(Number),
     });
-    expect(s.listActivePairings().map((p) => p.id)).toEqual(['old']);
+    expect(s.listActivePairings()).toEqual([]);
     s.close();
     const check = new DatabaseSync(path);
-    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 8 });
     check.close();
   });
 

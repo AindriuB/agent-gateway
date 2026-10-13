@@ -1,7 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-export const STATUS_TOOL = 'gateway_status';
+import { STATUS_TOOL } from './status-tool.js';
+
+export { STATUS_TOOL };
 
 /**
  * MCP server for an instance that could not take the link port or the pairing store because

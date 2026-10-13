@@ -9,7 +9,13 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkListenError } from './link/server.js';
-import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
+import {
+  LinkRegistry,
+  LinkServer,
+  PairingCodes,
+  type LiveCode,
+  type PairingCodesOptions,
+} from './link/index.js';
 import { createLogger, type Logger } from './log.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
@@ -33,6 +39,16 @@ function isInstanceConflict(err: unknown): boolean {
 
 const MAX_WARNED_ORIGINS = 20;
 const MAX_ORIGIN_CHARS = 100;
+
+/** Refusals of a stored token: the browser should be offered a code to pair again. */
+const TOKEN_REFUSALS: ReadonlySet<string> = new Set([
+  'pairing token is unknown, revoked, or for another world or user',
+  'pairing predates origin binding; pair again with a code',
+  'pairing was made from a different origin',
+]);
+
+const minutesLeft = (expiresAt: number, now: number): number =>
+  Math.max(1, Math.ceil((expiresAt - now) / 60_000));
 
 /** Make an untrusted Origin header safe for a log line: printable ASCII only, bounded. */
 export function sanitizeOrigin(origin: string | undefined): string {
@@ -70,6 +86,8 @@ export interface AppDeps {
    * stopping the app and exiting the process.
    */
   onStepDown?: (why: string) => void;
+  /** Clock and timers for pairing-code expiry; injectable so tests need not wait ten minutes. */
+  codeClock?: Pick<PairingCodesOptions, 'now' | 'setTimer' | 'clearTimer'>;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -83,6 +101,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let relay: RelayServer | undefined;
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
+  let codes: PairingCodes | undefined;
   // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
   const dbPath = deps.dbPath ?? defaultDbPath();
   const startedAt = Date.now();
@@ -121,6 +140,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     async stop() {
       stdioProxy?.stop();
       stdioProxy = undefined;
+      codes?.stop();
+      codes = undefined;
       await secondary?.stop();
       secondary = undefined;
       await relay?.close();
@@ -197,6 +218,8 @@ export function createApp(config: Config, deps: AppDeps): App {
 
   /** Undo a failed or finished startPrimary. */
   async function teardown(): Promise<void> {
+    codes?.stop();
+    codes = undefined;
     await relay?.close();
     relay = undefined;
     await server?.close();
@@ -262,19 +285,61 @@ export function createApp(config: Config, deps: AppDeps): App {
     // EADDRINUSE. The store is opened in the same tick as listen resolves, before any
     // connection can be handled, so the lazy getters below are never read while unset.
     const registry = new LinkRegistry();
-    const codes = new PairingCodes();
+    let linkPort = config.linkPort;
+    const now = deps.codeClock?.now ?? Date.now;
+    // Sessions that finished their handshake; each leaves the set when it closes, and the relay
+    // caps how many there can be.
+    const initialized = new Set<Server>();
+    const linesFor = (c: LiveCode): [string, string] => [
+      `Pairing code: ${c.code} (expires in ${minutesLeft(c.expiresAt, now())} min)`,
+      `Link URL: ws://localhost:${linkPort} (pid ${process.pid} holds link port ${linkPort})`,
+    ];
+    // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
+    // Only to sessions past their handshake: a notification before `initialize` is out of order.
+    const sendNotice = (s: Server, c: LiveCode): void =>
+      void s
+        .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: linesFor(c).join('. ') })
+        .catch(() => undefined);
+    const thisCodes = new PairingCodes({
+      ...deps.codeClock,
+      onIssued: (c) => {
+        // Each code gets one refusal line per origin: a repeat refusal after a refresh must show
+        // the new code. Clearing (not growing) keeps the set bounded.
+        warned.clear();
+        for (const line of linesFor(c)) writeStatus(line);
+        for (const s of initialized) sendNotice(s, c);
+      },
+    });
+    codes = thisCodes;
+    const track = (s: Server): Server => {
+      s.oninitialized = () => {
+        initialized.add(s);
+        const c = thisCodes.current();
+        if (c) sendNotice(s, c);
+      };
+      const previous = s.onclose;
+      s.onclose = () => {
+        initialized.delete(s);
+        previous?.();
+      };
+      return s;
+    };
     const warned = new Set<string>();
     link = new LinkServer({
       port: config.linkPort,
       onOriginRejected: (origin, reason, detail) => {
         const shown = sanitizeOrigin(origin);
+        if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
         const key = `${shown} ${reason} ${detail ?? ''}`;
         if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
         warned.add(key);
+        const live = thisCodes.current();
         const where =
           reason === 'no valid pairing code'
             ? " The code is in this log or the client's MCP log."
-            : '';
+            : live && TOKEN_REFUSALS.has(reason)
+              ? ` Enter pairing code ${live.code} (expires in ${minutesLeft(live.expiresAt, now())} min) in the Agent Gateway pairing prompt; it is also in the client's MCP log.`
+              : '';
         writeStatus(
           `rejected link connection from origin ${shown}: ${reason}${detail ? ` (${detail})` : ''}.${where}`,
         );
@@ -282,7 +347,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       get store() {
         return openedStore();
       },
-      codes,
+      codes: thisCodes,
       registry,
       ...(deps.allowedOrigins?.length ? { allowedOrigins: deps.allowedOrigins } : {}),
       gatewayVersion: deps.version,
@@ -294,15 +359,13 @@ export function createApp(config: Config, deps: AppDeps): App {
       },
     });
     const port = await link.listen();
+    linkPort = port;
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
     store = (deps.openStore ?? openStore)(dbPath);
     events = new EventBuffer(store, registry);
     queue = new OfflineQueue(store, registry);
     events.startRetention();
-    const pairingLine = `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`;
-    const linkLine = `Link URL: ws://localhost:${port} (pid ${process.pid} holds link port ${port})`;
-    writeStatus(pairingLine);
-    writeStatus(linkLine);
+    thisCodes.issue('startup');
     const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
       version: deps.version,
       registry,
@@ -316,21 +379,18 @@ export function createApp(config: Config, deps: AppDeps): App {
           userName: p.userName,
         })) ?? [],
       log: writeStatus,
+      pairingHint: () => {
+        const c = thisCodes.issue('mcp');
+        return { code: c.code, expiresInMin: minutesLeft(c.expiresAt, now()) };
+      },
     });
     const ready = { events, queue };
-    server = createSessionServer(sessionOptions(ready.events, ready.queue));
-    // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
-    // Only after the client has finished its handshake: a notification before `initialize` is
-    // out of order and some clients drop or reject it. Relayed sessions never send it.
-    const notice = `${pairingLine}. ${linkLine}`;
-    const primarySession = server;
-    primarySession.oninitialized = () =>
-      void primarySession
-        .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: notice })
-        .catch(() => undefined);
+    server = track(createSessionServer(sessionOptions(ready.events, ready.queue)));
     await server.connect(transport);
     // Relayed sessions are accepted only once everything they share is ready.
-    await startRelay(port, () => createSessionServer(sessionOptions(ready.events, ready.queue)));
+    await startRelay(port, () =>
+      track(createSessionServer(sessionOptions(ready.events, ready.queue))),
+    );
     logger.info(`MCP stdio server started`);
   }
 }

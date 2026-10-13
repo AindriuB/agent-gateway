@@ -113,7 +113,9 @@ describe('second gateway instance (built cli)', () => {
     second.send({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
     const list = await second.reply(3);
     expect(JSON.stringify(list.result)).toContain('world_info');
-    expect(JSON.stringify(list.result)).not.toContain(STATUS_TOOL);
+    expect(JSON.stringify(list.result)).not.toContain(
+      'Explains why this gateway instance cannot reach Foundry',
+    );
     expect(second.child.exitCode).toBeNull();
   }, 20_000);
 });
@@ -293,7 +295,7 @@ describe('startup failures and origins (built cli)', () => {
       );
       for (const r of rs.filter((x) => x.err().includes('cannot pair'))) {
         expect(r.out()).toContain('world_info');
-        expect(r.out()).not.toContain(STATUS_TOOL);
+        expect(r.out()).not.toContain('Explains why this gateway instance cannot reach Foundry');
       }
       for (const r of rs) expect(r.child.exitCode).toBeNull();
       for (const r of rs.splice(0)) {
