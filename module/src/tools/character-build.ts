@@ -26,6 +26,8 @@ const write = defineWriteHandler({
 async function listChoices(ctx: OpContext, uuid: string): Promise<DispatchResult> {
   try {
     if (ctx.user.isGM !== true) forbid('Listing choices is limited to the GM');
+    const user = game.users?.get(ctx.user.id);
+    if (!user) forbid('A current user is required');
     const systemId = String(game.system?.id);
     const build = hook();
     if (!build.listChoices)
@@ -43,11 +45,7 @@ async function listChoices(ctx: OpContext, uuid: string): Promise<DispatchResult
     if (!doc || doc.documentName !== 'Item' || doc.uuid !== uuid || doc.pack !== pack.collection)
       invalid('Compendium entry not found.');
     const source = typeof doc.toObject === 'function' ? doc.toObject() : doc._source;
-    const { choices, message } = await build.listChoices(
-      source,
-      uuid,
-      game.users?.get(ctx.user.id),
-    );
+    const { choices, message } = await build.listChoices(source, uuid, user);
     const structured = characterBuildOutput.parse({
       systemId,
       supported: true,

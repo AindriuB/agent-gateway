@@ -122,9 +122,9 @@ function substituteSelection(
   return invalid(`${label(src)}: GrantItem uuid ${uuid.slice(0, 80)} cannot be resolved headless`);
 }
 
-/** True unless the user is known and cannot observe the document (or its pack). */
+/** True only for a known user who can observe the document and its pack. */
 function docVisible(doc: any, user: unknown): boolean {
-  if (user === undefined) return true;
+  if (user === undefined || user === null) return false;
   const g = globalThis as any;
   const pack = typeof doc?.pack === 'string' ? g.game?.packs?.get(doc.pack) : undefined;
   for (const d of [doc, pack])

@@ -129,10 +129,13 @@ export const MAX_FILTER_QUERIES = 8;
 export const MAX_PACKS = 12;
 export const MAX_INDEX_ENTRIES = 30000;
 
+/** Fails closed: with no known user nothing is observable. */
 const canObserve = (doc: any, user: unknown): boolean =>
-  user === undefined || typeof doc?.testUserPermission !== 'function'
-    ? true
-    : doc.testUserPermission(user, 'OBSERVER') === true;
+  user === undefined || user === null
+    ? false
+    : typeof doc?.testUserPermission !== 'function'
+      ? true
+      : doc.testUserPermission(user, 'OBSERVER') === true;
 /** True when the user may see the document an option value names (pack index entries only). */
 function valueVisible(value: string, user: unknown): boolean {
   const parts = value.split('.');
@@ -161,14 +164,17 @@ export function makeInflater(opts: { actor?: any; user?: unknown } = {}): Inflat
     try {
       const c = rule?.choices;
       if (!isPlain(c) || !Array.isArray(c.filter)) return undefined;
-      const itemType = typeof c.itemType === 'string' ? c.itemType : 'feat';
-      if (
-        !opts.actor &&
-        (itemType === 'feat' ||
-          itemType === 'heritage' ||
-          /\{actor\||\bself:/.test(JSON.stringify(c)))
-      )
-        return undefined;
+      // As pf2e does (pf2e.mjs:32106): an unknown item type means 'feat'. Bounds and the
+      // actor-dependence check use the normalised type.
+      const classes = G.CONFIG?.PF2E?.Item?.documentClasses;
+      const itemType =
+        typeof c.itemType === 'string' && isPlain(classes) && Object.hasOwn(classes, c.itemType)
+          ? c.itemType
+          : 'feat';
+      // Anything that reads actor state is checked exactly when the item is created: preflight
+      // sees the Actor without this batch's own class or ancestry, the runtime clone has them.
+      if (/\{actor\||\bself:/.test(JSON.stringify(c))) return undefined;
+      if (!opts.actor && (itemType === 'feat' || itemType === 'heritage')) return undefined;
       if (c.slugsAsValues && typeof c.pack !== 'string') return undefined;
       if (++budget.queries > MAX_FILTER_QUERIES) return undefined;
       const all: any[] = Array.from(G.game?.packs?.values?.() ?? []);

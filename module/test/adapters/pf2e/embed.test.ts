@@ -49,7 +49,14 @@ const actor = (): any => ({
 });
 const prepare = (source: any, overrides: any = {}, a = actor()) =>
   Promise.resolve(
-    pf2eEmbedHook.prepare({ systemId: 'pf2e', actor: a, entry: {}, source, overrides }),
+    pf2eEmbedHook.prepare({
+      systemId: 'pf2e',
+      actor: a,
+      entry: {},
+      source,
+      overrides,
+      user: { id: 'u' },
+    }),
   );
 const refused = async (source: any, overrides: any, match: RegExp) => {
   await expect(prepare(source, overrides)).rejects.toMatchObject({

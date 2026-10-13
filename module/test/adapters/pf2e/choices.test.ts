@@ -15,10 +15,12 @@ import {
   MAX_FILTER_QUERIES,
   MAX_INDEX_ENTRIES,
 } from '../../../src/adapters/pf2e/choices.js';
-import { listChoices, pf2eEmbedHook } from '../../../src/adapters/pf2e/embed.js';
+import { listChoices as rawListChoices, pf2eEmbedHook } from '../../../src/adapters/pf2e/embed.js';
 import { HANDLERS } from '../../../src/tools/index.js';
 import { setup, g } from '../../tools/gm-documents/fixtures.js';
 
+const listChoices = (source: any, uuid: string, user: unknown = { id: 'u' }) =>
+  rawListChoices(source, uuid, user);
 const prompt = vi.fn();
 const OPTIONS = [
   { value: 'a', label: 'A' },
@@ -330,6 +332,7 @@ describe('listing and preflight', () => {
       entry: { uuid: 'Compendium.p.c.Top' },
       source,
       overrides: {},
+      user: { id: 'u' },
       ...extra,
     });
   const feat = (rule: object) => ({ name: 'F', type: 'feat', system: { rules: [rule] } });
@@ -508,7 +511,7 @@ describe('review fixes', () => {
     const pack = (id: string, size = 10, observable = true) => ({
       collection: id,
       metadata: { type: 'Item' },
-      index: Object.assign([{ type: 'equipment' }], { size }),
+      index: Object.assign([{ type: 'equipment' }, { type: 'feat' }], { size }),
       testUserPermission: vi.fn(() => observable),
     });
     beforeEach(() => {
@@ -541,7 +544,11 @@ describe('review fixes', () => {
           return uuids.map((u, i) => ({ value: u, label: `F${i}` }));
         }
       }
-      g.CONFIG = { Actor: { documentClass: FakeActor }, Item: { documentClass: FakeItem } };
+      g.CONFIG = {
+        Actor: { documentClass: FakeActor },
+        Item: { documentClass: FakeItem },
+        PF2E: { Item: { documentClasses: { equipment: {}, feat: {}, heritage: {} } } },
+      };
       (FakeRule.prototype as any).preCreate = vi.fn();
       g.game.pf2e.RuleElements.builtin.ChoiceSet = FakeRule;
       packs = new Map([['pf2e.eq', pack('pf2e.eq')]]);
@@ -567,6 +574,7 @@ describe('review fixes', () => {
         entry: { uuid: 'Compendium.p.c.Top' },
         source,
         overrides: {},
+        user: { id: 'u' },
         ...extra,
       });
     it('lists a filter choice from index entries only (cut at 50, flagged truncated)', async () => {
@@ -600,6 +608,52 @@ describe('review fixes', () => {
         expect(choices[0]).toMatchObject({ dynamic: true, options: [] });
       }
       expect(queried).toHaveLength(0);
+    });
+    it('normalises an unknown itemType to feat before counting and dynamic checks', async () => {
+      // An invalid itemType would otherwise count zero packs and let pf2e index every feat pack.
+      const bogus = filterRule({ itemType: 'bogus', pack: undefined });
+      expect((await listChoices(feat(bogus), 'u')).choices[0]).toMatchObject({ dynamic: true });
+      packs = new Map(
+        Array.from({ length: MAX_PACKS + 1 }, (_, i) => [`p${i}`, pack(`p${i}`)] as const),
+      );
+      const actor = { feats: new Map(), getRollOptions: () => [] };
+      const out = await prep(feat(bogus), {
+        actor,
+        choices: [{ flag: 'pick', value: 'whatever' }],
+      });
+      expect(out).toBeDefined(); // dynamic: accepted, enforced at create time
+      expect(queried).toHaveLength(0);
+    });
+    it('leaves actor-dependent filters dynamic on import too', async () => {
+      const actor = { feats: new Map(), getRollOptions: () => [] };
+      for (const filter of [['{actor|x}'], ['self:class:rogue']]) {
+        await expect(
+          prep(feat(filterRule({ filter })), {
+            actor,
+            choices: [{ flag: 'pick', value: 'anything' }],
+          }),
+        ).resolves.toBeDefined();
+      }
+      expect(queried).toHaveLength(0);
+    });
+    it('fails closed without a user', async () => {
+      expect((await rawListChoices(feat(filterRule()), 'u', undefined)).choices[0]).toMatchObject({
+        dynamic: true,
+      });
+      g.fromUuid = vi.fn(async () => ({ toObject: () => ({ name: 'G', system: { rules: [] } }) }));
+      await expect(
+        pf2eEmbedHook.prepare({
+          systemId: 'pf2e',
+          actor: { feats: new Map() },
+          entry: { uuid: 'x' },
+          source: {
+            name: 'C',
+            type: 'class',
+            system: { rules: [], items: { a: { uuid: 'Compendium.p.c.Item.g' } } },
+          },
+          overrides: {},
+        }),
+      ).rejects.toThrow(/not available/);
     });
     it('leaves a filter dynamic, before any query, when it would scan too much', async () => {
       packs = new Map(
@@ -708,6 +762,7 @@ describe('review fixes', () => {
         entry: { uuid: 'Compendium.p.c.Top' },
         source: structuredClone(src),
         overrides: {},
+        user: { id: 'u' },
         ...extra,
       });
     it('resolves the grant from the decision and then needs the granted choice answered', async () => {
