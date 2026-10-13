@@ -1,7 +1,8 @@
 # 36 — Add the OAuth consent page, token revocation and server-mode pairing confirmation
 
 **Repo:** .
-**Depends on:** 35, 18, 10b, 37, 35b
+**Depends on:** 18, 67, 68, 35b
+**Status:** Deferred beyond B, with 18. Split on 2026-10-13: the consent page and self-service grant revocation moved to 67, and server-mode pairing confirmation moved to 68 (both MVP B).
 **Owns:**
 - gateway/src/oauth/consent/**
 - gateway/test/oauth/consent/**
@@ -56,3 +57,6 @@ never silently replaces an existing one.
 - Client-specific setup guides (43)
 - Writing `docs/security.md` (43) or `docs/server-mode.md` (42)
 - Session routing and isolation tests in `gateway/test/routing/**` (11, 20)
+
+## MVP split (2026-10-13)
+Depends was `35, 18, 10b, 37, 35b`. 67 covers this file's consent page, grant listing and revocation of a user's own grants. 68 covers `--server-mode`, first-pairing and re-pairing confirmation, and the local-mode trust comment. What remains here waits for 18: a GM revoking other users' grants or tokens (including while that user is offline), grant and pending-pairing sections inside 18's agents app, and the `oauth_revoke` audit event (35b). Re-scope this file before starting it.

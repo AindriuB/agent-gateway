@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 34, 35
+**Status:** Deferred beyond B.
 **Owns:**
 - gateway/src/audit/**
 - gateway/test/audit/**

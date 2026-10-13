@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 16
+**Status:** MVP B (after A). B order 2; its Owns are disjoint from 34's, so it may run alongside 34.
 **Owns:**
 - gateway/src/headless/**
 - gateway/test/headless/**

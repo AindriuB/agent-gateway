@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 34
+**Status:** MVP B (after A). B order 4.
 **Owns:**
 - gateway/src/oauth/**
 - gateway/test/oauth/**
@@ -29,5 +30,8 @@ short-lived access tokens stored hashed, and scopes that form permission layer 1
 - [ ] `npm run verify` passes
 
 ## Out of scope
-- Consent page UI and in-Foundry revocation (36)
+- Consent page UI and in-Foundry revocation (67)
 - Tunnel setup (documented in 43)
+
+## MVP split (2026-10-13)
+The consent step stays the auto-deny placeholder named in the Acceptance list. 67 (MVP B, next after this task) replaces it with the real consent page and adds self-service grant revocation, so remote clients can authorize in MVP B once 67 lands.

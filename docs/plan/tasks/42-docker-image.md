@@ -1,7 +1,8 @@
 # 42 — Add the server-mode Docker image
 
 **Repo:** .
-**Depends on:** 38, 41, 36
+**Depends on:** 38, 35, 64, 68
+**Status:** MVP B (after A). B order 7, after 68.
 **Owns:**
 - gateway/Dockerfile
 - gateway/.dockerignore
@@ -18,7 +19,7 @@ locally; the registry is not yet chosen.
 - docs/plan/specs/2026-10-09-agent-gateway.md:48-56 — server mode
 - docs/plan/specs/2026-10-09-agent-gateway.md:188-190 — Docker image, registry to confirm (GHCR vs Docker Hub)
 - gateway/src/headless/** (37, 38)
-- docs/plan/tasks/36-consent-and-revocation.md — `--server-mode` flag and server-mode pairing confirmation
+- docs/plan/tasks/68-server-mode-pairing-confirmation.md — `--server-mode` flag and server-mode pairing confirmation
 
 ## Acceptance
 - [ ] Multi-stage Dockerfile on a Node LTS slim base with Chromium for headless; runs as a non-root user; data dir is a volume; config via env and a mounted 0600 file
@@ -30,3 +31,6 @@ locally; the registry is not yet chosen.
 ## Out of scope
 - Choosing or configuring the registry
 - Homelab compose wiring (homelab repo)
+
+## MVP split (2026-10-13)
+Depends was `38, 41, 36`. 41's MVP A scope moved to 64, which creates `scripts/release.mjs`. The `--server-mode` flag and server-mode pairing confirmation this task relies on now come from 68, split from 36 on 2026-10-13, so the Acceptance list stands as written.
