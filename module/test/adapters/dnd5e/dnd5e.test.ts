@@ -532,7 +532,7 @@ describe('dnd5e adapter', () => {
       a.items = coll([]);
       release();
       await first;
-      expect(String((await second).message)).toContain('changed while the action was queued');
+      expect(String((await second).message)).toMatch(/changed while the action was/);
       expect(rollAttack).toHaveBeenCalledTimes(1);
     });
     it('refuses a use whose spell slots disappear during the awaited audit steps', async () => {
@@ -547,6 +547,28 @@ describe('dnd5e adapter', () => {
         dnd5eAdapter.performAction(a, 'use:x1:q1', { level: 4 }, ctx),
       ).rejects.toBeDefined();
       expect(use).not.toHaveBeenCalled();
+    });
+    it('serialises overlapping uses so the last slot is spent once', async () => {
+      const a = withActs([base('q1', 'utility')]);
+      a.items[0].type = 'spell';
+      a.items[0].system.level = 3;
+      const slots = { value: 1, max: 1, level: 3 };
+      a.system = { ...actor.system, spells: { spell3: slots } };
+      use.mockImplementation(async () => {
+        const seen = slots.value; // the native consume reads the slot, then writes it back later
+        await new Promise((r) => setTimeout(r, 5));
+        if (seen <= 0) return undefined;
+        slots.value = seen - 1;
+        return { message: { type: 'usage' } };
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const [one, two]: any[] = await Promise.all([
+        dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx),
+        dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx),
+      ]);
+      expect(slots.value).toBe(0);
+      expect([one.completed, two.completed].sort()).toEqual([false, true]);
+      expect(String([one, two].find((r) => !r.completed).message)).toContain('was not used');
     });
     it('serialises roll actions per actor so captures cannot cross', async () => {
       const order: string[] = [];

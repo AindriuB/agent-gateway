@@ -4,7 +4,7 @@ import type { BuildHook, BuildPayload } from '../build.js';
 import type { AdapterExecutionContext } from '../types.js';
 import { AdapterUnsupportedError } from '../types.js';
 import { invalid } from '../../tools/_write.js';
-import { advancementOf, leavesAdvancementsUnapplied } from './embed.js';
+import { advancementCap, advancementReport, describeReport } from './embed.js';
 
 declare const CONFIG: any;
 declare const Hooks: any;
@@ -51,13 +51,13 @@ function describe(actor: any): BuildPayload {
   }
   const notes: string[] = [];
   if (half) notes.push(`${half} skill(s) have half proficiency, which has no rank and is omitted.`);
-  const pending = list(actor.items).filter((i) =>
-    leavesAdvancementsUnapplied(i?._source ?? i),
-  ).length;
-  if (pending)
-    notes.push(
-      `${pending} embedded class, species, background or feat Item(s) carry advancements; embedding does not apply them, so hit points, granted items and proficiencies are not set.`,
-    );
+  // Read each embedded Item's own advancement state (the definitions stay after they are applied).
+  const reports = list(actor.items)
+    .filter((i) => ['background', 'class', 'feat', 'race', 'subclass'].includes(i?.type))
+    .slice(0, 64)
+    .map((i) => advancementReport(i?._source ?? i, advancementCap(i)));
+  const advancement = describeReport(reports, 'embedded Items');
+  if (advancement) notes.push(advancement);
   return {
     supported: true,
     boosts: [],
@@ -148,13 +148,11 @@ async function apply(
 
 /** What embedding this Item would leave undone. Reads only; there are no prompts to answer. */
 function listChoices(source: any): Promise<{ choices: never[]; message?: string }> {
-  const n = advancementOf(source).length;
+  const text = describeReport([advancementReport(source, advancementCap(source))], 'this Item');
   return Promise.resolve({
     choices: [],
-    ...(n
-      ? {
-          message: `This Item has ${n} advancement(s). Embedding it does not apply them (no hit points, granted items or proficiencies), and no choices can be answered.`,
-        }
+    ...(text
+      ? { message: `${text} Embedding does not apply them, and no choices can be answered.` }
       : {}),
   });
 }

@@ -454,128 +454,140 @@ async function performAction(
     if (decided.refusal) return invalid(decided.refusal);
     ended = decided.effect;
   }
-  for (const uuid of [item.uuid, actor.uuid, ended?.uuid])
-    if (typeof uuid === 'string') await context.snapshot(uuid);
-  await context.intendCreate();
-  // Every await is behind us. Native code recomputes a few things from live state when `use` runs
-  // (which concentration to end, :17919-17923; whether the activity can run), so decide again now,
-  // with no await between here and the `use` call, and bind the native call to that decision.
-  let concentrationEnd: string | false | undefined;
-  if (
-    actor.items?.get?.(item.id) !== item ||
-    item.system?.activities?.get?.(activity.id) !== activity
-  )
-    return invalid('The item changed while the action was being checked; try again');
-  const again = checkLevel(actor, item, kind, options);
-  if (again.error) return invalid(again.error);
-  if (again.slot !== slot || again.level !== level)
-    return invalid('The spell slots changed while the action was being checked; try again');
-  if (kind === 'use') {
-    const now = refusal(item, activity);
-    if (now) return invalid(`Cannot use ${text(item.name, 100)}: ${now}`);
-    if (activity.canUse === false) return invalid('This activity cannot be used');
-    const decided = concentrationDecision(actor, item, activity);
-    if (decided.refusal) return invalid(decided.refusal);
-    if ((decided.effect?.id ?? null) !== (ended?.id ?? null))
-      return invalid(
-        `Cannot use ${text(item.name, 100)}: your concentration changed while it was being checked${
-          decided.effect ? ` (it would now end ${concentrationLabel(actor, decided.effect)})` : ''
-        }. Try again.`,
-      );
-    if (effectiveActivity(item, activity)?.requiresConcentration === true)
-      concentrationEnd = decided.effect ? String(decided.effect.id) : false;
-  }
-  let refusedWhileQueued: string | undefined;
-  let recorded: string | undefined;
-  let outcome: unknown;
-  let summary = '';
-  try {
+  // The whole of what follows, from the audit steps to the native call, runs in the per-Actor queue,
+  // so two overlapping actions on one Actor cannot both prepare "spend the last slot" (the second
+  // sees the first's result). The snapshots and `intendCreate` are inside it too: they are awaits,
+  // so every decision made before them is made again after them, with no await before the native
+  // call.
+  return exclusive(String(actor.uuid), async () => {
     if (kind === 'use') {
-      // configure: false skips the dialog; subsequentActions: false stops an attack activity
-      // opening its own attack dialog (:21468, :17728); measuredTemplate: false skips template
-      // placement (:17866, :18222); summons: false skips token placement (:40481-40483);
-      // create: false returns the card data unsaved.
-      outcome = await activity.use(
-        {
-          subsequentActions: false,
-          create: { measuredTemplate: false, summons: false },
-          ...(slot ? { spell: { slot } } : {}),
-          // `end ??=` in _prepareUsageConfig (:17919-17923) keeps any value that is not nullish,
-          // so the validated effect id, or false (end nothing), is honoured as given.
-          ...(concentrationEnd === undefined ? {} : { concentration: { end: concentrationEnd } }),
-        },
-        { configure: false },
-        { create: false },
-      );
-      const results = outcome as any;
-      if (results) recorded = await postData(results.message, context);
-    } else {
-      // Roll actions wait in a per-Actor queue, which is an await: everything they decide is
-      // decided again inside it, with no await before the native roll. Upcast damage: dnd5e
-      // scales on a temporary clone of the Item whose flags.dnd5e.scaling is set, exactly as
-      // Activity#_prepareUsageScaling does for `use` (dnd5e.mjs:17946-17963); the clone's own
-      // activity rolls the scaled damage. Nothing is written for the clone.
-      const rolled = await exclusive(String(actor.uuid), async () => {
-        if (
-          actor.items?.get?.(item.id) !== item ||
-          item.system?.activities?.get?.(activity.id) !== activity
-        )
-          return { refused: 'The item changed while the action was queued; try again' } as const;
-        const live = checkLevel(actor, item, kind, options);
-        if (live.error || live.slot !== slot || live.level !== level)
-          return {
-            refused: live.error ?? 'The spell slots changed while queued; try again',
-          } as const;
-        const scaling = level === undefined ? 0 : level - spellLevel(item);
-        const rolling = scaling > 0 ? scaledActivity(item, activity, scaling) : activity;
-        if (!rolling) return { refused: 'Could not prepare the upcast damage roll' } as const;
-        return rollUnsaved(rolling, (message) =>
-          kind === 'attack'
-            ? rolling.rollAttack({}, { configure: false }, message)
-            : rolling.rollDamage({}, { configure: false }, message),
-        );
-      });
-      if ('refused' in rolled) refusedWhileQueued = rolled.refused;
-      outcome =
-        !('refused' in rolled) && Array.isArray(rolled.rolls) && rolled.rolls.length
-          ? rolled.rolls
-          : undefined;
-      if (outcome && !('refused' in rolled)) {
-        recorded = await postData(rolled.data, context);
-        summary = ` (total ${(outcome as any[]).map((r) => text(num(r?.total))).join(', ')})`;
-      }
+      const decided = concentrationDecision(actor, item, activity);
+      if (decided.refusal) return invalid(decided.refusal);
+      ended = decided.effect;
     }
-  } catch (e) {
+    for (const uuid of [item.uuid, actor.uuid, ended?.uuid])
+      if (typeof uuid === 'string') await context.snapshot(uuid);
+    await context.intendCreate();
+    // Every await is behind us. Native code recomputes a few things from live state when `use` runs
+    // (which concentration to end, :17919-17923; whether the activity can run), so decide again now,
+    // with no await between here and the `use` call, and bind the native call to that decision.
+    let concentrationEnd: string | false | undefined;
+    if (
+      actor.items?.get?.(item.id) !== item ||
+      item.system?.activities?.get?.(activity.id) !== activity
+    )
+      return invalid('The item changed while the action was being checked; try again');
+    const again = checkLevel(actor, item, kind, options);
+    if (again.error) return invalid(again.error);
+    if (again.slot !== slot || again.level !== level)
+      return invalid('The spell slots changed while the action was being checked; try again');
+    if (kind === 'use') {
+      const now = refusal(item, activity);
+      if (now) return invalid(`Cannot use ${text(item.name, 100)}: ${now}`);
+      if (activity.canUse === false) return invalid('This activity cannot be used');
+      const decided = concentrationDecision(actor, item, activity);
+      if (decided.refusal) return invalid(decided.refusal);
+      if ((decided.effect?.id ?? null) !== (ended?.id ?? null))
+        return invalid(
+          `Cannot use ${text(item.name, 100)}: your concentration changed while it was being checked${
+            decided.effect ? ` (it would now end ${concentrationLabel(actor, decided.effect)})` : ''
+          }. Try again.`,
+        );
+      if (effectiveActivity(item, activity)?.requiresConcentration === true)
+        concentrationEnd = decided.effect ? String(decided.effect.id) : false;
+    }
+    let refusedWhileQueued: string | undefined;
+    let recorded: string | undefined;
+    let outcome: unknown;
+    let summary = '';
+    try {
+      if (kind === 'use') {
+        // configure: false skips the dialog; subsequentActions: false stops an attack activity
+        // opening its own attack dialog (:21468, :17728); measuredTemplate: false skips template
+        // placement (:17866, :18222); summons: false skips token placement (:40481-40483);
+        // create: false returns the card data unsaved.
+        outcome = await activity.use(
+          {
+            subsequentActions: false,
+            create: { measuredTemplate: false, summons: false },
+            ...(slot ? { spell: { slot } } : {}),
+            // `end ??=` in _prepareUsageConfig (:17919-17923) keeps any value that is not nullish,
+            // so the validated effect id, or false (end nothing), is honoured as given.
+            ...(concentrationEnd === undefined ? {} : { concentration: { end: concentrationEnd } }),
+          },
+          { configure: false },
+          { create: false },
+        );
+        const results = outcome as any;
+        if (results) recorded = await postData(results.message, context);
+      } else {
+        // Everything below already runs inside the per-Actor queue, after the last await, so
+        // what is decided here is what the native roll sees. Upcast damage: dnd5e
+        // scales on a temporary clone of the Item whose flags.dnd5e.scaling is set, exactly as
+        // Activity#_prepareUsageScaling does for `use` (dnd5e.mjs:17946-17963); the clone's own
+        // activity rolls the scaled damage. Nothing is written for the clone.
+        const rolled = await (async () => {
+          if (
+            actor.items?.get?.(item.id) !== item ||
+            item.system?.activities?.get?.(activity.id) !== activity
+          )
+            return { refused: 'The item changed while the action was queued; try again' } as const;
+          const live = checkLevel(actor, item, kind, options);
+          if (live.error || live.slot !== slot || live.level !== level)
+            return {
+              refused: live.error ?? 'The spell slots changed while queued; try again',
+            } as const;
+          const scaling = level === undefined ? 0 : level - spellLevel(item);
+          const rolling = scaling > 0 ? scaledActivity(item, activity, scaling) : activity;
+          if (!rolling) return { refused: 'Could not prepare the upcast damage roll' } as const;
+          return rollUnsaved(rolling, (message) =>
+            kind === 'attack'
+              ? rolling.rollAttack({}, { configure: false }, message)
+              : rolling.rollDamage({}, { configure: false }, message),
+          );
+        })();
+        if ('refused' in rolled) refusedWhileQueued = rolled.refused;
+        outcome =
+          !('refused' in rolled) && Array.isArray(rolled.rolls) && rolled.rolls.length
+            ? rolled.rolls
+            : undefined;
+        if (outcome && !('refused' in rolled)) {
+          recorded = await postData(rolled.data, context);
+          summary = ` (total ${(outcome as any[]).map((r) => text(num(r?.total))).join(', ')})`;
+        }
+      }
+    } catch (e) {
+      return {
+        completed: false,
+        message:
+          `Using ${text(item.name, 200)} failed; uses, quantity, ammunition or a spell slot may already have been spent and that cannot be undone: ${text((e as Error)?.message, 300)}`.slice(
+            0,
+            2000,
+          ),
+      };
+    } finally {
+      if (recorded) await context.created(recorded);
+    }
+    if (refusedWhileQueued) return invalid(refusedWhileQueued);
+    if (!outcome)
+      return {
+        completed: false,
+        message: `${text(item.name, 200)} was not used (cancelled, unavailable or no resources)`,
+      };
+    const verb =
+      kind === 'use' ? 'Used' : kind === 'attack' ? 'Rolled attack for' : 'Rolled damage for';
+    const replaced = ended
+      ? `. Your concentration on ${concentrationLabel(actor, ended)} ended and cannot be undone`
+      : '';
+    const note =
+      (recorded
+        ? '. Resources spent natively cannot be undone'
+        : '. No chat message was created; resources spent natively cannot be undone') + replaced;
     return {
-      completed: false,
-      message:
-        `Using ${text(item.name, 200)} failed; uses, quantity, ammunition or a spell slot may already have been spent and that cannot be undone: ${text((e as Error)?.message, 300)}`.slice(
-          0,
-          2000,
-        ),
+      completed: true,
+      message: `${verb} ${text(item.name, 200)}${summary}${note}`.slice(0, 2000),
     };
-  } finally {
-    if (recorded) await context.created(recorded);
-  }
-  if (refusedWhileQueued) return invalid(refusedWhileQueued);
-  if (!outcome)
-    return {
-      completed: false,
-      message: `${text(item.name, 200)} was not used (cancelled, unavailable or no resources)`,
-    };
-  const verb =
-    kind === 'use' ? 'Used' : kind === 'attack' ? 'Rolled attack for' : 'Rolled damage for';
-  const replaced = ended
-    ? `. Your concentration on ${concentrationLabel(actor, ended)} ended and cannot be undone`
-    : '';
-  const note =
-    (recorded
-      ? '. Resources spent natively cannot be undone'
-      : '. No chat message was created; resources spent natively cannot be undone') + replaced;
-  return {
-    completed: true,
-    message: `${verb} ${text(item.name, 200)}${summary}${note}`.slice(0, 2000),
-  };
+  });
 }
 
 function inventory(actor: any) {

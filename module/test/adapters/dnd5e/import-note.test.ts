@@ -26,11 +26,30 @@ describe('compendium_import into a dnd5e Actor', () => {
       _id: 's',
       name: '<script>x</script>',
       type: 'class',
-      system: { advancement: { a: {}, b: {} } },
+      system: {
+        levels: 1,
+        advancement: {
+          a: { type: 'HitPoints', value: {} },
+          b: { type: 'ItemGrant', configuration: { items: [{ uuid: 'x' }] }, value: {} },
+        },
+      },
       flags: {},
     });
     expect(result.text).toMatch(/NOT applied/);
     expect(result.text).not.toContain('<script>');
+  });
+  it('does not claim unapplied advancements that a source already carries applied', async () => {
+    const result = await run({
+      _id: 's',
+      name: 'Fighter',
+      type: 'class',
+      system: {
+        levels: 1,
+        advancement: { a: { type: 'HitPoints', value: { 1: 'max' } } },
+      },
+      flags: {},
+    });
+    expect(result.text).not.toMatch(/NOT applied/);
   });
   it('adds no note for an item without advancements', async () => {
     const result = await run({ _id: 's', name: 'Sword', type: 'weapon', system: {}, flags: {} });

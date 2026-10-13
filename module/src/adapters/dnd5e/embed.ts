@@ -112,12 +112,106 @@ export const dnd5eEmbedHook: EmbedHook = Object.freeze({
   },
   observe,
   /** A fixed text: nothing from the Item source is echoed, so there is no untrusted text to escape. */
-  note: (source: any): string | undefined =>
-    leavesAdvancementsUnapplied(source)
-      ? 'This dnd5e Item carries advancements (hit points, granted items, proficiencies, ability score improvements) that were NOT applied by embedding it.'
-      : undefined,
+  // The state is read from the embedded source itself: embedding never applies advancements, and
+  // a source that already carries applied values is not claimed to be unapplied.
+  note: (source: any): string | undefined => {
+    if (!ADVANCING.has(source?.type)) return undefined;
+    const text = describeReport([advancementReport(source, advancementCap(source))], 'this Item');
+    return text ? `${text} Embedding does not apply advancements.` : undefined;
+  },
 });
 
 /** True when embedding this Item source will leave advancements unapplied (see the file header). */
 export const leavesAdvancementsUnapplied = (src: any): boolean =>
   ADVANCING.has(src?.type) && advancementOf(src).length > 0;
+
+export interface AdvancementReport {
+  /** Advancements with nothing applied at any level up to the Item's level. */
+  unapplied: number;
+  /** Advancements applied at some of those levels but not all. */
+  partial: number;
+  applied: number;
+  /** Types whose application state cannot be read from the data. */
+  unknown: number;
+}
+const isEmptyValue = (v: unknown): boolean =>
+  v === undefined ||
+  v === null ||
+  (Array.isArray(v) ? v.length === 0 : typeof v === 'object' ? Object.keys(v).length === 0 : false);
+const levelNum = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+
+/**
+ * Which levels of one advancement apply, up to `cap`, and whether each was applied. Mirrors the
+ * system's own `configuredForLevel` (dnd5e.mjs:27422 Trait, :47233 HitPoints, :48485 ItemGrant,
+ * :48695 ItemChoice, :50082 Subclass) on plain data, so it works on a source as well as an Item.
+ * ASI is applied once its value has a `type` (asi or feat; :46758-46769). Advancements with no
+ * application state (ScaleValue is derived) are skipped; Size and ModifyItem are reported unknown.
+ */
+function levelsApplied(adv: any, cap: number): boolean[] | 'unknown' | 'none' {
+  const value = adv?.value ?? {};
+  const config = adv?.configuration ?? {};
+  const level = levelNum(adv?.level) ?? 0;
+  switch (adv?.type) {
+    case 'HitPoints':
+      return Array.from({ length: Math.min(cap, 20) }, (_, i) => !!value[i + 1]);
+    case 'ItemChoice':
+      return Object.entries<any>(config.choices ?? {})
+        .filter(([l, c]) => Number(l) <= cap && Number(c?.count) > 0)
+        .map(([l]) => value.added?.[l] !== undefined);
+    case 'ItemGrant':
+      return isEmptyValue(config.items) || level > cap ? 'none' : [!isEmptyValue(value)];
+    case 'Trait':
+      return (isEmptyValue(config.grants) && isEmptyValue(config.choices)) || level > cap
+        ? 'none'
+        : [!isEmptyValue(value.chosen)];
+    case 'Subclass':
+      return level > cap ? 'none' : [!isEmptyValue(value)];
+    case 'AbilityScoreImprovement':
+      return level > cap ? 'none' : [typeof value.type === 'string' && value.type !== ''];
+    case 'ScaleValue':
+      return 'none';
+    default:
+      return 'unknown';
+  }
+}
+
+/** Tally the application state of an Item source's advancements (see levelsApplied). */
+export function advancementReport(src: any, cap: number): AdvancementReport {
+  const out: AdvancementReport = { unapplied: 0, partial: 0, applied: 0, unknown: 0 };
+  const level = Math.max(1, Math.trunc(cap) || 1);
+  for (const adv of advancementOf(src)) {
+    const states = levelsApplied(adv, level);
+    if (states === 'none') continue;
+    if (states === 'unknown') out.unknown += 1;
+    else if (states.length === 0 || states.every(Boolean)) out.applied += 1;
+    else if (states.some(Boolean)) out.partial += 1;
+    else out.unapplied += 1;
+  }
+  return out;
+}
+const sum = (rs: readonly AdvancementReport[]): AdvancementReport =>
+  rs.reduce(
+    (a, r) => ({
+      unapplied: a.unapplied + r.unapplied,
+      partial: a.partial + r.partial,
+      applied: a.applied + r.applied,
+      unknown: a.unknown + r.unknown,
+    }),
+    { unapplied: 0, partial: 0, applied: 0, unknown: 0 },
+  );
+/** Fixed-text description of a report; empty when there is nothing to say. */
+export function describeReport(rs: readonly AdvancementReport[], where: string): string {
+  const r = sum(rs);
+  const parts: string[] = [];
+  if (r.unapplied)
+    parts.push(
+      `${r.unapplied} advancement(s) on ${where} are NOT applied (hit points, granted items, proficiencies or ability score improvements are not set)`,
+    );
+  if (r.partial) parts.push(`${r.partial} advancement(s) are only partly applied`);
+  if (r.unknown) parts.push(`${r.unknown} advancement(s) have no readable application state`);
+  return parts.length ? `${parts.join('; ')}.` : '';
+}
+/** The level an Item's advancements apply up to (dnd5e.mjs:27755), or 1 for a fresh source. */
+export const advancementCap = (item: any): number =>
+  levelNum(item?.system?.advancementLevel) ?? levelNum(item?.system?.levels) ?? 1;

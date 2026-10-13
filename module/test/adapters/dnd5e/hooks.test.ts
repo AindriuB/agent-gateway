@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { characterBuildOutput } from '@agent-gateway/protocol';
-import { dnd5eEmbedHook } from '../../../src/adapters/dnd5e/embed.js';
+import {
+  advancementReport,
+  describeReport,
+  dnd5eEmbedHook,
+} from '../../../src/adapters/dnd5e/embed.js';
 import { dnd5eBuildHook } from '../../../src/adapters/dnd5e/build.js';
 import { embedHookFor } from '../../../src/adapters/embed.js';
 import { selectBuildHook } from '../../../src/adapters/build.js';
@@ -70,7 +74,7 @@ describe('dnd5e embed hook', () => {
     const cls = {
       type: 'class',
       name: '<img src=x onerror=alert(1)>',
-      system: { advancement: [{}] },
+      system: { levels: 1, advancement: [{ type: 'HitPoints', value: {} }] },
     };
     const note = dnd5eEmbedHook.note!(cls);
     expect(note).toContain('NOT applied');
@@ -161,10 +165,89 @@ describe('dnd5e build hook', () => {
       AdapterUnsupportedError,
     );
     const r = await dnd5eBuildHook.listChoices!(
-      { type: 'class', system: { advancement: [{}, {}] } },
+      {
+        type: 'class',
+        system: {
+          levels: 1,
+          advancement: [
+            { type: 'HitPoints', value: {} },
+            { type: 'AbilityScoreImprovement', level: 1, value: {} },
+          ],
+        },
+      },
       'u',
     );
     expect(r.choices).toEqual([]);
-    expect(r.message).toContain('2 advancement');
+    expect(r.message).toContain('2 advancement(s) on this Item are NOT applied');
+  });
+});
+
+describe('dnd5e advancement state', () => {
+  const fighter = (advancement: any[], levels = 3, extra: any = {}) => ({
+    type: 'class',
+    system: { levels, advancement, ...extra },
+  });
+  const hp = (value: any) => ({ type: 'HitPoints', value });
+  const grant = (value: any) => ({
+    type: 'ItemGrant',
+    level: 1,
+    configuration: { items: [{ uuid: 'Compendium.x' }] },
+    value,
+  });
+  const choice = (added: any) => ({
+    type: 'ItemChoice',
+    configuration: { choices: { 1: { count: 1 }, 3: { count: 1 } } },
+    value: { added },
+  });
+  const trait = (chosen: string[]) => ({
+    type: 'Trait',
+    level: 1,
+    configuration: { grants: ['skills:ath'], choices: [] },
+    value: { chosen },
+  });
+  it('reports unapplied, applied and partial from the values', () => {
+    const none = advancementReport(fighter([hp({}), grant({}), trait([])]), 3);
+    expect(none).toMatchObject({ unapplied: 3, partial: 0, applied: 0 });
+    const done = advancementReport(
+      fighter([
+        hp({ 1: 'max', 2: 'avg', 3: 7 }),
+        grant({ added: { a: 'b' } }),
+        trait(['skills:ath']),
+        { type: 'AbilityScoreImprovement', level: 1, value: { type: 'asi' } },
+      ]),
+      3,
+    );
+    expect(done).toMatchObject({ unapplied: 0, partial: 0, applied: 4 });
+    const partial = advancementReport(fighter([hp({ 1: 'max' }), choice({ 1: { a: 'u' } })]), 3);
+    expect(partial).toMatchObject({ partial: 2, unapplied: 0 });
+  });
+  it('only counts levels up to the Item level', () => {
+    expect(advancementReport(fighter([hp({ 1: 'max' })], 1), 1)).toMatchObject({ applied: 1 });
+    expect(advancementReport(fighter([{ ...grant({}), level: 5 }], 3), 3)).toMatchObject({
+      unapplied: 0,
+      applied: 0,
+    });
+  });
+  it('says so neutrally when a type has no readable state', () => {
+    const r = advancementReport(fighter([{ type: 'Size', value: {} }]), 1);
+    expect(r.unknown).toBe(1);
+    expect(describeReport([r], 'this Item')).toContain('no readable application state');
+    expect(describeReport([r], 'this Item')).not.toContain('NOT');
+  });
+  it('character_build reports only what is actually unapplied', () => {
+    const a = actor();
+    const embedded = (type: string, advancement: any[], levels = 3) => ({
+      type,
+      system: { levels, advancementLevel: levels },
+      _source: { type, system: { levels, advancement } },
+    });
+    a.items = [
+      embedded('class', [hp({ 1: 'max', 2: 'max', 3: 'max' }), grant({ added: { x: 'y' } })]),
+    ];
+    expect((dnd5eBuildHook.describe(a) as any).message ?? '').not.toContain('NOT applied');
+    a.items = [embedded('class', [hp({ 1: 'max' }), grant({})])];
+    const m = (dnd5eBuildHook.describe(a) as any).message;
+    expect(m).toContain('1 advancement(s) on embedded Items are NOT applied');
+    expect(m).toContain('1 advancement(s) are only partly applied');
   });
 });
