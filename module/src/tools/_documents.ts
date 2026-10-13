@@ -318,3 +318,53 @@ export async function createDocument(
   await ctx.created(made.uuid, parent);
   return made.uuid;
 }
+export interface EmbeddedBatch {
+  /** Every canonical created UUID, in the order the native call returned them. */
+  readonly uuids: string[];
+  /** Native writes made without audit callOptions during the create (0 without an observer). */
+  readonly uncorrelated: number;
+}
+/**
+ * Create one embedded document and record every document the native call returns (a system may
+ * add grants in the same batch). All returned documents are recorded before any is rejected.
+ */
+export async function createEmbeddedBatch(
+  ctx: WriteContext,
+  type: string,
+  data: Record<string, any>,
+  parent: any,
+  beforeCreate?: () => void,
+  observe?: (parent: any) => { finish(): number },
+): Promise<EmbeddedBatch> {
+  checkData(data, type, false, true);
+  checkCreate(ctx, type, data, parent);
+  await ctx.intendCreate(parent);
+  beforeCreate?.();
+  checkCreate(ctx, type, data, parent);
+  const observer = observe?.(parent);
+  let made: any;
+  let uncorrelated = 0;
+  try {
+    made = await parent.createEmbeddedDocuments(type, [data], ctx.callOptions);
+  } finally {
+    uncorrelated = observer?.finish() ?? 0;
+  }
+  const docs: any[] = Array.isArray(made) ? made : [];
+  const uuids: string[] = [];
+  let sound = docs.length > 0;
+  for (const doc of docs) {
+    if (
+      !canonical(doc) ||
+      doc.documentName !== type ||
+      (doc.parent ?? undefined) !== parent ||
+      isAuditDocument(doc)
+    ) {
+      sound = false;
+      continue;
+    }
+    await ctx.created(doc.uuid, parent);
+    uuids.push(doc.uuid);
+  }
+  if (!sound) throw new Error('Native creation returned no canonical new document');
+  return { uuids, uncorrelated };
+}
