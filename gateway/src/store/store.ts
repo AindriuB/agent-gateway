@@ -61,10 +61,15 @@ function toRow(r: Row): PairingRow {
 
 export function openStore(path: string, now: () => number = Date.now): Store {
   const db = new DatabaseSync(path);
-  // Wait briefly for a concurrent reader instead of failing with SQLITE_BUSY.
-  db.exec('PRAGMA busy_timeout = 5000');
-  db.exec('PRAGMA journal_mode = DELETE');
-  applyMigrations(db, MIGRATIONS);
+  try {
+    // Wait briefly for a concurrent reader instead of failing with SQLITE_BUSY.
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec('PRAGMA journal_mode = DELETE');
+    applyMigrations(db, MIGRATIONS);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
   const revokedListeners = new Set<() => void>();
   const insert = db.prepare(
     'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at) VALUES (?, ?, ?, ?, ?, ?)',

@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openStore } from '../../src/store/index.js';
 import { applyMigrations } from '../../src/store/migrate.js';
 import { MIGRATIONS } from '../../src/store/migrations/index.js';
@@ -11,6 +11,17 @@ import { MIGRATIONS } from '../../src/store/migrations/index.js';
 const hashToken = (t: string): string => createHash('sha256').update(t).digest('hex');
 
 const dir = (): string => mkdtempSync(join(tmpdir(), 'ag-store-'));
+
+describe('openStore failure', () => {
+  it('closes the database handle when setup throws', () => {
+    const path = join(dir(), 'bad.db');
+    writeFileSync(path, 'not a sqlite database'.repeat(100));
+    const close = vi.spyOn(DatabaseSync.prototype, 'close');
+    expect(() => openStore(path)).toThrow();
+    expect(close).toHaveBeenCalledTimes(1);
+    close.mockRestore();
+  });
+});
 
 describe('store', () => {
   it('creates, finds and revokes pairings', () => {
