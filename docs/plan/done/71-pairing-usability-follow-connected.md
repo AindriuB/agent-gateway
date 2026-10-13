@@ -238,4 +238,6 @@ WHERE origin IS NULL AND revoked_at IS NULL
 ## Review
 Attempt 1 needed changes for three items: a refresh timer that fired early and stopped refresh; the re-bind cap also suppressing the stderr line; and refusal dedupe not showing the new code. All three were fixed in b242797. `warned.clear()` runs on each new code instead of keying by code, which keeps it bounded. The `store.test.ts` edits went beyond its narrow Owns qualifier; migration 008 forced them, and they do not weaken the test. Tester PASS at 65bb416 and b242797; reviewer APPROVE at b242797.
 
+External review on PR #108 raised two P2s, both fixed in f300301. First, `lostAt` survived a reconnect of the bound pairing, so a second outage could re-bind after about 1 ms; `noteConnected` now clears `lostAt` synchronously. The bug occurred only when the reconnect and the second drop fell inside one tool-list flush window. Second, submitting a matching but expired code cancelled the refresh timer; an expired consume is now refused without clearing anything. Our re-review found the first regression test flaky (without the fix it failed only 6 of 10 runs), so 0e0c597 added a deterministic SessionBinding unit test that failed 6 of 6 runs without the fix. Tester PASS at f300301: verify twice, mcpb, conformance, real gateway unchanged.
+
 Manual Claude Desktop .mcpb check: PENDING (Andrew).
