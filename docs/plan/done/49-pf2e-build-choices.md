@@ -2,8 +2,8 @@
 
 **Repo:** .
 **Depends on:** 45, 46
-**Status:** Next after 45+46; architect design gate first
-Design gate: CHANGES applied 2026-10-13; spike (item 2) required before implementation.
+**Status:** Complete. Offline gate green at `7a77f08`; native v14 `pf2e-choices` 2/2 (Foundry 14.369 / pf2e 8.6.0). PR number is added when Andrew merges. v13 not run. Follow-ups: task 44 (uncorrelated follow-up item updates).
+Design gate: CHANGES applied 2026-10-13; spike passed before implementation.
 **Owns:**
 - module/src/adapters/pf2e/choices.ts (new)
 - module/src/adapters/pf2e/embed.ts (from 45)
@@ -130,3 +130,12 @@ A GM macro or another module on the same client that reads or forges a live regi
 - Changing `SystemAdapter` or the pack API
 - Answering `query` or drop-in `ownedItems` choices
 - Any edit to tasks 45 or 46 beyond the options-and-report seam named in Owns
+
+## Attempt 1 — three review rounds, defects fixed
+Review found and the branch fixed: unbounded filter-choice inflation, a blank-actor preflight, timeout falling through to pf2e's native prompt, wrong flag naming, wrapper detection by function identity (now by marker), an invalid `itemType` bypassing the bounds, and a permission leak through decided UUIDs.
+
+## Attempt 2 — live e2e failed 1 of 2 (fixed)
+Head `5ae9f8b`, `pf2e-choices` failed 1/2: a `flags.system.` GrantItem placeholder (Tactical Expansion) was not resolved. Fixed at `7a77f08` by accepting the alias.
+
+## Attempt 3 — passed
+Head `7a77f08`: `npm run verify` green (3,815 fast / 2,227 slow); live `pf2e-choices` 2/2 on v14.369 / pf2e 8.6.0. Known limits: the GM sees pf2e's progress notification during filter queries; `list_choices` shows no options for feat/heritage filters (dynamic, enforced at create); follow-up item updates are not correlated (task 44).

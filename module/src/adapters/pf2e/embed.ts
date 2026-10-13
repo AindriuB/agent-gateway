@@ -1,6 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { EmbedHook, EmbedInput, EmbedObservation, EmbedOverrides } from '../embed.js';
+import type {
+  ChoiceDecision,
+  EmbedHook,
+  EmbedInput,
+  EmbedObservation,
+  EmbedOverrides,
+  EmbedRunInput,
+} from '../embed.js';
 import { invalid } from '../../tools/_write.js';
+import {
+  MAX_CHOICES,
+  choiceFlag,
+  choiceWrapperError,
+  choiceWrapperInstalled,
+  describeChoice,
+  resolveChoices,
+  withChoiceCall,
+  makeInflater,
+  type FoundChoice,
+  type Inflater,
+  type ListedChoice,
+} from './choices.js';
 
 declare const fromUuid: (uuid: string) => Promise<any>;
 declare const Hooks: any;
@@ -28,12 +48,23 @@ const isPlain = (v: unknown): v is Record<string, any> =>
 const keyIs = (rule: any, name: string): boolean =>
   typeof rule?.key === 'string' && (rule.key === name || rule.key.endsWith(`.${name}`));
 
+interface ScanCtx {
+  readonly decisions: readonly ChoiceDecision[];
+  /** Listing mode: a grant that depends on an unanswered choice is skipped, not refused. */
+  readonly lenient: boolean;
+  skipped: number;
+  readonly inflate: Inflater;
+  readonly found: FoundChoice[];
+  readonly user?: unknown;
+}
+
 /** Grant UUIDs an item source names: GrantItem rules and a class-style `system.items` map. */
-function grantUuids(src: any, rules: any[]): string[] {
+function grantUuids(src: any, srcUuid: string, rules: any[], scan: ScanCtx): string[] {
   const out: string[] = [];
   for (const rule of rules) {
     if (!keyIs(rule, 'GrantItem') || typeof rule.uuid !== 'string') continue;
-    out.push(substituteSelection(rule.uuid, rules, src));
+    const uuid = substituteSelection(rule.uuid, rules, src, srcUuid, scan);
+    if (uuid !== undefined) out.push(uuid);
   }
   // Class, background and kit `system.items`; a kit's backpack entries nest further `items`.
   const pending: any[] = isPlain(src?.system?.items) ? Object.values(src.system.items) : [];
@@ -46,43 +77,124 @@ function grantUuids(src: any, rules: any[]): string[] {
   if (pending.length) invalid(`${label(src)}: more than 256 grant entries cannot be scanned`);
   return out;
 }
-/** `{item|flags.pf2e.rulesSelections.x}` resolves to a preselected ChoiceSet; otherwise refuse. */
-function substituteSelection(uuid: string, rules: any[], src: any): string {
+/**
+ * `{item|flags.pf2e.rulesSelections.x}` (or the `flags.system` alias) resolves to a preselected ChoiceSet, or else to the
+ * agent's decision for that flag (validated against the choice's options afterwards). Otherwise
+ * refuse, or in listing mode skip the grant.
+ */
+function substituteSelection(
+  uuid: string,
+  rules: any[],
+  src: any,
+  srcUuid: string,
+  scan: ScanCtx,
+): string | undefined {
   if (!uuid.includes('{')) return uuid;
-  const m = /^\{item\|flags\.pf2e\.rulesSelections\.([A-Za-z0-9_-]{1,64})\}$/.exec(uuid);
+  // pf2e resolves `{item|path}` with getProperty on the item (pf2e.mjs:31822-31850); the item's
+  // system flags are reachable as `flags.pf2e` and as the alias `flags.system`.
+  const m = /^\{item\|flags\.(?:pf2e|system)\.rulesSelections\.([A-Za-z0-9_-]{1,64})\}$/.exec(uuid);
   const choice = m
-    ? rules.find((r) => keyIs(r, 'ChoiceSet') && r.flag === m[1] && typeof r.selection === 'string')
+    ? rules.find(
+        (r) => keyIs(r, 'ChoiceSet') && choiceFlag(r, src?.name, src?.system?.slug) === m[1],
+      )
     : undefined;
-  if (!choice)
-    invalid(`${label(src)}: GrantItem uuid ${uuid.slice(0, 80)} cannot be resolved headless`);
-  return choice.selection;
+  if (choice && typeof choice.selection === 'string') return choice.selection;
+  const decided = choice
+    ? scan.decisions.find(
+        (d) => d.flag === m![1] && (d.itemUuid === undefined || d.itemUuid === srcUuid),
+      )
+    : undefined;
+  // Only a value the choice itself offers may be loaded; anything else (or a choice whose options
+  // are unknown until created) is treated as unresolved, never fetched.
+  const offered = decided
+    ? scan.found.find((c) => c.itemUuid === srcUuid.slice(0, 500) && c.flag === decided.flag)
+    : undefined;
+  if (
+    decided &&
+    offered &&
+    !offered.dynamic &&
+    !offered.unsupported &&
+    offered.values?.has(decided.value)
+  )
+    return decided.value;
+  if (scan.lenient) {
+    scan.skipped += 1;
+    return undefined;
+  }
+  return invalid(`${label(src)}: GrantItem uuid ${uuid.slice(0, 80)} cannot be resolved headless`);
 }
-function checkSource(src: any): string[] {
+
+/** True only for a known user who can observe the document and its pack. */
+function docVisible(doc: any, user: unknown): boolean {
+  if (user === undefined || user === null) return false;
+  const g = globalThis as any;
+  const pack = typeof doc?.pack === 'string' ? g.game?.packs?.get(doc.pack) : undefined;
+  for (const d of [doc, pack])
+    if (
+      typeof d?.testUserPermission === 'function' &&
+      d.testUserPermission(user, 'OBSERVER') !== true
+    )
+      return false;
+  return true;
+}
+
+/** Collect the ChoiceSet rules that still need an answer; refuse the other unanswerable prompts. */
+async function checkSource(
+  src: any,
+  uuid: string,
+  found: FoundChoice[],
+  scan: ScanCtx,
+): Promise<string[]> {
   const rules: any[] = Array.isArray(src?.system?.rules) ? src.system.rules : [];
   for (const rule of rules) {
     if (!keyIs(rule, 'ChoiceSet')) continue;
-    // pf2e also prompts when the value matches no choice; that is out of scope until task 49.
-    if (typeof rule.selection !== 'string' && typeof rule.selection !== 'number')
-      invalid(
-        `${label(src)}: ChoiceSet rule${typeof rule.flag === 'string' ? ` "${rule.flag.slice(0, 40)}"` : ''} needs a selection and the gateway cannot answer prompts`,
-      );
+    if (typeof rule.selection === 'string' || typeof rule.selection === 'number') continue;
+    if (found.length >= MAX_CHOICES)
+      invalid(`More than ${MAX_CHOICES} ChoiceSet rules need answers`);
+    found.push(await describeChoice(rule, src, uuid, scan.inflate));
   }
   const sys = src?.system;
   if (src?.type === 'ammo' && sys?.craftableAs != null && !sys.baseItem)
     invalid(
       `${label(src)}: ammunition with craftableAs needs system.baseItem, which cannot be prompted`,
     );
-  return grantUuids(src, rules);
+  return grantUuids(src, uuid, rules, scan);
 }
-/** Walk the grants the native create would add, refusing anything that would open a prompt. */
-async function scanHeadless(root: any): Promise<void> {
+/**
+ * Walk the grants the native create would add, refusing anything that would open a prompt other
+ * than a ChoiceSet, and return every ChoiceSet that still needs an answer. Each carries the
+ * label of the item it belongs to, for messages.
+ */
+export async function scanHeadless(
+  root: any,
+  rootUuid: string,
+  options: {
+    decisions?: readonly ChoiceDecision[];
+    lenient?: boolean;
+    /** The real target Actor (import) so actor-dependent filters are evaluated correctly. */
+    actor?: unknown;
+    user?: unknown;
+  } = {},
+): Promise<{ found: FoundChoice[]; labels: Map<FoundChoice, string>; skipped: number }> {
+  const found: FoundChoice[] = [];
+  const scan: ScanCtx = {
+    decisions: options.decisions ?? [],
+    lenient: options.lenient === true,
+    skipped: 0,
+    inflate: makeInflater({ actor: options.actor, user: options.user }),
+    found,
+    user: options.user,
+  };
   const seen = new Set<string>();
+  const labels = new Map<FoundChoice, string>();
   let docs = 0;
-  let level: any[] = [root];
+  let level: Array<{ src: any; uuid: string }> = [{ src: root, uuid: rootUuid }];
   for (let depth = 0; level.length; depth++) {
-    const next: any[] = [];
-    for (const src of level) {
-      const uuids = checkSource(src);
+    const next: Array<{ src: any; uuid: string }> = [];
+    for (const { src, uuid: srcUuid } of level) {
+      const before = found.length;
+      const uuids = await checkSource(src, srcUuid, found, scan);
+      for (const c of found.slice(before)) labels.set(c, label(src));
       if (uuids.length && depth >= MAX_DEPTH)
         invalid(`${label(src)}: grants nest deeper than ${MAX_DEPTH} levels`);
       for (const uuid of uuids) {
@@ -91,12 +203,36 @@ async function scanHeadless(root: any): Promise<void> {
         if (++docs > MAX_DOCS) invalid(`Grants resolve more than ${MAX_DOCS} documents`);
         const doc = await fromUuid(uuid);
         if (!doc) continue; // The native create skips an unresolvable grant.
+        if (!docVisible(doc, options.user)) invalid('A granted item is not available to this user'); // never names the document
         const source = typeof doc.toObject === 'function' ? doc.toObject() : doc._source;
-        if (isPlain(source)) next.push(source);
+        if (isPlain(source)) next.push({ src: source, uuid });
       }
     }
     level = next;
   }
+  return { found, labels, skipped: scan.skipped };
+}
+
+/** List the choices a compendium Item source and its grants will ask for. Reads only. */
+export async function listChoices(
+  source: any,
+  uuid: string,
+  user?: unknown,
+): Promise<{ choices: ListedChoice[]; message?: string }> {
+  const { found, skipped } = await scanHeadless(source, uuid, { lenient: true, user });
+  const choices = found.map((c) => {
+    const listed: Partial<FoundChoice> = { ...c };
+    delete listed.values;
+    return listed as ListedChoice;
+  });
+  return {
+    choices,
+    ...(skipped
+      ? {
+          message: `${skipped} grant(s) depend on a choice and are not expanded; answer it to see their choices.`,
+        }
+      : {}),
+  };
 }
 
 function carryFor(source: any, equipped: boolean): Record<string, unknown> | undefined {
@@ -181,11 +317,38 @@ function observe(actor: any): EmbedObservation {
 
 export const pf2eEmbedHook: EmbedHook = Object.freeze({
   systemId: 'pf2e',
-  async prepare({ actor, entry, source, overrides }: EmbedInput): Promise<Record<string, any>> {
-    void entry;
-    await scanHeadless(source);
+  async prepare({
+    user,
+    actor,
+    entry,
+    source,
+    overrides,
+    choices,
+    onUnanswered,
+  }: EmbedInput): Promise<Record<string, any>> {
+    const rootUuid = String(entry?.uuid ?? source?._stats?.compendiumSource ?? '');
+    const { found, labels } = await scanHeadless(source, rootUuid, {
+      decisions: choices ?? [],
+      actor,
+      user,
+    });
+    const decisions = choices ?? [];
+    resolveChoices(
+      found,
+      decisions,
+      onUnanswered ?? 'reject',
+      (c) => labels.get(c) ?? label(source),
+    );
+    // Anything left to answer (or ignore) needs the wrapper; without it nothing may reach a prompt.
+    if ((found.length || decisions.length) && !choiceWrapperInstalled())
+      invalid(`${label(source)}: choices cannot be answered: ${choiceWrapperError()}`);
     applyOverrides(actor, source, overrides);
     return source;
+  },
+  async run<T>(input: EmbedRunInput, create: () => Promise<T>) {
+    // No wrapper (a non-choice item on a system whose install failed): the create is unchanged.
+    if (!choiceWrapperInstalled()) return { value: await create(), report: [], timedOut: false };
+    return withChoiceCall(input.callId, String(input.actor?.id ?? ''), input.choices ?? [], create);
   },
   observe,
 });

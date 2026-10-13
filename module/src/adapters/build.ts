@@ -1,4 +1,8 @@
-import type { CharacterBuildChange, CharacterBuildOutput } from '@agent-gateway/protocol';
+import type {
+  CharacterBuildChange,
+  CharacterBuildOutput,
+  ChoiceListing,
+} from '@agent-gateway/protocol';
 import type { AdapterExecutionContext, AdapterPayload } from './types.js';
 import { genericBuildHook } from './generic/build.js';
 import { pf2eBuildHook } from './pf2e/build.js';
@@ -17,6 +21,12 @@ export interface BuildHook {
     changes: readonly CharacterBuildChange[],
     context: AdapterExecutionContext,
   ): BuildPayload | Promise<BuildPayload>;
+  /** Optional: the choices a compendium Item source (and its grants) will ask for. Reads only. */
+  listChoices?(
+    source: unknown,
+    uuid: string,
+    user?: unknown,
+  ): Promise<{ choices: ChoiceListing[]; message?: string }>;
 }
 /** Bundled hooks only. Future system tasks insert entries here; no public registration. */
 const hooks: ReadonlyMap<string, BuildHook> = new Map([[pf2eBuildHook.systemId, pf2eBuildHook]]);
