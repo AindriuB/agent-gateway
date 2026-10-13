@@ -38,7 +38,7 @@ To use another port, pass `--http-port <n>` and put the same port in the URL.
 2. In Foundry, open Configure Settings, then Agent Gateway, then Pair with gateway. Enter the code and press Connect. Leave the gateway URL as it is (`ws://localhost:7420`).
 3. Ask for `gateway_status` again. It should say you are connected, with the world and user.
 
-A code lasts 10 minutes and works once; `gateway_status` shows a fresh one when needed. The pairing is kept in that browser and only works from the address it was made from, so `http://` and `https://` addresses of one host pair separately. Your Foundry user's role decides which tools the agent gets.
+A code lasts 10 minutes and works once; `gateway_status` shows a fresh one when needed. The pairing is kept in that browser and only works from the address it was made from, so `http://` and `https://` addresses of one host pair separately. Your Foundry user's role decides which tools the agent gets. Without `--user`, a session follows the connected pairing and can move to a different user or world that you pair later; to fix a session to one user, add `--user <name>` to the gateway command (a Foundry user name or id). See the [security model](../security.md).
 
 ## If something goes wrong
 

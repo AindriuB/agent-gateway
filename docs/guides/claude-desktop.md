@@ -30,6 +30,8 @@ Add the server under `mcpServers`:
 }
 ```
 
+To fix the gateway to one Foundry user, add `"--user", "<name>"` to `args` (a Foundry user name or id). Without it, a chat follows the connected pairing and can move to a different user or world that you pair later. See the [security model](../security.md). The extension has no setting for this.
+
 Node 22.13 or newer must be installed. If Claude Desktop cannot find `npx`, give the full path to it as `command`.
 
 ## Pair
