@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 34 done in `docs/plan/done/`, 32 active in `docs/plan/tasks/` (2026-10-13).
+Inventory: 35 done in `docs/plan/done/`, 31 active in `docs/plan/tasks/` (2026-10-13).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -21,7 +21,7 @@ then MVP B (VPS/hosted).
 ### MVP A: someone else can install it locally
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
-- **A1: 60, 61, 63** (parallel; Owns are disjoint). 60 module zip and `relationships.systems`; 61 npm-installable gateway (bundle or publish the private protocol workspace); 63 stdio conformance, cross-vendor schema checks and the compatibility matrix.
+- **A1: 60, 61, 63** (parallel; Owns are disjoint). 60 module zip and `relationships.systems`; 61 is done (archived in `docs/plan/done/`): the gateway builds as one esbuild bundle at `dist/bin/cli.js` with the private protocol inlined, packs to 4 files, and installs from a packed tarball (not published); 63 stdio conformance, cross-vendor schema checks and the compatibility matrix.
 - **A2: 62** (after 61). Build the `.mcpb` bundle from the 61 output; unsigned, not uploaded.
 - **A3: 64, 65** (after A1 and A2). 64 local release script (version bump, gates, three artefacts, stops before anything irreversible); 65 local quick start, security model and privacy statement.
 - **A4: 66** (after 64 and 65). Cut 0.1.0 through a PR and the release script. It stops for Andrew at every irreversible step: GitHub draft release, publishing it, `npm publish`, any Foundry package listing. The open `relationships.systems` question from 60 must be answered first.
