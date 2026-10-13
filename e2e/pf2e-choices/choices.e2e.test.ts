@@ -165,4 +165,77 @@ describe('pf2e ChoiceSet answers headless (set AGENT_GATEWAY_E2E_PF2E=1 and _WRI
     },
     humanTimeout(1),
   );
+  it(
+    'answers a compendium filter choice with a listed UUID, with no prompt',
+    async () => {
+      await session.browser.page.evaluate(`(() => {
+        globalThis.__agPromptCount = 0;
+        globalThis.__agPromptHook = Hooks.on('renderPickAThingPrompt', () => { globalThis.__agPromptCount++; });
+      })()`);
+      try {
+        // Feats whose ChoiceSet queries the compendium (`choices.filter`), from the pack index.
+        const featUuids = (await session.browser.page.evaluate(`(async () => {
+          const index = await game.packs.get('pf2e.feats-srd').getIndex({ fields: ['system.rules'] });
+          return index
+            .filter((e) => (e.system?.rules ?? []).some((r) => r.key === 'ChoiceSet' && !r.selection &&
+              r.choices && !Array.isArray(r.choices) && Array.isArray(r.choices.filter)))
+            .slice(0, 40)
+            .map((e) => e.uuid);
+        })()`)) as string[];
+        expect(featUuids.length, 'a feat with a filter ChoiceSet').toBeGreaterThan(0);
+        let featUuid: string | undefined;
+        let choices: Array<Record<string, any>> = [];
+        let filterFlag: string | undefined;
+        for (const uuid of featUuids) {
+          const listed = await session.gateway.call('character_build', { listChoices: uuid });
+          expect(listed.isError, listed.text).toBe(false);
+          const found = (listed.structured?.choices ?? []) as Array<Record<string, any>>;
+          // Every choice answerable by value, and at least one with listed UUID options.
+          const filter = found.find(
+            (c) =>
+              !c.dynamic &&
+              c.options.length > 0 &&
+              c.options.every((o: Record<string, any>) => /^(Compendium|Item)\./.test(o.value)),
+          );
+          if (filter && found.every((c) => !c.unsupported && (c.dynamic || c.options.length > 0))) {
+            featUuid = uuid;
+            choices = found;
+            filterFlag = filter.flag;
+            break;
+          }
+        }
+        expect(featUuid, 'a filter-choice feat answerable by listed UUIDs').toBeDefined();
+        const decisions = choices.map((c) => ({
+          flag: c.flag as string,
+          itemUuid: c.itemUuid as string,
+          value: c.options[0]?.value as string,
+        }));
+        const done = await settle(
+          session,
+          await session.gateway.call('compendium_import', {
+            uuid: featUuid,
+            actorUuid,
+            choices: decisions.filter((d) => d.value !== undefined),
+          }),
+        );
+        expect(done.result.isError, done.result.text).toBe(false);
+        const state = (await session.browser.page.evaluate(`(async () => {
+          const actor = await fromUuid(${q(actorUuid)});
+          const selections = {};
+          for (const item of actor.items) Object.assign(selections, item.flags?.pf2e?.rulesSelections ?? {});
+          return { prompts: globalThis.__agPromptCount, selections };
+        })()`)) as { prompts: number; selections: Record<string, unknown> };
+        expect(state.prompts).toBe(0);
+        const chosen = decisions.find((d) => d.flag === filterFlag)!;
+        expect(state.selections[chosen.flag]).toBe(chosen.value);
+      } finally {
+        await session.browser.page.evaluate(`(() => {
+          Hooks.off('renderPickAThingPrompt', globalThis.__agPromptHook);
+          delete globalThis.__agPromptCount;
+          delete globalThis.__agPromptHook;
+        })()`);
+      }
+    },
+    humanTimeout(1),
+  );
 });
