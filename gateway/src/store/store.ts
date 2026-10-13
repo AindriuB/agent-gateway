@@ -37,6 +37,10 @@ export interface Store {
   /** Pairings that are not revoked. */
   listActivePairings(): PairingRow[];
   revokePairing(id: string): boolean;
+  /** Hex sha256 of the local HTTP bearer token; the token itself is never stored. */
+  getHttpTokenHash(): string | undefined;
+  /** Replace the stored hash (rotation), or with `onlyIfAbsent` set it only when none exists. */
+  setHttpTokenHash(hash: string, onlyIfAbsent?: boolean): void;
   close(): void;
 }
 
@@ -85,6 +89,13 @@ export function openStore(path: string, now: () => number = Date.now): Store {
   const revoke = db.prepare(
     'UPDATE pairings SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL',
   );
+  const getSetting = db.prepare('SELECT value FROM gateway_settings WHERE key = ?');
+  const putSetting = db.prepare(
+    'INSERT OR REPLACE INTO gateway_settings (key, value) VALUES (?, ?)',
+  );
+  const putSettingIfAbsent = db.prepare(
+    'INSERT OR IGNORE INTO gateway_settings (key, value) VALUES (?, ?)',
+  );
   return {
     events: createEventRepository(db),
     queue: createQueueRepository(db),
@@ -113,6 +124,12 @@ export function openStore(path: string, now: () => number = Date.now): Store {
       const changed = Number(revoke.run(now(), id).changes) > 0;
       if (changed) for (const listener of revokedListeners) listener();
       return changed;
+    },
+    getHttpTokenHash() {
+      return (getSetting.get('http_token_hash') as { value: string } | undefined)?.value;
+    },
+    setHttpTokenHash(hash, onlyIfAbsent = false) {
+      (onlyIfAbsent ? putSettingIfAbsent : putSetting).run('http_token_hash', hash);
     },
     close() {
       db.close();

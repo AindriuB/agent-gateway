@@ -177,7 +177,7 @@ export class HttpServer {
         200,
         renderStatus({
           version: this.o.version,
-          uptimeMs: Date.now() - this.o.startedAt,
+          uptimeMs: this.now() - this.o.startedAt,
           worlds,
         }),
         'text/html',

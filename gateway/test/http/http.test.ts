@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { HttpServer } from '../../src/http/index.js';
-import { loadOrCreateToken } from '../../src/http/token.js';
+import { loadOrCreateToken, rotateToken } from '../../src/http/token.js';
+import { openStore } from '../../src/store/index.js';
 import { createSessionServer } from '../../src/mcp/session.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool, pairModule, until, type FakeModule } from '../routing/harness.js';
@@ -24,8 +25,10 @@ afterEach(async () => {
   h = undefined;
 });
 
-const token = loadOrCreateToken(undefined);
+const tokenStore = openStore(':memory:');
+const token = loadOrCreateToken(tokenStore);
 const TOKEN = token.created as string;
+token.commit();
 
 async function setup(over: Partial<ConstructorParameters<typeof HttpServer>[0]> = {}) {
   h = await startServer();
@@ -193,22 +196,24 @@ describe('local HTTP transport', () => {
 });
 
 describe('http token', () => {
-  it('is generated once, stored hashed, and verified', async () => {
-    const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const dir = mkdtempSync(join(tmpdir(), 'agh-'));
-    try {
-      const first = loadOrCreateToken(dir);
-      expect(first.created).toBeTruthy();
-      expect(readFileSync(join(dir, 'http-token.sha256'), 'utf8')).not.toContain(first.created!);
-      const second = loadOrCreateToken(dir);
-      expect(second.created).toBeUndefined();
-      expect(second.verify(first.created)).toBe(true);
-      expect(second.verify('other')).toBe(false);
-      expect(second.verify(undefined)).toBe(false);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+  it('is persisted only on commit, stored hashed, verified, and rotated', () => {
+    const store = openStore(':memory:');
+    const first = loadOrCreateToken(store);
+    expect(first.created).toBeTruthy();
+    // A run that never commits (its listen failed) leaves nothing behind.
+    expect(store.getHttpTokenHash()).toBeUndefined();
+    expect(loadOrCreateToken(store).created).toBeTruthy();
+    first.commit();
+    expect(store.getHttpTokenHash()).toMatch(/^[0-9a-f]{64}$/);
+    expect(store.getHttpTokenHash()).not.toContain(first.created!);
+    const second = loadOrCreateToken(store);
+    expect(second.created).toBeUndefined();
+    expect(second.verify(first.created)).toBe(true);
+    expect(second.verify('other')).toBe(false);
+    expect(second.verify(undefined)).toBe(false);
+    const rotated = rotateToken(store);
+    expect(second.verify(first.created)).toBe(false);
+    expect(second.verify(rotated)).toBe(true);
+    store.close();
   });
 });

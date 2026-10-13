@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { createApp } from '../app.js';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { createApp, defaultDbPath } from '../app.js';
 import { ConfigError, HTTP_BIND_HOST, loadConfig } from '../config/index.js';
+import { rotateToken } from '../http/token.js';
+import { openStore } from '../store/index.js';
 import { reportStartFailure } from './start-failure.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
@@ -18,6 +22,8 @@ Options:
                       (bearer token printed once on first run)
   --http-port <n>     Port for --http (default 7421)
   --http-host <addr>  Only 127.0.0.1 is accepted
+  --http-rotate-token Generate a new HTTP bearer token, print it once, and exit. The old token
+                      stops working at once, also in a gateway that is already running
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -50,6 +56,35 @@ function normalizeOrigins(values: readonly string[]): string[] {
   });
 }
 
+/**
+ * One-shot: write the new hash to the store and exit. A running gateway reads the hash from the
+ * store on every request, so the old token stops working and the new one starts working the
+ * moment this commits. The token is printed only after the write succeeded.
+ */
+function rotate(dbOption: string | undefined): void {
+  const dbPath = dbOption ?? defaultDbPath();
+  if (dbPath === ':memory:') {
+    process.stderr.write('--http-rotate-token needs a database file, not :memory:\n');
+    process.exit(2);
+  }
+  try {
+    mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+    const store = openStore(dbPath);
+    try {
+      const token = rotateToken(store);
+      process.stderr.write(`HTTP bearer token (shown once, stored hashed): ${token}\n`);
+      process.stderr.write('The previous token no longer works.\n');
+    } finally {
+      store.close();
+    }
+  } catch (err) {
+    process.stderr.write(
+      `Could not rotate the HTTP token (${(err as Error).message}); the old token is unchanged\n`,
+    );
+    process.exit(1);
+  }
+}
+
 function main(): void {
   let values;
   try {
@@ -63,6 +98,7 @@ function main(): void {
         http: { type: 'boolean' },
         'http-port': { type: 'string' },
         'http-host': { type: 'string' },
+        'http-rotate-token': { type: 'boolean' },
         world: { type: 'string' },
         user: { type: 'string' },
         'allow-origin': { type: 'string', multiple: true },
@@ -87,6 +123,10 @@ function main(): void {
       `Refusing --http-host ${values['http-host']}: local HTTP binds ${HTTP_BIND_HOST} only\n`,
     );
     process.exit(2);
+  }
+  if (values['http-rotate-token']) {
+    rotate(values.db ?? process.env.AGENT_GATEWAY_DB);
+    return;
   }
   let config;
   try {

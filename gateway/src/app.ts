@@ -257,7 +257,10 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startSecondary(reason: string): Promise<void> {
-    if (deps.http) writeStatus('HTTP is served by the primary gateway instance, not this one');
+    if (deps.http)
+      writeStatus(
+        'HTTP is served only by the primary gateway instance; if that was started without --http, restart it with --http',
+      );
     const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
     if (!stateDir || !ep?.ok) {
       const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
@@ -415,7 +418,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
     if (deps.http) {
-      const token = loadOrCreateToken(stateDir);
+      const token = loadOrCreateToken(openedStore());
       const lim = deps.httpLimits ?? {};
       const candidate = new HttpServer({
         host: HTTP_BIND_HOST,
@@ -432,6 +435,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       });
       const httpPort = await candidate.listen();
       httpServer = candidate;
+      token.commit();
       if (token.created) {
         writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
       }

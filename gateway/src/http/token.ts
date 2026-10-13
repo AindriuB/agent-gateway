@@ -1,44 +1,45 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-export const TOKEN_FILE = 'http-token.sha256';
+import type { Store } from '../store/index.js';
 
 const sha256 = (s: string): Buffer => createHash('sha256').update(s).digest();
+const newToken = (): string => randomBytes(32).toString('hex');
 
 export interface HttpToken {
-  /** Constant-time check of a presented token against the stored hash. */
+  /**
+   * Constant-time check of a presented token against the hash currently in the store. The
+   * store is read per request, so a rotation by another process takes effect at once.
+   */
   verify(given: string | undefined): boolean;
   /** Set only on the run that generated the token; it is never stored in the clear. */
   created?: string;
+  /** Persist a freshly generated token's hash. Call it only once the listener is up. */
+  commit(): void;
 }
 
-/** Load the stored token hash from the state dir, or generate a token on first run. */
-export function loadOrCreateToken(stateDir: string | undefined): HttpToken {
-  const file = stateDir ? join(stateDir, TOKEN_FILE) : undefined;
-  let hash: Buffer | undefined;
-  if (file && existsSync(file)) {
-    const hex = readFileSync(file, 'utf8').trim();
-    if (/^[0-9a-f]{64}$/.test(hex)) hash = Buffer.from(hex, 'hex');
-  }
-  let created: string | undefined;
-  if (!hash) {
-    created = randomBytes(32).toString('hex');
-    hash = sha256(created);
-    if (file) {
-      const tmp = `${file}.${process.pid}.tmp`;
-      try {
-        writeFileSync(tmp, `${hash.toString('hex')}\n`, { mode: 0o600 });
-        renameSync(tmp, file);
-      } catch (err) {
-        rmSync(tmp, { force: true });
-        throw err;
-      }
-    }
-  }
-  const expected = hash;
+/**
+ * The token for this run. The hash is stored only when `commit()` is called, so a run that
+ * fails to listen leaves nothing behind and the next run still prints a token.
+ */
+export function loadOrCreateToken(
+  store: Pick<Store, 'getHttpTokenHash' | 'setHttpTokenHash'>,
+): HttpToken {
+  const created = store.getHttpTokenHash() === undefined ? newToken() : undefined;
   return {
-    verify: (given) => given !== undefined && timingSafeEqual(sha256(given), expected),
+    verify(given) {
+      const hex = store.getHttpTokenHash();
+      if (given === undefined || hex === undefined || !/^[0-9a-f]{64}$/.test(hex)) return false;
+      return timingSafeEqual(sha256(given), Buffer.from(hex, 'hex'));
+    },
     ...(created ? { created } : {}),
+    commit() {
+      if (created) store.setHttpTokenHash(sha256(created).toString('hex'), true);
+    },
   };
+}
+
+/** New token; its hash replaces the stored one, which invalidates the old token. */
+export function rotateToken(store: Pick<Store, 'setHttpTokenHash'>): string {
+  const token = newToken();
+  store.setHttpTokenHash(sha256(token).toString('hex'));
+  return token;
 }
