@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** none
-**Status:** Next (Andrew, 2026-10-13): wave 1, before 32
+**Status:** Complete. Offline gate green; native v14 acceptance passed 2/2 (Foundry 14.369 / pf2e 8.6.0). Merge PR number is added when Andrew merges. Follow-up limits are in Task44 and Task49.
 **Owns:**
 - protocol/src/tools/compendium-import.ts
 - protocol/test/tools/compendium-import.test.ts (new)
