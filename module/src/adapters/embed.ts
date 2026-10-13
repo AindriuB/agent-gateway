@@ -60,6 +60,12 @@ export interface EmbedHook {
     input: EmbedRunInput,
     create: () => Promise<T>,
   ): Promise<{ value: T; report: ChoiceReportEntry[]; timedOut?: boolean }>;
+  /**
+   * A short, fixed disclosure about the prepared source (for example, that advancements were not
+   * applied). compendium_import appends it to its result text. It must never echo untrusted
+   * text; the caller bounds it regardless.
+   */
+  note?(source: Record<string, any>): string | undefined;
   /** Start counting native writes that carry no audit callOptions. */
   observe?(actor: any): EmbedObservation;
 }

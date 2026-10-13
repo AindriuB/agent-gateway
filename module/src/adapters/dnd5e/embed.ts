@@ -7,18 +7,19 @@ declare const Hooks: any;
 // Written against dnd5e 6.0.6; line references are to systems/dnd5e/dnd5e.mjs of that release.
 //
 // What happens when an Item is created on an Actor through the API:
-//  - No dialog opens. Advancement prompts come only from AdvancementManager, which the sheet's
-//    drop handler starts (dnd5e.mjs:66402, forNewItem :25309); createEmbeddedDocuments never does.
-//    Class, subclass, species (`race`), background and feat Items therefore arrive with their
-//    advancement definitions but none of them is applied: no hit points, no granted items, no
-//    proficiencies, no ability score improvements. preCreateAdvancement (:28273) only fills in
-//    default advancement data on a source that has none.
+//  - No dialog opens. Advancements are applied by AdvancementManager (forNewItem dnd5e.mjs:25309,
+//    forLevelChange :25454, per-type Advancement#apply(level, data) :24925), which the sheet's drop
+//    handler starts (:66402); createEmbeddedDocuments never does. They could be applied without
+//    the sheet, but that is not done here (a follow-up task). Class, subclass, species (`race`),
+//    background and feat Items therefore arrive with their advancement definitions and none is
+//    applied: no hit points, no granted items, no proficiencies, no ability score improvements.
+//    preCreateAdvancement (:28273) only fills in default advancement data on a source with none.
 //  - Item5e#_preCreate (:35918) refuses non-physical Items on group Actors and sets an identifier.
 //  - ClassData#_onCreate (:29191) assigns the primary class and spellcasting ability with Actor
 //    updates that carry no audit options; SpellData#_preCreate (:34653) sets preparation; the
 //    `observe` hook counts such writes.
 // So the hook has nothing to answer and nothing to prompt. It refuses what could not be created
-// safely and bounds the work.
+// safely, bounds the work, and `note` tells the caller that advancements were not applied.
 
 /** Item types a character may carry; `facility` belongs to bastions and needs a prompt-driven flow. */
 const TYPES = new Set([
@@ -37,7 +38,7 @@ const TYPES = new Set([
 ]);
 /** Types with physical state (PhysicalItemTemplate: quantity, weight; dnd5e.mjs:29525-29545). */
 const PHYSICAL = new Set(['consumable', 'container', 'equipment', 'loot', 'tool', 'weapon']);
-/** Item types whose creation applies advancement only through a UI flow. */
+/** Item types that carry advancements, none of which embedding applies. */
 const ADVANCING = new Set(['background', 'class', 'feat', 'race', 'subclass']);
 const MAX_ENTRIES = 128;
 const label = (src: any): string => `"${String(src?.name ?? 'unnamed').slice(0, 80)}"`;
@@ -110,6 +111,11 @@ export const dnd5eEmbedHook: EmbedHook = Object.freeze({
     return source;
   },
   observe,
+  /** A fixed text: nothing from the Item source is echoed, so there is no untrusted text to escape. */
+  note: (source: any): string | undefined =>
+    leavesAdvancementsUnapplied(source)
+      ? 'This dnd5e Item carries advancements (hit points, granted items, proficiencies, ability score improvements) that were NOT applied by embedding it.'
+      : undefined,
 });
 
 /** True when embedding this Item source will leave advancements unapplied (see the file header). */

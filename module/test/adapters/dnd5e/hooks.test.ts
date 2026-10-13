@@ -66,6 +66,18 @@ describe('dnd5e embed hook', () => {
     };
     expect(() => dnd5eEmbedHook.prepare(input(big))).toThrow();
   });
+  it('notes that advancements were not applied, with fixed text only', () => {
+    const cls = {
+      type: 'class',
+      name: '<img src=x onerror=alert(1)>',
+      system: { advancement: [{}] },
+    };
+    const note = dnd5eEmbedHook.note!(cls);
+    expect(note).toContain('NOT applied');
+    expect(note).not.toContain('<img');
+    expect(dnd5eEmbedHook.note!({ type: 'weapon', system: {} })).toBeUndefined();
+    expect(dnd5eEmbedHook.note!({ type: 'class', system: { advancement: [] } })).toBeUndefined();
+  });
   it('counts uncorrelated writes and always unhooks', () => {
     const a = actor();
     const watch = dnd5eEmbedHook.observe!(a);

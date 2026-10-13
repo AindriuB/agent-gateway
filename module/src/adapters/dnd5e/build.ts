@@ -12,11 +12,11 @@ declare const Hooks: any;
 // Written against dnd5e 6.0.6; line references are to systems/dnd5e/dnd5e.mjs of that release.
 //
 // Scope. dnd5e's build steps (ability scores, hit points, class/species/background features,
-// proficiencies, ASIs) are AdvancementManager steps (dnd5e.mjs:25085), which are application
-// windows driven by a person; there is no headless entry point that applies them. This hook
-// therefore supports only what is a plain Actor field and fits the interface: skill proficiency
-// ranks (system.skills.<key>.value, 0, 1 or 2; :83798-83801). Everything else is refused with a
-// message. Ability scores and hit points are plain fields (system.abilities.<key>.value,
+// proficiencies, ASIs) are advancements, applied through AdvancementManager (dnd5e.mjs:25085;
+// forNewItem :25309, forLevelChange :25454, Advancement#apply(level, data) :24925). Applying them
+// headlessly is possible but is a follow-up task, not part of this hook. It supports only what is
+// a plain Actor field and fits the interface: skill proficiency ranks (system.skills.<key>.value,
+// 0, 1 or 2; :83798-83801). Everything else is refused with a message. Ability scores and hit points are plain fields (system.abilities.<key>.value,
 // system.attributes.hp) that document_update can set; the interface has no place for them.
 const MAX_RANK = 2;
 const MAX_ROWS = 64;
@@ -34,7 +34,7 @@ const isCharacter = (actor: any): boolean => actor?.type === 'character';
 
 const REFUSED: Record<string, string> = {
   attribute_boost:
-    'dnd5e has no attribute boosts: ability scores come from advancement steps that need the sheet. Set system.abilities.<key>.value with document_update instead',
+    'dnd5e has no attribute boosts: this tool does not apply advancements yet. Set system.abilities.<key>.value with document_update instead',
   key_attribute: 'dnd5e has no key attribute',
   feat_slot: 'dnd5e has no feat slots',
 };
@@ -56,7 +56,7 @@ function describe(actor: any): BuildPayload {
   ).length;
   if (pending)
     notes.push(
-      `${pending} embedded class, species, background or feat Item(s) carry advancements; embedding does not apply them, so hit points, granted items and proficiencies come only from changes made separately.`,
+      `${pending} embedded class, species, background or feat Item(s) carry advancements; embedding does not apply them, so hit points, granted items and proficiencies are not set.`,
     );
   return {
     supported: true,

@@ -6,7 +6,7 @@ import { openUserSession, type UserSession } from '../lib/session.js';
 // Opt-in: set AGENT_GATEWAY_E2E_DND5E_WORLD=dnd5e-test (the dnd5e world that is currently running;
 // Foundry 14, dnd5e 6.0.6). Without it every test skips. The suite creates its own temporary
 // GM-owned character (the human approves every write), builds it from SRD compendium entries
-// (dnd5e.classes, dnd5e.items, dnd5e.spells) and deletes exactly that UUID afterwards.
+// (dnd5e.classes, dnd5e.equipment24, dnd5e.spells) and deletes exactly that UUID afterwards.
 const world = process.env.AGENT_GATEWAY_E2E_DND5E_WORLD;
 const enabled = Boolean(world);
 const SKIP = 'skipped: set AGENT_GATEWAY_E2E_DND5E_WORLD (for example dnd5e-test)';
@@ -132,7 +132,7 @@ describe(`dnd5e adapter (${enabled ? `world ${world}` : SKIP})`, () => {
     'builds the temporary character with compendium_import and character_build',
     async () => {
       await embed('class', 'dnd5e.classes', 'Fighter');
-      await embed('sword', 'dnd5e.items', 'Longsword', { equipped: true });
+      await embed('sword', 'dnd5e.equipment24', 'Longsword', { equipped: true });
       await embed('cantrip', 'dnd5e.spells', 'Fire Bolt');
       const set = await settle(
         session,
