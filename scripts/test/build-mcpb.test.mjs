@@ -23,20 +23,45 @@ describe('gateway/mcpb/manifest.json', () => {
     assert.equal(source.tools, undefined);
   });
 
-  it('passes the Foundry URL as the allowed origin', () => {
-    assert.ok(source.server.mcp_config.args.includes('--allow-origin=${user_config.foundry_url}'));
-    assert.equal(source.user_config.foundry_url.default, 'http://localhost:30000');
-    assert.ok(!source.user_config.foundry_url.sensitive);
+  it('needs no settings: no URL argument, three advanced optional ports and log level', () => {
+    assert.deepEqual(source.server.mcp_config.args, ['${__dirname}/dist/bin/cli.js']);
+    assert.deepEqual(Object.keys(source.user_config).sort(), [
+      'http_port',
+      'link_port',
+      'log_level',
+    ]);
+    for (const [name, opt] of Object.entries(source.user_config)) {
+      assert.equal(opt.required, false, name);
+      assert.notEqual(opt.default, undefined, name);
+      assert.ok(opt.description.startsWith('Advanced.'), name);
+    }
+  });
+
+  it('names no retired setting anywhere', () => {
+    const strings = [];
+    const walk = (v) => {
+      if (typeof v === 'string') strings.push(v);
+      else if (v && typeof v === 'object') {
+        for (const [k, x] of Object.entries(v)) {
+          strings.push(k);
+          walk(x);
+        }
+      }
+    };
+    walk(source);
+    for (const s of strings)
+      for (const banned of ['foundry_url', 'role', 'allow-origin'])
+        assert.ok(!s.includes(banned), `${banned} in ${s}`);
   });
 
   it('exposes only known env settings and no secrets', () => {
     const allowed = new Set([
       'AGENT_GATEWAY_LINK_PORT',
       'AGENT_GATEWAY_HTTP_PORT',
-      'AGENT_GATEWAY_ROLE',
       'AGENT_GATEWAY_LOG_LEVEL',
     ]);
     const env = source.server.mcp_config.env;
+    assert.deepEqual(new Set(Object.keys(env)), allowed);
     for (const [k, v] of Object.entries(env)) {
       assert.ok(allowed.has(k), k);
       assert.match(v, /^\$\{user_config\.\w+\}$/);

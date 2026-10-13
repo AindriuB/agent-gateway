@@ -10,7 +10,7 @@ import {
   hashToken,
 } from '../../src/link/index.js';
 import { openStore } from '../../src/store/index.js';
-import { TestClient, hello, startServer, type Harness } from './helpers.js';
+import { ORIGIN, TestClient, hello, startServer, type Harness } from './helpers.js';
 
 let h: Harness | undefined;
 const clients: TestClient[] = [];
@@ -134,6 +134,7 @@ describe('handshake', () => {
       tokenHash: hashToken(token),
       worldId: 'w1',
       userId: 'u1',
+      origin: ORIGIN,
     });
     const other = await connect(h.port);
     other.send(hello({ kind: 'pairingToken', token }, { userId: 'u9' }));

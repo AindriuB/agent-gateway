@@ -15,19 +15,37 @@ import {
 } from '@agent-gateway/protocol';
 import type { Store } from '../store/index.js';
 import type { PairingCodes } from './pairing-codes.js';
+import { CodeAttempts } from './code-attempts.js';
+import { canonicalOrigin } from './origin.js';
 import { toolsets } from '../routing/toolsets.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 export const MAX_MISSED_PONGS = 2;
+/** Sockets that have upgraded but not yet sent `hello`; the next upgrade gets a 503. */
+export const MAX_PENDING_HANDSHAKES = 16;
+
+/** Why a connection attempt was refused; the text is for the local log, never sent to the peer. */
+export type OriginRejection =
+  | 'origin is not an allowed browser origin'
+  | 'host header is not loopback'
+  | 'no valid pairing code'
+  | 'pairing was made from a different origin'
+  | 'pairing predates origin binding; pair again with a code'
+  | 'too many failed pairing codes';
 
 export interface LinkServerOptions {
   port: number;
   store: Store;
   codes: PairingCodes;
   registry: LinkRegistry;
-  /** Exact `Origin` header values allowed to connect. */
-  allowedOrigins: readonly string[];
+  /**
+   * Optional extra restriction: exact `Origin` values allowed to reach `hello`. Undefined or empty
+   * means any canonical http(s) origin may; a pairing code or a token bound to it is still needed.
+   */
+  allowedOrigins?: readonly string[];
+  /** Clock for the failed-code window; defaults to Date.now. */
+  now?: () => number;
   gatewayVersion: string;
   /** Defaults to 127.0.0.1. Any other address also requires `allowNonLoopback`. */
   host?: string;
@@ -36,8 +54,8 @@ export interface LinkServerOptions {
   helloTimeoutMs?: number;
   events?: EventBuffer;
   queue?: OfflineQueue;
-  /** Called when an upgrade is refused for its `Origin`; `undefined` means no header. */
-  onOriginRejected?: (origin: string | undefined) => void;
+  /** Called when a connection is refused; `origin` is `undefined` when there was no usable header. */
+  onOriginRejected?: (origin: string | undefined, reason: OriginRejection) => void;
 }
 
 export const hashToken = (token: string): string =>
@@ -68,9 +86,13 @@ export class LinkServer {
   private readonly wss: WebSocketServer;
   private readonly sockets = new Set<WebSocket>();
   private readonly host: string;
+  private readonly attempts: CodeAttempts;
+  private pending = 0;
+  private boundPort = 0;
 
   constructor(private readonly opts: LinkServerOptions) {
     this.host = opts.host ?? '127.0.0.1';
+    this.attempts = new CodeAttempts(opts.now);
     if (this.host !== '127.0.0.1' && !opts.allowNonLoopback) {
       throw new Error(`Refusing to bind link server to ${this.host} without allowNonLoopback`);
     }
@@ -88,7 +110,8 @@ export class LinkServer {
       this.http.listen(this.opts.port, this.host, () => {
         this.http.off('error', onError);
         const addr = this.http.address();
-        resolve(typeof addr === 'object' && addr ? addr.port : this.opts.port);
+        this.boundPort = typeof addr === 'object' && addr ? addr.port : this.opts.port;
+        resolve(this.boundPort);
       });
     });
   }
@@ -99,16 +122,42 @@ export class LinkServer {
   }
 
   private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const origin = req.headers.origin;
-    if (origin === undefined || !this.opts.allowedOrigins.includes(origin)) {
-      this.opts.onOriginRejected?.(origin);
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+    const header = req.headers.origin;
+    const refuse = (status: string, reason?: OriginRejection): void => {
+      if (reason) this.opts.onOriginRejected?.(header, reason);
+      socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
+    };
+    // A rebound DNS name still reaches loopback, but its Host is the attacker's name.
+    if (!this.opts.allowNonLoopback) {
+      const host = req.headers.host;
+      if (host !== `localhost:${this.boundPort}` && host !== `127.0.0.1:${this.boundPort}`) {
+        refuse('403 Forbidden', 'host header is not loopback');
+        return;
+      }
+    }
+    const origin = canonicalOrigin(header);
+    const allowed = this.opts.allowedOrigins;
+    if (origin === undefined || (allowed && allowed.length > 0 && !allowed.includes(origin))) {
+      refuse('403 Forbidden', 'origin is not an allowed browser origin');
       return;
     }
-    this.wss.handleUpgrade(req, socket, head, (ws) => this.onConnection(ws));
+    if (this.pending >= MAX_PENDING_HANDSHAKES) {
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return;
+    }
+    // Held until hello arrives or the socket closes, whichever comes first.
+    this.pending++;
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      this.pending--;
+    };
+    socket.once('close', release);
+    this.wss.handleUpgrade(req, socket, head, (ws) => this.onConnection(ws, origin, release));
   }
 
-  private onConnection(ws: WebSocket): void {
+  private onConnection(ws: WebSocket, origin: string, releasePending: () => void): void {
     this.sockets.add(ws);
     let conn: LinkConnection | undefined;
     let handshaking = false;
@@ -175,7 +224,8 @@ export class LinkServer {
         }
         handshaking = true;
         clearTimeout(helloTimer);
-        conn = this.handshake(msg, send, reject, ws);
+        releasePending();
+        conn = this.handshake(msg, origin, send, reject, ws);
         if (conn) {
           heartbeat = setInterval(() => {
             if (missed >= MAX_MISSED_PONGS) {
@@ -264,6 +314,7 @@ export class LinkServer {
 
   private handshake(
     hello: Extract<LinkMessage, { type: 'hello' }>,
+    origin: string,
     send: (m: LinkMessage) => void,
     reject: (code: ErrorCode, message: string) => void,
     ws: WebSocket,
@@ -274,15 +325,21 @@ export class LinkServer {
       return undefined;
     }
     const { store, codes } = this.opts;
-    const invalid = (): undefined => {
-      reject('PAIRING_INVALID', 'Pairing code or token is invalid, expired or already used');
+    const invalid = (reason: OriginRejection, code: ErrorCode = 'PAIRING_INVALID'): undefined => {
+      this.opts.onOriginRejected?.(origin, reason);
+      reject(code, reason);
       return undefined;
     };
     let agentId: string;
     let issuedToken: string | undefined;
     let recordedName: string;
     if (hello.auth.kind === 'pairingCode') {
-      if (!codes.consume(hello.auth.code)) return invalid();
+      // Checked before the code store, so a valid code is neither spent nor found by guessing.
+      if (this.attempts.limited()) return invalid('too many failed pairing codes', 'RATE_LIMITED');
+      if (!codes.consume(hello.auth.code)) {
+        this.attempts.recordFailure();
+        return invalid('no valid pairing code');
+      }
       issuedToken = randomBytes(32).toString('base64url');
       agentId = randomUUID();
       store.createPairing({
@@ -291,6 +348,7 @@ export class LinkServer {
         worldId: hello.world.id,
         userId: hello.user.id,
         userName: hello.user.name,
+        origin,
       });
       recordedName = hello.user.name;
     } else {
@@ -301,8 +359,11 @@ export class LinkServer {
         row.worldId !== hello.world.id ||
         row.userId !== hello.user.id
       ) {
-        return invalid();
+        return invalid('no valid pairing code');
       }
+      if (row.origin === null)
+        return invalid('pairing predates origin binding; pair again with a code');
+      if (row.origin !== origin) return invalid('pairing was made from a different origin');
       agentId = row.id;
       // The name given at pairing is the one that counts; a reconnect's hello name is only a claim.
       recordedName = row.userName;

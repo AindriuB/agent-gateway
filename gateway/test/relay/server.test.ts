@@ -37,7 +37,7 @@ vi.mock('node:crypto', async (orig) => {
 });
 
 const PORT = 7777;
-const CFG = makeRelayConfig('player', ['http://localhost:30000'], 1000);
+const CFG = makeRelayConfig(['http://localhost:30000'], 7421, 'info', 1000);
 
 interface Rig {
   dir: string;
@@ -225,10 +225,11 @@ describe('relay config fingerprint', () => {
   it('refuses a differing config that is not newer, with the primary config, and creates no session', async () => {
     const r = await rig();
     for (const config of [
-      { ...CFG, role: 'gm' },
-      { ...CFG, origins: ['https://foundry.local'] },
-      { ...CFG, role: 'gm', startedAt: CFG.startedAt }, // tie
-      { ...CFG, role: 'gm', startedAt: CFG.startedAt - 1 },
+      { ...CFG, allowOrigins: ['https://foundry.local'] },
+      { ...CFG, httpPort: 7500 },
+      { ...CFG, logLevel: 'debug' },
+      { ...CFG, httpPort: 7500, startedAt: CFG.startedAt }, // tie
+      { ...CFG, logLevel: 'debug', startedAt: CFG.startedAt - 1 },
       undefined,
     ]) {
       const res = await rawHello(r, withConfig(config)(r));
@@ -244,17 +245,24 @@ describe('relay config fingerprint', () => {
     const r = await rig({ onStepDown: (why) => stepped.push(why) });
     const res = await rawHello(
       r,
-      hello(r, { config: { ...CFG, role: 'gm', startedAt: CFG.startedAt + 1 } }),
+      hello(r, { config: { ...CFG, logLevel: 'debug', startedAt: CFG.startedAt + 1 } }),
     );
     expect(JSON.parse(res.reply).code).toBe('RELAY_CONFIG_STEPDOWN');
     expect(r.create).not.toHaveBeenCalled();
     expect(stepped).toEqual([]); // still serving during the grace period
     await until(() => stepped.length === 1, 5000, 'step down');
-    expect(stepped[0]).toContain('role player here vs gm there');
+    expect(stepped[0]).toContain('log level info here vs debug there');
     // a second request does not step down twice
     await sleep(100);
     expect(stepped).toHaveLength(1);
   }, 10_000);
+
+  it('parses a config without a role and ignores one that an older peer sends', async () => {
+    const { parseRelayConfig } = await import('../../src/relay/config.js');
+    expect(parseRelayConfig(CFG)).toEqual(CFG);
+    expect(parseRelayConfig({ ...CFG, role: 'gm' })).toEqual(CFG);
+    expect(parseRelayConfig({ origins: [], role: 'gm', startedAt: 1 })).toBeUndefined();
+  });
 
   it('serves a matching config regardless of start order', async () => {
     const r = await rig();
@@ -262,7 +270,7 @@ describe('relay config fingerprint', () => {
       endpoint: r.sock,
       stateDir: r.dir,
       linkPort: PORT,
-      config: { ...CFG, origins: [...CFG.origins], startedAt: CFG.startedAt + 500 },
+      config: { ...CFG, allowOrigins: [...CFG.allowOrigins], startedAt: CFG.startedAt + 500 },
       selector: {},
     });
     expect(c.kind).toBe('ok');

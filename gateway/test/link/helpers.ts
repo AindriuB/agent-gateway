@@ -56,8 +56,15 @@ export class TestClient {
     });
   }
 
-  static async connect(port: number, origin: string | null = ORIGIN): Promise<TestClient> {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`, origin ? { origin } : {});
+  static async connect(
+    port: number,
+    origin: string | null = ORIGIN,
+    extra: { host?: string } = {},
+  ): Promise<TestClient> {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      ...(origin ? { origin } : {}),
+      ...(extra.host ? { headers: { Host: extra.host } } : {}),
+    });
     await new Promise<void>((res, rej) => {
       ws.once('open', () => res());
       ws.once('error', rej);

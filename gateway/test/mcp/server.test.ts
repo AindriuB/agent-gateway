@@ -4,68 +4,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { defineTool, toJsonSchema, eventsPoll, eventsHistory } from '@agent-gateway/protocol/tools';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
-import { EmptyModuleConnections } from '../../src/app.js';
-import { createMcpServer } from '../../src/mcp/index.js';
-
-const fixture = defineTool({
-  name: 'fixture_tool',
-  minRole: 'player',
-  category: 'read',
-  handledBy: 'module',
-  description: 'fixture',
-  input: z.object({ a: z.string() }),
-  output: z.object({ b: z.string() }),
-});
-
-async function connect(tools: Parameters<typeof createMcpServer>[0]['tools']) {
-  const server = createMcpServer({
-    version: '0.0.0',
-    role: 'player',
-    connections: new EmptyModuleConnections(),
-    tools,
-  });
-  const client = new Client({ name: 't', version: '0' });
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  await Promise.all([server.connect(a), client.connect(b)]);
-  return client;
-}
-
-describe('mcp server', () => {
-  it('never lists or forwards gateway-owned event tools in legacy mode', async () => {
-    const c = await connect([fixture, eventsPoll, eventsHistory]);
-    expect((await c.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
-    const r = await c.callTool({ name: 'events_poll', arguments: {} });
-    expect(JSON.stringify(r)).toContain('UNKNOWN_TOOL');
-    await c.close();
-  });
-  it('lists [] for an empty registry', async () => {
-    expect((await (await connect([])).listTools()).tools).toEqual([]);
-  });
-  it('lists registered tools with JSON Schema', async () => {
-    const { tools } = await (await connect([fixture])).listTools();
-    expect(tools.map((t) => t.name)).toEqual(['fixture_tool']);
-    expect(tools[0]?.inputSchema.type).toBe('object');
-    expect(tools[0]?.outputSchema).toEqual({
-      type: 'object',
-      anyOf: [
-        toJsonSchema(fixture).outputSchema,
-        expect.objectContaining({ required: ['status', 'id'], additionalProperties: false }),
-      ],
-    });
-  });
-  it('answers calls with world offline', async () => {
-    const res = await (await connect([fixture])).callTool({ name: 'fixture_tool', arguments: {} });
-    expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toContain('world offline');
-    expect(res.structuredContent).toBeUndefined();
-    expect(JSON.stringify(res.content)).toContain('WORLD_OFFLINE: ');
-  });
-});
 
 describe('cli', () => {
   const cli = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));

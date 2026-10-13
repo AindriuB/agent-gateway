@@ -2,49 +2,63 @@ import { safeText } from '../routing/index.js';
 
 /**
  * The parts of a gateway's configuration that must agree between a primary and the instances that
- * relay to it: they decide what a session may do (role) and who may reach the link (origins). It
- * holds no secrets. `startedAt` is the process start time, used only to order mismatched configs.
+ * relay to it. `allowOrigins` is the optional `--allow-origin` restriction (empty means any
+ * origin); the ports and log level are the settings a user can change without restarting the host.
+ * It holds no secrets. `startedAt` is the process start time, used only to order mismatched configs.
  */
 export interface RelayConfig {
-  role: string;
-  origins: string[];
+  allowOrigins: string[];
+  httpPort: number;
+  logLevel: string;
   startedAt: number;
 }
 
 export const makeRelayConfig = (
-  role: string,
-  origins: readonly string[],
+  allowOrigins: readonly string[],
+  httpPort: number,
+  logLevel: string,
   startedAt: number,
-): RelayConfig => ({ role, origins: [...origins].sort(), startedAt });
+): RelayConfig => ({ allowOrigins: [...allowOrigins].sort(), httpPort, logLevel, startedAt });
 
 export function parseRelayConfig(v: unknown): RelayConfig | undefined {
   if (typeof v !== 'object' || v === null) return undefined;
   const c = v as Record<string, unknown>;
   if (
-    typeof c.role !== 'string' ||
+    typeof c.httpPort !== 'number' ||
+    typeof c.logLevel !== 'string' ||
     typeof c.startedAt !== 'number' ||
-    !Array.isArray(c.origins) ||
-    c.origins.length > 64 ||
-    !c.origins.every((o) => typeof o === 'string')
+    !Array.isArray(c.allowOrigins) ||
+    c.allowOrigins.length > 64 ||
+    !c.allowOrigins.every((o) => typeof o === 'string')
   )
     return undefined;
-  return { role: c.role, origins: [...(c.origins as string[])].sort(), startedAt: c.startedAt };
+  return {
+    allowOrigins: [...(c.allowOrigins as string[])].sort(),
+    httpPort: c.httpPort,
+    logLevel: c.logLevel,
+    startedAt: c.startedAt,
+  };
 }
 
 export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
-  a.role === b.role &&
-  a.origins.length === b.origins.length &&
-  a.origins.every((o, i) => o === b.origins[i]);
+  a.httpPort === b.httpPort &&
+  a.logLevel === b.logLevel &&
+  a.allowOrigins.length === b.allowOrigins.length &&
+  a.allowOrigins.every((o, i) => o === b.allowOrigins[i]);
 
 /** Names what differs, for logs and the degraded reason. Untrusted text is sanitised. */
 export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | undefined): string {
   if (!theirs) return 'the other gateway did not report its configuration';
   const parts: string[] = [];
-  if (mine.role !== theirs.role)
-    parts.push(`role ${safeText(mine.role)} here vs ${safeText(theirs.role)} there`);
-  if (mine.origins.join(',') !== theirs.origins.join(','))
+  if (mine.allowOrigins.join(',') !== theirs.allowOrigins.join(','))
     parts.push(
-      `allowed origins [${mine.origins.map(safeText).join(', ')}] here vs [${theirs.origins.map(safeText).join(', ')}] there`,
+      `allowed origins [${mine.allowOrigins.map(safeText).join(', ')}] here vs [${theirs.allowOrigins.map(safeText).join(', ')}] there`,
     );
+  if (mine.httpPort !== theirs.httpPort)
+    parts.push(
+      `http port ${safeText(String(mine.httpPort))} here vs ${safeText(String(theirs.httpPort))} there`,
+    );
+  if (mine.logLevel !== theirs.logLevel)
+    parts.push(`log level ${safeText(mine.logLevel)} here vs ${safeText(theirs.logLevel)} there`);
   return parts.join('; ') || 'configuration differs';
 }

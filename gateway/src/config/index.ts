@@ -4,7 +4,6 @@ import { z } from 'zod';
 export const ConfigSchema = z.object({
   linkPort: z.coerce.number().int().min(1).max(65535).default(7420),
   httpPort: z.coerce.number().int().min(1).max(65535).default(7421),
-  role: z.enum(['player', 'gm']).default('player'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
@@ -15,7 +14,6 @@ export class ConfigError extends Error {}
 const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_LINK_PORT: 'linkPort',
   AGENT_GATEWAY_HTTP_PORT: 'httpPort',
-  AGENT_GATEWAY_ROLE: 'role',
   AGENT_GATEWAY_LOG_LEVEL: 'logLevel',
 };
 
@@ -47,13 +45,22 @@ export interface LoadConfigInput {
   configPath?: string | undefined;
   env?: NodeJS.ProcessEnv;
   flags?: Partial<Record<keyof Config, unknown>>;
+  /** Called once if a retired `role` setting was given. The value is otherwise ignored. */
+  onIgnored?: (message: string) => void;
 }
+
+export const IGNORED_ROLE_MESSAGE =
+  'AGENT_GATEWAY_ROLE / config "role" is ignored: the tool tier comes from the Foundry user\'s role';
 
 /** Precedence: file, then env, then flags (later wins). */
 export function loadConfig(input: LoadConfigInput = {}): Config {
   const env = input.env ?? process.env;
   const merged: Record<string, unknown> = {};
   if (input.configPath) Object.assign(merged, readConfigFile(input.configPath));
+  // The tool tier comes only from the Foundry user's role, never from a gateway setting.
+  const roleGiven = 'role' in merged || (env.AGENT_GATEWAY_ROLE ?? '') !== '';
+  delete merged.role;
+  if (roleGiven) input.onIgnored?.(IGNORED_ROLE_MESSAGE);
   for (const [envKey, key] of Object.entries(ENV_KEYS)) {
     const v = env[envKey];
     if (v !== undefined && v !== '') merged[key] = v;
