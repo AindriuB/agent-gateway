@@ -51,7 +51,7 @@ primary goes away, a secondary takes over, within a bounded number of attempts.
    - `{"relay":1,"ok":false,"code":C}` on refusal, then it closes. `C` is one of `RELAY_AUTH`, `RELAY_PORT_MISMATCH`, `RELAY_SELECTOR_MISMATCH`, `RELAY_FULL` or `RELAY_PROTOCOL`.
 
    After `ok`, the stream is newline-delimited JSON-RPC, the same framing as stdio.
-4. **Binding.** A relayed session uses the **primary's** selector and `knownIdentities`. If the secondary's selector is non-empty and differs from the primary's, the handshake is refused with `RELAY_SELECTOR_MISMATCH`, and the secondary goes degraded with a reason that names both selectors, sanitised with `safeText`. Desktop starts every instance from the same `.mcpb` args, so in practice the selectors are equal.
+4. **Binding (Andrew, 2026-10-13).** A relayed session uses the **primary's** selector and `knownIdentities`. If the secondary's selector is non-empty and differs from the primary's, the handshake is refused with `RELAY_SELECTOR_MISMATCH`, and the secondary goes degraded with a reason that names both selectors, sanitised with `safeText`. Desktop starts every instance from the same `.mcpb` args, so in practice the selectors are equal.
 5. **Limits.**
    - `MAX_RELAY_LINE_BYTES` = 4 MiB, in each direction, at both ends. It is enforced while reading, before `JSON.parse`. An oversized line closes that relay connection.
    - `MAX_RELAY_SESSIONS` = 16 concurrent connections on the primary; the next one gets `RELAY_FULL`.
@@ -87,7 +87,7 @@ primary goes away, a secondary takes over, within a bounded number of attempts.
 - [ ] The primary logs one sanitised stderr line per relayed session (`relay session <n> opened`/`closed`). The pairing code still prints only from the link-port holder (the existing test passes).
 - [ ] `npm run verify` passes, and `node --test scripts/test/build-mcpb.test.mjs` still passes
 - [ ] Manual (Andrew, Mac, Claude Desktop with the rebuilt `.mcpb`): in a normal chat and a Cowork chat open at the same time, both call `world_info` successfully against foundry.local. Quitting the normal chat's instance (or killing the primary PID) leaves the Cowork chat working after one retry. The PR records the result.
-- [ ] Windows: the endpoint and secret code paths compile, and the win32 path derivation is unit-tested. The PR states plainly that no live win32 run was done, unless Andrew provides one.
+- [ ] Windows (Andrew, 2026-10-13: ship macOS-verified; the release notes say Windows is untested): the endpoint and secret code paths compile, and the win32 path derivation is unit-tested. The PR states plainly that no live win32 run was done. No Windows run is required.
 
 ## Out of scope
 - Task 34's HTTP transport, bearer token and status page; this task adds no TCP listener
