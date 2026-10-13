@@ -4,6 +4,8 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { Readable, Writable } from 'node:stream';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkListenError } from './link/server.js';
@@ -13,6 +15,7 @@ import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
+import { RelaySecondary, RelayServer, relayEndpoint } from './relay/index.js';
 
 export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
 
@@ -72,6 +75,11 @@ export interface AppDeps {
   dbPath?: string;
   /** Where the pairing code line goes; defaults to stderr (stdout carries MCP). */
   writeStatus?: (line: string) => void;
+  /** MCP stdio streams; default to the process's. Injectable for tests. */
+  stdin?: Readable;
+  stdout?: Writable;
+  /** Store opener; injectable so tests can prove a relay never opens the db. */
+  openStore?: typeof openStore;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -82,10 +90,15 @@ export function createApp(config: Config, deps: AppDeps): App {
   let store: Store | undefined;
   let events: EventBuffer | undefined;
   let queue: OfflineQueue | undefined;
+  let relay: RelayServer | undefined;
+  let secondary: RelaySecondary | undefined;
+  // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
+  const dbPath = deps.dbPath ?? defaultDbPath();
+  const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
   return {
     async start() {
       try {
-        await startPrimary();
+        await startPrimary(new StdioServerTransport(deps.stdin, deps.stdout));
       } catch (err) {
         await this.stop();
         // Only a conflict with another running gateway degrades. A real failure of the
@@ -98,11 +111,14 @@ export function createApp(config: Config, deps: AppDeps): App {
             ? `pid ${process.pid}: another gateway holds link port ${err.port}; this instance cannot pair`
             : `pid ${process.pid}: another gateway holds the pairing database; this instance cannot pair`,
         );
-        server = createDegradedServer({ version: deps.version, reason });
-        await server.connect(new StdioServerTransport());
+        await startSecondary(reason);
       }
     },
     async stop() {
+      await secondary?.stop();
+      secondary = undefined;
+      await relay?.close();
+      relay = undefined;
       await server?.close();
       server = undefined;
       queue?.close();
@@ -121,7 +137,84 @@ export function createApp(config: Config, deps: AppDeps): App {
     return store;
   }
 
-  async function startPrimary(): Promise<void> {
+  async function startRelay(linkPort: number, createSession: () => Server): Promise<void> {
+    const ep = stateDir ? relayEndpoint(stateDir) : undefined;
+    if (!stateDir || !ep) return;
+    if (!ep.ok) {
+      writeStatus(
+        `relay off: ${ep.reason}; other gateway instances will only answer gateway_status`,
+      );
+      return;
+    }
+    const candidate = new RelayServer({
+      endpoint: ep.path,
+      stateDir,
+      linkPort,
+      selector: deps.selector ?? {},
+      createSession,
+      log: writeStatus,
+    });
+    try {
+      await candidate.listen();
+      relay = candidate;
+    } catch (err) {
+      writeStatus(
+        `relay off: ${(err as Error).message}; other gateway instances will only answer gateway_status`,
+      );
+    }
+  }
+
+  /** Undo a failed or finished startPrimary. */
+  async function teardown(): Promise<void> {
+    await relay?.close();
+    relay = undefined;
+    await server?.close();
+    server = undefined;
+    queue?.close();
+    queue = undefined;
+    events?.close();
+    events = undefined;
+    await link?.close();
+    link = undefined;
+    store?.close();
+    store = undefined;
+  }
+
+  async function startSecondary(reason: string): Promise<void> {
+    const ep = stateDir ? relayEndpoint(stateDir) : undefined;
+    if (!stateDir || !ep?.ok) {
+      const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
+      server = createDegradedServer({
+        version: deps.version,
+        reason: `${reason} (relaying is off: ${why})`,
+      });
+      await server.connect(new StdioServerTransport(deps.stdin, deps.stdout));
+      return;
+    }
+    secondary = new RelaySecondary({
+      endpoint: ep.path,
+      stateDir,
+      linkPort: config.linkPort,
+      selector: deps.selector ?? {},
+      input: deps.stdin ?? process.stdin,
+      output: deps.stdout ?? process.stdout,
+      log: writeStatus,
+      async becomePrimary(transport) {
+        try {
+          await startPrimary(transport);
+          return true;
+        } catch (err) {
+          await teardown();
+          if (isInstanceConflict(err)) return false;
+          throw err;
+        }
+      },
+      createDegraded: (why) => createDegradedServer({ version: deps.version, reason: why }),
+    });
+    await secondary.start(reason);
+  }
+
+  async function startPrimary(transport: Transport): Promise<void> {
     // Hold the link port before touching the shared db: opening it runs migrations and
     // retention deletes, which a secondary instance must never do. A loser fails here with
     // EADDRINUSE. The store is opened in the same tick as listen resolves, before any
@@ -155,9 +248,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       },
     });
     const port = await link.listen();
-    const dbPath = deps.dbPath ?? defaultDbPath();
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
-    store = openStore(dbPath);
+    store = (deps.openStore ?? openStore)(dbPath);
     events = new EventBuffer(store, registry);
     queue = new OfflineQueue(store, registry);
     events.startRetention();
@@ -165,11 +257,11 @@ export function createApp(config: Config, deps: AppDeps): App {
     const linkLine = `Link URL: ws://localhost:${port} (pid ${process.pid} holds link port ${port})`;
     writeStatus(pairingLine);
     writeStatus(linkLine);
-    server = createSessionServer({
+    const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
       version: deps.version,
       registry,
-      events,
-      queue,
+      events: e,
+      queue: q,
       ...(deps.selector ? { selector: deps.selector } : {}),
       knownIdentities: () =>
         store?.listActivePairings().map((p) => ({
@@ -179,7 +271,11 @@ export function createApp(config: Config, deps: AppDeps): App {
         })) ?? [],
       log: writeStatus,
     });
-    await server.connect(new StdioServerTransport());
+    const ready = { events, queue };
+    server = createSessionServer(sessionOptions(ready.events, ready.queue));
+    await server.connect(transport);
+    // Relayed sessions are accepted only once everything they share is ready.
+    await startRelay(port, () => createSessionServer(sessionOptions(ready.events, ready.queue)));
     logger.info(`MCP stdio server started`);
     // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
     void server
