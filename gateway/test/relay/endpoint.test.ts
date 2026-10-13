@@ -47,7 +47,7 @@ describe('relayEndpoint', () => {
     const r = relayEndpoint(dir, 7420, 'darwin');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toContain(`${Buffer.byteLength(`${dir}/relay-7420.sock`)} bytes`);
-    expect(relayEndpoint(`/${'d'.repeat(80)}`, 7420, 'darwin').ok).toBe(true);
+    expect(relayEndpoint(`/${'d'.repeat(60)}`, 7420, 'darwin').ok).toBe(true);
   });
 
   it('derives a named pipe from the lowercased state dir on win32 (pure function)', () => {

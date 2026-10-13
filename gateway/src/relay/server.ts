@@ -65,6 +65,7 @@ export class RelayServer {
   private readonly isWin: boolean;
   private secret = '';
   private socketIno: number | undefined;
+  private bindPath = '';
   private steppingDown = false;
   private endpoint: string;
 
@@ -91,15 +92,19 @@ export class RelayServer {
         throw new Error(
           `state dir ${safeText(stateDir)} is accessible to other users (mode ${(mode & 0o777).toString(8)}); expected 0700`,
         );
-      // Holding the link port makes a leftover socket file very likely stale, but never unlink
+      // Holding the link port makes a leftover socket file very likely stale, but never replace
       // one that still answers: it belongs to someone else.
       if (existsSync(endpoint) && (await isLive(endpoint)))
         throw new Error(`relay endpoint ${safeText(endpoint)} is already in use`);
-      rmSync(endpoint, { force: true });
     }
     this.secret = newSecret();
     // win32: a random per-boot pipe name, published only in the secret file (see relayEndpoint).
     if (this.isWin) this.endpoint = `${endpoint}-${newSecret().slice(0, 16)}`;
+    // Unix: bind a private temporary name, then rename it onto the endpoint. libuv remembers the
+    // temporary name, so closing this server can never unlink a successor's endpoint.
+    this.bindPath = this.isWin
+      ? this.endpoint
+      : `${endpoint.slice(0, -'.sock'.length)}.${process.pid}.${newSecret().slice(0, 6)}.sock`;
     this.secretFile = writeSecret(
       stateDir,
       this.opts.linkPort,
@@ -113,7 +118,7 @@ export class RelayServer {
     try {
       listening = new Promise<void>((resolve, reject) => {
         net.once('error', reject);
-        net.listen(this.endpoint, () => {
+        net.listen(this.bindPath, () => {
           net.off('error', reject);
           resolve();
         });
@@ -124,13 +129,16 @@ export class RelayServer {
     }
     try {
       await listening;
+      if (!this.isWin) {
+        chmodSync(this.bindPath, 0o600);
+        this.socketIno = statSync(this.bindPath).ino;
+        // Atomically replaces any stale file left at the endpoint.
+        renameSync(this.bindPath, this.endpoint);
+      }
     } catch (err) {
+      rmSync(this.bindPath, { force: true });
       await this.close();
       throw err;
-    }
-    if (!this.isWin) {
-      chmodSync(this.endpoint, 0o600);
-      this.socketIno = statSync(this.endpoint).ino;
     }
   }
 
@@ -139,7 +147,7 @@ export class RelayServer {
     this.net = undefined;
     for (const s of this.sockets) s.destroy();
     this.sockets.clear();
-    if (net?.listening) await this.closeListener(net);
+    if (net?.listening) await new Promise<void>((r) => net.close(() => r()));
     // Only remove what this server created: the socket by inode, the secret by its content.
     if (!this.isWin && this.socketIno !== undefined) {
       try {
@@ -161,38 +169,12 @@ export class RelayServer {
     this.secretFile = undefined;
   }
 
-  /**
-   * Closing a listening Unix socket makes libuv unlink its path, whoever owns the file by then.
-   * If the path was replaced by someone else's socket, move it aside for the duration.
-   */
-  private async closeListener(net: NetServer): Promise<void> {
-    let aside: string | undefined;
-    if (!this.isWin && this.socketIno !== undefined) {
-      try {
-        if (statSync(this.opts.endpoint).ino !== this.socketIno) {
-          aside = `${this.opts.endpoint}.${process.pid}.aside`;
-          renameSync(this.opts.endpoint, aside);
-        }
-      } catch {
-        aside = undefined;
-      }
-    }
-    await new Promise<void>((r) => net.close(() => r()));
-    if (aside) {
-      try {
-        renameSync(aside, this.opts.endpoint);
-      } catch {
-        // the owner removed it meanwhile
-      }
-    }
-  }
-
   /** Keep serving for the grace period so in-flight calls finish, then let the app exit. */
   private stepDown(why: string): void {
     if (this.steppingDown) return;
     this.steppingDown = true;
     const net = this.net;
-    if (net?.listening) void this.closeListener(net);
+    if (net?.listening) net.close();
     const timer = setTimeout(() => this.opts.onStepDown?.(why), STEPDOWN_GRACE_MS);
     timer.unref();
   }

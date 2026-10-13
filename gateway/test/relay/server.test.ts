@@ -2,6 +2,7 @@ import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  renameSync,
   readFileSync,
   rmSync,
   statSync,
@@ -375,6 +376,32 @@ describe('relay endpoints are namespaced by link port', () => {
     expect(c.kind).toBe('ok');
     if (c.kind === 'ok') c.upstream.close();
     await b.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("close() never removes a successor's endpoint (the successor replaced it by rename)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agr-'));
+    chmodSync(dir, 0o700);
+    const first = make(dir, PORT);
+    await first.listen();
+    const path = join(dir, `relay-${PORT}.sock`);
+    // A successor takes over the same endpoint (it renames its own socket onto the path).
+    const successor = make(dir, PORT);
+    const probe = await import('node:net');
+    const tmp = join(dir, 'successor.sock');
+    const mine = probe.createServer();
+    await new Promise<void>((res) => mine.listen(tmp, res));
+    renameSync(tmp, path);
+    await first.close();
+    expect(existsSync(path)).toBe(true);
+    const c = await new Promise<boolean>((res) => {
+      const sock = connect(path);
+      sock.once('connect', () => (sock.destroy(), res(true)));
+      sock.once('error', () => res(false));
+    });
+    expect(c).toBe(true);
+    void successor;
+    await new Promise((res) => mine.close(res));
     rmSync(dir, { recursive: true, force: true });
   });
 

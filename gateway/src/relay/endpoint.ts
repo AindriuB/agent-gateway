@@ -36,5 +36,14 @@ export function relayEndpoint(
       ok: false,
       reason: `the relay socket path is ${bytes} bytes, over the ${MAX_UNIX_SOCKET_PATH_BYTES}-byte limit; use a shorter --db path`,
     };
+  // The primary binds a longer temporary name first (see RelayServer.listen).
+  const temp = Buffer.byteLength(
+    posix.join(posix.resolve(stateDir), `relay-${linkPort}.4194304.ffffff.sock`),
+  );
+  if (temp > MAX_UNIX_SOCKET_PATH_BYTES)
+    return {
+      ok: false,
+      reason: `the relay socket's temporary path can be ${temp} bytes, over the ${MAX_UNIX_SOCKET_PATH_BYTES}-byte limit; use a shorter --db path`,
+    };
   return { ok: true, path };
 }
