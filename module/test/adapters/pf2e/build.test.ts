@@ -371,6 +371,74 @@ describe('aggregate result budget', () => {
   });
 });
 
+describe('concurrent builds on one Actor', () => {
+  let source: any;
+  const live = () => {
+    source = { build: { attributes: { boosts: { 1: [], 5: [] } } }, skills: {} };
+    actor.toObject = () => ({ system: structuredClone(source) });
+    actor.update = vi.fn(async (patch: any) => {
+      await new Promise((r) => setTimeout(r, 5));
+      if (patch['system.build']) {
+        source.build = structuredClone(patch['system.build']);
+        actor.system.build.attributes.boosts = structuredClone(
+          patch['system.build'].attributes.boosts,
+        );
+      }
+    });
+  };
+  const level5 = (attribute: string) =>
+    apply([{ kind: 'attribute_boost', source: 'level', level: 5, attribute }]);
+  it('serialises overlapping calls so both level-5 boosts land', async () => {
+    live();
+    await Promise.all([level5('str'), level5('dex')]);
+    expect(source.build.attributes.boosts[5]).toEqual(['str', 'dex']);
+  });
+  it('releases the lock after a throw', async () => {
+    live();
+    await expect(apply([{ kind: 'skill_rank', skill: 'nonsense', rank: 1 }])).rejects.toBeDefined();
+    actor.class.update = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    await expect(apply([{ kind: 'key_attribute', attribute: 'dex' }])).rejects.toBeDefined();
+    await level5('con');
+    expect(source.build.attributes.boosts[5]).toEqual(['con']);
+  });
+  it('rejects, listing earlier writes, when system.build changed since the plan', async () => {
+    live();
+    const ctx = context();
+    ctx.snapshot = vi.fn(async () => {
+      source.build.attributes.boosts[5] = ['wis'];
+    });
+    await expect(
+      apply(
+        [
+          { kind: 'key_attribute', attribute: 'dex' },
+          { kind: 'attribute_boost', source: 'level', level: 5, attribute: 'str' },
+        ],
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/changed during this call; read it again and retry/),
+    });
+    expect(actor.class.update).not.toHaveBeenCalled();
+    expect(actor.update).not.toHaveBeenCalled();
+  });
+  it('lists Item updates already applied when the build changes after them', async () => {
+    live();
+    actor.class.update = vi.fn(async () => {
+      source.build.attributes.boosts[5] = ['wis'];
+    });
+    await expect(
+      apply([
+        { kind: 'key_attribute', attribute: 'dex' },
+        { kind: 'attribute_boost', source: 'level', level: 5, attribute: 'str' },
+      ]),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/Already applied: cls/) });
+    expect(actor.update).not.toHaveBeenCalled();
+  });
+});
+
 describe('level boosts as pf2e stores them', () => {
   it('merges into the source system.build and keeps its other data', async () => {
     // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).

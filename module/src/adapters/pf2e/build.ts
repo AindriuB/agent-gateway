@@ -240,6 +240,48 @@ function observe(actor: any): { finish(): { added: number; updated: number; remo
   };
 }
 
+const locks = new Map<string, Promise<void>>();
+/** A stuck call cannot hold an Actor's lock longer than this; the next waiter then proceeds. */
+export const BUILD_LOCK_WAIT_MS = 30_000;
+/**
+ * Serialise build calls on one Actor in this client (plan, snapshots, updates, post-write read).
+ * Writers on other clients are caught by the optimistic check in `apply`.
+ */
+async function withActorLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const mine = new Promise<void>((resolve) => (release = resolve));
+  const tail = prev.then(() => mine);
+  locks.set(key, tail);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      prev,
+      new Promise<void>((resolve) => (timer = setTimeout(resolve, BUILD_LOCK_WAIT_MS))),
+    ]);
+    clearTimeout(timer);
+    return await fn();
+  } finally {
+    clearTimeout(timer);
+    release();
+    if (locks.get(key) === tail) locks.delete(key);
+  }
+}
+
+/** What the plan was built from: the Actor's source build and the source ranks it will set. */
+function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): string {
+  let source: any;
+  try {
+    source = typeof actor.toObject === 'function' ? actor.toObject().system : undefined;
+  } catch {
+    source = undefined;
+  }
+  const ranks = changes
+    .filter((c) => c.kind === 'skill_rank' && c.skill)
+    .map((c) => [c.skill, source?.skills?.[c.skill!]?.rank ?? null]);
+  return JSON.stringify([source?.build ?? null, ranks]);
+}
+
 async function apply(
   actor: any,
   changes: readonly CharacterBuildChange[],
@@ -248,7 +290,24 @@ async function apply(
   if (!isCharacter(actor)) throw new AdapterUnsupportedError();
   if (typeof context?.snapshot !== 'function' || !context.callOptions)
     throw new Error('Audit context unavailable');
+  return withActorLock(String(actor.uuid), () => applyLocked(actor, changes, context));
+}
+
+async function applyLocked(
+  actor: any,
+  changes: readonly CharacterBuildChange[],
+  context: AdapterExecutionContext,
+): Promise<BuildPayload> {
   const p = plan(actor, changes);
+  const planned = fingerprint(actor, changes);
+  const applied: string[] = [];
+  const stale = () => {
+    if (fingerprint(actor, changes) === planned) return;
+    invalid(
+      'The build changed during this call; read it again and retry.' +
+        (applied.length ? ` Already applied: ${applied.join(', ').slice(0, 300)}.` : ''),
+    );
+  };
   // Every document the batch will update is snapshotted before the first write.
   const docs: [any, Record<string, unknown>][] = [...p.items];
   if (Object.keys(p.actor).length) docs.push([actor, p.actor]);
@@ -259,7 +318,9 @@ async function apply(
   const watch = observe(actor);
   let seen = { added: 0, updated: 0, removed: 0 };
   try {
+    if (Object.keys(p.actor).length) stale();
     for (const [doc, patch] of docs) {
+      if (doc === actor) stale();
       try {
         // Foundry's update() writes `parent` etc. into the operation object it is given, so a
         // shared options object would turn a later Actor update into an "embedded" one. Hand
@@ -269,6 +330,7 @@ async function apply(
           agentGateway: { ...context.callOptions.agentGateway },
         };
         await doc.update(patch, options);
+        applied.push(str(doc.name, 60) ?? 'a document');
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error);
         failures.push(
