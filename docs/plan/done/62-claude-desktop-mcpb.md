@@ -28,7 +28,7 @@ same stdio gateway that 61 makes installable from npm. Built locally from the
 - [x] `node scripts/build-mcpb.mjs` (after `npm run build`) writes `dist/release/foundry-agent-gateway.mcpb` using the pinned `@anthropic-ai/mcpb` devDependency
 - [x] `scripts/test/build-mcpb.test.mjs` unpacks the bundle and asserts it contains `manifest.json` and the entry point the manifest names, and that `node <unpacked entry> --version` with a temp `HOME` prints the version (proves no unresolved workspace import)
 - [x] `node --test scripts/test/build-mcpb.test.mjs` passes and `npm run verify` passes
-- [ ] Manual check on the Mac: install the bundle in Claude Desktop, pair with foundry.local v14 with the GM tab open, and call `world_info` successfully; PR includes the log or screenshot. If Claude Desktop's built-in Node cannot load `node:sqlite`, stop and report the exact error; do not change runtime type or storage engine. Done so far (Andrew, Electron 44.4.3): installs and runs on Desktop's Node with `node:sqlite`; `initialize` and `tools/list` work in normal chat; pairing with https://foundry.local succeeded. Open: `world_info` awaits Andrew's confirmation
+- [x] Manual check on the Mac: install the bundle in Claude Desktop, pair with foundry.local v14 with the GM tab open, and call `world_info` successfully; PR includes the log or screenshot. If Claude Desktop's built-in Node cannot load `node:sqlite`, stop and report the exact error; do not change runtime type or storage engine. Done so far (Andrew, Electron 44.4.3): installs and runs on Desktop's Node with `node:sqlite`; `initialize` and `tools/list` work in normal chat; pairing with https://foundry.local succeeded. Confirmed (Andrew): from a normal Claude Desktop chat the gateway is connected to world "till-dawn" as GM and works end to end, used for real character building
 
 ## Amendments (Andrew, 2026-10-13)
 - A gateway instance that loses the link port (EADDRINUSE) or finds the db locked stays up as a degraded MCP server instead of exiting: it answers `initialize`, `ping` and `server/discover` (-32601), exposes one `gateway_status` tool, and returns `LINK_UNAVAILABLE` on every call. The link port is bound before the store opens, so a degraded instance never opens the db. Real failures such as a corrupt db still exit 1. Reason: Claude Desktop starts extra copies for its Cowork/Code pool and probes.
@@ -50,4 +50,6 @@ Bundle, manifest and tests reviewed in one round (notices, test residue). The ma
 
 Gates: `npm run verify` green (fast 3898 in the reviewer's run); `node --test scripts/test/build-mcpb.test.mjs` 5/5.
 
-Decision (Andrew): 0.1.0 ships degraded secondaries. Task 69 will let secondaries forward to the primary over task 34's local transport.
+Finding from real use: a Cowork chat ("linked to the computer") always gets a degraded instance, because the normal-chat instance starts first and holds the port. Cowork chats therefore cannot use Foundry tools at all while secondaries are degraded.
+
+Decision (Andrew): 0.1.0 ships degraded secondaries. Task 69 will let secondaries forward to the primary over task 34's local transport; Andrew is deciding whether to pull it into MVP A.
