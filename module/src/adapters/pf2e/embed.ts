@@ -3,11 +3,13 @@ import type { EmbedHook, EmbedInput, EmbedObservation, EmbedOverrides } from '..
 import { invalid } from '../../tools/_write.js';
 
 declare const fromUuid: (uuid: string) => Promise<any>;
+declare const Hooks: any;
 
 /**
  * Item types with physical state (quantity and carry type). Feats take a slot instead.
  */
 const PHYSICAL = new Set([
+  'ammo',
   'armor',
   'backpack',
   'book',
@@ -33,9 +35,13 @@ function grantUuids(src: any, rules: any[]): string[] {
     if (!keyIs(rule, 'GrantItem') || typeof rule.uuid !== 'string') continue;
     out.push(substituteSelection(rule.uuid, rules, src));
   }
-  if (isPlain(src?.system?.items))
-    for (const entry of Object.values<any>(src.system.items))
-      if (typeof entry?.uuid === 'string') out.push(entry.uuid);
+  // Class, background and kit `system.items`; a kit's backpack entries nest further `items`.
+  const pending: any[] = isPlain(src?.system?.items) ? Object.values(src.system.items) : [];
+  for (let seen = 0; pending.length && seen < 256; seen++) {
+    const entry = pending.pop();
+    if (typeof entry?.uuid === 'string') out.push(entry.uuid);
+    if (isPlain(entry?.items)) pending.push(...Object.values(entry.items));
+  }
   return out;
 }
 /** `{item|flags.pf2e.rulesSelections.x}` resolves to a preselected ChoiceSet; otherwise refuse. */
@@ -53,7 +59,8 @@ function checkSource(src: any): string[] {
   const rules: any[] = Array.isArray(src?.system?.rules) ? src.system.rules : [];
   for (const rule of rules) {
     if (!keyIs(rule, 'ChoiceSet')) continue;
-    if (rule.selection === undefined || rule.selection === null)
+    // pf2e also prompts when the value matches no choice; that is out of scope until task 49.
+    if (typeof rule.selection !== 'string' && typeof rule.selection !== 'number')
       invalid(
         `${label(src)}: ChoiceSet rule${typeof rule.flag === 'string' ? ` "${rule.flag.slice(0, 40)}"` : ''} needs a selection and the gateway cannot answer prompts`,
       );
@@ -91,18 +98,15 @@ async function scanHeadless(root: any): Promise<void> {
 }
 
 function carryFor(source: any, equipped: boolean): Record<string, unknown> | undefined {
-  const usage = String(source?.system?.usage?.value ?? '');
-  const held =
-    /^held-in-(one|two)-hands?$/.exec(usage) ?? (/^held-in-/.test(usage) ? ['', 'one'] : null);
-  if (held)
+  // Armor's usage is forced to `wornarmor` by pf2e's prepareBaseData; other types keep their source.
+  const usage = source.type === 'armor' ? 'wornarmor' : String(source?.system?.usage?.value ?? '');
+  if (/^held-in-/.test(usage))
     return equipped
-      ? { carryType: 'held', handsHeld: held[1] === 'two' ? 2 : 1 }
+      ? { carryType: 'held', handsHeld: usage === 'held-in-two-hands' ? 2 : 1 }
       : { carryType: 'worn', handsHeld: 0 };
+  // getUsageDetails: `worn` has no slot; `wornarmor`, `worngloves`... name the slot after "worn".
   if (usage === 'worn') return { carryType: equipped ? 'worn' : 'dropped', handsHeld: 0 };
-  if (usage.startsWith('worn-'))
-    return equipped
-      ? { carryType: 'worn', handsHeld: 0, inSlot: true }
-      : { carryType: 'worn', handsHeld: 0, inSlot: false };
+  if (usage.startsWith('worn')) return { carryType: 'worn', handsHeld: 0, inSlot: equipped };
   if (usage === 'carried' || usage === '') {
     if (equipped) return undefined; // Carried items count as equipped already.
     invalid('equipped=false is not supported for an item that is only carried');
@@ -116,7 +120,9 @@ function checkSlot(actor: any, source: any, slot: string): number | undefined {
     if (!isPlain(group?.slots) || !Object.hasOwn(group.slots, slot)) continue;
     const entry = group.slots[slot];
     if (entry?.feat) invalid(`Feat slot "${slot}" is occupied`);
-    if (typeof group.isFeatValid === 'function' && group.isFeatValid(source) !== true)
+    // FeatGroup#isFeatValid reads `category` from an Item instance; the same test on the source.
+    const supported: unknown[] = Array.isArray(group.supported) ? group.supported : [];
+    if (supported.length > 0 && !supported.includes(source.system?.category))
       invalid(`Feat slot "${slot}" does not accept this feat's category`);
     return typeof entry?.level === 'number' ? entry.level : undefined;
   }
@@ -148,26 +154,22 @@ function applyOverrides(
   }
 }
 
+/**
+ * Count Item updates and deletes on this Actor that carry no audit callId, which are the system's
+ * own uncorrelated writes (pf2e `itemUpdates`, class replacement). Document hooks, not patching.
+ */
 function observe(actor: any): EmbedObservation {
   let count = 0;
-  const restore: Array<() => void> = [];
-  for (const method of ['updateEmbeddedDocuments', 'deleteEmbeddedDocuments']) {
-    const original = actor?.[method];
-    if (typeof original !== 'function') continue;
-    const own = Object.hasOwn(actor, method);
-    actor[method] = function (this: unknown, ...args: any[]) {
-      if (typeof args[2]?.agentGateway?.callId !== 'string') count += 1;
-      return original.apply(this, args);
-    };
-    restore.push(() => {
-      if (own) actor[method] = original;
-      else delete actor[method];
+  const on = (name: string) =>
+    Hooks.on(name, (doc: any, ...args: unknown[]) => {
+      const options: any = name.startsWith('update') ? args[1] : args[0];
+      if (doc?.parent === actor && typeof options?.agentGateway?.callId !== 'string') count += 1;
     });
-  }
+  const ids: Array<[string, unknown]> = [];
+  for (const name of ['updateItem', 'deleteItem']) ids.push([name, on(name)]);
   return {
     finish() {
-      for (const undo of restore) undo();
-      restore.length = 0;
+      for (const [name, id] of ids.splice(0)) Hooks.off(name, id);
       return count;
     },
   };

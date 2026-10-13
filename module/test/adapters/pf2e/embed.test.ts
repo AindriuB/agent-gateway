@@ -17,18 +17,35 @@ afterEach(() => {
   delete g.fromUuid;
 });
 
-const slot = (level: number, feat?: object) => ({ level, feat });
+// Shapes from pf2e 8.6.0 CharacterFeats/FeatGroup (pf2e.mjs:34903-35100): groups are plain data with
+// `supported` category lists and slots keyed `<group>-<level>`; `bonus` supports everything.
+const slot = (group: string, level: number, feat?: object) => ({
+  id: `${group}-${level}`,
+  label: String(level),
+  level,
+  placeholder: 'PF2E.EmptySlot',
+  children: [],
+  ...(feat ? { feat } : {}),
+});
+const group = (id: string, supported: string[], levels: number[], taken: number[] = []) => ({
+  id,
+  supported,
+  slots: Object.fromEntries(
+    levels.map((l) => [
+      `${id}-${l}`,
+      slot(id, l, taken.includes(l) ? { name: 'Taken' } : undefined),
+    ]),
+  ),
+});
 const actor = (): any => ({
-  feats: new Map([
+  feats: new Map(
     [
-      'ancestry',
-      {
-        id: 'ancestry',
-        slots: { 'ancestry-1': slot(1), 'ancestry-5': slot(5, { name: 'Taken' }) },
-        isFeatValid: (feat: any) => feat.system?.category === 'ancestry',
-      },
-    ],
-  ]),
+      group('ancestry', ['ancestry'], [1, 5], [5]),
+      group('class', ['class'], [1, 2]),
+      group('general', ['general', 'skill'], [3]),
+      { id: 'bonus', supported: [], slots: {} },
+    ].map((g) => [g.id, g]),
+  ),
 });
 const prepare = (source: any, overrides: any = {}, a = actor()) =>
   Promise.resolve(
@@ -75,15 +92,32 @@ describe('pf2e overrides', () => {
       carryType: 'held',
       handsHeld: 2,
     });
-    const armor = { name: 'A', type: 'armor', system: { usage: { value: 'worn' }, rules: [] } };
-    expect(
-      (await prepare(structuredClone(armor), { equipped: true })).system.equipped.carryType,
-    ).toBe('worn');
-    expect(
-      (await prepare(structuredClone(armor), { equipped: false })).system.equipped.carryType,
-    ).toBe('dropped');
-    const gloves = { ...armor, system: { usage: { value: 'worn-gloves' }, rules: [] } };
-    expect((await prepare(gloves, { equipped: true })).system.equipped.inSlot).toBe(true);
+    // Real worn usages have no hyphen: armor is `wornarmor` (pf2e.mjs:50938), gloves `worngloves`.
+    const worn = (type: string, value?: string) => ({
+      name: 'W',
+      type,
+      system: { ...(value ? { usage: { value } } : {}), rules: [] },
+    });
+    for (const src of [
+      worn('armor'),
+      worn('armor', 'wornarmor'),
+      worn('equipment', 'worngloves'),
+    ]) {
+      expect((await prepare(structuredClone(src), { equipped: true })).system.equipped).toEqual({
+        carryType: 'worn',
+        handsHeld: 0,
+        inSlot: true,
+      });
+      expect(
+        (await prepare(structuredClone(src), { equipped: false })).system.equipped.inSlot,
+      ).toBe(false);
+    }
+    const plain = worn('equipment', 'worn');
+    expect((await prepare(structuredClone(plain), { equipped: true })).system.equipped).toEqual({
+      carryType: 'worn',
+      handsHeld: 0,
+    });
+    expect((await prepare(plain, { equipped: false })).system.equipped.carryType).toBe('dropped');
     expect((await prepare(weapon(), { equipped: false })).system.equipped).toEqual({
       carryType: 'worn',
       handsHeld: 0,
@@ -208,18 +242,45 @@ describe('pf2e headless safety', () => {
   });
 });
 
-describe('pf2e write observer', () => {
-  it('counts only writes without audit callOptions and restores the methods', async () => {
-    const original = vi.fn(async () => []);
-    const a: any = Object.create({
-      updateEmbeddedDocuments: original,
-      deleteEmbeddedDocuments: original,
+describe('pf2e physical types, selections and kits', () => {
+  it('accepts a quantity override on ammunition (a physical type, pf2e.mjs:3173)', async () => {
+    const arrows = {
+      name: 'Arrows',
+      type: 'ammo',
+      system: { usage: { value: 'held-in-one-hand' }, rules: [] },
+    };
+    expect((await prepare(arrows, { quantity: 20 })).system.quantity).toBe(20);
+  });
+  it('treats only a string or number selection as present', async () => {
+    const src = (selection: unknown) => ({
+      name: 'F',
+      type: 'feat',
+      system: { rules: [{ key: 'ChoiceSet', flag: 'pick', selection }] },
     });
-    const obs = pf2eEmbedHook.observe!(a);
-    await a.updateEmbeddedDocuments('Item', [], { render: false });
-    await a.deleteEmbeddedDocuments('Item', [], { agentGateway: { callId: 'c' } });
-    expect(obs.finish()).toBe(1);
-    expect(Object.hasOwn(a, 'updateEmbeddedDocuments')).toBe(false);
-    expect(a.updateEmbeddedDocuments).toBe(original);
+    await expect(prepare(src('acrobatics'))).resolves.toBeDefined();
+    await expect(prepare(src(3))).resolves.toBeDefined();
+    for (const bad of [{}, [], true, undefined, null])
+      await refused(src(bad), {}, /needs a selection/);
+  });
+  it('scans the nested contents of a kit', async () => {
+    docs.set(
+      'Compendium.p.c.Item.g',
+      choiceDoc({ name: 'G', system: { rules: [{ key: 'ChoiceSet', flag: 'x' }] } }),
+    );
+    const kit = {
+      name: 'Kit',
+      type: 'kit',
+      system: {
+        rules: [],
+        items: {
+          a: {
+            uuid: 'Compendium.p.c.Item.none',
+            quantity: 1,
+            items: { b: { uuid: 'Compendium.p.c.Item.g', quantity: 1 } },
+          },
+        },
+      },
+    };
+    await refused(kit, {}, /"G": ChoiceSet/);
   });
 });

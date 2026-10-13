@@ -149,25 +149,54 @@ describe('compendium_import with actorUuid', () => {
 });
 
 describe('uncorrelated native writes', () => {
-  const run = async (poke: boolean) => {
+  // Foundry's Hooks.on/off: a hook id is returned and removes only that listener.
+  const listeners = new Map<number, [string, (...a: any[]) => void]>();
+  let nextId = 1;
+  const fire = (name: string, ...args: any[]) =>
+    [...listeners.values()].filter(([n]) => n === name).forEach(([, fn]) => fn(...args));
+  beforeEach(() => {
+    listeners.clear();
+    g.Hooks.on = (name: string, fn: any) => (listeners.set(nextId, [name, fn]), nextId++);
+    g.Hooks.off = (_name: string, id: number) => listeners.delete(id);
+  });
+  const run = async (events: Array<[string, any, any]>) => {
     g.game.system = { id: 'pf2e' };
     const actor = f.doc('Actor', { _id: 'a1', name: 'PC' });
-    actor.updateEmbeddedDocuments = vi.fn(async () => []);
+    const stranger = f.doc('Actor', { _id: 'a2', name: 'Other' });
     const original = actor.createEmbeddedDocuments;
     actor.createEmbeddedDocuments = vi.fn(async (...a: any[]) => {
-      if (poke) await actor.updateEmbeddedDocuments('Item', [], { render: false });
+      for (const [name, doc, options] of events) {
+        const owner = doc === 'other' ? stranger : actor;
+        const item = { parent: owner };
+        if (name === 'updateItem') fire(name, item, {}, options, 'gm');
+        else fire(name, item, options, 'gm');
+      }
       return original(...a);
     });
     const result: any = await call({ uuid: entry.uuid, actorUuid: actor.uuid });
-    return { result, actor };
+    return result;
   };
   it('names them only when they happened', async () => {
-    expect((await run(true)).result.text).toMatch(/uncorrelated.*task 44/);
-    expect((await run(false)).result.text).not.toMatch(/uncorrelated/);
+    const plain = { render: false };
+    expect((await run([['updateItem', 'actor', plain]])).text).toMatch(/1 native.*task 44/);
+    expect((await run([])).text).not.toMatch(/uncorrelated/);
   });
-  it('restores the Actor methods afterwards', async () => {
-    const { actor } = await run(true);
-    expect(Object.hasOwn(actor, 'deleteEmbeddedDocuments')).toBe(false);
-    expect(vi.isMockFunction(actor.updateEmbeddedDocuments)).toBe(true);
+  it('ignores writes that carry an audit callId or touch another Actor', async () => {
+    const audited = { agentGateway: { callId: 'c' } };
+    const result = await run([
+      ['updateItem', 'actor', audited],
+      ['deleteItem', 'actor', audited],
+      ['updateItem', 'other', { render: false }],
+    ]);
+    expect(result.text).not.toMatch(/uncorrelated/);
+  });
+  it('counts deletes and removes its hooks, also for overlapping calls', async () => {
+    const [a, b] = await Promise.all([
+      run([['deleteItem', 'actor', {}]]),
+      run([['deleteItem', 'actor', {}]]),
+    ]);
+    expect(a.text).toMatch(/uncorrelated/);
+    expect(b.text).toMatch(/uncorrelated/);
+    expect(listeners.size).toBe(0);
   });
 });
