@@ -7,7 +7,11 @@ import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { LinkClient, type SocketLike, type TokenCredential } from '../../../module/src/link/client.js';
+import {
+  LinkClient,
+  type SocketLike,
+  type TokenCredential,
+} from '../../../module/src/link/client.js';
 import { coreAnnouncements, FIXTURE_PACK_TOOL, hello, ORIGIN } from '../conformance/fake-module.js';
 
 export const cliPath = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));

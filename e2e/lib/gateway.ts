@@ -14,6 +14,7 @@ export function gatewayArgs(
   config: E2eConfig,
   paths: E2ePaths,
   user: string | undefined,
+  extra: readonly string[] = [],
 ): string[] {
   const args = [
     GATEWAY_CLI,
@@ -27,6 +28,7 @@ export function gatewayArgs(
     config.world,
   ];
   if (user !== undefined) args.push('--user', user);
+  args.push(...extra);
   return args;
 }
 
@@ -54,6 +56,8 @@ export class GatewayProcess {
     private readonly config: E2eConfig,
     private readonly paths: E2ePaths,
     readonly user: string | undefined,
+    /** Extra CLI arguments, for a second instance (`--http`, `--http-port`, a differing setting). */
+    private readonly extraArgs: readonly string[] = [],
   ) {}
 
   get stderr(): string {
@@ -71,7 +75,7 @@ export class GatewayProcess {
     }
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: gatewayArgs(this.config, this.paths, this.user),
+      args: gatewayArgs(this.config, this.paths, this.user, this.extraArgs),
       stderr: 'pipe',
       cwd: REPO_ROOT,
     });

@@ -20,6 +20,7 @@ export default defineConfig({
             'fixtures/**/*.test.ts',
             'setup/**/*.test.ts',
             'multi/**/*.test.ts',
+            'takeover/**/*.test.ts',
           ],
           exclude: ['**/*.e2e.test.ts', '**/node_modules/**'],
         },
@@ -32,6 +33,7 @@ export default defineConfig({
           include: [
             'read/**/*.e2e.test.ts',
             'multi/**/*.e2e.test.ts',
+            'takeover/**/*.e2e.test.ts',
             'packs/**/*.e2e.test.ts',
             'dnd5e/**/*.e2e.test.ts',
             'pf2e/**/*.e2e.test.ts',
