@@ -1,13 +1,12 @@
 import { OfflineQueue } from './offline-queue/service.js';
 import { EventBuffer } from './events/index.js';
 import { mkdirSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
-import { LinkListenError, mapListenError } from './link/server.js';
+import { LinkListenError } from './link/server.js';
 import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
 import { createDegradedServer } from './mcp/degraded.js';
@@ -22,16 +21,6 @@ function isInstanceConflict(err: unknown): boolean {
   if (err instanceof LinkListenError) return err.code === 'EADDRINUSE';
   const e = err as { errcode?: number; message?: string } | null;
   return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
-}
-
-/** Bind and release the link port, so a taken port fails before the store is opened. */
-async function probeLinkPort(port: number): Promise<void> {
-  const probe = createServer();
-  await new Promise<void>((resolve, reject) => {
-    probe.once('error', (err) => reject(mapListenError(err, port)));
-    probe.listen(port, '127.0.0.1', () => resolve());
-  });
-  await new Promise<void>((resolve) => probe.close(() => resolve()));
 }
 
 export function defaultDbPath(): string {
@@ -117,29 +106,41 @@ export function createApp(config: Config, deps: AppDeps): App {
     },
   };
 
+  function openedStore(): Store {
+    if (!store) throw new Error('store is not open yet');
+    return store;
+  }
+
   async function startPrimary(): Promise<void> {
-    // Learn whether another gateway holds the link port before touching the shared db:
-    // opening it runs migrations and retention deletes, which a secondary must not do.
-    await probeLinkPort(config.linkPort);
-    const dbPath = deps.dbPath ?? defaultDbPath();
-    if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
-    store = openStore(dbPath);
+    // Hold the link port before touching the shared db: opening it runs migrations and
+    // retention deletes, which a secondary instance must never do. A loser fails here with
+    // EADDRINUSE. The store is opened in the same tick as listen resolves, before any
+    // connection can be handled, so the lazy getters below are never read while unset.
     const registry = new LinkRegistry();
     const codes = new PairingCodes();
-    events = new EventBuffer(store, registry);
-    queue = new OfflineQueue(store, registry);
-    events.startRetention();
     link = new LinkServer({
       port: config.linkPort,
-      store,
+      get store() {
+        return openedStore();
+      },
       codes,
       registry,
       allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
       gatewayVersion: deps.version,
-      events,
-      queue,
+      get events() {
+        return events;
+      },
+      get queue() {
+        return queue;
+      },
     });
     const port = await link.listen();
+    const dbPath = deps.dbPath ?? defaultDbPath();
+    if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+    store = openStore(dbPath);
+    events = new EventBuffer(store, registry);
+    queue = new OfflineQueue(store, registry);
+    events.startRetention();
     const pairingLine = `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`;
     const linkLine = `Link URL: ws://localhost:${port} (pid ${process.pid} holds link port ${port})`;
     writeStatus(pairingLine);

@@ -247,6 +247,22 @@ describe('startup failures and origins (built cli)', () => {
     expect(primary.err()).toContain(`pid ${primary.child.pid} holds link port ${port}`);
   }, 20_000);
 
+  it('elects exactly one primary among concurrent fresh starts', async () => {
+    for (let i = 0; i < 20; i++) {
+      const port = await freePort();
+      const db = join(tmp(), 'g.db');
+      const rs = [0, 1, 2, 3].map(() => run(['--link-port', String(port), '--db', db]));
+      await waitFor(() => rs.every((r) => /Pairing code|cannot pair/.test(r.err())));
+      expect(rs.filter((r) => r.err().includes('Pairing code'))).toHaveLength(1);
+      expect(rs.filter((r) => r.err().includes('cannot pair'))).toHaveLength(3);
+      for (const r of rs) expect(r.child.exitCode).toBeNull();
+      for (const r of rs.splice(0)) {
+        r.child.kill();
+        await new Promise((res) => r.child.once('close', res));
+      }
+    }
+  }, 120_000);
+
   it('accepts a normalised --allow-origin', async () => {
     const args = ['--allow-origin=http://Foundry.Local:30000/'];
     expect(await originAccepted(args, 'http://foundry.local:30000')).toBe(true);
