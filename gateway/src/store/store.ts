@@ -39,8 +39,11 @@ export interface Store {
   revokePairing(id: string): boolean;
   /** Hex sha256 of the local HTTP bearer token; the token itself is never stored. */
   getHttpTokenHash(): string | undefined;
-  /** Replace the stored hash (rotation), or with `onlyIfAbsent` set it only when none exists. */
-  setHttpTokenHash(hash: string, onlyIfAbsent?: boolean): void;
+  /**
+   * Replace the stored hash (rotation), or with `onlyIfAbsent` set it only when none exists.
+   * Returns whether a row was written.
+   */
+  setHttpTokenHash(hash: string, onlyIfAbsent?: boolean): boolean;
   close(): void;
 }
 
@@ -129,7 +132,11 @@ export function openStore(path: string, now: () => number = Date.now): Store {
       return (getSetting.get('http_token_hash') as { value: string } | undefined)?.value;
     },
     setHttpTokenHash(hash, onlyIfAbsent = false) {
-      (onlyIfAbsent ? putSettingIfAbsent : putSetting).run('http_token_hash', hash);
+      return (
+        Number(
+          (onlyIfAbsent ? putSettingIfAbsent : putSetting).run('http_token_hash', hash).changes,
+        ) > 0
+      );
     },
     close() {
       db.close();

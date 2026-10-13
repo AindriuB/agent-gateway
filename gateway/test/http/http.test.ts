@@ -216,4 +216,14 @@ describe('http token', () => {
     expect(second.verify(rotated)).toBe(true);
     store.close();
   });
+
+  it('commit reports false when a rotation stored a token first', () => {
+    const store = openStore(':memory:');
+    const mine = loadOrCreateToken(store);
+    const rotated = rotateToken(store);
+    expect(mine.commit()).toBe(false);
+    expect(mine.verify(mine.created)).toBe(false);
+    expect(mine.verify(rotated)).toBe(true);
+    store.close();
+  });
 });

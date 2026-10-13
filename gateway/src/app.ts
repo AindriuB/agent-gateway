@@ -435,9 +435,13 @@ export function createApp(config: Config, deps: AppDeps): App {
       });
       const httpPort = await candidate.listen();
       httpServer = candidate;
-      token.commit();
-      if (token.created) {
+      const stored = token.commit();
+      if (token.created && stored) {
         writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
+      } else if (token.created) {
+        writeStatus(
+          "HTTP bearer token: a rotated token is already in effect; this instance's own token was discarded",
+        );
       }
       writeStatus(
         `MCP HTTP at http://${HTTP_BIND_HOST}:${httpPort}/mcp (Authorization: Bearer <token>)`,

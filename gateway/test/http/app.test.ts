@@ -1,6 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../../src/app.js';
+import { DatabaseSync } from 'node:sqlite';
 import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -114,6 +115,78 @@ describe('--http in the app', () => {
     expect(check.getHttpTokenHash()).toBe(createHash('sha256').update(newTok!).digest('hex'));
     check.close();
   }, 30_000);
+
+  it('a takeover with the HTTP port blocked persists no hash; a later start prints a working token', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const link = await freePort();
+    let port = await freePort();
+    while (port === link) port = await freePort();
+    const primary = mk(link, port, state.db, false);
+    await primary.app.start();
+    const blocker = createServer().listen(port, '127.0.0.1');
+    await new Promise((r) => blocker.once('listening', r));
+    const successor = mk(link, port, state.db, true);
+    await successor.app.start();
+    await primary.app.stop();
+    await until(
+      () => successor.lines.some((l) => l.startsWith('takeover failed')),
+      20_000,
+      'failed takeover',
+    );
+    await successor.app.stop();
+    const check = openStore(state.db);
+    expect(check.getHttpTokenHash()).toBeUndefined();
+    check.close();
+    expect(successor.lines.some((l) => l.startsWith('HTTP bearer token'))).toBe(false);
+    await new Promise((r) => blocker.close(r));
+    const retry = mk(link, port, state.db, true);
+    await retry.app.start();
+    const tok =
+      (retry.lines.find((l) => l.startsWith('HTTP bearer token')) ?? '').split(': ')[1] ?? '';
+    expect(tok).toMatch(/^[0-9a-f]{64}$/);
+    expect(await status(port, tok)).toBe(200);
+  }, 40_000);
+
+  it.each([
+    ['behind', 3, /start the gateway once/],
+    ['ahead', 99, /older than the database/],
+  ])('--http-rotate-token refuses a db that is %s and leaves it alone', (_n, version, msg) => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const db = new DatabaseSync(state.db);
+    db.exec('CREATE TABLE marker (x)');
+    db.exec(`PRAGMA user_version = ${version}`);
+    db.close();
+    const r = spawnSync(process.execPath, [cli, '--http-rotate-token', '--db', state.db], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(msg);
+    expect(r.stderr).toContain('old token is unchanged');
+    const after = new DatabaseSync(state.db);
+    expect(after.prepare('PRAGMA user_version').get()).toEqual({ user_version: version });
+    expect(
+      after.prepare("SELECT name FROM sqlite_master WHERE name = 'gateway_settings'").all(),
+    ).toEqual([]);
+    after.close();
+  });
+
+  it('--http-rotate-token refuses a missing db', () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const r = spawnSync(
+      process.execPath,
+      [cli, '--http-rotate-token', '--db', `${state.dir}/none.db`],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+      },
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/start the gateway once/);
+  });
 
   it('--http-rotate-token refuses :memory: with a non-zero exit', () => {
     const r = spawnSync(process.execPath, [cli, '--http-rotate-token', '--db', ':memory:'], {

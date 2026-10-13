@@ -12,8 +12,11 @@ export interface HttpToken {
   verify(given: string | undefined): boolean;
   /** Set only on the run that generated the token; it is never stored in the clear. */
   created?: string;
-  /** Persist a freshly generated token's hash. Call it only once the listener is up. */
-  commit(): void;
+  /**
+   * Persist a freshly generated token's hash. Call it only once the listener is up. False means
+   * a token (a concurrent rotation) was stored first and this run's token is void.
+   */
+  commit(): boolean;
 }
 
 /**
@@ -32,7 +35,7 @@ export function loadOrCreateToken(
     },
     ...(created ? { created } : {}),
     commit() {
-      if (created) store.setHttpTokenHash(sha256(created).toString('hex'), true);
+      return !created || store.setHttpTokenHash(sha256(created).toString('hex'), true);
     },
   };
 }

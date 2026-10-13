@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { createApp, defaultDbPath } from '../app.js';
 import { ConfigError, HTTP_BIND_HOST, loadConfig } from '../config/index.js';
 import { rotateToken } from '../http/token.js';
 import { openStore } from '../store/index.js';
+import { MIGRATIONS } from '../store/migrations/index.js';
 import { reportStartFailure } from './start-failure.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
@@ -56,6 +57,22 @@ function normalizeOrigins(values: readonly string[]): string[] {
   });
 }
 
+/** Why the db at `path` cannot be rotated without migrating it, or undefined when it is current. */
+function schemaProblem(path: string): string | undefined {
+  const start = 'start the gateway once to create or update it';
+  if (!existsSync(path)) return `there is no database at ${path}; ${start}`;
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const v = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+    if (v < MIGRATIONS.length) return `the database is behind this version; ${start}`;
+    if (v > MIGRATIONS.length)
+      return 'this binary is older than the database; use the newer gateway';
+    return undefined;
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * One-shot: write the new hash to the store and exit. A running gateway reads the hash from the
  * store on every request, so the old token stops working and the new one starts working the
@@ -68,7 +85,14 @@ function rotate(dbOption: string | undefined): void {
     process.exit(2);
   }
   try {
-    mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+    // Rotation must never migrate a db that a running gateway owns: check the schema read-only.
+    const problem = schemaProblem(dbPath);
+    if (problem) {
+      process.stderr.write(
+        `Could not rotate the HTTP token: ${problem}; the old token is unchanged\n`,
+      );
+      process.exit(1);
+    }
     const store = openStore(dbPath);
     try {
       const token = rotateToken(store);
