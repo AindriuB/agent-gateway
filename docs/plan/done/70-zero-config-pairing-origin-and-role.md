@@ -157,7 +157,7 @@ and no MCP input can choose it.
   - No string in the manifest contains `foundry_url`, `role` or `allow-origin`.
   - The built bundle's entry still runs.
 - [ ] `npm run verify` passes
-- [ ] Manual (Andrew, Mac, Claude Desktop), recorded in the PR:
+- [x] Manual (Andrew, Mac, Claude Desktop), recorded in the PR. Passed 2026-10-13: zero-settings bundle, paired from https://foundry.local, `world_info` in a normal chat returned Test World / pf2e 8.6.0 / v14 / Gamemaster (GAMEMASTER):
   1. Uninstall the old extension and move `~/.foundry-agent-gateway/gateway.db` aside.
   2. Install the rebuilt `.mcpb` and change no setting.
   3. Open a normal chat, open https://foundry.local as the GM, and enter the pairing code from `~/Library/Logs/Claude/main.log` in the module's pairing window. It connects.

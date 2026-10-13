@@ -1,8 +1,8 @@
 # 34 — Add local Streamable HTTP transport with bearer auth and defences
 
 **Repo:** .
-**Depends on:** 13, 69, 70
-**Status:** MVP A (Andrew, 2026-10-13); after 69 and 70
+**Depends on:** 13, 69, 70, 71
+**Status:** MVP A (Andrew, 2026-10-13); after 71 (which follows 69 and 70)
 **Owns:**
 - gateway/src/http/**
 - gateway/src/status/**
