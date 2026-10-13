@@ -23,6 +23,12 @@ describe('gateway/mcpb/manifest.json', () => {
     assert.equal(source.tools, undefined);
   });
 
+  it('passes the Foundry URL as the allowed origin', () => {
+    assert.ok(source.server.mcp_config.args.includes('--allow-origin=${user_config.foundry_url}'));
+    assert.equal(source.user_config.foundry_url.default, 'http://localhost:30000');
+    assert.ok(!source.user_config.foundry_url.sensitive);
+  });
+
   it('exposes only known env settings and no secrets', () => {
     const allowed = new Set([
       'AGENT_GATEWAY_LINK_PORT',
@@ -36,7 +42,8 @@ describe('gateway/mcpb/manifest.json', () => {
       assert.match(v, /^\$\{user_config\.\w+\}$/);
     }
     for (const [name, opt] of Object.entries(source.user_config)) {
-      assert.ok(Object.values(env).includes(`\${user_config.${name}}`), name);
+      const wired = [...Object.values(env), ...source.server.mcp_config.args].join(' ');
+      assert.ok(wired.includes(`\${user_config.${name}}`), name);
       assert.ok(!opt.sensitive, name);
       assert.ok(['number', 'string'].includes(opt.type));
     }

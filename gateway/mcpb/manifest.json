@@ -19,7 +19,7 @@
     "entry_point": "dist/bin/cli.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/bin/cli.js"],
+      "args": ["${__dirname}/dist/bin/cli.js", "--allow-origin=${user_config.foundry_url}"],
       "env": {
         "AGENT_GATEWAY_LINK_PORT": "${user_config.link_port}",
         "AGENT_GATEWAY_HTTP_PORT": "${user_config.http_port}",
@@ -30,6 +30,13 @@
   },
   "tools_generated": true,
   "user_config": {
+    "foundry_url": {
+      "type": "string",
+      "title": "Foundry URL",
+      "description": "The exact origin you open Foundry at: scheme, host and port only, no path and no trailing slash, e.g. https://foundry.local or http://localhost:30000. Only this origin may pair with the gateway (--allow-origin).",
+      "default": "http://localhost:30000",
+      "required": false
+    },
     "link_port": {
       "type": "number",
       "title": "Module link port",

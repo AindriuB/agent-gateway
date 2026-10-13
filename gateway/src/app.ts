@@ -8,6 +8,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
@@ -65,45 +66,19 @@ export function createApp(config: Config, deps: AppDeps): App {
   let queue: OfflineQueue | undefined;
   return {
     async start() {
-      const dbPath = deps.dbPath ?? defaultDbPath();
-      if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
-      store = openStore(dbPath);
-      const registry = new LinkRegistry();
-      const codes = new PairingCodes();
-      events = new EventBuffer(store, registry);
-      queue = new OfflineQueue(store, registry);
-      events.startRetention();
-      link = new LinkServer({
-        port: config.linkPort,
-        store,
-        codes,
-        registry,
-        allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
-        gatewayVersion: deps.version,
-        events,
-        queue,
-      });
-      const port = await link.listen();
-      writeStatus(
-        `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`,
-      );
-      writeStatus(`Link URL: ws://localhost:${port}`);
-      server = createSessionServer({
-        version: deps.version,
-        registry,
-        events,
-        queue,
-        ...(deps.selector ? { selector: deps.selector } : {}),
-        knownIdentities: () =>
-          store?.listActivePairings().map((p) => ({
-            worldId: p.worldId,
-            userId: p.userId,
-            userName: p.userName,
-          })) ?? [],
-        log: writeStatus,
-      });
-      await server.connect(new StdioServerTransport());
-      logger.info(`MCP stdio server started`);
+      try {
+        await startPrimary();
+      } catch (err) {
+        // Another gateway owns the link port or the pairing store. Release anything
+        // half-opened and stay up as an MCP server that reports the conflict.
+        await this.stop();
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.warn(`running without a Foundry link: ${reason}`);
+        writeStatus(`Failed to start link: ${reason}`);
+        server = createDegradedServer({ version: deps.version, reason });
+        await server.connect(new StdioServerTransport());
+        logger.info('MCP stdio server started (no Foundry link)');
+      }
     },
     async stop() {
       await server?.close();
@@ -118,4 +93,54 @@ export function createApp(config: Config, deps: AppDeps): App {
       store = undefined;
     },
   };
+
+  async function startPrimary(): Promise<void> {
+    const dbPath = deps.dbPath ?? defaultDbPath();
+    if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
+    store = openStore(dbPath);
+    const registry = new LinkRegistry();
+    const codes = new PairingCodes();
+    events = new EventBuffer(store, registry);
+    queue = new OfflineQueue(store, registry);
+    events.startRetention();
+    link = new LinkServer({
+      port: config.linkPort,
+      store,
+      codes,
+      registry,
+      allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
+      gatewayVersion: deps.version,
+      events,
+      queue,
+    });
+    const port = await link.listen();
+    const pairingLine = `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`;
+    const linkLine = `Link URL: ws://localhost:${port}`;
+    writeStatus(pairingLine);
+    writeStatus(linkLine);
+    server = createSessionServer({
+      version: deps.version,
+      registry,
+      events,
+      queue,
+      ...(deps.selector ? { selector: deps.selector } : {}),
+      knownIdentities: () =>
+        store?.listActivePairings().map((p) => ({
+          worldId: p.worldId,
+          userId: p.userId,
+          userName: p.userName,
+        })) ?? [],
+      log: writeStatus,
+    });
+    await server.connect(new StdioServerTransport());
+    logger.info(`MCP stdio server started`);
+    // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
+    void server
+      .sendLoggingMessage({
+        level: 'notice',
+        logger: 'pairing',
+        data: `${pairingLine}. ${linkLine}`,
+      })
+      .catch(() => undefined);
+  }
 }
