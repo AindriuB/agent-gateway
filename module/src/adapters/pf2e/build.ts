@@ -230,7 +230,14 @@ async function apply(
   const notes: string[] = [];
   for (const [doc, patch] of docs) {
     try {
-      await doc.update(patch, context.callOptions);
+      // Foundry's update() writes `parent` etc. into the operation object it is given, so a
+      // shared options object would turn a later Actor update into an "embedded" one. Hand each
+      // call a fresh copy that carries only the audit correlation.
+      const options = {
+        ...context.callOptions,
+        agentGateway: { ...context.callOptions.agentGateway },
+      };
+      await doc.update(patch, options);
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
       notes.push(`Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`);

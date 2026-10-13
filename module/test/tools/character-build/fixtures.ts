@@ -16,7 +16,9 @@ export function item(id: string, type: string, system: Record<string, unknown> =
     system,
     update: vi.fn(async (patch: any, options: any) => {
       events.push(`update:${doc.uuid}`);
-      doc.lastOptions = options;
+      doc.lastOptions = { ...options };
+      // Foundry writes the operation context into the options object it is handed.
+      if (options && typeof options === 'object') Object.assign(options, { parent: actor });
       doc.lastPatch = patch;
     }),
   };
@@ -55,6 +57,9 @@ export function pf2eActor(level = 7): any {
     // pf2e 8.6.0 stores a sparse source (pf2e.mjs:35316); prepared system.skills is complete.
     _source: { system: { skills: { acrobatics: { rank: 1 } } } },
     update: vi.fn(async (patch: any, options: any) => {
+      for (const key of ['parent', 'parentUuid', 'pack'])
+        if (options && key in options)
+          throw new Error('Actor is not a valid embedded Document within the Actor Document');
       events.push('update:Actor.a');
       actor.lastPatch = patch;
       actor.lastOptions = options;

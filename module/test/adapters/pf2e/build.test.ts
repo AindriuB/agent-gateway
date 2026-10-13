@@ -173,8 +173,10 @@ describe('pf2e apply', () => {
       ].sort(),
     );
     expect(events.filter((e) => e.startsWith('update:'))).toHaveLength(5);
-    for (const doc of [actor, actor.ancestry, actor.background, actor.class, actor.feat])
-      expect(doc.update).toHaveBeenCalledWith(expect.any(Object), callOptions);
+    for (const doc of [actor, actor.ancestry, actor.background, actor.class, actor.feat]) {
+      expect(doc.update).toHaveBeenCalledTimes(1);
+      expect(doc.lastOptions).toEqual({ agentGateway: { callId: 'call-1' } });
+    }
     expect(actor.ancestry.lastPatch).toEqual({ 'system.boosts.0.selected': 'str' });
     expect(actor.class.lastPatch).toEqual({ 'system.keyAbility.selected': 'dex' });
     expect(actor.feat.lastPatch).toEqual({ 'system.location': 'class-1', 'system.level.taken': 1 });
@@ -248,6 +250,22 @@ describe('post-write result is always reportable', () => {
     const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
     expect(r.skills.length).toBeLessThanOrEqual(128);
     passes(r);
+  });
+});
+
+describe('item and actor updates in one batch', () => {
+  it('lands both when item updates mutate the options they are handed', async () => {
+    const r: any = await apply([
+      { kind: 'key_attribute', attribute: 'dex' },
+      { kind: 'attribute_boost', source: 'level', level: 5, attribute: 'con' },
+      { kind: 'skill_rank', skill: 'athletics', rank: 2 },
+    ]);
+    expect(r.message).toBeUndefined();
+    expect(actor.class.lastPatch).toEqual({ 'system.keyAbility.selected': 'dex' });
+    expect(actor.lastPatch['system.skills.athletics.rank']).toBe(2);
+    expect(actor.lastPatch['system.build']).toBeDefined();
+    expect(actor.lastOptions).toEqual({ agentGateway: { callId: 'call-1' } });
+    expect(callOptions).toEqual({ agentGateway: { callId: 'call-1' } });
   });
 });
 
