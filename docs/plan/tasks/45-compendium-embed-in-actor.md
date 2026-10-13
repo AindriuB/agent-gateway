@@ -102,3 +102,13 @@ Head `f031ced`. Tester PASS: `npm run verify` 2,227 slow on rerun, after one kno
 - Suggestions to apply:
   - Treat a ChoiceSet `selection` as present only when it is a string or number. pf2e still prompts on a non-matching value (pf2e.mjs:31902, :32155); state that a non-matching value is out of scope until task 49.
   - Scan kit `entry.items` nested contents in `grantUuids` (pf2e.mjs:52666-52671).
+
+## Attempt 2 — failed
+Head `7d2eb54`. Tester PASS: one `serialise-scaling` timing flake, then two clean `test:slow` reruns at 2,227; fast 3,679; e2e-unit 163. Reviewer REQUEST CHANGES; all four attempt-1 defects confirmed fixed; the feat-slot replica matches `FeatGroup#isFeatValid` (pf2e.mjs:34974, :52443); scope clean.
+- `module/src/adapters/pf2e/embed.ts:102`, `:110-112`: shields have no persisted usage (Migration905UnpersistUsage, pf2e.mjs:11338-11346), and pf2e forces `held-in-one-hand` in prepareBaseData (:51334).
+  - With `{equipped:true}` the shield is embedded unequipped while the tool reports success.
+  - With `{equipped:false}` it is wrongly refused.
+  - Fix: force `shield` to `held-in-one-hand`, alongside `armor` → `wornarmor`, and add a no-usage shield fixture.
+- Apply in the result text:
+  - The uncorrelated-write count may include concurrent writes to the same Actor.
+  - pf2e `ItemPF2e._onCreate` (:45816-45822) may make an unawaited Actor update without callOptions, which is not counted (task 44).
