@@ -21,7 +21,16 @@ const context = () =>
   }) as any;
 const apply = (changes: CharacterBuildChange[], ctx = context()) =>
   pf2eBuildHook.apply(actor, changes, ctx);
+const listeners = new Map<number, [string, (...a: any[]) => void]>();
+let hookId = 0;
+const fire = (name: string, ...args: unknown[]) =>
+  [...listeners.values()].filter(([n]) => n === name).forEach(([, fn]) => fn(...args));
 beforeEach(() => {
+  listeners.clear();
+  (globalThis as any).Hooks = {
+    on: (name: string, fn: (...a: any[]) => void) => (listeners.set(++hookId, [name, fn]), hookId),
+    off: (_name: string, id: number) => listeners.delete(id),
+  };
   (globalThis as any).CONFIG = { PF2E: { skills: { acrobatics: {}, athletics: {} } } };
   resetEvents();
   actor = pf2eActor();
@@ -197,10 +206,10 @@ describe('pf2e apply', () => {
     const plain: any = await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
     expect(plain.message).toBeUndefined();
     actor.class.update = vi.fn(async () => {
-      actor.items = [...actor.itemList, item('granted', 'feat', {}, actor)];
+      fire('createItem', item('granted', 'feat', {}, actor), {}, 'u');
     });
     const r: any = await apply([{ kind: 'key_attribute', attribute: 'dex' }]);
-    expect(r.message).toMatch(/1 added, 0 removed/);
+    expect(r.message).toMatch(/1 added, 0 updated, 0 removed/);
     expect(r.message).toMatch(/not undoable/);
   });
 });
@@ -283,9 +292,8 @@ describe('update failures', () => {
     actor.update = vi.fn(async () => {
       throw new Error('actor boom');
     });
-    actor.items = [...actor.itemList, item('granted', 'feat', {}, actor)];
     actor.ancestry.update = vi.fn(async () => {
-      actor.items = actor.itemList;
+      fire('deleteItem', item('gone', 'feat', {}, actor), {}, 'u');
     });
     const r: any = await apply([
       { kind: 'attribute_boost', source: 'ancestry', slot: '0', attribute: 'str' },
@@ -293,6 +301,34 @@ describe('update failures', () => {
     ]);
     expect(r.message.startsWith('Update of Hero failed: actor boom')).toBe(true);
     expect(r.message).toMatch(/1 removed/);
+  });
+});
+
+describe('uncorrelated native Item writes', () => {
+  const run = () => apply([{ kind: 'key_attribute', attribute: 'dex' }]);
+  it('discloses an uncorrelated updateItem on an existing Item', async () => {
+    actor.class.update = vi.fn(async () => {
+      fire('updateItem', actor.feat, { flags: {} }, {}, 'u');
+    });
+    const r: any = await run();
+    expect(r.message).toMatch(/0 added, 1 updated, 0 removed/);
+    expect(r.message).toMatch(/not undoable/);
+  });
+  it('does not disclose a correlated update, or another Actor\u2019s Item', async () => {
+    actor.class.update = vi.fn(async () => {
+      fire('updateItem', actor.feat, {}, { agentGateway: { callId: 'call-1' } }, 'u');
+      fire('updateItem', item('x', 'feat', {}, {}), {}, {}, 'u');
+    });
+    expect(((await run()) as any).message).toBeUndefined();
+  });
+  it('removes its listeners after the call, including on throw', async () => {
+    await run();
+    expect(listeners.size).toBe(0);
+    actor.class.update = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    await expect(run()).rejects.toBeDefined();
+    expect(listeners.size).toBe(0);
   });
 });
 

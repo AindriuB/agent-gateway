@@ -6,6 +6,7 @@ import { AdapterUnsupportedError } from '../types.js';
 import { invalid } from '../../tools/_write.js';
 
 declare const CONFIG: any;
+declare const Hooks: any;
 
 const ATTRIBUTES = ['str', 'dex', 'con', 'int', 'wis', 'cha'] as const;
 const LEVEL_BOOSTS = [1, 5, 10, 15, 20];
@@ -211,6 +212,33 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
   return out;
 }
 
+/**
+ * Count Item writes on this Actor that did not carry the audit callId while the batch ran: native
+ * rule elements (GrantItem and the like) write without our options. Listeners are always removed
+ * by `finish()`.
+ */
+function observe(actor: any): { finish(): { added: number; updated: number; removed: number } } {
+  const seen = { added: 0, updated: 0, removed: 0 };
+  const ids: Array<[string, unknown]> = [];
+  const hooks = typeof Hooks === 'undefined' ? undefined : Hooks;
+  const kinds = { createItem: 'added', updateItem: 'updated', deleteItem: 'removed' } as const;
+  for (const [name, key] of Object.entries(kinds))
+    ids.push([
+      name,
+      hooks?.on(name, (doc: any, ...args: unknown[]) => {
+        const options: any = name === 'updateItem' ? args[1] : args[0];
+        if (doc?.parent === actor && typeof options?.agentGateway?.callId !== 'string')
+          seen[key] += 1;
+      }),
+    ]);
+  return {
+    finish() {
+      for (const [name, id] of ids.splice(0)) hooks?.off?.(name, id);
+      return seen;
+    },
+  };
+}
+
 async function apply(
   actor: any,
   changes: readonly CharacterBuildChange[],
@@ -220,7 +248,6 @@ async function apply(
   if (typeof context?.snapshot !== 'function' || !context.callOptions)
     throw new Error('Audit context unavailable');
   const p = plan(actor, changes);
-  const before = new Set(list(actor.items).map((i) => i?.id));
   // Every document the batch will update is snapshotted before the first write.
   const docs: [any, Record<string, unknown>][] = [...p.items];
   if (Object.keys(p.actor).length) docs.push([actor, p.actor]);
@@ -228,33 +255,34 @@ async function apply(
   // Once a write has happened the result must never be lost: failures are reported, not thrown.
   const failures: string[] = [];
   const notes: string[] = [];
-  for (const [doc, patch] of docs) {
-    try {
-      // Foundry's update() writes `parent` etc. into the operation object it is given, so a
-      // shared options object would turn a later Actor update into an "embedded" one. Hand each
-      // call a fresh copy that carries only the audit correlation.
-      const options = {
-        ...context.callOptions,
-        agentGateway: { ...context.callOptions.agentGateway },
-      };
-      await doc.update(patch, options);
-    } catch (error) {
-      const why = error instanceof Error ? error.message : String(error);
-      failures.push(`Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`);
-    }
-  }
+  const watch = observe(actor);
+  let seen = { added: 0, updated: 0, removed: 0 };
   try {
-    const after = list(actor.items).map((i) => i?.id);
-    const created = after.filter((id) => !before.has(id)).length;
-    const removed = [...before].filter((id) => !after.includes(id)).length;
-    if (created || removed)
-      notes.push(
-        `Native pf2e rule elements changed Items on this Actor (${created} added, ${removed} removed) ` +
-          'outside this call\u2019s audit correlation. Those changes are not undoable.',
-      );
-  } catch {
-    notes.push('The Actor Items could not be compared after the update.');
+    for (const [doc, patch] of docs) {
+      try {
+        // Foundry's update() writes `parent` etc. into the operation object it is given, so a
+        // shared options object would turn a later Actor update into an "embedded" one. Hand
+        // each call a fresh copy that carries only the audit correlation.
+        const options = {
+          ...context.callOptions,
+          agentGateway: { ...context.callOptions.agentGateway },
+        };
+        await doc.update(patch, options);
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error);
+        failures.push(
+          `Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`,
+        );
+      }
+    }
+  } finally {
+    seen = watch.finish();
   }
+  if (seen.added || seen.updated || seen.removed)
+    notes.push(
+      `Native pf2e rule elements changed Items on this Actor (${seen.added} added, ${seen.updated} updated, ${seen.removed} removed) ` +
+        'outside this call\u2019s audit correlation. Those changes are not undoable.',
+    );
   // Nothing written: report a failure so the audit entry is not recorded as ok.
   if (docs.length > 0 && failures.length === docs.length)
     invalid(`No build change was written. ${failures[0]}`);
