@@ -20,7 +20,7 @@ import {
 import { GATEWAY_CLI, NotConnectedError, REPO_ROOT } from './lib/gateway.js';
 import { readRunData, recordRunData, resetRunData } from './lib/rundata.js';
 import { CONNECT_BUDGET_MS } from './lib/wait.js';
-import { openUserSession } from './lib/session.js';
+import { openUserSession, type UserSession } from './lib/session.js';
 import { preflightMessage, preflightState, SEED_HINT, SETUP_HINT } from './lib/state.js';
 import {
   buildSummary,
@@ -58,53 +58,58 @@ export function fixturePolicy(
   return { skip: true };
 }
 
-async function livePreflight(
-  config: E2eConfig,
-  paths: E2ePaths,
-  connectDeadlineAt: number,
+/** What livePreflight needs from a session, so the order of opens and closes can be tested. */
+export interface PreflightSession {
+  foundryVersion: string;
+  gateway: Pick<UserSession['gateway'], 'call'>;
+  close(): Promise<void>;
+}
+export type OpenPreflightSession = (user: string) => Promise<PreflightSession>;
+
+/**
+ * The GM session is always closed before the player session opens: both gateways bind the same
+ * link port, so the second cannot start while the first is still up. Skipping the fixtures skips
+ * only the two fixture checks; the close and the player check are the same path.
+ */
+export async function livePreflight(
+  config: Pick<E2eConfig, 'gmUser' | 'playerUser'>,
+  paths: Pick<E2ePaths, 'runData'>,
+  open: OpenPreflightSession,
   skipFixtures = false,
 ): Promise<string> {
   let version = 'unknown';
-  const gm = await openUserSession(config, paths, config.gmUser, { connectDeadlineAt });
+  const gm = await open(config.gmUser);
   try {
     version = gm.foundryVersion;
-    if (skipFixtures) {
-      process.stdout.write(`${FIXTURES_SKIPPED_LINE}\n`);
-      return await finishPreflight(config, paths, connectDeadlineAt, version);
-    }
-    const found = await gm.gateway.call('document_search', {
-      type: 'JournalEntry',
-      query: FIXTURE.names.publicEntry,
-    });
-    const names = ((found.structured?.results ?? []) as Array<{ name: string }>).map((r) => r.name);
-    if (!names.includes(FIXTURE.names.publicEntry)) {
-      throw new PreflightError(`fixtures not found (${FIXTURE.names.publicEntry}); ${SEED_HINT}`);
-    }
-    const pack = await gm.gateway.call('compendium_search', {
-      query: 'a',
-      pack: COMPENDIUM.limitedPack,
-      limit: 1,
-    });
-    const first = (pack.structured?.results as Array<{ uuid: string }> | undefined)?.[0]?.uuid;
-    if (!first) {
-      throw new PreflightError(
-        `the GM found no entry in ${COMPENDIUM.limitedPack}; is the pf2e pack installed?`,
+    if (skipFixtures) process.stdout.write(`${FIXTURES_SKIPPED_LINE}\n`);
+    else {
+      const found = await gm.gateway.call('document_search', {
+        type: 'JournalEntry',
+        query: FIXTURE.names.publicEntry,
+      });
+      const names = ((found.structured?.results ?? []) as Array<{ name: string }>).map(
+        (r) => r.name,
       );
+      if (!names.includes(FIXTURE.names.publicEntry)) {
+        throw new PreflightError(`fixtures not found (${FIXTURE.names.publicEntry}); ${SEED_HINT}`);
+      }
+      const pack = await gm.gateway.call('compendium_search', {
+        query: 'a',
+        pack: COMPENDIUM.limitedPack,
+        limit: 1,
+      });
+      const first = (pack.structured?.results as Array<{ uuid: string }> | undefined)?.[0]?.uuid;
+      if (!first) {
+        throw new PreflightError(
+          `the GM found no entry in ${COMPENDIUM.limitedPack}; is the pf2e pack installed?`,
+        );
+      }
+      recordRunData(paths.runData, { kind: 'facts', limitedPackUuid: first });
     }
-    recordRunData(paths.runData, { kind: 'facts', limitedPackUuid: first });
   } finally {
     await gm.close();
   }
-  return finishPreflight(config, paths, connectDeadlineAt, version);
-}
-
-async function finishPreflight(
-  config: E2eConfig,
-  paths: E2ePaths,
-  connectDeadlineAt: number,
-  version: string,
-): Promise<string> {
-  const player = await openUserSession(config, paths, config.playerUser, { connectDeadlineAt });
+  const player = await open(config.playerUser);
   await player.close();
   return version;
 }
@@ -165,7 +170,13 @@ async function main(): Promise<number> {
   if (!existsSync(GATEWAY_CLI)) throw new PreflightError('gateway is not built; run npm run build');
 
   resetRunData(paths.runData);
-  const version = await livePreflight(config, paths, startedAt + CONNECT_BUDGET_MS, policy.skip);
+  const version = await livePreflight(
+    config,
+    paths,
+    (user) =>
+      openUserSession(config, paths, user, { connectDeadlineAt: startedAt + CONNECT_BUDGET_MS }),
+    policy.skip,
+  );
   recordRunData(paths.runData, { kind: 'foundry', version });
 
   const reportPath = join(paths.stateDir, 'vitest-report.json');
