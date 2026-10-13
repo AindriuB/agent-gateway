@@ -122,4 +122,24 @@ describe('pre-hello socket cap', () => {
     expect(seen.filter(([, r]) => r.startsWith('too many sockets'))).toHaveLength(2);
     expect(seen[0]![0]).toBe('https://evil.example');
   });
+
+  it('names the holding origins, not the refused one, when several origins fill the global cap', async () => {
+    const seen: [string | undefined, string, string | undefined][] = [];
+    h = await startServer({
+      helloTimeoutMs: 60_000,
+      allowedOrigins: undefined,
+      onOriginRejected: (o, r, d) => seen.push([o, r, d]),
+    });
+    for (let o = 0; o < MAX_PENDING_HANDSHAKES / MAX_PENDING_PER_ORIGIN; o++)
+      for (let i = 0; i < MAX_PENDING_PER_ORIGIN; i++)
+        clients.push(await TestClient.connect(h.port, `https://evil${o}.example`));
+    await expect(TestClient.connect(h.port, 'https://foundry.local')).rejects.toThrow(/503/);
+    expect(seen).toHaveLength(1);
+    const [origin, reason, detail] = seen[0]!;
+    expect(origin).toBe('https://foundry.local');
+    expect(reason).toBe('too many pages are holding gateway connections open without pairing');
+    expect(reason).not.toContain('close this page');
+    expect(detail).toMatch(/^held by: (https:\/\/evil\d\.example x4(, )?){3}$/);
+    expect(detail).not.toContain('foundry.local');
+  });
 });

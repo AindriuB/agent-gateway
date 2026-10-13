@@ -266,16 +266,18 @@ export function createApp(config: Config, deps: AppDeps): App {
     const warned = new Set<string>();
     link = new LinkServer({
       port: config.linkPort,
-      onOriginRejected: (origin, reason) => {
+      onOriginRejected: (origin, reason, detail) => {
         const shown = sanitizeOrigin(origin);
-        const key = `${shown} ${reason}`;
+        const key = `${shown} ${reason} ${detail ?? ''}`;
         if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
         warned.add(key);
         const where =
           reason === 'no valid pairing code'
             ? " The code is in this log or the client's MCP log."
             : '';
-        writeStatus(`rejected link connection from origin ${shown}: ${reason}.${where}`);
+        writeStatus(
+          `rejected link connection from origin ${shown}: ${reason}${detail ? ` (${detail})` : ''}.${where}`,
+        );
       },
       get store() {
         return openedStore();

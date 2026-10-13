@@ -36,7 +36,8 @@ export type OriginRejection =
   | 'pairing predates origin binding; pair again with a code'
   | 'too many failed pairing codes'
   | 'pairing token is unknown, revoked, or for another world or user'
-  | 'too many sockets waiting to say hello; close this page';
+  | 'too many sockets waiting to say hello; close this page'
+  | 'too many pages are holding gateway connections open without pairing';
 
 export interface LinkServerOptions {
   port: number;
@@ -59,7 +60,12 @@ export interface LinkServerOptions {
   events?: EventBuffer;
   queue?: OfflineQueue;
   /** Called when a connection is refused; `origin` is `undefined` when there was no usable header. */
-  onOriginRejected?: (origin: string | undefined, reason: OriginRejection) => void;
+  onOriginRejected?: (
+    origin: string | undefined,
+    reason: OriginRejection,
+    /** Extra context for the log line, e.g. which origins hold the pre-hello slots. */
+    detail?: string,
+  ) => void;
 }
 
 export const hashToken = (token: string): string =>
@@ -146,10 +152,22 @@ export class LinkServer {
       refuse('403 Forbidden', 'origin is not an allowed browser origin');
       return;
     }
-    if (
-      this.pending >= MAX_PENDING_HANDSHAKES ||
-      (this.pendingByOrigin.get(origin) ?? 0) >= MAX_PENDING_PER_ORIGIN
-    ) {
+    if (this.pending >= MAX_PENDING_HANDSHAKES) {
+      // The refused origin may be innocent: name the pages that hold the slots instead.
+      const holders = [...this.pendingByOrigin]
+        .sort((x, y) => y[1] - x[1])
+        .slice(0, 3)
+        .map(([o, n]) => `${o.slice(0, 100)} x${n}`)
+        .join(', ');
+      this.opts.onOriginRejected?.(
+        origin,
+        'too many pages are holding gateway connections open without pairing',
+        `held by: ${holders}`,
+      );
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return;
+    }
+    if ((this.pendingByOrigin.get(origin) ?? 0) >= MAX_PENDING_PER_ORIGIN) {
       this.opts.onOriginRejected?.(
         origin,
         'too many sockets waiting to say hello; close this page',
