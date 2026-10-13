@@ -143,7 +143,6 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
         if (current.length >= MAX_PER_LEVEL) invalid('At most 4 boosts are allowed per level');
         current.push(c.attribute!);
         levelLists.set(lv!, current);
-        levelLists.set(lv!, current);
         // Mirror the native AttributeBuilder (pf2e.mjs:23973-23975): merge into the Actor's own
         // source `system.build` and update that object, never a dotted array path.
         const base = out.actor['system.build'] ?? sourceBuild(actor);
@@ -227,6 +226,7 @@ async function apply(
   if (Object.keys(p.actor).length) docs.push([actor, p.actor]);
   for (const [doc] of docs) await context.snapshot(doc.uuid);
   // Once a write has happened the result must never be lost: failures are reported, not thrown.
+  const failures: string[] = [];
   const notes: string[] = [];
   for (const [doc, patch] of docs) {
     try {
@@ -240,7 +240,7 @@ async function apply(
       await doc.update(patch, options);
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
-      notes.push(`Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`);
+      failures.push(`Update of ${str(doc.name, 80) ?? 'a document'} failed: ${why.slice(0, 200)}`);
     }
   }
   try {
@@ -255,7 +255,11 @@ async function apply(
   } catch {
     notes.push('The Actor Items could not be compared after the update.');
   }
-  return finish(actor, notes);
+  // Nothing written: report a failure so the audit entry is not recorded as ok.
+  if (docs.length > 0 && failures.length === docs.length)
+    invalid(`No build change was written. ${failures[0]}`);
+  // Failures lead the message so the audit result's truncation cannot hide them.
+  return finish(actor, [...failures, ...notes]);
 }
 
 const EMPTY: BuildPayload = { supported: true, boosts: [], skills: [], featSlots: [] };
@@ -280,6 +284,8 @@ function finish(actor: any, notes: string[]): BuildPayload {
   }
   const key = shape.keyAttribute.safeParse(state?.keyAttribute);
   if (key.success && key.data) out.keyAttribute = key.data;
+  else if (!key.success && state?.keyAttribute !== undefined)
+    notes.push('The keyAttribute state was not reportable; read it again with character_build.');
   if (notes.length) out.message = notes.join(' ').slice(0, 2000);
   return out;
 }

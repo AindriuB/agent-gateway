@@ -269,6 +269,33 @@ describe('item and actor updates in one batch', () => {
   });
 });
 
+describe('update failures', () => {
+  it('throws, carrying the first failure, when every update fails', async () => {
+    actor.class.update = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    await expect(apply([{ kind: 'key_attribute', attribute: 'dex' }])).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/No build change was written\..*boom/),
+    });
+  });
+  it('leads the message with failures on a partial failure', async () => {
+    actor.update = vi.fn(async () => {
+      throw new Error('actor boom');
+    });
+    actor.items = [...actor.itemList, item('granted', 'feat', {}, actor)];
+    actor.ancestry.update = vi.fn(async () => {
+      actor.items = actor.itemList;
+    });
+    const r: any = await apply([
+      { kind: 'attribute_boost', source: 'ancestry', slot: '0', attribute: 'str' },
+      { kind: 'skill_rank', skill: 'athletics', rank: 1 },
+    ]);
+    expect(r.message.startsWith('Update of Hero failed: actor boom')).toBe(true);
+    expect(r.message).toMatch(/1 removed/);
+  });
+});
+
 describe('level boosts as pf2e stores them', () => {
   it('merges into the source system.build and keeps its other data', async () => {
     // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).
