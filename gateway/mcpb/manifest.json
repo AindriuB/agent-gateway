@@ -1,0 +1,72 @@
+{
+  "manifest_version": "0.3",
+  "name": "foundry-agent-gateway",
+  "display_name": "Foundry Agent Gateway",
+  "version": "0.1.0",
+  "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
+  "author": {
+    "name": "Andrew Bannister",
+    "url": "https://github.com/AindriuB/agent-gateway"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AindriuB/agent-gateway.git"
+  },
+  "homepage": "https://github.com/AindriuB/agent-gateway#readme",
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bin/cli.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/bin/cli.js"],
+      "env": {
+        "AGENT_GATEWAY_LINK_PORT": "${user_config.link_port}",
+        "AGENT_GATEWAY_HTTP_PORT": "${user_config.http_port}",
+        "AGENT_GATEWAY_ROLE": "${user_config.role}",
+        "AGENT_GATEWAY_LOG_LEVEL": "${user_config.log_level}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "user_config": {
+    "link_port": {
+      "type": "number",
+      "title": "Module link port",
+      "description": "Local port the Foundry module connects to (AGENT_GATEWAY_LINK_PORT).",
+      "default": 7420,
+      "min": 1,
+      "max": 65535,
+      "required": false
+    },
+    "http_port": {
+      "type": "number",
+      "title": "HTTP port",
+      "description": "Local HTTP port (AGENT_GATEWAY_HTTP_PORT).",
+      "default": 7421,
+      "min": 1,
+      "max": 65535,
+      "required": false
+    },
+    "role": {
+      "type": "string",
+      "title": "Role",
+      "description": "Either 'player' or 'gm' (AGENT_GATEWAY_ROLE).",
+      "default": "player",
+      "required": false
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log level",
+      "description": "One of debug, info, warn, error (AGENT_GATEWAY_LOG_LEVEL).",
+      "default": "info",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=22.13"
+    }
+  }
+}

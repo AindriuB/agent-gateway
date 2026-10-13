@@ -27,6 +27,7 @@
     "fsevents": true
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^26.6.4",
     "@types/ws": "^8.18.2",
