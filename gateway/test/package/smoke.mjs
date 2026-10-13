@@ -2,14 +2,24 @@
 // Packs the gateway, installs the tarball into a temp dir with a temp HOME and
 // checks the installed bin. Publishes nothing.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const root = resolve(new URL('../../..', import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const realState = join(homedir(), '.foundry-agent-gateway');
-const before = existsSync(realState) ? readdirSync(realState).sort().join() : null;
+function snapshot(dir) {
+  if (!existsSync(dir)) return null;
+  const out = [];
+  for (const e of readdirSync(dir, { recursive: true }).sort()) {
+    const st = statSync(join(dir, e));
+    out.push(`${e}:${st.size}:${st.mtimeMs}`);
+  }
+  return out.join('\n');
+}
+const before = snapshot(realState);
 const work = mkdtempSync(join(tmpdir(), 'fag-smoke-'));
 const home = join(work, 'home');
 const app = join(work, 'app');
@@ -20,6 +30,8 @@ const env = {
   USERPROFILE: home,
   npm_config_cache: join(work, 'cache'),
 };
+
+delete env.AGENT_GATEWAY_DB;
 
 try {
   const version = JSON.parse(readFileSync(join(root, 'gateway/package.json'), 'utf8')).version;
@@ -65,7 +77,7 @@ try {
   assert.ok(msg.result?.serverInfo, 'initialize result');
   console.log('ok: initialize result on stdout, nothing else; stderr bytes:', r.stderr.length);
 
-  const after = existsSync(realState) ? readdirSync(realState).sort().join() : null;
+  const after = snapshot(realState);
   assert.equal(after, before, 'real ~/.foundry-agent-gateway untouched');
   console.log('ok: real state dir untouched');
 } finally {

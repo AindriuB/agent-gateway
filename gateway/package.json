@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
-    "prepack": "npm run build",
+    "prepack": "tsc -p ../protocol/tsconfig.json && npm run build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
