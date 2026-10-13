@@ -332,6 +332,45 @@ describe('uncorrelated native Item writes', () => {
   });
 });
 
+describe('aggregate result budget', () => {
+  const crowd = (n: number) => {
+    const slots: Record<string, any> = {};
+    for (let i = 0; i < n; i++)
+      slots[`class-${i}`] = {
+        id: `class-${i}`,
+        level: (i % 20) + 1,
+        feat: {
+          uuid: `Actor.aaaaaaaaaaaaaaaa.Item.${String(i).padStart(16, 'x')}`,
+          name: 'N'.repeat(200),
+        },
+      };
+    actor.feats = [{ id: 'class', slotted: true, slots, isFeatValid: () => true }];
+  };
+  const wire = (r: unknown) =>
+    characterBuild.output.parse({
+      ...(boundedAdapterData(r) as object),
+      actorUuid: 'Actor.a',
+      systemId: 'pf2e',
+    });
+  it('trims an oversize state on both the write and describe paths', async () => {
+    crowd(80);
+    const written: any = await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
+    const read: any = pf2eBuildHook.describe(actor);
+    for (const r of [written, read]) {
+      wire(r);
+      expect(new TextEncoder().encode(JSON.stringify(r)).length).toBeLessThanOrEqual(65536);
+      expect(r.message).toMatch(/truncated/);
+      expect(r.featSlots.length).toBeGreaterThan(0);
+    }
+    expect(written.featSlots.every((f: any) => f.itemName === undefined)).toBe(true);
+  });
+  it('does not trim a normal build', async () => {
+    const r: any = await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
+    expect(r.message).toBeUndefined();
+    expect(r.featSlots.find((f: any) => f.itemName)).toBeDefined();
+  });
+});
+
 describe('level boosts as pf2e stores them', () => {
   it('merges into the source system.build and keeps its other data', async () => {
     // pf2e 8.6.0 prepared data derives boosts from source (pf2e.mjs:35267-35280).

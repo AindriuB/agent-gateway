@@ -4,6 +4,7 @@ import type { BuildHook, BuildPayload } from '../build.js';
 import type { AdapterExecutionContext } from '../types.js';
 import { AdapterUnsupportedError } from '../types.js';
 import { invalid } from '../../tools/_write.js';
+import { boundedAdapterData } from '../../tools/_adapters.js';
 
 declare const CONFIG: any;
 declare const Hooks: any;
@@ -314,8 +315,44 @@ function finish(actor: any, notes: string[]): BuildPayload {
   if (key.success && key.data) out.keyAttribute = key.data;
   else if (!key.success && state?.keyAttribute !== undefined)
     notes.push('The keyAttribute state was not reportable; read it again with character_build.');
-  if (notes.length) out.message = notes.join(' ').slice(0, 2000);
-  return out;
+  return fit(out, notes);
+}
+
+/** Leave headroom for the actorUuid and systemId fields invokeAdapter adds, and its byte cap. */
+const RESULT_BUDGET = 60000;
+function fits(result: unknown): boolean {
+  try {
+    boundedAdapterData(result);
+    return new TextEncoder().encode(JSON.stringify(result)).length <= RESULT_BUDGET;
+  } catch {
+    return false;
+  }
+}
+const TRUNCATED =
+  'The build state was truncated to fit the result size limit; read it again with character_build.';
+/**
+ * Make the whole result pass boundedAdapterData and invokeAdapter's byte cap. Trim
+ * deterministically: drop slot names, then shorten featSlots, then the other arrays.
+ */
+function fit(out: any, notes: string[]): BuildPayload {
+  const message = (extra: string[]) => {
+    const all = [...notes, ...extra];
+    return all.length ? { message: all.join(' ').slice(0, 2000) } : {};
+  };
+  let result = { ...out, ...message([]) };
+  if (fits(result)) return result;
+  const extra = [TRUNCATED];
+  const trial = () => (result = { ...out, ...message(extra) });
+  for (const slot of out.featSlots) delete slot.itemName;
+  if (trial() && fits(result)) return result;
+  for (const key of ['featSlots', 'skills', 'boosts'] as const)
+    while (out[key].length > 0) {
+      out[key] = out[key].slice(0, Math.floor(out[key].length / 2));
+      trial();
+      if (fits(result)) return result;
+    }
+  delete out.keyAttribute;
+  return trial();
 }
 
 export const pf2eBuildHook: BuildHook = Object.freeze({
