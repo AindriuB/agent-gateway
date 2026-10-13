@@ -21,6 +21,11 @@ export const MAX_RELAY_HANDSHAKE_BYTES = 4096;
 /** `sun_path` limit on darwin, minus the terminating NUL. */
 export const MAX_UNIX_SOCKET_PATH_BYTES = 103;
 
+/** How long an instance keeps waiting for older primaries to hand it the link before it gives up. */
+export const RELAY_TAKEOVER_DEADLINE_MS = 60_000;
+/** A handover claim older than the grace period plus this is stale and ignored. */
+export const RELAY_CLAIM_SLACK_MS = 10_000;
+
 /** How long a primary keeps serving after agreeing to step down for a newer config. */
 export const STEPDOWN_GRACE_MS = 2000;
 

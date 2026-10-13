@@ -3,10 +3,14 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { safeText, type UserSelector } from '../routing/index.js';
+import { clearClaim, readClaim } from './claim.js';
 import {
   RELAY_BACKOFF_CAP_MS,
   RELAY_BACKOFF_START_MS,
+  RELAY_CLAIM_SLACK_MS,
   RELAY_CONNECT_ATTEMPTS,
+  RELAY_TAKEOVER_DEADLINE_MS,
+  STEPDOWN_GRACE_MS,
 } from './constants.js';
 import { describeConfigDiff, type RelayConfig } from './config.js';
 import { StdioRelayProxy } from './proxy.js';
@@ -185,7 +189,7 @@ export class RelaySecondary {
         if (this.stopped) return;
         const [a, b] = InMemoryTransport.createLinkedPair();
         try {
-          if (await this.opts.becomePrimary(a)) {
+          if (await this.tryBind(a)) {
             this.role = 'primary';
             const up = new LocalUpstream(b);
             await up.start();
@@ -227,11 +231,12 @@ export class RelaySecondary {
     // Set once a primary agrees to step down for us: from then on we also try to take its place.
     let takeOver = tryPrimary;
     let delay = RELAY_BACKOFF_START_MS;
+    let stepDownDeadline: number | undefined;
     for (let attempt = 1; attempt <= RELAY_CONNECT_ATTEMPTS && !this.stopped; attempt++) {
       if (takeOver) {
         const [a, b] = InMemoryTransport.createLinkedPair();
         try {
-          if (await this.opts.becomePrimary(a)) {
+          if (await this.tryBind(a)) {
             this.role = 'primary';
             const up = new LocalUpstream(b);
             await up.start();
@@ -266,6 +271,15 @@ export class RelaySecondary {
           this.opts.log('the primary gateway has an older configuration and is stepping down');
           takeOver = true;
           last = 'waiting for the older gateway to step down';
+          // Being handed a STEPDOWN means an older instance holds the port and will release it:
+          // that is not a failed attempt. Without this, a run of older instances winning the port
+          // would use up the budget and leave this, the newest instance, degraded. A separate
+          // deadline bounds the wait.
+          stepDownDeadline ??= Date.now() + RELAY_TAKEOVER_DEADLINE_MS;
+          if (Date.now() < stepDownDeadline) {
+            attempt--;
+            delay = RELAY_BACKOFF_START_MS;
+          }
         } else if (r.code !== 'RELAY_AUTH' && r.code !== 'RELAY_FULL')
           return this.blocked(`the primary gateway refused the relay: ${safeText(String(r.code))}`);
         if (r.code !== 'RELAY_CONFIG_STEPDOWN')
@@ -280,6 +294,26 @@ export class RelaySecondary {
     }
     const reason = `could not relay to the gateway holding link port ${this.opts.linkPort} after ${RELAY_CONNECT_ATTEMPTS} attempts: ${last}`;
     return this.blocked(reason);
+  }
+
+  /** A primary is handing the link port to another instance right now: leave the bind to it. */
+  private claimedByOther(): boolean {
+    const c = readClaim(this.opts.stateDir, this.opts.linkPort);
+    if (!c || c.heir === this.opts.config.startedAt) return false;
+    const age = Date.now() - c.at;
+    return age >= 0 && age < STEPDOWN_GRACE_MS + RELAY_CLAIM_SLACK_MS;
+  }
+
+  /** Try to bind the link port, unless another instance holds the claim to it. */
+  private async tryBind(transport: Transport): Promise<boolean> {
+    if (this.claimedByOther()) return false;
+    const won = await this.opts.becomePrimary(transport);
+    if (won) {
+      const c = readClaim(this.opts.stateDir, this.opts.linkPort);
+      if (c?.heir === this.opts.config.startedAt)
+        clearClaim(this.opts.stateDir, this.opts.linkPort);
+    }
+    return won;
   }
 
   /**

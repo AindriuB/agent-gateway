@@ -18,6 +18,7 @@ import {
   sameSessionConfig,
   type RelayConfig,
 } from './config.js';
+import { writeClaim } from './claim.js';
 import { LineSplitter } from './lines.js';
 import { newSecret, parseSecretFile, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';
@@ -179,9 +180,15 @@ export class RelayServer {
   }
 
   /** Keep serving for the grace period so in-flight calls finish, then let the app exit. */
-  private stepDown(why: string): void {
+  private stepDown(why: string, heir: number): void {
     if (this.steppingDown) return;
     this.steppingDown = true;
+    // Name the heir before the port is released, so older instances do not win the race for it.
+    try {
+      writeClaim(this.opts.stateDir, this.opts.linkPort, heir);
+    } catch (err) {
+      this.opts.log(`could not record the handover claim: ${safeText((err as Error).message)}`);
+    }
     const net = this.net;
     if (net?.listening) net.close();
     const timer = setTimeout(() => this.opts.onStepDown?.(why), STEPDOWN_GRACE_MS);
@@ -298,7 +305,8 @@ export class RelayServer {
         this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
           config: this.opts.config,
         });
-        if (newer) this.stepDown(describeConfigDiff(this.opts.config, theirConfig));
+        if (newer)
+          this.stepDown(describeConfigDiff(this.opts.config, theirConfig), theirConfig!.startedAt);
         return;
       }
       this.opts.log(

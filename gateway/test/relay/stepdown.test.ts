@@ -180,16 +180,15 @@ describe('a stepped-down gateway stays alive', () => {
 
     const steps = (x: Cli) => count(x.stderr(), 'stepping down:');
     const asked = (x: Cli) => count(x.stderr(), 'stepping down for the newer instance');
-    // What rules out a livelock: a primary only ever steps down because a strictly newer peer
-    // asked it to (the server refuses anyone else), so a step-down is never self-inflicted, and C,
-    // the newest, never steps down. A standby or secondary may win the port ahead of C in the
-    // handover window, which costs one more step-down; it takes a second lost race to cost another.
-    // So each of A and B is bounded by the number of instances, not by timing, and the total is too.
-    for (const x of [a, b, c]) expect(steps(x), 'every step-down was asked for').toBe(asked(x));
-    expect(steps(a)).toBeLessThanOrEqual(3);
-    expect(steps(b)).toBeLessThanOrEqual(3);
+    // Every step-down was asked for by a strictly newer peer (two handshakes may both be logged).
+    for (const x of [a, b, c]) expect(asked(x)).toBeGreaterThanOrEqual(steps(x));
+    // One step-down per instance per newer peer at most: A has two newer peers, B one, C none.
+    // That holds because a primary that steps down for C names C as the heir (a claim file) before
+    // it releases the port, so older standbys and secondaries cannot win the port ahead of C and
+    // force a second step-down, and C keeps waiting rather than spending its attempts on them.
+    expect(steps(a)).toBeLessThanOrEqual(2);
+    expect(steps(b)).toBeLessThanOrEqual(1);
     expect(steps(c)).toBe(0);
-    expect(steps(a) + steps(b)).toBeLessThanOrEqual(6);
     for (const x of [a, b, c]) expect(alive(x.pid)).toBe(true);
     expect(holds(c)).toBe(1);
     // The final primary is C: its own stdio client reaches the module.
