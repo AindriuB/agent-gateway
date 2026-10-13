@@ -540,7 +540,7 @@ describe('character_build listChoices handler', () => {
     expect((await list(entry.uuid)) as any).toMatchObject({ error: { code: 'INVALID_ARGS' } });
   });
   it('reports unsupported on another system', async () => {
-    g.game.system = { id: 'dnd5e' };
+    g.game.system = { id: 'starfinder' };
     const { entry } = entryWith([]);
     expect((await list(entry.uuid)) as any).toMatchObject({ structured: { supported: false } });
   });

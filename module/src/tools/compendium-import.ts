@@ -98,6 +98,10 @@ async function embed(
     lines.push(
       `${batch.uncorrelated} native write(s) made by the system during creation are uncorrelated with this audit entry and are not undoable here (task 44 owns that). The count may include concurrent writes to the same Actor, and a possible unawaited Actor update after creation is not counted.`,
     );
+  // A hook's own disclosure: fixed text, bounded here, and control characters are dropped.
+  const note = hook.note?.(data);
+  if (typeof note === 'string' && note)
+    lines.push(note.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300));
   if (ran.timedOut)
     lines.push(
       'The create ran past the time limit for answering choices; any choice raised after that was ignored.',

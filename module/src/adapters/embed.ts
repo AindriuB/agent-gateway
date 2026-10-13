@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { genericEmbedHook } from './generic/embed.js';
 import { pf2eEmbedHook } from './pf2e/embed.js';
+import { dnd5eEmbedHook } from './dnd5e/embed.js';
 
 /** The bounded, system-neutral overrides compendium_import accepts for an embedded Item. */
 export interface EmbedOverrides {
@@ -59,10 +60,19 @@ export interface EmbedHook {
     input: EmbedRunInput,
     create: () => Promise<T>,
   ): Promise<{ value: T; report: ChoiceReportEntry[]; timedOut?: boolean }>;
+  /**
+   * A short, fixed disclosure about the prepared source (for example, that advancements were not
+   * applied). compendium_import appends it to its result text. It must never echo untrusted
+   * text; the caller bounds it regardless.
+   */
+  note?(source: Record<string, any>): string | undefined;
   /** Start counting native writes that carry no audit callOptions. */
   observe?(actor: any): EmbedObservation;
 }
 
-const HOOKS: Readonly<Record<string, EmbedHook>> = Object.freeze({ pf2e: pf2eEmbedHook });
+const HOOKS: Readonly<Record<string, EmbedHook>> = Object.freeze({
+  pf2e: pf2eEmbedHook,
+  dnd5e: dnd5eEmbedHook,
+});
 export const embedHookFor = (systemId: string): EmbedHook =>
   Object.hasOwn(HOOKS, systemId) ? HOOKS[systemId]! : genericEmbedHook;

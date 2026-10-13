@@ -25,6 +25,8 @@ The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It i
 | `AGENT_GATEWAY_E2E_CONNECT_TIMEOUT_S` | `20`; the most one user's wait for a stored pairing to connect may take (the two users share a 43 s budget) |
 | `AGENT_GATEWAY_E2E_HEADED` | `1` shows the browsers during seed, clean and runs |
 
+`AGENT_GATEWAY_E2E_SKIP_FIXTURES=1` skips only the seeded-fixture and limited-pack preflight checks. It requires a suite filter on the command line and is for suites, such as `dnd5e`, that create their own data.
+
 Keep passwords out of the repo; they belong in the environment or `test.env`. The old single `FOUNDRY_PASSWORD` is no longer read: if it is set, the harness prints a one-line warning and ignores it. A password variable that is defined but empty in the environment means "no password" and overrides a value in `test.env`.
 
 Foundry user names are matched against the join screen exactly first, then case-insensitively, because the world's real names may differ in case (`test-world` has `Player2`). When nothing matches, the run fails listing the names the join screen offers. Set `FOUNDRY_PLAYER2_USER` and friends to the real spelling anyway: the gateway binds `--user` by the name recorded at pairing.
@@ -76,6 +78,16 @@ Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_P
 `npm run test:e2e -- --foundry v13` targets `AGENT_GATEWAY_E2E_V13_URL`. Without it the run prints `SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)` and exits 0. For setup and seed, set `FOUNDRY_URL` to that same v13 URL; those commands do not accept `--foundry`. Set `AGENT_GATEWAY_E2E_STATE_DIR` consistently to a separate directory (for example `~/.config/agent-gateway/e2e-v13`) for setup, seed and runs, keeping v13 pairings and profiles separate from v14.
 
 The configured v13.351 / PF2e 7.12.2 instance passed the full core/read/multi-user gate: 34 tests passed, zero failed, and the optional Hello Pack test skipped (35 discovered). The v14.369 gate passed all 35 tests, and Hello Pack enabled/disabled lifecycle acceptance was also checked separately on v14. These results do not claim Hello Pack lifecycle validation on v13.
+
+## dnd5e live run (task 32)
+
+The `dnd5e` suite needs a dnd5e world and creates its own data, so it runs unseeded with the fixture preflight skipped. The accepted world is `dnd5e-test` (dnd5e 6.0.6, Foundry 14.369, users `dev-gm` and `Player1`, `playerAgentsEnabled` on, not seeded). The command is:
+
+```
+AGENT_GATEWAY_E2E_SKIP_FIXTURES=1 FOUNDRY_WORLD=dnd5e-test FOUNDRY_PLAYER_USER=Player1 AGENT_GATEWAY_E2E_DND5E_WORLD=dnd5e-test npm run test:e2e -- --foundry v14 dnd5e
+```
+
+The suite paces its writes to 9 per minute and retries RATE_LIMITED, including the cleanup delete, so it takes about 75 s. Without `AGENT_GATEWAY_E2E_DND5E_WORLD` it skips with a message. Last passing run: 7 of 7 at `421724c`; v13 not run.
 
 ## Native approved-write acceptance
 

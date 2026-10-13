@@ -1,0 +1,676 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ACTION_LOCK_MAX_WAITING,
+  ACTION_LOCK_WAIT_MS,
+  dnd5eAdapter,
+  pendingActionLocks,
+} from '../../../src/adapters/dnd5e/index.js';
+import { selectAdapter } from '../../../src/adapters/index.js';
+import type { AdapterExecutionContext } from '../../../src/adapters/types.js';
+import { adapterContract } from '../contract.js';
+
+const chatCreate = vi.fn();
+const toggle = vi.fn();
+const use = vi.fn();
+const rollAttack = vi.fn();
+const rollDamage = vi.fn();
+const coll = (rows: any[]) =>
+  Object.assign(rows, { get: (id: string) => rows.find((r) => r.id === id) });
+const act = (id: string, name: string, type = 'attack') => ({
+  id,
+  name,
+  type,
+  use,
+  rollAttack,
+  rollDamage,
+  activation: { type: 'action' },
+});
+const sword: any = {
+  id: 'w1',
+  uuid: 'Actor.a.Item.w1',
+  name: 'Longsword',
+  type: 'weapon',
+  system: {
+    equipped: true,
+    quantity: 1,
+    weight: { value: 3, units: 'lb' },
+    activities: coll([act('a1', 'Longsword')]),
+  },
+};
+const fireball: any = {
+  id: 's1',
+  uuid: 'Actor.a.Item.s1',
+  name: 'Fireball',
+  type: 'spell',
+  system: {
+    level: 3,
+    method: 'spell',
+    canPrepare: true,
+    prepared: 1,
+    activities: coll([act('a2', 'Fireball', 'save')]),
+  },
+};
+const unprepared: any = {
+  ...fireball,
+  id: 's3',
+  name: 'Wish',
+  system: { ...fireball.system, prepared: 0 },
+};
+const rage: any = {
+  id: 'f1',
+  uuid: 'Actor.a.Item.f1',
+  name: 'Rage',
+  type: 'feat',
+  system: { uses: { value: 2, max: 3 }, activities: coll([act('a3', 'Rage', 'utility')]) },
+};
+const ring: any = {
+  id: 'r1',
+  uuid: 'Actor.a.Item.r1',
+  name: 'Ring',
+  type: 'equipment',
+  system: { quantity: 1, equipped: true, attuned: true, attunement: 'required' },
+};
+const poisoned = { uuid: 'Actor.a.ActiveEffect.e1', statuses: new Set(['poisoned']) };
+const actor: any = {
+  id: 'a',
+  uuid: 'Actor.a',
+  name: 'Seelah',
+  img: 'i.webp',
+  type: 'character',
+  statuses: new Set(['poisoned']),
+  effects: [poisoned],
+  items: coll([sword, fireball, unprepared, rage, ring]),
+  toggleStatusEffect: toggle,
+  system: {
+    attributes: {
+      hp: { value: 30, max: 40, temp: 2 },
+      ac: { value: 18 },
+      prof: 3,
+      movement: { speeds: { walk: 30 }, units: 'ft' },
+      encumbrance: { value: 40, thresholds: { maximum: 150 } },
+      attunement: { value: 1, max: 3 },
+    },
+    details: { level: 5 },
+    abilities: { str: { value: 16, mod: 3 }, dex: { value: 10, mod: 0 } },
+    spells: { spell3: { value: 2, max: 3, level: 3, type: 'spell' } },
+    currency: { gp: 12 },
+  },
+};
+const hooks = new Map<string, (...a: any[]) => void>();
+(globalThis as any).Hooks = {
+  on: (name: string, fn: any) => (hooks.set(name, fn), name),
+  off: (name: string) => hooks.delete(name),
+};
+(globalThis as any).CONFIG = {
+  DND5E: { conditionTypes: { poisoned: {}, exhaustion: { levels: 6 } } },
+  statusEffects: {
+    poisoned: { id: 'poisoned', name: 'Poisoned' },
+    exhaustion: { id: 'exhaustion', name: 'Exhaustion' },
+    dead: { id: 'dead', name: 'Dead' },
+  },
+};
+(globalThis as any).ChatMessage = { create: chatCreate };
+const callOptions = { agentGateway: { callId: 'call1' } };
+const intendCreate = vi.fn(async () => {});
+const created = vi.fn(async () => {});
+const snapshot = vi.fn(async () => {});
+const ctx = { intendCreate, created, snapshot, callOptions } as unknown as AdapterExecutionContext;
+
+adapterContract(dnd5eAdapter, { actor, actorUuid: 'Actor.a', systemId: 'dnd5e' });
+
+describe('dnd5e adapter', () => {
+  afterEach(() => expect(pendingActionLocks(), 'a test leaked the action lock').toBe(0));
+  beforeEach(() => {
+    vi.clearAllMocks();
+    hooks.clear();
+    poisoned.statuses = new Set(['poisoned']);
+    actor.statuses = new Set(['poisoned']);
+    actor.effects = coll([poisoned]);
+  });
+  it('is registered', () => expect(selectAdapter('dnd5e')).toBe(dnd5eAdapter));
+  it('summarises HP, AC, level, ability mods and speed', async () => {
+    const out: any = await dnd5eAdapter.actorSummary(actor);
+    const a = Object.fromEntries(out.attributes.map((x: any) => [x.key, x.value]));
+    expect(a).toMatchObject({
+      hp: '30/40 (+2 temp)',
+      ac: '18',
+      level: '5',
+      str: '+3 (16)',
+      speed: '30 ft',
+    });
+  });
+  it('lists weapons, spells by level with slots, features with uses; skips unprepared', async () => {
+    const { actions } = (await dnd5eAdapter.listActions(actor)) as any;
+    expect(actions.map((x: any) => x.id)).toEqual([
+      'use:w1:a1',
+      'attack:w1:a1',
+      'damage:w1:a1',
+      'use:s1:a2',
+      'damage:s1:a2',
+      'use:f1:a3',
+    ]);
+    expect(actions.find((x: any) => x.id === 'use:s1:a2')).toMatchObject({
+      group: 'Level 3 spells',
+      uses: '2/3 slots',
+    });
+    expect(actions.find((x: any) => x.id === 'use:f1:a3')).toMatchObject({
+      group: 'Features',
+      uses: '2/3 uses',
+    });
+  });
+  it('uses an activity headlessly and creates the card with callOptions', async () => {
+    use.mockResolvedValue({ message: { type: 'usage' } });
+    chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+    const r: any = await dnd5eAdapter.performAction(actor, 'use:s1:a2', { level: 3 }, ctx);
+    expect(use).toHaveBeenCalledWith(
+      {
+        subsequentActions: false,
+        create: { measuredTemplate: false, summons: false },
+        spell: { slot: 'spell3' },
+      },
+      { configure: false },
+      { create: false },
+    );
+    expect(chatCreate).toHaveBeenCalledWith({ type: 'usage' }, { ...callOptions });
+    expect(created).toHaveBeenCalledWith('ChatMessage.m');
+    expect(snapshot).toHaveBeenCalledWith('Actor.a.Item.s1');
+    expect(r.completed).toBe(true);
+  });
+  it('rolls an attack without a dialog and posts the captured message with callOptions', async () => {
+    rollAttack.mockImplementation(async (_c: any, _d: any, m: any) => {
+      const config = { data: { type: 'attack' }, create: m.create };
+      hooks.get('dnd5e.preRollV2')?.({ subject: sword.system.activities[0] }, {}, config);
+      return [{ total: 17 }];
+    });
+    chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+    const r: any = await dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+    expect(rollAttack).toHaveBeenCalledWith({}, { configure: false }, { create: false });
+    expect(chatCreate).toHaveBeenCalledWith({ type: 'attack' }, { ...callOptions });
+    expect(r.message).toContain('total 17');
+    expect(hooks.size).toBe(0);
+  });
+  it('rejects unknown ids and a slot below the spell level', async () => {
+    await expect(dnd5eAdapter.performAction(actor, 'use:zz:a2', {}, ctx)).rejects.toBeDefined();
+    await expect(
+      dnd5eAdapter.performAction(actor, 'use:s1:a2', { level: 2 }, ctx),
+    ).rejects.toBeDefined();
+    await expect(dnd5eAdapter.performAction(actor, 'attack:s1:a2', {}, ctx)).rejects.toBeDefined();
+    expect(use).not.toHaveBeenCalled();
+  });
+  it('reports a thrown use without hiding the spend', async () => {
+    use.mockRejectedValue(new Error('boom'));
+    const r = (await dnd5eAdapter.performAction(actor, 'use:f1:a3', {}, ctx)) as any;
+    expect(r.completed).toBe(false);
+    expect(r.message).toContain('cannot be undone');
+  });
+  it('reports attunement and weight in the inventory', async () => {
+    const inv = (await dnd5eAdapter.inventorySemantics(actor)) as any;
+    expect(inv.items.find((i: any) => i.name === 'Ring')).toMatchObject({
+      equipped: true,
+      invested: true,
+    });
+    expect(inv.items.find((i: any) => i.name === 'Longsword').weight).toBe('3 lb');
+    expect(inv.totals[0]).toMatchObject({ key: 'weight', value: '40/150' });
+  });
+  it('reads conditions and toggles through toggleStatusEffect', async () => {
+    expect(((await dnd5eAdapter.conditions(actor)) as any).conditions).toEqual([
+      { id: 'poisoned', name: 'Poisoned' },
+    ]);
+    await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
+    expect(snapshot).toHaveBeenCalledWith('Actor.a.ActiveEffect.e1');
+    expect(toggle).toHaveBeenCalledWith('poisoned', { active: false });
+    await expect(
+      dnd5eAdapter.conditions(actor, { id: 'dead', active: true }, ctx),
+    ).rejects.toBeDefined();
+  });
+  describe('condition races', () => {
+    const exhaustion = (level: number, id = 'dnd5eexhaustion0') => ({
+      id,
+      uuid: `Actor.a.ActiveEffect.${id}`,
+      statuses: new Set(['exhaustion']),
+      system: { level },
+    });
+    const set = (...effects: any[]) => {
+      actor.statuses = new Set(effects.length ? ['exhaustion'] : []);
+      actor.effects = coll(effects);
+    };
+    it('reads the level from dnd5e own static-id effect, not an item effect listing the status', async () => {
+      const mine = exhaustion(3);
+      const itemEffect = {
+        id: 'itemfx0000000001',
+        uuid: 'Actor.a.Item.i.ActiveEffect.f',
+        statuses: new Set(['exhaustion']),
+        system: {},
+      };
+      set(itemEffect, mine); // the item effect is ordered first
+      expect(((await dnd5eAdapter.conditions(actor)) as any).conditions).toContainEqual({
+        id: 'exhaustion',
+        name: 'Exhaustion',
+        value: 3,
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 2 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -1 });
+      toggle.mockClear();
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -3 });
+      expect(snapshot).not.toHaveBeenCalledWith('Actor.a.Item.i.ActiveEffect.f');
+    });
+    it('reports level 0 when only an item effect carries the status', async () => {
+      actor.statuses = new Set(['exhaustion']);
+      actor.effects = coll([
+        { id: 'itemfx0000000001', statuses: new Set(['exhaustion']), system: {} },
+      ]);
+      const c: any = ((await dnd5eAdapter.conditions(actor)) as any).conditions;
+      expect(c).toContainEqual({ id: 'exhaustion', name: 'Exhaustion', value: 0 });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 2 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 2 });
+    });
+    it('a non-leveled toggle acts on single-status effects only, as core does', async () => {
+      const multi = { id: 'm', uuid: 'u.m', statuses: new Set(['poisoned', 'blinded']) };
+      actor.statuses = new Set(['poisoned']);
+      actor.effects = coll([multi]);
+      await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
+      expect(toggle).not.toHaveBeenCalled(); // core would find nothing to remove
+    });
+    it('recomputes the delta from the target after the snapshots', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 3; // another update lands during the wait
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 1 }); // 3 + 1 = the target 4
+    });
+    it('a removal racing an add still removes whatever level it finds', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 5;
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+      expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -5 });
+    });
+    it('does nothing when the target was reached during the wait', async () => {
+      const e = exhaustion(2);
+      set(e);
+      snapshot.mockImplementationOnce(async () => {
+        e.system.level = 4;
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+      expect(toggle).not.toHaveBeenCalled();
+    });
+    it('refuses when the effect it will change is replaced by an unenrolled one during the wait', async () => {
+      set(exhaustion(2));
+      snapshot.mockImplementationOnce(async () => {
+        const replacement = exhaustion(2);
+        replacement.uuid = 'Actor.a.ActiveEffect.replacement';
+        actor.effects = coll([replacement]);
+      });
+      await expect(
+        dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx),
+      ).rejects.toBeDefined();
+      expect(toggle).not.toHaveBeenCalled();
+    });
+    it('a non-leveled toggle follows the live state after the wait', async () => {
+      // poisoned is active; removal requested; someone else removes it during the wait
+      snapshot.mockImplementationOnce(async () => {
+        actor.statuses = new Set();
+        actor.effects = coll([]);
+      });
+      await dnd5eAdapter.conditions(actor, { id: 'poisoned', active: false }, ctx);
+      expect(toggle).not.toHaveBeenCalled();
+    });
+  });
+  it('moves leveled conditions by a level delta', async () => {
+    actor.statuses = new Set(['exhaustion']);
+    actor.effects = coll([
+      {
+        id: 'dnd5eexhaustion0',
+        uuid: 'Actor.a.ActiveEffect.x',
+        statuses: new Set(['exhaustion']),
+        system: { level: 2 },
+      },
+    ]);
+    await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: true, value: 4 }, ctx);
+    expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: 2 });
+    toggle.mockClear();
+    await dnd5eAdapter.conditions(actor, { id: 'exhaustion', active: false }, ctx);
+    expect(toggle).toHaveBeenCalledWith('exhaustion', { levels: -2 });
+    await expect(
+      dnd5eAdapter.conditions(actor, { id: 'poisoned', active: true, value: 2 }, ctx),
+    ).rejects.toBeDefined();
+  });
+
+  describe('headless safety', () => {
+    const withActs = (acts: any[]) => {
+      const it: any = {
+        id: 'x1',
+        uuid: 'Actor.a.Item.x1',
+        name: 'Thing',
+        type: 'feat',
+        system: { activities: coll(acts) },
+      };
+      return { ...actor, items: coll([it]), concentration: undefined } as any;
+    };
+    const base = (id: string, type: string, extra: any = {}) => ({
+      id,
+      name: 'Thing',
+      type,
+      use,
+      ...extra,
+    });
+    it('refuses cast and order, and transform that opens a compendium browser', async () => {
+      for (const [type, extra] of [
+        ['cast', {}],
+        ['order', {}],
+        ['transform', { transform: { mode: 'cr' } }],
+        ['mystery', {}],
+      ] as const) {
+        const a = withActs([base('q1', type, extra)]);
+        expect(((await dnd5eAdapter.listActions(a)) as any).actions).toEqual([]);
+        await expect(dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx)).rejects.toBeDefined();
+      }
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('allows form and empty-mode transform, and neutralises summons', async () => {
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      for (const mode of ['form', '']) {
+        const a = withActs([base('q1', 'transform', { transform: { mode } })]);
+        await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx);
+      }
+      await dnd5eAdapter.performAction(withActs([base('q2', 'summon')]), 'use:x1:q2', {}, ctx);
+      expect(use).toHaveBeenCalledTimes(3);
+      expect(use.mock.calls[2]![0].create).toEqual({ measuredTemplate: false, summons: false });
+    });
+    it('checks the target of a forward activity', async () => {
+      const cast = base('c1', 'cast');
+      const ok = base('u1', 'utility');
+      const a = withActs([
+        cast,
+        ok,
+        base('f1', 'forward', { activity: { id: 'c1' } }),
+        base('f2', 'forward', { activity: { id: 'u1' } }),
+      ]);
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:f1', {}, ctx)).rejects.toBeDefined();
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:f2', {}, ctx)).resolves.toBeDefined();
+    });
+    const conc = (name: string, activityId: string) => ({
+      id: 'e-c1',
+      uuid: 'Actor.a.ActiveEffect.c1',
+      name: 'Concentrating',
+      flags: { dnd5e: { item: { id: 'zz', data: { name, _id: activityId } } } },
+    });
+    const spellWithConc = () => {
+      const a = withActs([base('q1', 'utility', { requiresConcentration: true })]);
+      a.system = {
+        ...actor.system,
+        attributes: { ...actor.system.attributes, concentration: { limit: 1 } },
+      };
+      return a;
+    };
+    it('refuses to end a different concentration, naming it escaped', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('<b>Hold</b>', 'other')]) };
+      const err: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx).catch((e) => e);
+      expect(String(err.message ?? JSON.stringify(err))).toContain('&#60;b&#62;Hold');
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('snapshots and discloses replacing its own concentration', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const r: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx);
+      expect(snapshot).toHaveBeenCalledWith('Actor.a.ActiveEffect.c1');
+      expect(r.message).toContain('concentration on Bless ended');
+    });
+    it('binds the native call to the validated concentration decision', async () => {
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const own = spellWithConc();
+      own.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      await dnd5eAdapter.performAction(own, 'use:x1:q1', {}, ctx);
+      expect(use.mock.calls[0]![0].concentration).toEqual({ end: 'e-c1' });
+      const none = spellWithConc();
+      none.system.attributes.concentration = { limit: 2 };
+      none.concentration = { effects: new Set([conc('Bless', 'zz')]) };
+      await dnd5eAdapter.performAction(none, 'use:x1:q1', {}, ctx);
+      expect(use.mock.calls[1]![0].concentration).toEqual({ end: false });
+    });
+    it('refuses when concentration changes during the awaited audit steps', async () => {
+      const a = spellWithConc();
+      a.system.attributes.concentration = { limit: 1 };
+      a.concentration = { effects: new Set() };
+      snapshot.mockImplementationOnce(async () => {
+        a.concentration = { effects: new Set([conc('<i>Hex</i>', 'other')]) };
+      });
+      const err: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx).catch((e) => e);
+      expect(String(err.message ?? JSON.stringify(err))).toContain('&#60;i&#62;Hex');
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('refuses when the validated effect is replaced by another during the awaits', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      snapshot.mockImplementationOnce(async () => {
+        const other = { ...conc('Bane', 'q1'), id: 'e-other', uuid: 'Actor.a.ActiveEffect.c2' };
+        a.concentration = { effects: new Set([other]) };
+      });
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx)).rejects.toBeDefined();
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('rolls upcast damage on a scaled clone, and rejects bad levels', async () => {
+      const dice = (spell: any) => (spell.flags?.dnd5e?.scaling ?? 0) + 8;
+      const rolled: string[] = [];
+      const mkActivity = (owner: any) => ({
+        id: 'a2',
+        type: 'save',
+        use,
+        rollAttack,
+        rollDamage: async (_c: any, _d: any, m: any) => {
+          rolled.push(`${dice(owner)}d6`);
+          hooks.get('dnd5e.preRollV2')?.(
+            { subject: owner.system.activities[0] },
+            {},
+            { data: { n: 1 }, create: m.create },
+          );
+          return [{ total: 1 }];
+        },
+        activation: { type: 'action' },
+      });
+      const base: any = { ...fireball, flags: {} };
+      base.system = { ...fireball.system, activities: coll([]) };
+      base.system.activities.push(mkActivity(base));
+      base.clone = () => {
+        const c: any = {
+          ...base,
+          flags: {},
+          actor: {},
+          system: { ...base.system, activities: coll([]) },
+        };
+        c.updateSource = (d: any) => (c.flags = { dnd5e: { scaling: d['flags.dnd5e.scaling'] } });
+        c.prepareFinalAttributes = () => {};
+        c.system.activities.push(mkActivity(c));
+        return c;
+      };
+      base.actor = actor;
+      const a: any = { ...actor, items: coll([base]) };
+      a.system = {
+        ...actor.system,
+        spells: { spell3: { value: 2, max: 3, level: 3 }, spell4: { value: 1, max: 1, level: 4 } },
+      };
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.d' });
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', {}, ctx);
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 3 }, ctx);
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 4 }, ctx);
+      expect(rolled).toEqual(['8d6', '8d6', '9d6']); // level 4: its last slot is already spent
+      // A pact slot of level 5 covers damage rolled at level 4 (but is not a slot to spend at 4).
+      a.system.spells.pact = { value: 0, max: 1, level: 5, type: 'pact' };
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 5 }, ctx);
+      delete a.system.spells.pact;
+      for (const level of [2, 5, 10, 'x', 4.5])
+        await expect(
+          dnd5eAdapter.performAction(a, 'damage:s1:a2', { level }, ctx),
+        ).rejects.toBeDefined();
+      await expect(
+        dnd5eAdapter.performAction(a, 'attack:w1:a1', { level: 3 }, ctx),
+      ).rejects.toBeDefined();
+    });
+    it('refuses a queued roll whose item was removed while it waited', async () => {
+      const a: any = { ...actor, items: coll([sword]) };
+      let release!: () => void;
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: {}, create: m.create },
+        );
+        await new Promise<void>((r) => (release = r));
+        return [{ total: 1 }];
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+      const first = dnd5eAdapter.performAction(a, 'attack:w1:a1', {}, ctx);
+      const second = dnd5eAdapter.performAction(a, 'attack:w1:a1', {}, ctx).catch((e) => e);
+      await vi.waitFor(() => expect(rollAttack).toHaveBeenCalledTimes(1));
+      a.items = coll([]);
+      release();
+      await first;
+      expect(String((await second).message)).toMatch(/changed while the action was/);
+      expect(rollAttack).toHaveBeenCalledTimes(1);
+    });
+    it('refuses a use whose spell slots disappear during the awaited audit steps', async () => {
+      const a = withActs([base('q1', 'utility')]);
+      a.items[0].type = 'spell';
+      a.items[0].system.level = 3;
+      a.system = { ...actor.system, spells: { spell4: { value: 1, max: 1, level: 4 } } };
+      snapshot.mockImplementationOnce(async () => {
+        a.system = { ...actor.system, spells: {} };
+      });
+      await expect(
+        dnd5eAdapter.performAction(a, 'use:x1:q1', { level: 4 }, ctx),
+      ).rejects.toBeDefined();
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('serialises overlapping uses so the last slot is spent once', async () => {
+      const a = withActs([base('q1', 'utility')]);
+      a.items[0].type = 'spell';
+      a.items[0].system.level = 3;
+      const slots = { value: 1, max: 1, level: 3 };
+      a.system = { ...actor.system, spells: { spell3: slots } };
+      use.mockImplementation(async () => {
+        const seen = slots.value; // the native consume reads the slot, then writes it back later
+        await new Promise((r) => setTimeout(r, 5));
+        if (seen <= 0) return undefined;
+        slots.value = seen - 1;
+        return { message: { type: 'usage' } };
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const [one, two]: any[] = await Promise.all([
+        dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx),
+        dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx),
+      ]);
+      expect(slots.value).toBe(0);
+      expect([one.completed, two.completed].sort()).toEqual([false, true]);
+      expect(String([one, two].find((r) => !r.completed).message)).toContain('was not used');
+    });
+    describe('action lock', () => {
+      const gated = () => {
+        const releases: Array<() => void> = [];
+        const order: string[] = [];
+        use.mockImplementation(async () => {
+          order.push('start');
+          await new Promise<void>((r) => releases.push(r));
+          order.push('end');
+          return { message: { type: 'usage' } };
+        });
+        chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+        return { releases, order };
+      };
+      const act = (a: any, label = '') =>
+        dnd5eAdapter.performAction(a, 'use:x1:q1', { label } as any, ctx).catch((e) => e);
+      it('refuses the waiter past the cap, and cleans the map up after the last one', async () => {
+        const g = gated();
+        const a = withActs([base('q1', 'utility')]);
+        const holder = act(a);
+        await vi.waitFor(() => expect(g.releases).toHaveLength(1));
+        const waiting = Array.from({ length: ACTION_LOCK_MAX_WAITING }, () => act(a));
+        const fifth: any = await act(a);
+        expect(String(fifth.message)).toContain('Another action is still running');
+        expect(pendingActionLocks()).toBe(1);
+        for (let i = 0; i < 1 + ACTION_LOCK_MAX_WAITING; i++) {
+          await vi.waitFor(() => expect(g.releases.length).toBeGreaterThan(i));
+          g.releases[i]!();
+        }
+        await Promise.all([holder, ...waiting]);
+        expect(use).toHaveBeenCalledTimes(1 + ACTION_LOCK_MAX_WAITING);
+        expect(pendingActionLocks()).toBe(0);
+      });
+      it('refuses a timed-out waiter before any write and still runs the next one in order', async () => {
+        vi.useFakeTimers();
+        try {
+          const g = gated();
+          const a = withActs([base('q1', 'utility')]);
+          const holder = act(a);
+          await vi.advanceTimersByTimeAsync(0);
+          expect(g.releases).toHaveLength(1);
+          const early = act(a);
+          await vi.advanceTimersByTimeAsync(ACTION_LOCK_WAIT_MS - 1000);
+          const late = act(a); // queued 1 s before the early one times out... after it
+          await vi.advanceTimersByTimeAsync(1001);
+          const refused: any = await early;
+          expect(String(refused.message)).toContain('Another action is still running');
+          snapshot.mockClear();
+          g.releases[0]!();
+          await vi.advanceTimersByTimeAsync(0);
+          await holder;
+          await vi.advanceTimersByTimeAsync(0);
+          expect(g.releases).toHaveLength(2); // the late waiter was granted next, in order
+          g.releases[1]!();
+          expect(((await late) as any).completed).toBe(true);
+          expect(use).toHaveBeenCalledTimes(2); // the refused waiter never reached the native call
+          expect(pendingActionLocks()).toBe(0);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+    it('serialises roll actions per actor so captures cannot cross', async () => {
+      const order: string[] = [];
+      let release!: () => void;
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        order.push('a:start');
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: { n: 'A' }, create: m.create },
+        );
+        await new Promise<void>((r) => (release = r));
+        order.push('a:end');
+        return [{ total: 1 }];
+      });
+      rollAttack.mockImplementationOnce(async (_c: any, _d: any, m: any) => {
+        order.push('b:start');
+        hooks.get('dnd5e.preRollV2')?.(
+          { subject: sword.system.activities[0] },
+          {},
+          { data: { n: 'B' }, create: m.create },
+        );
+        return [{ total: 2 }];
+      });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.r' });
+      const first = dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+      const second = dnd5eAdapter.performAction(actor, 'attack:w1:a1', {}, ctx);
+      await vi.waitFor(() => expect(order).toEqual(['a:start']));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(order).toEqual(['a:start']);
+      release();
+      await Promise.all([first, second]);
+      expect(order).toEqual(['a:start', 'a:end', 'b:start']);
+      expect(chatCreate.mock.calls.map((c) => c[0].n)).toEqual(['A', 'B']);
+      expect(hooks.size).toBe(0);
+    });
+  });
+});

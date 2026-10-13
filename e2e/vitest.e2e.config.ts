@@ -14,6 +14,8 @@ export default defineConfig({
           name: 'e2e-unit',
           root: import.meta.dirname,
           include: [
+            'run.test.ts',
+            'dnd5e/**/*.test.ts',
             'lib/**/*.test.ts',
             'fixtures/**/*.test.ts',
             'setup/**/*.test.ts',
@@ -31,6 +33,7 @@ export default defineConfig({
             'read/**/*.e2e.test.ts',
             'multi/**/*.e2e.test.ts',
             'packs/**/*.e2e.test.ts',
+            'dnd5e/**/*.e2e.test.ts',
             'pf2e/**/*.e2e.test.ts',
             'pf2e-build/**/*.e2e.test.ts',
             'pf2e-embed/**/*.e2e.test.ts',

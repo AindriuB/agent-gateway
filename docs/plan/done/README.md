@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 32 contracts have merged implementations and recorded evidence. Task 19's
+These 33 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -29,6 +29,7 @@ over unchecked historical boxes.
 | 30 | Complete; bounded GM native offline replay/once-denial/status/duplicate/reconnect acceptance on v13/v14; earlier failures cleaned | PR #80 (`232130f`, merged `216e22a`); final gate 3,509 fast / 2,227 slow |
 
 | 31 | Complete; bounded generic native validation (v13 automated, v14 reviewed reconciliation) | PR #82 (`1d4743b`, merged `783ba3a`); validation PR #84 (merged `3868bfe`) |
+| 32 | Complete; native v14 dnd5e 7/7 on dnd5e 6.0.6 (summary, use/attack/damage actions, conditions, embed, `skill_rank` build); v13 not run; advancements not applied (noted in `compendium_import`); Activity#use and toggleStatusEffect writes uncorrelated | Task 32 PR (number added on merge); gate 3,851 fast / 2,227 slow at `421724c` |
 | 33 | Complete; native v14 pf2e 7/7 acceptance incl. audited undoable strike and costed feat; v13 not run; Undo limits in task 44 | PR #86 (`9918aae`, merged `899e89a`); final gate 3,644 fast / 2,227 slow |
 | 45 | Complete; native v14 pf2e 2/2 (Dagger with quantity and equipped, feat into a class-granted slot, both audited undoable); v13 not run; ChoiceSet items refused until task 49 | Task 45 PR (number added on merge); gate ~3,681 fast / 2,227 slow at `ccddcbd` |
 | 46 | Complete; native v14 pf2e 2/2 (one call: ancestry/background boosts, key attribute, level 1 and 5 boosts, skill rank, class feat slot; wrong-group feat refused with no write); v13 not run; lore skills rejected; rule-element Item side effects disclosed not undoable (task 44) | Task 46 PR (number added on merge); gate 3,738 fast / 2,227 slow at `30d5538` |

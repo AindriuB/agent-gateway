@@ -44,7 +44,7 @@ beforeEach(() => {
 describe('build hook registry', () => {
   it('selects pf2e and falls back to unsupported', () => {
     expect(selectBuildHook('pf2e')).toBe(pf2eBuildHook);
-    expect(selectBuildHook('dnd5e')).toBe(genericBuildHook);
+    expect(selectBuildHook('starfinder')).toBe(genericBuildHook);
     expect(genericBuildHook.describe({})).toMatchObject({ supported: false });
     expect(() => genericBuildHook.apply({}, [], context())).toThrow(AdapterUnsupportedError);
   });
