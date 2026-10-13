@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { createApp } from '../app.js';
 import { ConfigError, loadConfig } from '../config/index.js';
+import { reportStartFailure } from './start-failure.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -74,10 +75,12 @@ function main(): void {
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   process.stdin.once('end', shutdown);
-  app.start().catch((err: unknown) => {
-    process.stderr.write(`Failed to start: ${String(err)}\n`);
-    process.exit(1);
-  });
+  app.start().catch((err: unknown) =>
+    reportStartFailure(err, {
+      writeStderr: (line) => process.stderr.write(line),
+      exit: (code) => process.exit(code),
+    }),
+  );
 }
 
 main();
