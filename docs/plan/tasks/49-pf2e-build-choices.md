@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 45, 46
-**Status:** Planned — do not start; queued after current workloads (32, 44)
+**Status:** Next after 45+46; architect design gate first
 **Design gate:** an architect pass is required before any implementation. See "Design gate".
 **Owns:**
 - module/src/adapters/pf2e/choices.ts (new)

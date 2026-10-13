@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** none
-**Status:** Planned — do not start; queued after current workloads (32, 44)
+**Status:** Next (Andrew, 2026-10-13): wave 1, before 32
 **Owns:**
 - protocol/src/tools/character-build.ts (new)
 - protocol/src/tools/index.ts (insertion only)
