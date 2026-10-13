@@ -93,11 +93,14 @@ export function createApp(config: Config, deps: AppDeps): App {
         // only instance (corrupt db, permissions) must still exit 1 via reportStartFailure.
         if (!isInstanceConflict(err)) throw err;
         const reason = (err as Error).message;
-        logger.error(`running without a Foundry link: ${reason}`);
-        writeStatus(`Failed to start link: ${reason}`);
+        // One clear line; no pairing code, so only the instance that holds the port shows one.
+        logger.error(
+          err instanceof LinkListenError
+            ? `pid ${process.pid}: another gateway holds link port ${err.port}; this instance cannot pair`
+            : `pid ${process.pid}: another gateway holds the pairing database; this instance cannot pair`,
+        );
         server = createDegradedServer({ version: deps.version, reason });
         await server.connect(new StdioServerTransport());
-        logger.info('MCP stdio server started (no Foundry link)');
       }
     },
     async stop() {
@@ -138,7 +141,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     });
     const port = await link.listen();
     const pairingLine = `Pairing code: ${codes.generate()} (expires in ${PAIRING_CODE_TTL_MS / 60_000} min)`;
-    const linkLine = `Link URL: ws://localhost:${port}`;
+    const linkLine = `Link URL: ws://localhost:${port} (pid ${process.pid} holds link port ${port})`;
     writeStatus(pairingLine);
     writeStatus(linkLine);
     server = createSessionServer({

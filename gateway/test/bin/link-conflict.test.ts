@@ -215,7 +215,12 @@ describe('startup failures and origins (built cli)', () => {
       })}\n`,
     );
     await waitFor(() => r.out().includes('"id":1'));
-    expect(r.err()).toContain('[error] running without a Foundry link');
+    expect(r.err()).toContain(
+      `[error] pid ${r.child.pid}: another gateway holds link port ${port}; this instance cannot pair`,
+    );
+    expect(r.err()).not.toContain('Pairing code');
+    expect(r.err()).not.toContain('MCP stdio server started');
+    expect(r.err().trim().split('\n')).toHaveLength(1);
     expect(r.child.exitCode).toBeNull();
     const after = statSync(db);
     expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
@@ -232,6 +237,15 @@ describe('startup failures and origins (built cli)', () => {
       ws.on('error', () => resolve(false));
     });
   }
+
+  it('prints the code and the pid only from the instance that holds the port', async () => {
+    const port = await freePort();
+    const db = join(tmp(), 'g.db');
+    const primary = run(['--link-port', String(port), '--db', db]);
+    await waitFor(() => primary.err().includes('Link URL'));
+    expect(primary.err()).toContain('Pairing code: ');
+    expect(primary.err()).toContain(`pid ${primary.child.pid} holds link port ${port}`);
+  }, 20_000);
 
   it('accepts a normalised --allow-origin', async () => {
     const args = ['--allow-origin=http://Foundry.Local:30000/'];
