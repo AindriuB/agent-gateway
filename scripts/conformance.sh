@@ -15,8 +15,15 @@ REAL_HOME="$HOME"
 work="$(mktemp -d)"
 module_pid=""
 cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    for f in pair.log module.log gateway.log; do
+      [ -s "$work/$f" ] && { echo "--- conformance: $f ---" >&2; cat "$work/$f" >&2; }
+    done
+  fi
   if [ -n "$module_pid" ]; then kill "$module_pid" 2>/dev/null || true; wait "$module_pid" 2>/dev/null || true; fi
   rm -rf "$work"
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -30,12 +37,13 @@ db="$work/gateway.db"
 token="$work/token"
 ready="$work/ready"
 
-"${tsx[@]}" pair "$db" "$LINK_PORT" "$token"
-"${tsx[@]}" serve "$LINK_PORT" "$token" "$ready" &
+"${tsx[@]}" pair "$db" "$LINK_PORT" "$token" 2>"$work/pair.log"
+"${tsx[@]}" serve "$LINK_PORT" "$token" "$ready" 2>"$work/module.log" &
 module_pid=$!
 
 # The inspector hands the server only a minimal environment, so port and database go as -e.
 inspect() {
+  rm -f "$ready" # a stale file from the previous gateway must not release the wrapper
   npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli \
     node gateway/test/conformance/gateway-wrapper.mjs gateway/dist/bin/cli.js "$@" \
     -e "AGENT_GATEWAY_LINK_PORT=$LINK_PORT" -e "AGENT_GATEWAY_DB=$db" \

@@ -12,6 +12,12 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
 child.on('exit', (code) => process.exit(code ?? 1));
 
 const deadline = Date.now() + 15_000;
-while (!existsSync(readyFile) && Date.now() < deadline) await sleep(20);
-await sleep(150); // the gateway processes the toolset frame after it arrives
+while (!existsSync(readyFile)) {
+  if (Date.now() > deadline) {
+    process.stderr.write('conformance: fake module never became ready\n');
+    child.kill('SIGTERM');
+    process.exit(1);
+  }
+  await sleep(20);
+}
 process.stdin.pipe(child.stdin);

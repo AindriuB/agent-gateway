@@ -71,10 +71,19 @@ async function pair(dbPath: string, port: number, tokenFile: string): Promise<vo
   await server.listen();
   const ws = await connect(port);
   const token = await new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('pairing timed out after 10s')), 10_000);
+    const fail = (err: Error) => {
+      clearTimeout(timer);
+      reject(err);
+    };
+    ws.once('close', () => fail(new Error('link closed before pairing completed')));
+    ws.once('error', fail);
     ws.on('message', (d) => {
       const m = JSON.parse(d.toString()) as { type: string; pairingToken?: string };
-      if (m.type === 'welcome' && m.pairingToken) resolve(m.pairingToken);
-      else if (m.type === 'reject') reject(new Error('pairing rejected'));
+      if (m.type === 'welcome' && m.pairingToken) {
+        clearTimeout(timer);
+        resolve(m.pairingToken);
+      } else if (m.type === 'reject') fail(new Error('pairing rejected'));
     });
     ws.send(JSON.stringify(hello({ kind: 'pairingCode', code: codes.generate() })));
   });
@@ -92,6 +101,9 @@ async function serveOnce(port: number, token: string, readyFile: string): Promis
       ws.send(
         JSON.stringify({ type: 'toolset', tools: [...coreAnnouncements(), FIXTURE_PACK_TOOL] }),
       );
+      // The gateway handles frames in order, so its pong to this ping means the toolset is applied.
+      ws.send(JSON.stringify({ type: 'ping' }));
+    } else if (m.type === 'pong') {
       // Tells gateway-wrapper.mjs it may start forwarding the client's requests.
       writeFileSync(readyFile, 'ready');
     } else if (m.type === 'ping') {
