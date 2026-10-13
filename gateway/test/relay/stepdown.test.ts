@@ -179,12 +179,21 @@ describe('a stepped-down gateway stays alive', () => {
     await sleep(5_000); // let any bounce play out
 
     const steps = (x: Cli) => count(x.stderr(), 'stepping down:');
-    // One step-down per instance per newer peer at most: A has two, B one and C none.
-    expect(steps(a)).toBeLessThanOrEqual(2);
-    expect(steps(b)).toBeLessThanOrEqual(1);
+    const asked = (x: Cli) => count(x.stderr(), 'stepping down for the newer instance');
+    // What rules out a livelock: a primary only ever steps down because a strictly newer peer
+    // asked it to (the server refuses anyone else), so a step-down is never self-inflicted, and C,
+    // the newest, never steps down. A standby or secondary may win the port ahead of C in the
+    // handover window, which costs one more step-down; it takes a second lost race to cost another.
+    // So each of A and B is bounded by the number of instances, not by timing, and the total is too.
+    for (const x of [a, b, c]) expect(steps(x), 'every step-down was asked for').toBe(asked(x));
+    expect(steps(a)).toBeLessThanOrEqual(3);
+    expect(steps(b)).toBeLessThanOrEqual(3);
     expect(steps(c)).toBe(0);
+    expect(steps(a) + steps(b)).toBeLessThanOrEqual(6);
     for (const x of [a, b, c]) expect(alive(x.pid)).toBe(true);
     expect(holds(c)).toBe(1);
+    // The final primary is C: its own stdio client reaches the module.
+    expect(await worldInfoEventually(c)).toContain('echo:');
     const status = await a.client.callTool({ name: STATUS_TOOL, arguments: {} });
     expect(JSON.stringify(status.content)).toContain('different settings');
 
