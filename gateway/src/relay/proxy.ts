@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import {
+  MAX_RELAY_BUFFERED_BYTES,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_PENDING,
   RELAY_BUSY,
@@ -26,6 +27,8 @@ const key = (id: unknown): string => `${typeof id}:${String(id)}`;
 export class StdioRelayProxy {
   /** Called once when the current upstream is lost; the owner then attaches a new one. */
   onLost?: () => void;
+  /** Called once if the client stopped reading stdout past the cap; the proxy has already stopped. */
+  onClientGone?: () => void;
   private up: Upstream | undefined;
   private readonly pending = new Set<string>();
   private initialize: RpcMessage | undefined;
@@ -36,6 +39,14 @@ export class StdioRelayProxy {
   private started = false;
   private stopped = false;
   private readonly onData = (chunk: Buffer) => this.handleChunk(chunk);
+  /** stdout has more queued than it will take right now; stdin and the upstream are paused. */
+  private blocked = false;
+  private readonly onDrain = () => {
+    if (!this.blocked || this.stopped) return;
+    this.blocked = false;
+    this.input.resume();
+    this.up?.resume?.();
+  };
 
   constructor(
     private readonly input: Readable,
@@ -51,11 +62,15 @@ export class StdioRelayProxy {
     if (this.started) return;
     this.started = true;
     this.input.on('data', this.onData);
+    // One drain listener for the proxy's life, not one per write.
+    this.output.on('drain', this.onDrain);
   }
 
   stop(): void {
     this.stopped = true;
+    this.pending.clear();
     this.input.off('data', this.onData);
+    this.output.off('drain', this.onDrain);
     const up = this.up;
     this.up = undefined;
     up?.close();
@@ -70,14 +85,16 @@ export class StdioRelayProxy {
     this.up = up;
     // Back-pressure belongs to one upstream. A swap must never inherit a pause that only the
     // old upstream's drain could have lifted.
-    this.input.resume();
+    // A stdout stall outlives the upstream, so it stays paused; otherwise start flowing.
+    if (this.blocked) up.pause?.();
+    else this.input.resume();
     up.onMessage = (m) => {
       if (this.up !== up) return;
       this.fromUpstream(m);
     };
     up.onClose = () => this.lose(up);
     up.onDrain = () => {
-      if (this.up === up) this.input.resume();
+      if (this.up === up && !this.blocked) this.input.resume();
     };
     if (this.initialize) {
       up.send({ ...this.initialize, id: this.replayId });
@@ -90,7 +107,7 @@ export class StdioRelayProxy {
   private lose(up: Upstream): void {
     if (this.up !== up) return;
     this.up = undefined;
-    this.input.resume();
+    if (!this.blocked) this.input.resume();
     this.failPending(RELAY_LOST, 'the gateway instance serving this session went away');
     up.close();
     this.onLost?.();
@@ -98,9 +115,19 @@ export class StdioRelayProxy {
 
   private write(m: RpcMessage): void {
     if (this.stopped) return;
-    if (!this.output.write(`${JSON.stringify(m)}\n`)) {
+    const line = `${JSON.stringify(m)}\n`;
+    // Everything the client sees, replies and relay errors alike, goes through this cap: a client
+    // that stops reading must not be able to grow this process's memory.
+    if (this.output.writableLength + line.length > MAX_RELAY_BUFFERED_BYTES) {
+      this.log('the client stopped reading stdout; dropping its session');
+      this.stop();
+      this.onClientGone?.();
+      return;
+    }
+    if (!this.output.write(line) && !this.blocked) {
+      this.blocked = true;
+      this.input.pause();
       this.up?.pause?.();
-      this.output.once('drain', () => this.up?.resume?.());
     }
   }
 
@@ -148,6 +175,7 @@ export class StdioRelayProxy {
   }
 
   private handleLine(line: string): void {
+    if (this.stopped) return;
     if (line.trim() === '') return;
     let m: unknown;
     try {

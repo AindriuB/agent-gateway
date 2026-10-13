@@ -227,6 +227,10 @@ export function createApp(config: Config, deps: AppDeps): App {
           throw err;
         }
       },
+      onClientGone: () => {
+        // A relay with no client has no purpose; a primary still serves other instances' sessions.
+        if (!link) void app.stop().finally(() => process.exit(0));
+      },
       createDegraded: (why) => createDegradedServer({ version: deps.version, reason: why }),
     });
     await secondary.start(reason);

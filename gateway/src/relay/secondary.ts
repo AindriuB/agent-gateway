@@ -29,6 +29,8 @@ export interface SecondaryOptions {
   becomePrimary(transport: Transport): Promise<boolean>;
   /** The degraded session to serve once the relay budget is spent. */
   createDegraded(reason: string): Server;
+  /** The client stopped reading stdout past the cap and its session was dropped. */
+  onClientGone?: () => void;
   /** Test hook. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -52,6 +54,7 @@ export class RelaySecondary {
   constructor(private readonly opts: SecondaryOptions) {
     this.proxy = new StdioRelayProxy(opts.input, opts.output, opts.log);
     this.proxy.onLost = () => void this.recover();
+    this.proxy.onClientGone = () => this.opts.onClientGone?.();
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 

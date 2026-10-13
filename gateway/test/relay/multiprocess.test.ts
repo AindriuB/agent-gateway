@@ -1,12 +1,16 @@
+import { execFileSync, spawn } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { createServer as createNetServer } from 'node:net';
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { STATUS_TOOL } from '../../src/mcp/degraded.js';
 import {
+  cliPath,
   FakeModule,
   freePort,
   pairedPrimary,
+  sleep,
   startCli,
   tempState,
   until,
@@ -240,5 +244,49 @@ describe('relay between built CLI instances', () => {
     expect(await toolNames(b2)).not.toEqual([STATUS_TOOL]);
     const b3 = track(await startCli(portB, dbB));
     expect(await toolNames(b3)).not.toEqual([STATUS_TOOL]);
+  }, 90_000);
+
+  it('(g) a secondary whose client never reads stdout stays bounded and does not affect others', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    const { cli: primary, module } = await pairedPrimary(port, state.db);
+    clis.push(primary);
+    modules.push(module);
+    const healthy = track(await startCli(port, state.db));
+    const stuck = spawn(
+      process.execPath,
+      [cliPath, '--link-port', String(port), '--db', state.db],
+      { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH ?? '', HOME: tmpdir() } },
+    );
+    stuck.stdout.pause(); // never reads
+    stuck.stdin.on('error', () => undefined);
+    stuck.stderr.resume();
+    const send = (m: object) => stuck.stdin.write(`${JSON.stringify(m)}\n`);
+    send({
+      jsonrpc: '2.0',
+      id: 0,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    for (let i = 1; i <= 3000; i++) send({ jsonrpc: '2.0', id: i, method: 'tools/list' });
+    // Meanwhile the primary and a healthy relayed session keep working.
+    for (let n = 0; n < 5; n++) {
+      expect(await echo(healthy, `ok${n}`)).toContain(`echo:ok${n}`);
+      expect(await echo(primary, `p${n}`)).toContain(`echo:p${n}`);
+      await sleep(200);
+    }
+    // The stuck process is either parked or has dropped the client; it is not growing without bound.
+    const rss = Number(
+      execFileSync('ps', ['-o', 'rss=', '-p', String(stuck.pid)], { encoding: 'utf8' }).trim() || 0,
+    );
+    if (rss) expect(rss / 1024).toBeLessThan(400);
+    stuck.kill();
+    await new Promise((r) => stuck.once('close', r));
   }, 90_000);
 });

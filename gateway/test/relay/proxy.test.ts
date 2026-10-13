@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   LocalUpstream,
+  MAX_RELAY_BUFFERED_BYTES,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_PENDING,
   StdioRelayProxy,
@@ -223,5 +224,128 @@ describe('StdioRelayProxy replay id', () => {
     next.onMessage?.({ jsonrpc: '2.0', id, result: { tools: [1] } });
     expect(out.at(-1)).toMatchObject({ id, result: { tools: [1] } });
     expect(proxy.pendingCount).toBe(0);
+  });
+});
+
+describe('StdioRelayProxy stdout back-pressure', () => {
+  const big = 'r'.repeat(200 * 1024);
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+  /** A proxy whose client never reads stdout (the readable side is never consumed). */
+  function stuck() {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const proxy = new StdioRelayProxy(input, output);
+    let gone = 0;
+    proxy.onClientGone = () => void gone++;
+    proxy.start();
+    const write = (m: object) => input.write(`${JSON.stringify(m)}\n`);
+    return { input, output, proxy, write, gone: () => gone };
+  }
+  /** An upstream that answers every request with a result of `size` bytes. */
+  function answering(size: number) {
+    const up = new FakeUpstream();
+    const payload = 'r'.repeat(size);
+    const base = up.send.bind(up);
+    up.send = (m) => {
+      base(m);
+      if (m.id !== undefined)
+        queueMicrotask(() => up.onMessage?.({ jsonrpc: '2.0', id: m.id, result: { payload } }));
+      return true;
+    };
+    return up;
+  }
+
+  it('pauses stdin on a stalled stdout, stays bounded over 400 requests, and recovers on drain', async () => {
+    const { input, output, proxy, write, gone } = stuck();
+    const up = answering(20 * 1024);
+    let paused = 0;
+    let resumed = 0;
+    up.pause = () => void paused++;
+    up.resume = () => void resumed++;
+    proxy.attach(up);
+    const rss = process.memoryUsage().rss;
+    for (let i = 0; i < 400; i++) write({ jsonrpc: '2.0', id: i, method: 'x' });
+    await tick();
+    expect(input.isPaused()).toBe(true);
+    expect(paused).toBe(1);
+    expect(output.listenerCount('drain')).toBe(1);
+    expect(up.sent.length).toBeLessThan(400); // stdin stopped feeding the session
+    expect(output.writableLength).toBeLessThanOrEqual(MAX_RELAY_BUFFERED_BYTES);
+    expect(process.memoryUsage().rss - rss).toBeLessThan(64 * 1024 * 1024);
+    expect(gone()).toBe(0);
+    // The client reads again: everything resumes and every request is eventually answered.
+    const got = new Set<unknown>();
+    let buf = '';
+    output.on('data', (d: Buffer) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        got.add((JSON.parse(buf.slice(0, i)) as RpcMessage).id);
+        buf = buf.slice(i + 1);
+      }
+    });
+    for (let n = 0; n < 200 && got.size < 400; n++) await tick();
+    expect(got.size).toBe(400);
+    expect(resumed).toBeGreaterThan(0);
+    expect(gone()).toBe(0);
+  }, 20_000);
+
+  it('drops the session once more than the cap is queued unread, and stays bounded', async () => {
+    const { input, output, proxy, write, gone } = stuck();
+    const up = new FakeUpstream(); // ignores pause(), like an in-process session
+    let closed = 0;
+    const origClose = up.close.bind(up);
+    up.close = () => (closed++, origClose());
+    proxy.attach(up);
+    write({ jsonrpc: '2.0', id: 1, method: 'x' });
+    await tick();
+    const rss = process.memoryUsage().rss;
+    for (let i = 0; i < 100; i++)
+      up.onMessage?.({ jsonrpc: '2.0', method: 'notifications/message', params: { big } });
+    expect(gone()).toBe(1);
+    expect(closed).toBeGreaterThan(0);
+    expect(proxy.pendingCount).toBe(0);
+    expect(input.listenerCount('data')).toBe(0);
+    expect(output.listenerCount('drain')).toBe(0);
+    expect(output.writableLength).toBeLessThanOrEqual(MAX_RELAY_BUFFERED_BYTES);
+    expect(process.memoryUsage().rss - rss).toBeLessThan(64 * 1024 * 1024);
+  });
+
+  it('applies RELAY_BUSY replies to the same cap', async () => {
+    const { proxy, write, output } = stuck();
+    proxy.attach(new FakeUpstream()); // never answers
+    for (let i = 0; i < MAX_RELAY_PENDING; i++) write({ jsonrpc: '2.0', id: i, method: 'x' });
+    for (let i = 0; i < 20000; i++) write({ jsonrpc: '2.0', id: `b${i}`, method: 'x' });
+    await tick();
+    expect(output.writableLength).toBeLessThanOrEqual(MAX_RELAY_BUFFERED_BYTES);
+  });
+
+  it('through a LocalUpstream after takeover: dropped at the cap, shared server and other sessions untouched', async () => {
+    const { proxy, write, gone } = stuck();
+    const first = new FakeUpstream();
+    proxy.attach(first);
+    first.close(); // the old primary went away
+    // One shared server end with two independent sessions.
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const [c, d] = InMemoryTransport.createLinkedPair();
+    a.onmessage = (m) => {
+      const id = (m as { id: number }).id;
+      for (let i = 0; i < 60; i++)
+        a.send({ jsonrpc: '2.0', id, result: { big } }).catch(() => undefined);
+    };
+    c.onmessage = (m) =>
+      void c.send({ jsonrpc: '2.0', id: (m as { id: number }).id, result: 'ok' });
+    const other: unknown[] = [];
+    d.onmessage = (m) => void other.push(m);
+    await Promise.all([a.start(), c.start(), d.start()]);
+    const local = new LocalUpstream(b);
+    await local.start();
+    proxy.attach(local);
+    for (let i = 0; i < 10; i++) write({ jsonrpc: '2.0', id: i, method: 'x' });
+    await tick();
+    expect(gone()).toBe(1);
+    await d.send({ jsonrpc: '2.0', id: 1, method: 'ping' });
+    await tick();
+    expect(other).toHaveLength(1);
   });
 });

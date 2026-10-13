@@ -115,6 +115,8 @@ export class LocalUpstream implements Upstream {
     return this.transport.start();
   }
 
+  // No pause(): an in-process session cannot be throttled, so a stalled client is bounded by the
+  // proxy's stdout cap instead (it drops the session once that much is queued).
   send(message: RpcMessage): boolean {
     void this.transport.send(message as unknown as JSONRPCMessage).catch(() => undefined);
     return true;
