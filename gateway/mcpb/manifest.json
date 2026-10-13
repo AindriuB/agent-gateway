@@ -19,28 +19,20 @@
     "entry_point": "dist/bin/cli.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/bin/cli.js", "--allow-origin=${user_config.foundry_url}"],
+      "args": ["${__dirname}/dist/bin/cli.js"],
       "env": {
         "AGENT_GATEWAY_LINK_PORT": "${user_config.link_port}",
         "AGENT_GATEWAY_HTTP_PORT": "${user_config.http_port}",
-        "AGENT_GATEWAY_ROLE": "${user_config.role}",
         "AGENT_GATEWAY_LOG_LEVEL": "${user_config.log_level}"
       }
     }
   },
   "tools_generated": true,
   "user_config": {
-    "foundry_url": {
-      "type": "string",
-      "title": "Foundry URL",
-      "description": "The exact origin you open Foundry at: scheme, host and port only, no path and no trailing slash, e.g. https://foundry.local or http://localhost:30000. Only this origin may pair with the gateway (--allow-origin).",
-      "default": "http://localhost:30000",
-      "required": false
-    },
     "link_port": {
       "type": "number",
       "title": "Module link port",
-      "description": "Local port the Foundry module connects to (AGENT_GATEWAY_LINK_PORT).",
+      "description": "Advanced. Local port the Foundry module connects to (AGENT_GATEWAY_LINK_PORT). Leave as is unless 7420 is taken.",
       "default": 7420,
       "min": 1,
       "max": 65535,
@@ -49,23 +41,16 @@
     "http_port": {
       "type": "number",
       "title": "HTTP port",
-      "description": "Local HTTP port (AGENT_GATEWAY_HTTP_PORT).",
+      "description": "Advanced. Local HTTP port (AGENT_GATEWAY_HTTP_PORT). Leave as is unless 7421 is taken.",
       "default": 7421,
       "min": 1,
       "max": 65535,
       "required": false
     },
-    "role": {
-      "type": "string",
-      "title": "Role",
-      "description": "Accepted values: 'player' or 'gm' (AGENT_GATEWAY_ROLE). 'gm' exposes GM-only tools; leave as 'player' unless you need them.",
-      "default": "player",
-      "required": false
-    },
     "log_level": {
       "type": "string",
       "title": "Log level",
-      "description": "One of debug, info, warn, error (AGENT_GATEWAY_LOG_LEVEL).",
+      "description": "Advanced. One of debug, info, warn, error (AGENT_GATEWAY_LOG_LEVEL).",
       "default": "info",
       "required": false
     }

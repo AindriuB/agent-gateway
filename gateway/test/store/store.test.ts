@@ -1,4 +1,6 @@
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
@@ -9,6 +11,32 @@ import { applyMigrations } from '../../src/store/migrate.js';
 import { MIGRATIONS } from '../../src/store/migrations/index.js';
 
 const hashToken = (t: string): string => createHash('sha256').update(t).digest('hex');
+
+/** Type-checks `code` against the real sources with tsc; returns tsc's diagnostics ('' if clean). */
+function typeCheck(code: string): string {
+  const root = fileURLToPath(new URL('../../..', import.meta.url));
+  const d = mkdtempSync(join(tmpdir(), 'ag-types-'));
+  try {
+    writeFileSync(join(d, 'package.json'), '{"type":"module"}');
+    writeFileSync(join(d, 'check.ts'), code.replaceAll('SRC', join(root, 'gateway/src')));
+    writeFileSync(
+      join(d, 'tsconfig.json'),
+      JSON.stringify({
+        extends: join(root, 'tsconfig.base.json'),
+        compilerOptions: {
+          noEmit: true,
+          typeRoots: [join(root, 'node_modules/@types')],
+          types: ['node'],
+        },
+        files: ['check.ts'],
+      }),
+    );
+    const r = spawnSync(join(root, 'node_modules/.bin/tsc'), ['-p', d], { encoding: 'utf8' });
+    return r.stdout + r.stderr;
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
 
 const dir = (): string => mkdtempSync(join(tmpdir(), 'ag-store-'));
 
@@ -26,7 +54,13 @@ describe('openStore failure', () => {
 describe('store', () => {
   it('creates, finds and revokes pairings', () => {
     const s = openStore(':memory:', () => 42);
-    const row = s.createPairing({ id: 'a1', tokenHash: 'h', worldId: 'w', userId: 'u' });
+    const row = s.createPairing({
+      id: 'a1',
+      tokenHash: 'h',
+      worldId: 'w',
+      userId: 'u',
+      origin: 'https://foundry.local',
+    });
     expect(row).toEqual({
       id: 'a1',
       tokenHash: 'h',
@@ -35,6 +69,7 @@ describe('store', () => {
       userName: '',
       createdAt: 42,
       revokedAt: null,
+      origin: 'https://foundry.local',
     });
     expect(s.findPairingByHash('h')?.id).toBe('a1');
     expect(s.findPairingByHash('x')).toBeUndefined();
@@ -106,4 +141,41 @@ describe('store', () => {
       expect(MIGRATIONS[i]).toBe(mod.default);
     }
   });
+
+  it('has seven migrations', () => {
+    expect(MIGRATIONS).toHaveLength(7);
+  });
+
+  it('migrates a version 6 database with one pairing: origin reads back null, not revoked', () => {
+    const d = dir();
+    const path = join(d, 'g.db');
+    const old = new DatabaseSync(path);
+    applyMigrations(old, MIGRATIONS.slice(0, 6));
+    expect(old.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
+    old
+      .prepare(
+        'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run('old', 'hash-old', 'w', 'u', 'alice', 5);
+    old.close();
+    const s = openStore(path);
+    expect(s.findPairingByHash('hash-old')).toMatchObject({
+      id: 'old',
+      origin: null,
+      revokedAt: null,
+    });
+    expect(s.listActivePairings().map((p) => p.id)).toEqual(['old']);
+    s.close();
+    const check = new DatabaseSync(path);
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 });
+    check.close();
+  });
+
+  it('createPairing without an origin fails tsc, and with one passes', () => {
+    const body = (extra: string) => `import type { NewPairing } from 'SRC/store/store.js';
+export const p: NewPairing = { id: 'a', tokenHash: 'h', worldId: 'w', userId: 'u'${extra} };
+`;
+    expect(typeCheck(body(", origin: 'https://foundry.local'"))).toBe('');
+    expect(typeCheck(body(''))).toMatch(/origin/);
+  }, 30_000);
 });

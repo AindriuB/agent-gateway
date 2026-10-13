@@ -13,6 +13,8 @@ export interface PairingRow {
   userName: string;
   createdAt: number;
   revokedAt: number | null;
+  /** Exact browser origin the pairing was made from; null for pairings made before binding. */
+  origin: string | null;
 }
 
 export interface NewPairing {
@@ -21,6 +23,7 @@ export interface NewPairing {
   worldId: string;
   userId: string;
   userName?: string;
+  origin: string;
 }
 
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
@@ -45,6 +48,7 @@ interface Row {
   user_name: string;
   created_at: number;
   revoked_at: number | null;
+  origin: string | null;
 }
 
 function toRow(r: Row): PairingRow {
@@ -56,6 +60,7 @@ function toRow(r: Row): PairingRow {
     userName: r.user_name,
     createdAt: r.created_at,
     revokedAt: r.revoked_at,
+    origin: r.origin,
   };
 }
 
@@ -72,7 +77,7 @@ export function openStore(path: string, now: () => number = Date.now): Store {
   }
   const revokedListeners = new Set<() => void>();
   const insert = db.prepare(
-    'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
   const byHash = db.prepare('SELECT * FROM pairings WHERE token_hash = ?');
   const byId = db.prepare('SELECT * FROM pairings WHERE id = ?');
@@ -94,7 +99,7 @@ export function openStore(path: string, now: () => number = Date.now): Store {
       return !!r && r.revoked_at === null && r.world_id === worldId && r.user_id === userId;
     },
     createPairing(p) {
-      insert.run(p.id, p.tokenHash, p.worldId, p.userId, p.userName ?? '', now());
+      insert.run(p.id, p.tokenHash, p.worldId, p.userId, p.userName ?? '', now(), p.origin ?? null);
       return toRow(byId.get(p.id) as unknown as Row);
     },
     findPairingByHash(tokenHash) {

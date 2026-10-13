@@ -240,6 +240,10 @@ describe('store upgrade from version 1', () => {
 
     const store = openStore(path);
     expect(store.findPairingByHash(hashToken('old-token'))?.userName).toBe('');
+    // The pairing predates origin binding; bind it to the test origin so this test stays about names.
+    const bind = new DatabaseSync(path);
+    bind.prepare('UPDATE pairings SET origin = ? WHERE id = ?').run('http://localhost:30000', 'p1');
+    bind.close();
     h = await startServer({ store });
 
     const tc = await (await import('../link/helpers.js')).TestClient.connect(h.port);

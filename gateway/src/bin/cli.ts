@@ -16,8 +16,8 @@ Options:
   --link-port <n>     Port for the module link (default 7420)
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
-  --allow-origin <o>  Origin allowed to connect to the link (repeatable;
-                      default http://localhost:30000 and http://127.0.0.1:30000)
+  --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
+                      default: any http(s) origin, with a pairing code or its own token)
   --db <path>         SQLite file for pairings (default ~/.foundry-agent-gateway/gateway.db,
                       or AGENT_GATEWAY_DB)
   --version           Print version
@@ -77,7 +77,11 @@ function main(): void {
   }
   let config;
   try {
-    config = loadConfig({ configPath: values.config, flags: { linkPort: values['link-port'] } });
+    config = loadConfig({
+      configPath: values.config,
+      flags: { linkPort: values['link-port'] },
+      onIgnored: (m) => process.stderr.write(`${m}\n`),
+    });
   } catch (err) {
     if (err instanceof ConfigError) {
       process.stderr.write(`${err.message}\n`);
@@ -85,7 +89,7 @@ function main(): void {
     }
     throw err;
   }
-  // An empty value (a cleared host setting) means "use the defaults".
+  // An empty value (a cleared host setting) means no restriction.
   const allowOrigins = (values['allow-origin'] ?? []).filter((v) => v !== '');
   const app = createApp(config, {
     version: pkg.version,

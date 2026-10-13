@@ -24,8 +24,6 @@ import {
   StdioRelayProxy,
 } from './relay/index.js';
 
-export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
-
 /** True for failures caused by another running gateway owning the link port or the db. */
 function isInstanceConflict(err: unknown): boolean {
   if (err instanceof LinkListenError) return err.code === 'EADDRINUSE';
@@ -47,26 +45,6 @@ export function defaultDbPath(): string {
   return join(homedir(), '.foundry-agent-gateway', 'gateway.db');
 }
 
-export interface ModuleConnection {
-  readonly worldId: string;
-  readonly userId: string;
-}
-
-export interface ModuleConnections {
-  get(worldId: string, userId: string): ModuleConnection | undefined;
-  any(): ModuleConnection | undefined;
-}
-
-/** Kept for the pre-routing server in mcp/server.ts; the app itself routes through the link registry. */
-export class EmptyModuleConnections implements ModuleConnections {
-  get(): undefined {
-    return undefined;
-  }
-  any(): undefined {
-    return undefined;
-  }
-}
-
 export interface App {
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -77,7 +55,7 @@ export interface AppDeps {
   logger?: Logger;
   /** Which connected Foundry user the MCP session binds to; omitted means "the only one". */
   selector?: UserSelector;
-  /** Exact `Origin` values the link accepts; defaults to a local Foundry on port 30000. */
+  /** Optional extra restriction: only these exact `Origin` values may reach the link. */
   allowedOrigins?: readonly string[];
   dbPath?: string;
   /** Where the pairing code line goes; defaults to stderr (stdout carries MCP). */
@@ -88,7 +66,7 @@ export interface AppDeps {
   /** Store opener; injectable so tests can prove a relay never opens the db. */
   openStore?: typeof openStore;
   /**
-   * A newer instance with a different role or origins asked this primary to step down. Defaults to
+   * A newer instance with different settings asked this primary to step down. Defaults to
    * stopping the app and exiting the process.
    */
   onStepDown?: (why: string) => void;
@@ -109,7 +87,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   const dbPath = deps.dbPath ?? defaultDbPath();
   const startedAt = Date.now();
   const relayConfig = () =>
-    makeRelayConfig(config.role, deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS, startedAt);
+    makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt);
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
   const app: App = {
     async start() {
@@ -285,16 +263,20 @@ export function createApp(config: Config, deps: AppDeps): App {
     // connection can be handled, so the lazy getters below are never read while unset.
     const registry = new LinkRegistry();
     const codes = new PairingCodes();
-    const allowed = deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
     const warned = new Set<string>();
     link = new LinkServer({
       port: config.linkPort,
-      onOriginRejected: (origin) => {
+      onOriginRejected: (origin, reason, detail) => {
         const shown = sanitizeOrigin(origin);
-        if (warned.has(shown) || warned.size >= MAX_WARNED_ORIGINS) return;
-        warned.add(shown);
+        const key = `${shown} ${reason} ${detail ?? ''}`;
+        if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
+        warned.add(key);
+        const where =
+          reason === 'no valid pairing code'
+            ? " The code is in this log or the client's MCP log."
+            : '';
         writeStatus(
-          `rejected link connection from origin ${shown}; allowed: ${allowed.join(', ')}. Set the extension's Foundry URL to match, e.g. https://foundry.local`,
+          `rejected link connection from origin ${shown}: ${reason}${detail ? ` (${detail})` : ''}.${where}`,
         );
       },
       get store() {
@@ -302,7 +284,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       },
       codes,
       registry,
-      allowedOrigins: allowed,
+      ...(deps.allowedOrigins?.length ? { allowedOrigins: deps.allowedOrigins } : {}),
       gatewayVersion: deps.version,
       get events() {
         return events;

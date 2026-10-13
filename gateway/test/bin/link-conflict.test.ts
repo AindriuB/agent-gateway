@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:
 import { createServer as createNetServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import WebSocket from 'ws';
+import { PROTOCOL_VERSION } from '@agent-gateway/protocol';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,8 +173,20 @@ describe('startup failures and origins (built cli)', () => {
     await new Promise((r) => servers.pop()?.close(r));
     return port;
   };
-  const run = (args: string[]) => {
-    const child = spawn(process.execPath, [cli, ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const helloMsg = (auth: object) => ({
+    type: 'hello',
+    protocolVersion: PROTOCOL_VERSION,
+    moduleVersion: '0.0.0',
+    foundryVersion: '13.0',
+    world: { id: 'w1', title: 'W', system: 'dnd5e', systemVersion: '5' },
+    user: { id: 'u1', name: 'U', role: 4, isGM: true },
+    auth,
+  });
+  const run = (args: string[], env: Record<string, string> = {}) => {
+    const child = spawn(process.execPath, [cli, ...args], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, ...env },
+    });
     children.push(child);
     let err = '';
     let out = '';
@@ -290,30 +303,84 @@ describe('startup failures and origins (built cli)', () => {
     }
   }, 120_000);
 
-  it('warns once per distinct rejected origin, sanitised', async () => {
+  /** One WebSocket exchange: send `msg`, resolve with the first reply, or with 'refused' on a failed upgrade. */
+  const exchange = (port: number, origin: string, msg?: object) =>
+    new Promise<Record<string, unknown> | 'refused'>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
+      ws.on('error', () => resolve('refused'));
+      ws.on('open', () => msg && ws.send(JSON.stringify(msg)));
+      ws.on('message', (d) => {
+        resolve(JSON.parse(d.toString()) as Record<string, unknown>);
+        ws.close();
+      });
+    });
+
+  it('logs one line per distinct (origin, reason), sanitised, without a Foundry URL hint', async () => {
     const port = await freePort();
     const r = run(['--link-port', String(port), '--db', join(tmp(), 'g.db')]);
     await waitFor(() => r.err().includes('Link URL'));
-    const attempt = (origin: string) =>
-      new Promise<void>((resolve) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
-        ws.on('error', () => resolve());
-        ws.on('open', () => resolve());
-      });
-    await attempt('https://evil.example');
-    await attempt('https://evil.example');
-    await attempt(`https://${'a'.repeat(300)}`);
-    await waitFor(() => r.err().includes('aaaa'));
+    const bad = { kind: 'pairingCode', code: 'AAAA-AAAA' } as const;
+    expect(await exchange(port, 'https://evil.example', helloMsg(bad))).toMatchObject({
+      code: 'PAIRING_INVALID',
+    });
+    await exchange(port, 'https://evil.example', helloMsg(bad));
+    // A long origin is canonical only up to 255 characters, so it reaches hello and is truncated in the log.
+    const long = `https://${'a'.repeat(240)}.com`;
+    await exchange(port, long, helloMsg(bad));
+    await exchange(port, 'null');
+    await waitFor(() => r.err().includes('aaaa') && r.err().includes('origin null'));
     const lines = r
       .err()
       .split('\n')
       .filter((l) => l.startsWith('rejected link connection'));
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain('origin https://evil.example;');
-    expect(lines[0]).toContain('allowed: http://localhost:30000, http://127.0.0.1:30000');
-    expect(lines[0]).toContain('e.g. https://foundry.local');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('origin https://evil.example: no valid pairing code');
+    expect(lines[0]).toContain('The code is in this log or the client');
     expect(lines[1]).toContain('...');
     expect(lines[1].length).toBeLessThan(400);
+    expect(lines[2]).toContain('origin null: origin is not an allowed browser origin');
+    expect(r.err()).not.toContain('Foundry URL');
+  }, 20_000);
+
+  it('pairs from any origin with the code and holds the token to that origin', async () => {
+    const port = await freePort();
+    const r = run(['--link-port', String(port), '--db', join(tmp(), 'g.db')]);
+    await waitFor(() => r.err().includes('Pairing code: '));
+    const code = /Pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(r.err())![1]!;
+    const first = await exchange(
+      port,
+      'https://foundry.local',
+      helloMsg({ kind: 'pairingCode', code }),
+    );
+    expect(first).toMatchObject({ type: 'welcome' });
+    const token = (first as { pairingToken: string }).pairingToken;
+    // Hold a live connection from the paired origin, then replay the token from another one.
+    const live = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'https://foundry.local' });
+    const liveReply = new Promise<Record<string, unknown>>((res) =>
+      live.once('message', (d) => res(JSON.parse(d.toString()) as Record<string, unknown>)),
+    );
+    await new Promise((res) => live.once('open', res));
+    live.send(JSON.stringify(helloMsg({ kind: 'pairingToken', token })));
+    expect(await liveReply).toMatchObject({ type: 'welcome' });
+    const replay = await exchange(
+      port,
+      'http://foundry.local',
+      helloMsg({ kind: 'pairingToken', token }),
+    );
+    expect(replay).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
+    expect(live.readyState).toBe(WebSocket.OPEN);
+    live.close();
+  }, 20_000);
+
+  it('warns that a retired role setting is ignored, and still starts', async () => {
+    const port = await freePort();
+    const r = run(['--link-port', String(port), '--db', join(tmp(), 'g.db')], {
+      AGENT_GATEWAY_ROLE: 'gm',
+    });
+    await waitFor(() => r.err().includes('Link URL'));
+    expect(r.err()).toContain(
+      'AGENT_GATEWAY_ROLE / config "role" is ignored: the tool tier comes from the Foundry user\'s role',
+    );
   }, 20_000);
 
   it('accepts a normalised --allow-origin', async () => {
@@ -326,8 +393,8 @@ describe('startup failures and origins (built cli)', () => {
     expect(await originAccepted(args, 'http://localhost:30000')).toBe(false);
   }, 20_000);
 
-  it('falls back to the default origins for an empty --allow-origin=', async () => {
-    expect(await originAccepted(['--allow-origin='], 'http://localhost:30000')).toBe(true);
+  it('treats an empty --allow-origin= as no restriction', async () => {
+    expect(await originAccepted(['--allow-origin='], 'https://foundry.local')).toBe(true);
   }, 20_000);
 });
 
