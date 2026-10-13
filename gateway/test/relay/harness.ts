@@ -148,11 +148,12 @@ export async function startCli(
   db: string,
   extra: string[] = [],
   connect = true,
+  env: Record<string, string> = {},
 ): Promise<Cli> {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [cliPath, '--link-port', String(port), '--db', db, ...extra],
-    env: { PATH: process.env.PATH ?? '', HOME: tmpdir() },
+    env: { PATH: process.env.PATH ?? '', HOME: tmpdir(), ...env },
     stderr: 'pipe',
   });
   let err = '';

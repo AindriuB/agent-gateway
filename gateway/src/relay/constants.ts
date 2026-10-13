@@ -19,6 +19,9 @@ export const MAX_RELAY_HANDSHAKE_BYTES = 4096;
 /** `sun_path` limit on darwin, minus the terminating NUL. */
 export const MAX_UNIX_SOCKET_PATH_BYTES = 103;
 
+/** How long a primary keeps serving after agreeing to step down for a newer config. */
+export const STEPDOWN_GRACE_MS = 2000;
+
 /** JSON-RPC error code used for every relay-originated error. */
 export const RELAY_RPC_ERROR = -32001;
 export const RELAY_LOST = 'RELAY_LOST';
@@ -30,4 +33,8 @@ export type RelayRefusal =
   | 'RELAY_PORT_MISMATCH'
   | 'RELAY_SELECTOR_MISMATCH'
   | 'RELAY_FULL'
-  | 'RELAY_PROTOCOL';
+  | 'RELAY_PROTOCOL'
+  /** The secondary's config differs and is not newer: it must not relay. */
+  | 'RELAY_CONFIG_MISMATCH'
+  /** The secondary's config differs and is newer: the primary is stepping down for it. */
+  | 'RELAY_CONFIG_STEPDOWN';

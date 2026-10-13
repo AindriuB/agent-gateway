@@ -10,6 +10,7 @@ import { createSessionServer } from '../../src/mcp/session.js';
 import { toolsets } from '../../src/routing/index.js';
 import {
   connectRelay,
+  makeRelayConfig,
   MAX_RELAY_BUFFERED_BYTES,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_SESSIONS,
@@ -27,6 +28,7 @@ vi.mock('node:crypto', async (orig) => {
 });
 
 const PORT = 7777;
+const CFG = makeRelayConfig('player', ['http://localhost:30000'], 1000);
 
 interface Rig {
   dir: string;
@@ -46,7 +48,11 @@ afterEach(async () => {
 });
 
 async function rig(
-  over: { create?: () => Server; selector?: { world?: string; user?: string } } = {},
+  over: {
+    create?: () => Server;
+    selector?: { world?: string; user?: string };
+    onStepDown?: (why: string) => void;
+  } = {},
 ): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'agr-'));
   chmodSync(dir, 0o700);
@@ -60,9 +66,11 @@ async function rig(
     endpoint: ep.path,
     stateDir: dir,
     linkPort: PORT,
+    config: CFG,
     selector: over.selector ?? {},
     createSession: create,
     log: (l) => logs.push(l),
+    ...(over.onStepDown ? { onStepDown: over.onStepDown } : {}),
   });
   await server.listen();
   const r = { dir, sock: ep.path, server, create, logs };
@@ -85,7 +93,14 @@ function rawHello(r: Rig, first: string | undefined): Promise<{ reply: string; c
   });
 }
 const hello = (r: Rig, over: object = {}) =>
-  `${JSON.stringify({ relay: 1, secret: secretOf(r), linkPort: PORT, selector: {}, ...over })}\n`;
+  `${JSON.stringify({
+    relay: 1,
+    secret: secretOf(r),
+    linkPort: PORT,
+    config: CFG,
+    selector: {},
+    ...over,
+  })}\n`;
 
 describe('relay handshake', () => {
   it('refuses a wrong secret with RELAY_AUTH, closes, and creates no session', async () => {
@@ -100,7 +115,7 @@ describe('relay handshake', () => {
     const r = await rig();
     const res = await rawHello(
       r,
-      `${JSON.stringify({ relay: 1, linkPort: PORT, selector: {} })}\n`,
+      `${JSON.stringify({ relay: 1, linkPort: PORT, config: CFG, selector: {} })}\n`,
     );
     expect(JSON.parse(res.reply).code).toBe('RELAY_AUTH');
     expect(r.create).not.toHaveBeenCalled();
@@ -123,7 +138,13 @@ describe('relay handshake', () => {
   it('accepts an empty or equal selector', async () => {
     const r = await rig({ selector: { user: 'gm' } });
     for (const selector of [{}, { user: 'gm' }]) {
-      const c = await connectRelay({ endpoint: r.sock, stateDir: r.dir, linkPort: PORT, selector });
+      const c = await connectRelay({
+        endpoint: r.sock,
+        stateDir: r.dir,
+        linkPort: PORT,
+        config: CFG,
+        selector,
+      });
       expect(c.kind).toBe('ok');
       if (c.kind === 'ok') c.upstream.close();
     }
@@ -160,6 +181,7 @@ describe('relay handshake', () => {
         endpoint: r.sock,
         stateDir: r.dir,
         linkPort: PORT,
+        config: CFG,
         selector: {},
       });
       expect(c.kind).toBe('ok');
@@ -169,6 +191,7 @@ describe('relay handshake', () => {
       endpoint: r.sock,
       stateDir: r.dir,
       linkPort: PORT,
+      config: CFG,
       selector: {},
     });
     expect(extra).toMatchObject({ kind: 'refused', code: 'RELAY_FULL' });
@@ -178,11 +201,63 @@ describe('relay handshake', () => {
       endpoint: r.sock,
       stateDir: r.dir,
       linkPort: PORT,
+      config: CFG,
       selector: {},
     });
     expect(again.kind).toBe('ok');
     if (again.kind === 'ok') again.upstream.close();
     ups.forEach((u) => u.close());
+  });
+});
+
+describe('relay config fingerprint', () => {
+  const withConfig = (config: unknown) => (r: Rig) => hello(r, { config });
+
+  it('refuses a differing config that is not newer, with the primary config, and creates no session', async () => {
+    const r = await rig();
+    for (const config of [
+      { ...CFG, role: 'gm' },
+      { ...CFG, origins: ['https://foundry.local'] },
+      { ...CFG, role: 'gm', startedAt: CFG.startedAt }, // tie
+      { ...CFG, role: 'gm', startedAt: CFG.startedAt - 1 },
+      undefined,
+    ]) {
+      const res = await rawHello(r, withConfig(config)(r));
+      const reply = JSON.parse(res.reply);
+      expect(reply.code).toBe('RELAY_CONFIG_MISMATCH');
+      expect(reply.config).toEqual(CFG);
+    }
+    expect(r.create).not.toHaveBeenCalled();
+  });
+
+  it('a strictly newer differing config makes the primary step down after the grace period', async () => {
+    const stepped: string[] = [];
+    const r = await rig({ onStepDown: (why) => stepped.push(why) });
+    const res = await rawHello(
+      r,
+      hello(r, { config: { ...CFG, role: 'gm', startedAt: CFG.startedAt + 1 } }),
+    );
+    expect(JSON.parse(res.reply).code).toBe('RELAY_CONFIG_STEPDOWN');
+    expect(r.create).not.toHaveBeenCalled();
+    expect(stepped).toEqual([]); // still serving during the grace period
+    await until(() => stepped.length === 1, 5000, 'step down');
+    expect(stepped[0]).toContain('role player here vs gm there');
+    // a second request does not step down twice
+    await sleep(100);
+    expect(stepped).toHaveLength(1);
+  }, 10_000);
+
+  it('serves a matching config regardless of start order', async () => {
+    const r = await rig();
+    const c = await connectRelay({
+      endpoint: r.sock,
+      stateDir: r.dir,
+      linkPort: PORT,
+      config: { ...CFG, origins: [...CFG.origins], startedAt: CFG.startedAt + 500 },
+      selector: {},
+    });
+    expect(c.kind).toBe('ok');
+    if (c.kind === 'ok') c.upstream.close();
   });
 });
 
@@ -217,6 +292,7 @@ describe('relay security', () => {
       endpoint: ep.path,
       stateDir: dir,
       linkPort: PORT,
+      config: CFG,
       selector: {},
       createSession: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
       log: () => undefined,
@@ -238,6 +314,7 @@ describe('relay security', () => {
       endpoint: r.sock,
       stateDir: r.dir,
       linkPort: PORT,
+      config: CFG,
       selector: {},
       createSession: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
       log: () => undefined,
@@ -273,6 +350,7 @@ describe('relay session isolation', () => {
         endpoint: r.sock,
         stateDir: r.dir,
         linkPort: PORT,
+        config: CFG,
         selector: {},
       });
       if (c.kind !== 'ok') throw new Error(JSON.stringify(c));
@@ -313,6 +391,7 @@ describe('relay back-pressure', () => {
         endpoint: r.sock,
         stateDir: r.dir,
         linkPort: PORT,
+        config: CFG,
         selector: {},
       });
       if (c.kind !== 'ok') throw new Error(JSON.stringify(c));
@@ -361,6 +440,7 @@ describe('relay back-pressure', () => {
       endpoint: r.sock,
       stateDir: r.dir,
       linkPort: PORT,
+      config: CFG,
       selector: {},
     });
     if (c.kind !== 'ok') throw new Error('connect');

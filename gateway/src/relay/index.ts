@@ -1,4 +1,5 @@
 export * from './constants.js';
+export * from './config.js';
 export * from './endpoint.js';
 export * from './lines.js';
 export { RelayServer, type RelayServerOptions } from './server.js';

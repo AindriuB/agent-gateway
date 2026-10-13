@@ -8,6 +8,7 @@ import {
   RELAY_BACKOFF_START_MS,
   RELAY_CONNECT_ATTEMPTS,
 } from './constants.js';
+import { describeConfigDiff, type RelayConfig } from './config.js';
 import { StdioRelayProxy } from './proxy.js';
 import { connectRelay, LocalUpstream, type Upstream } from './upstream.js';
 
@@ -16,6 +17,8 @@ export interface SecondaryOptions {
   stateDir: string;
   linkPort: number;
   selector: UserSelector;
+  /** This instance's role and origins; the primary must agree or it will not serve us. */
+  config: RelayConfig;
   input: Readable;
   output: Writable;
   log: (line: string) => void;
@@ -101,9 +104,11 @@ export class RelaySecondary {
     failedWith: string,
   ): Promise<{ kind: 'upstream'; upstream: Upstream } | { kind: 'degraded'; reason: string }> {
     let last = failedWith;
+    // Set once a primary agrees to step down for us: from then on we also try to take its place.
+    let takeOver = tryPrimary;
     let delay = RELAY_BACKOFF_START_MS;
     for (let attempt = 1; attempt <= RELAY_CONNECT_ATTEMPTS && !this.stopped; attempt++) {
-      if (tryPrimary) {
+      if (takeOver) {
         const [a, b] = InMemoryTransport.createLinkedPair();
         try {
           if (await this.opts.becomePrimary(a)) {
@@ -126,12 +131,22 @@ export class RelaySecondary {
             kind: 'degraded',
             reason: `the primary gateway refused this instance: selector mismatch (this instance: ${describe(this.opts.selector)}; primary: ${describe(r.selector)})`,
           };
-        if (r.code !== 'RELAY_AUTH' && r.code !== 'RELAY_FULL')
+        if (r.code === 'RELAY_CONFIG_MISMATCH')
+          return {
+            kind: 'degraded',
+            reason: `the primary gateway runs a different configuration (${describeConfigDiff(this.opts.config, r.config)}); it is not older than this instance, so it is left running; quit it or restart Claude Desktop so every instance uses the same settings`,
+          };
+        if (r.code === 'RELAY_CONFIG_STEPDOWN') {
+          this.opts.log('the primary gateway has an older configuration and is stepping down');
+          takeOver = true;
+          last = 'waiting for the older gateway to step down';
+        } else if (r.code !== 'RELAY_AUTH' && r.code !== 'RELAY_FULL')
           return {
             kind: 'degraded',
             reason: `the primary gateway refused the relay: ${safeText(String(r.code))}`,
           };
-        last = `the primary gateway refused the relay: ${safeText(String(r.code))}`;
+        if (r.code !== 'RELAY_CONFIG_STEPDOWN')
+          last = `the primary gateway refused the relay: ${safeText(String(r.code))}`;
       } else {
         last = r.reason;
       }

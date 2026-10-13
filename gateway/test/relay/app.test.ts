@@ -5,7 +5,7 @@ import { openStore } from '../../src/store/index.js';
 import { freePort, tempState, until } from './harness.js';
 
 const config = (linkPort: number) =>
-  ({ linkPort, logLevel: 'error' }) as unknown as Parameters<typeof createApp>[0];
+  ({ linkPort, logLevel: 'error', role: 'player' }) as unknown as Parameters<typeof createApp>[0];
 
 describe('relay mode in the app', () => {
   const apps: App[] = [];

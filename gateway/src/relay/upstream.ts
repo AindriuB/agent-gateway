@@ -12,6 +12,7 @@ import {
   type RelayRefusal,
 } from './constants.js';
 import { SECRET_FILE } from './endpoint.js';
+import { parseRelayConfig, type RelayConfig } from './config.js';
 import { LineSplitter } from './lines.js';
 import { parseSecretFile } from './secret.js';
 
@@ -133,7 +134,12 @@ export class LocalUpstream implements Upstream {
 
 export type ConnectResult =
   | { kind: 'ok'; upstream: SocketUpstream }
-  | { kind: 'refused'; code: RelayRefusal | string; selector?: UserSelector }
+  | {
+      kind: 'refused';
+      code: RelayRefusal | string;
+      selector?: UserSelector;
+      config?: RelayConfig;
+    }
   | { kind: 'failed'; reason: string };
 
 export interface ConnectOptions {
@@ -141,6 +147,7 @@ export interface ConnectOptions {
   stateDir: string;
   linkPort: number;
   selector: UserSelector;
+  config: RelayConfig;
 }
 
 /** One relay connect attempt: read the secret, dial, handshake. Never throws. */
@@ -181,6 +188,7 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
           relay: RELAY_VERSION,
           secret,
           linkPort: opts.linkPort,
+          config: opts.config,
           selector: {
             ...(opts.selector.world ? { world: opts.selector.world } : {}),
             ...(opts.selector.user ? { user: opts.selector.user } : {}),
@@ -200,7 +208,13 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
       if (lines.length === 0) return;
       socket.off('data', onData);
       socket.pause();
-      let reply: { relay?: unknown; ok?: unknown; code?: unknown; selector?: unknown };
+      let reply: {
+        relay?: unknown;
+        ok?: unknown;
+        code?: unknown;
+        selector?: unknown;
+        config?: unknown;
+      };
       try {
         reply = JSON.parse(lines[0]!) as typeof reply;
       } catch {
@@ -221,6 +235,7 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
         settle({
           kind: 'refused',
           code: typeof reply.code === 'string' ? reply.code : 'RELAY_PROTOCOL',
+          ...(parseRelayConfig(reply.config) ? { config: parseRelayConfig(reply.config)! } : {}),
           ...(sel && typeof sel === 'object'
             ? {
                 selector: {

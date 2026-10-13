@@ -15,7 +15,7 @@ import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
-import { RelaySecondary, RelayServer, relayEndpoint } from './relay/index.js';
+import { makeRelayConfig, RelaySecondary, RelayServer, relayEndpoint } from './relay/index.js';
 
 export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
 
@@ -80,6 +80,11 @@ export interface AppDeps {
   stdout?: Writable;
   /** Store opener; injectable so tests can prove a relay never opens the db. */
   openStore?: typeof openStore;
+  /**
+   * A newer instance with a different role or origins asked this primary to step down. Defaults to
+   * stopping the app and exiting the process.
+   */
+  onStepDown?: (why: string) => void;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -94,8 +99,11 @@ export function createApp(config: Config, deps: AppDeps): App {
   let secondary: RelaySecondary | undefined;
   // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
   const dbPath = deps.dbPath ?? defaultDbPath();
+  const startedAt = Date.now();
+  const relayConfig = () =>
+    makeRelayConfig(config.role, deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS, startedAt);
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
-  return {
+  const app: App = {
     async start() {
       try {
         await startPrimary(new StdioServerTransport(deps.stdin, deps.stdout));
@@ -131,6 +139,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       store = undefined;
     },
   };
+  return app;
 
   function openedStore(): Store {
     if (!store) throw new Error('store is not open yet');
@@ -153,6 +162,12 @@ export function createApp(config: Config, deps: AppDeps): App {
       selector: deps.selector ?? {},
       createSession,
       log: writeStatus,
+      config: relayConfig(),
+      onStepDown: (why) => {
+        writeStatus(`stepping down: a newer gateway instance has different settings (${why})`);
+        if (deps.onStepDown) deps.onStepDown(why);
+        else void app.stop().finally(() => process.exit(0));
+      },
     });
     try {
       await candidate.listen();
@@ -196,6 +211,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       stateDir,
       linkPort: config.linkPort,
       selector: deps.selector ?? {},
+      config: relayConfig(),
       input: deps.stdin ?? process.stdin,
       output: deps.stdout ?? process.stdout,
       log: writeStatus,

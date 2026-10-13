@@ -8,8 +8,10 @@ import {
   MAX_RELAY_SESSIONS,
   RELAY_HANDSHAKE_MS,
   RELAY_VERSION,
+  STEPDOWN_GRACE_MS,
   type RelayRefusal,
 } from './constants.js';
+import { describeConfigDiff, parseRelayConfig, sameConfig, type RelayConfig } from './config.js';
 import { LineSplitter } from './lines.js';
 import { newSecret, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';
@@ -25,6 +27,10 @@ export interface RelayServerOptions {
   /** Builds one full session server per authenticated connection. */
   createSession: () => McpServer;
   log: (line: string) => void;
+  /** This primary's configuration; a relaying instance must match it. */
+  config: RelayConfig;
+  /** A mismatched but newer instance asked to take over: called once after the grace period. */
+  onStepDown?: (why: string) => void;
   platform?: NodeJS.Platform;
 }
 
@@ -45,6 +51,7 @@ export class RelayServer {
   private readonly platform: NodeJS.Platform;
   private readonly isWin: boolean;
   private secret = '';
+  private steppingDown = false;
   private endpoint: string;
 
   constructor(private readonly opts: RelayServerOptions) {
@@ -112,6 +119,16 @@ export class RelayServer {
       rmSync(this.opts.endpoint, { force: true });
     if (this.secretFile) rmSync(this.secretFile, { force: true });
     this.secretFile = undefined;
+  }
+
+  /** Keep serving for the grace period so in-flight calls finish, then let the app exit. */
+  private stepDown(why: string): void {
+    if (this.steppingDown) return;
+    this.steppingDown = true;
+    const net = this.net;
+    if (net?.listening) net.close();
+    const timer = setTimeout(() => this.opts.onStepDown?.(why), STEPDOWN_GRACE_MS);
+    timer.unref();
   }
 
   private refuse(socket: Socket, code: RelayRefusal, extra: object = {}): void {
@@ -202,6 +219,20 @@ export class RelayServer {
       this.refuse(socket, 'RELAY_SELECTOR_MISMATCH', {
         selector: { world: mine.world, user: mine.user },
       });
+      return;
+    }
+    const theirConfig = parseRelayConfig((hello as { config?: unknown }).config);
+    if (!theirConfig || !sameConfig(theirConfig, this.opts.config)) {
+      // A relayed session would run with this primary's role and origins, not the caller's, so a
+      // mismatch is never served. A strictly newer caller wins: this primary steps down for it.
+      const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
+      this.opts.log(
+        `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
+      );
+      this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
+        config: this.opts.config,
+      });
+      if (newer) this.stepDown(describeConfigDiff(this.opts.config, theirConfig));
       return;
     }
     if (this.active >= MAX_RELAY_SESSIONS) {

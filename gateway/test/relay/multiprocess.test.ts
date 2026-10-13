@@ -171,4 +171,50 @@ describe('relay between built CLI instances', () => {
     const s3 = track(await startCli(port, state.db));
     expect(await echo(s3, 'late')).toContain('echo:late');
   }, 90_000);
+
+  it('(e) a newer instance with different settings replaces a stale primary', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    // The install-time instance: manifest defaults (player, default origins).
+    const stale = await startCli(port, state.db, [], true, { AGENT_GATEWAY_ROLE: 'player' });
+    clis.push(stale);
+    await until(() => /Pairing code: /.test(stale.stderr()), 10_000, 'stale primary');
+    const exited = new Promise<void>((res) => {
+      const t = setInterval(() => {
+        try {
+          process.kill(stale.pid, 0);
+        } catch {
+          clearInterval(t);
+          res();
+        }
+      }, 50);
+    });
+    // The user saved new settings: a restarted instance with role gm and a new origin.
+    const fresh = track(
+      await startCli(port, state.db, ['--allow-origin=https://foundry.local'], true, {
+        AGENT_GATEWAY_ROLE: 'gm',
+      }),
+    );
+    await Promise.race([
+      exited,
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error('stale primary did not exit')), 15_000),
+      ),
+    ]);
+    expect(stale.stderr()).toContain('stepping down');
+    // The fresh instance holds the port with its own config, and the browser origin is accepted.
+    await until(() => /Pairing code: /.test(fresh.stderr()), 15_000, 'fresh primary');
+    expect(fresh.stderr()).toContain(`pid ${fresh.pid} holds link port ${port}`);
+    expect(await fresh.client.listTools().then((t) => t.tools.length)).toBeGreaterThan(1);
+    // A later instance with the same settings relays to it, with the same config.
+    const same = track(
+      await startCli(port, state.db, ['--allow-origin=https://foundry.local'], true, {
+        AGENT_GATEWAY_ROLE: 'gm',
+      }),
+    );
+    const names = (await same.client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toEqual([STATUS_TOOL]);
+    expect(same.stderr()).not.toContain('Pairing code');
+  }, 90_000);
 });
