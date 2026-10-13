@@ -87,3 +87,10 @@ Head `0cd8a6c`. Tester PASS: `npm run verify` 3,689 fast / 2,227 slow; e2e-unit 
   - Fix: validate slugs against the prepared `actor.system.skills`, or `CONFIG.PF2E.skills`.
   - The unit fixture hid the bug by pre-seeding stored skills (`module/test/tools/character-build/fixtures.ts:55`). Add a test on a sparse `_source.system.skills`.
 - Suggestion, accepted as is: e2e cleanup in `afterAll` by exact UUID is equivalent to "in `finally`".
+
+## Attempt 2 — live e2e failed (test bug)
+Head `bbfc99e`, bundle `67403dc9…` deployed to homelab; Foundry 14.369, pf2e 8.6.0, `test-world`, approved by Andrew 2026-10-13. Verify is green: 3,691 fast / 2,227 slow; e2e-unit 163. Result: 1 of 2 live tests passed. "describes the unbuilt character" passed.
+
+The build call returned `INVALID_ARGS: This feat cannot fill that slot`. The cause is in the spec: `e2e/pf2e-build/build.e2e.test.ts` takes the first open `featSlots` entry, which on a fresh character is an ancestry slot, and puts the temporary **class** feat in it. The adapter's refusal was correct. The batch was validated before any write, so nothing was applied. A read-only check afterwards found no leftover actors or items.
+
+Fix the spec: choose an open slot whose group accepts the feat's category (for example `class-*`). If `describe` does not expose enough to choose, expose the slot's group and accepted categories as bounded data. Assert the refusal case too: a class feat put into an ancestry slot must return INVALID_ARGS with no write.
