@@ -94,3 +94,12 @@ Head `bbfc99e`, bundle `67403dc9…` deployed to homelab; Foundry 14.369, pf2e 8
 The build call returned `INVALID_ARGS: This feat cannot fill that slot`. The cause is in the spec: `e2e/pf2e-build/build.e2e.test.ts` takes the first open `featSlots` entry, which on a fresh character is an ancestry slot, and puts the temporary **class** feat in it. The adapter's refusal was correct. The batch was validated before any write, so nothing was applied. A read-only check afterwards found no leftover actors or items.
 
 Fix the spec: choose an open slot whose group accepts the feat's category (for example `class-*`). If `describe` does not expose enough to choose, expose the slot's group and accepted categories as bounded data. Assert the refusal case too: a class feat put into an ancestry slot must return INVALID_ARGS with no write.
+
+## Attempt 3 — live e2e failed (real bug)
+Head `54d54b7`, bundle `67403dc9…`; `test-world` v14, approved by Andrew 2026-10-13. Result: 1 of 2 live tests passed. The negative wrong-group case behaved correctly live (`INVALID_ARGS: This feat cannot fill that slot`, 1 target, no write). No leftover actors afterwards.
+- **Real bug.** The positive build call passed validation, snapshotted 5 targets and almost certainly applied its writes, then returned `INTERNAL: System adapter returned an invalid result` from `invokeAdapter`'s output check (`module/src/tools/_adapters.ts:145`). The caller is told the call failed while the writes stand. This is worse than either outcome alone.
+  - Find which field breaks `boundedAdapterData` or `characterBuild.output.parse` for real prepared pf2e data, for example unbounded or long `message` text, a `null`/non-string slot or item value, numeric attribute values, or array caps.
+  - Reproduce it with a unit fixture built from real pf2e 8.6.0 post-write shapes.
+- **Structural guard.** After writes have been applied, the result must never be lost:
+  - Bound and sanitise every output field the adapter produces, so the post-write result always passes the schema.
+  - Cover that with a test that runs a real-shaped post-write result through `boundedAdapterData` and `characterBuild.output.parse`.
