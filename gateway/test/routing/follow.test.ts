@@ -204,11 +204,12 @@ describe('re-bind notices are bounded', () => {
     };
     const rebinds = () => lines.filter((l) => l.includes('re-bound from')).length;
     await flap(20);
-    expect(rebinds()).toBe(MAX_REBIND_NOTICES);
+    expect(rebinds()).toBe(20); // stderr is never capped
     expect(s.notices.filter((n) => n.logger === 'binding')).toHaveLength(MAX_REBIND_NOTICES);
     t += REBIND_NOTICE_WINDOW_MS;
     await flap(1);
-    expect(rebinds()).toBe(MAX_REBIND_NOTICES + 1);
+    expect(rebinds()).toBe(21);
+    expect(s.notices.filter((n) => n.logger === 'binding')).toHaveLength(MAX_REBIND_NOTICES + 1);
     // The session still follows the connected pairing even when the notice was suppressed.
     expect((await answer(st.cur, call(s))).res.isError).toBeFalsy();
   });

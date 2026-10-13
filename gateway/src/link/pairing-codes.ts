@@ -65,7 +65,12 @@ export class PairingCodes {
     if (!this.stopped)
       this.timer = this.setTimer(() => {
         this.timer = undefined;
-        if (this.live === live && !this.stopped) this.issue('expired');
+        // The timer can fire a few ms before `expiresAt` (the loop's cached time vs Date.now),
+        // so drop the code first: otherwise issue() would still see it as live and refresh stops.
+        if (this.live === live && !this.stopped) {
+          this.live = undefined;
+          this.issue('expired');
+        }
       }, PAIRING_CODE_TTL_MS);
     this.onIssued?.({ ...live, reason });
     return { ...live };

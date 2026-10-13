@@ -303,6 +303,9 @@ export function createApp(config: Config, deps: AppDeps): App {
     const thisCodes = new PairingCodes({
       ...deps.codeClock,
       onIssued: (c) => {
+        // Each code gets one refusal line per origin: a repeat refusal after a refresh must show
+        // the new code. Clearing (not growing) keeps the set bounded.
+        warned.clear();
         for (const line of linesFor(c)) writeStatus(line);
         for (const s of initialized) sendNotice(s, c);
       },

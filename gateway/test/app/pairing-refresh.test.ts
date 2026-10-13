@@ -185,5 +185,13 @@ describe('pairing code lifecycle in the app', () => {
     await again.untilClosed();
     expect(t.codeLines()).toHaveLength(2);
     expect(t.clock.timers.size).toBe(1);
+
+    // After a refresh, the same origin's repeat refusal prints a line with the new code.
+    t.clock.advance(PAIRING_CODE_TTL_MS);
+    const fresh = t.codeOf(t.codeLines()[2]!);
+    expect(fresh).not.toBe(code);
+    const later = await t.connect({ kind: 'pairingToken', token: 'revoked-token' });
+    await later.untilClosed();
+    await until(() => t.primary.lines.some((l) => l.includes(`Enter pairing code ${fresh}`)));
   }, 30_000);
 });

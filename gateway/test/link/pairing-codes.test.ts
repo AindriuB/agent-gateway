@@ -105,6 +105,18 @@ describe('PairingCodes: one live code, one timer', () => {
     expect(m.codes.size).toBe(1);
   });
 
+  it('refreshes even when the timer fires before expiresAt (clock lag)', () => {
+    const m = manual();
+    const first = m.codes.issue('startup');
+    const [[id, timer]] = [...m.timers];
+    m.setNow(first.expiresAt - 1);
+    m.timers.delete(id!);
+    timer.fn();
+    expect(m.issued.map((i) => i.reason)).toEqual(['startup', 'expired']);
+    expect(m.codes.current()?.code).not.toBe(first.code);
+    expect(m.timers.size).toBe(1);
+  });
+
   it('an expired code that is asked for again is replaced even if the timer has not fired', () => {
     const m = manual();
     const old = m.codes.issue('startup');

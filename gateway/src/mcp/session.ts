@@ -48,7 +48,7 @@ export interface SessionServerOptions {
   now?: () => number;
 }
 
-/** At most this many re-bind notices per window per session; further re-binds are silent. */
+/** At most this many MCP re-bind notices per window per session; the stderr line is never capped. */
 export const MAX_REBIND_NOTICES = 5;
 export const REBIND_NOTICE_WINDOW_MS = 60_000;
 
@@ -79,8 +79,10 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       noticesInWindow = 0;
     }
     noticesInWindow++;
-    if (noticesInWindow > MAX_REBIND_NOTICES) return;
+    // The stderr line is the audit trail across a pairing switch: always written. Only the
+    // MCP notice is capped.
     opts.log?.(text);
+    if (noticesInWindow > MAX_REBIND_NOTICES) return;
     void server
       .sendLoggingMessage({ level: 'notice', logger: 'binding', data: text })
       .catch(() => undefined);
