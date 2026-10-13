@@ -45,6 +45,9 @@ function isInstanceConflict(err: unknown): boolean {
   return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
 }
 
+/** Backoff for retrying HTTP after a takeover could not bind it. */
+const HTTP_RETRY_MIN_MS = 5_000;
+const HTTP_RETRY_MAX_MS = 60_000;
 const MAX_WARNED_ORIGINS = 20;
 const MAX_ORIGIN_CHARS = 100;
 
@@ -98,6 +101,11 @@ export interface AppDeps {
   codeClock?: Pick<PairingCodesOptions, 'now' | 'setTimer' | 'clearTimer'>;
   /** Serve MCP over local Streamable HTTP (primary only). */
   http?: boolean;
+  /** Timers for the takeover HTTP retry; injectable so tests need not wait. */
+  httpRetryTimers?: {
+    setTimer: (fn: () => void, ms: number) => unknown;
+    clearTimer: (handle: unknown) => void;
+  };
   /** Overrides for the HTTP limits; tests shorten them. */
   httpLimits?: Partial<{
     maxRequestBytes: number;
@@ -117,6 +125,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let queue: OfflineQueue | undefined;
   let relay: RelayServer | undefined;
   let httpServer: HttpServer | undefined;
+  let httpRetryTimer: unknown;
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
@@ -156,6 +165,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
     },
     async stop() {
+      cancelHttpRetry();
       stdioProxy?.stop();
       stdioProxy = undefined;
       codes?.stop();
@@ -236,8 +246,29 @@ export function createApp(config: Config, deps: AppDeps): App {
     }
   }
 
+  function cancelHttpRetry(): void {
+    if (httpRetryTimer !== undefined)
+      (deps.httpRetryTimers?.clearTimer ?? ((h) => clearTimeout(h as NodeJS.Timeout)))(
+        httpRetryTimer,
+      );
+    httpRetryTimer = undefined;
+  }
+
+  /** At most one timer is ever armed; each failed attempt re-arms it with a longer, capped delay. */
+  function scheduleHttpRetry(attempt: () => Promise<void>, delay: number): void {
+    cancelHttpRetry();
+    const set = deps.httpRetryTimers?.setTimer ?? ((fn, ms) => setTimeout(fn, ms).unref());
+    httpRetryTimer = set(() => {
+      httpRetryTimer = undefined;
+      attempt().catch(() => {
+        if (link) scheduleHttpRetry(attempt, Math.min(delay * 2, HTTP_RETRY_MAX_MS));
+      });
+    }, delay);
+  }
+
   /** Undo a failed or finished startPrimary. */
   async function teardown(): Promise<void> {
+    cancelHttpRetry();
     codes?.stop();
     codes = undefined;
     await httpServer?.close();
@@ -286,7 +317,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         // Outside the try: teardown must never run against a live primary.
         if (link) throw new Error('this process already holds the link');
         try {
-          await startPrimary(transport);
+          await startPrimary(transport, true);
           return true;
         } catch (err) {
           await teardown();
@@ -303,7 +334,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     await secondary.start(reason);
   }
 
-  async function startPrimary(transport: Transport): Promise<void> {
+  async function startPrimary(transport: Transport, retryHttp = false): Promise<void> {
     // Never start over a live primary: it would replace `link` and orphan the original.
     if (link) throw new Error('this process already holds the link');
     // Hold the link port before touching the shared db: opening it runs migrations and
@@ -417,7 +448,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     await startRelay(port, () =>
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
-    if (deps.http) {
+    const startHttp = async (): Promise<void> => {
       const token = loadOrCreateToken(openedStore());
       const lim = deps.httpLimits ?? {};
       const candidate = new HttpServer({
@@ -434,6 +465,11 @@ export function createApp(config: Config, deps: AppDeps): App {
         idleMs: lim.idleMs ?? HTTP_SESSION_IDLE_MS,
       });
       const httpPort = await candidate.listen();
+      // The app was stopped while the listen was pending.
+      if (!store) {
+        await candidate.close();
+        return;
+      }
       httpServer = candidate;
       const stored = token.commit();
       if (token.created && stored) {
@@ -446,6 +482,21 @@ export function createApp(config: Config, deps: AppDeps): App {
       writeStatus(
         `MCP HTTP at http://${HTTP_BIND_HOST}:${httpPort}/mcp (Authorization: Bearer <token>)`,
       );
+    };
+    if (deps.http) {
+      try {
+        await startHttp();
+      } catch (err) {
+        // First start exits at once so the user sees the conflict. A takeover keeps Foundry
+        // working and retries HTTP in the background.
+        if (!retryHttp) throw err;
+        const why =
+          (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
+            ? `${HTTP_BIND_HOST}:${config.httpPort} in use`
+            : (err as Error).message;
+        writeStatus(`HTTP off: ${why}; retrying`);
+        scheduleHttpRetry(startHttp, HTTP_RETRY_MIN_MS);
+      }
     }
     logger.info(`MCP stdio server started`);
   }

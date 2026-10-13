@@ -63,6 +63,7 @@ function schemaProblem(path: string): string | undefined {
   if (!existsSync(path)) return `there is no database at ${path}; ${start}`;
   const db = new DatabaseSync(path, { readOnly: true });
   try {
+    db.exec('PRAGMA busy_timeout = 5000');
     const v = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
     if (v < MIGRATIONS.length) return `the database is behind this version; ${start}`;
     if (v > MIGRATIONS.length)

@@ -6,6 +6,8 @@ import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { applyMigrations } from '../../src/store/migrate.js';
+import { MIGRATIONS } from '../../src/store/migrations/index.js';
 import { openStore } from '../../src/store/index.js';
 import { freePort, tempState, until } from '../relay/harness.js';
 
@@ -26,18 +28,75 @@ describe('--http in the app', () => {
     for (const c of cleanups.splice(0)) c();
   });
 
-  function mk(linkPort: number, httpPort: number, dbPath: string, http: boolean) {
+  /** A manual timer: the retry waits until the test fires it. */
+  function manualTimers() {
+    const t = {
+      pending: undefined as { fn: () => void; ms: number } | undefined,
+      armed: 0,
+      cleared: 0,
+      fire() {
+        const p = t.pending;
+        t.pending = undefined;
+        p?.fn();
+      },
+      setTimer(fn: () => void, ms: number) {
+        t.armed++;
+        t.pending = { fn, ms };
+        return t.pending;
+      },
+      clearTimer(h: unknown) {
+        t.cleared++;
+        if (t.pending === h) t.pending = undefined;
+      },
+    };
+    return t;
+  }
+
+  function mk(
+    linkPort: number,
+    httpPort: number,
+    dbPath: string,
+    http: boolean,
+    httpRetryTimers?: ReturnType<typeof manualTimers>,
+  ) {
     const lines: string[] = [];
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    let out = '';
+    stdout.on('data', (d: Buffer) => (out += d.toString()));
     const app = createApp(config(linkPort, httpPort), {
       version: '0.0.0-test',
       dbPath,
-      stdin: new PassThrough(),
-      stdout: new PassThrough(),
+      stdin,
+      stdout,
       writeStatus: (l) => lines.push(l),
       ...(http ? { http: true } : {}),
+      ...(httpRetryTimers ? { httpRetryTimers } : {}),
     });
     apps.push(app);
-    return { app, lines };
+    return { app, lines, stdin, out: () => out };
+  }
+
+  async function blockedTakeover() {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const link = await freePort();
+    let port = await freePort();
+    while (port === link) port = await freePort();
+    const primary = mk(link, port, state.db, false);
+    await primary.app.start();
+    const blocker = createServer().listen(port, '127.0.0.1');
+    await new Promise((r) => blocker.once('listening', r));
+    const timers = manualTimers();
+    const successor = mk(link, port, state.db, true, timers);
+    await successor.app.start();
+    await primary.app.stop();
+    await until(
+      () => successor.lines.some((l) => l.startsWith('HTTP off')),
+      20_000,
+      'HTTP retry notice',
+    );
+    return { state, port, blocker, timers, successor };
   }
 
   it('only the primary serves HTTP; a secondary says so, and takes over when the primary stops', async () => {
@@ -116,48 +175,69 @@ describe('--http in the app', () => {
     check.close();
   }, 30_000);
 
-  it('a takeover with the HTTP port blocked persists no hash; a later start prints a working token', async () => {
-    const state = tempState();
-    cleanups.push(state.cleanup);
-    const link = await freePort();
-    let port = await freePort();
-    while (port === link) port = await freePort();
-    const primary = mk(link, port, state.db, false);
-    await primary.app.start();
-    const blocker = createServer().listen(port, '127.0.0.1');
-    await new Promise((r) => blocker.once('listening', r));
-    const successor = mk(link, port, state.db, true);
-    await successor.app.start();
-    await primary.app.stop();
-    await until(
-      () => successor.lines.some((l) => l.startsWith('takeover failed')),
-      20_000,
-      'failed takeover',
+  it('a takeover with the HTTP port blocked stays primary, then brings HTTP up when the port frees', async () => {
+    const { state, port, blocker, timers, successor } = await blockedTakeover();
+    expect(successor.lines).toContain(`HTTP off: 127.0.0.1:${port} in use; retrying`);
+    expect(successor.lines.some((l) => l.startsWith('takeover failed'))).toBe(false);
+    expect(timers.pending?.ms).toBe(5000);
+    // It is the primary: the link is held and the tools answer.
+    successor.stdin.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '0' } } })}\n`,
     );
-    await successor.app.stop();
+    successor.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`);
+    await until(() => successor.out().includes('"id":2'), 10_000, 'tools/list');
+    expect(successor.out()).toContain('world_info');
+    // No hash and no token while HTTP is off.
     const check = openStore(state.db);
     expect(check.getHttpTokenHash()).toBeUndefined();
     check.close();
     expect(successor.lines.some((l) => l.startsWith('HTTP bearer token'))).toBe(false);
+    // Still blocked: the retry re-arms with a longer delay and still stores nothing.
+    timers.fire();
+    await until(() => timers.pending !== undefined, 5000, 're-armed timer');
+    expect(timers.pending?.ms).toBe(10_000);
+    // Freed: the next attempt serves HTTP and prints one working token.
     await new Promise((r) => blocker.close(r));
-    const retry = mk(link, port, state.db, true);
-    await retry.app.start();
+    timers.fire();
+    await until(
+      () => successor.lines.some((l) => l.startsWith('HTTP bearer token')),
+      5000,
+      'token line',
+    );
+    expect(successor.lines.filter((l) => l.startsWith('HTTP bearer token'))).toHaveLength(1);
     const tok =
-      (retry.lines.find((l) => l.startsWith('HTTP bearer token')) ?? '').split(': ')[1] ?? '';
+      (successor.lines.find((l) => l.startsWith('HTTP bearer token')) ?? '').split(': ')[1] ?? '';
     expect(tok).toMatch(/^[0-9a-f]{64}$/);
     expect(await status(port, tok)).toBe(200);
+    expect(timers.pending).toBeUndefined();
+  }, 40_000);
+
+  it('stop() cancels the HTTP retry timer', async () => {
+    const { timers, successor, blocker } = await blockedTakeover();
+    expect(timers.pending).toBeDefined();
+    await successor.app.stop();
+    expect(timers.pending).toBeUndefined();
+    expect(timers.cleared).toBeGreaterThan(0);
+    await new Promise((r) => blocker.close(r));
   }, 40_000);
 
   it.each([
-    ['behind', 3, /start the gateway once/],
+    ['behind', -1, /start the gateway once/],
     ['ahead', 99, /older than the database/],
   ])('--http-rotate-token refuses a db that is %s and leaves it alone', (_n, version, msg) => {
     const state = tempState();
     cleanups.push(state.cleanup);
-    const db = new DatabaseSync(state.db);
-    db.exec('CREATE TABLE marker (x)');
-    db.exec(`PRAGMA user_version = ${version}`);
-    db.close();
+    if (version < 0) {
+      // A real version-8 db: everything but the last migration applied.
+      const db = new DatabaseSync(state.db);
+      applyMigrations(db, MIGRATIONS.slice(0, -1));
+      db.close();
+    } else {
+      const db = new DatabaseSync(state.db);
+      db.exec('CREATE TABLE marker (x)');
+      db.exec(`PRAGMA user_version = ${version}`);
+      db.close();
+    }
     const r = spawnSync(process.execPath, [cli, '--http-rotate-token', '--db', state.db], {
       encoding: 'utf8',
       timeout: 10_000,
@@ -166,7 +246,9 @@ describe('--http in the app', () => {
     expect(r.stderr).toMatch(msg);
     expect(r.stderr).toContain('old token is unchanged');
     const after = new DatabaseSync(state.db);
-    expect(after.prepare('PRAGMA user_version').get()).toEqual({ user_version: version });
+    expect(after.prepare('PRAGMA user_version').get()).toEqual({
+      user_version: version < 0 ? MIGRATIONS.length - 1 : version,
+    });
     expect(
       after.prepare("SELECT name FROM sqlite_master WHERE name = 'gateway_settings'").all(),
     ).toEqual([]);
