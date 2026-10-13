@@ -101,8 +101,9 @@ Part 1, step-down without exit:
 - [ ] The tests in this part fail without the fix. The PR description records the failing output of a run with the fix reverted.
 
 Part 1b, module reconnect regression (no module fix expected):
-- [ ] A test drives the real `LinkClient` against `startCli` processes: A primary, then B takes over, then B is killed and A takes back over. The client is connected to the current primary within 30 s of each handover, and that primary's `/status` (or registry) reports exactly one connection.
-- [ ] If this test passes on `main` (expected), it is added as a regression test and `module/src/link/client.ts` is unchanged in the diff. If it fails, the PR names the defect with `path:line`, and the fix is limited to client.ts close and reject handling.
+- [ ] **Baseline (A to B), run on `main`:** a test drives the real `LinkClient` against `startCli` processes. A is primary and B takes over. Within 30 s the client is connected to B, and B's `/status` (or registry) reports exactly one connection. This test is expected to pass on `main` with module code unchanged. The PR description records that run.
+- [ ] **Full sequence, run with Part 1's fix applied and module code unchanged:** A is primary, B takes over, B is killed, and A takes back over. At each handover, the client is connected to the current primary within 30 s, and that primary reports exactly one connection. Do not run this on `main`, where A exits after stepping down (gateway/src/app.ts:236-240) and the sequence fails whatever the client does.
+- [ ] `module/src/link/client.ts` changes only if the baseline fails on `main`, or the full sequence fails with Part 1's fix applied. The PR then names the defect with `path:line`, and the fix is limited to client.ts close and reject handling. Otherwise client.ts is unchanged in the diff, and both tests land as regression tests.
 
 Part 2, the offline end-to-end takeover in `npm run verify`:
 - [ ] One test file under gateway/test/relay/ covers all of the following, in order and with one shared temp state dir:
