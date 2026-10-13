@@ -9,6 +9,7 @@
 - scripts/test/build-mcpb.test.mjs
 - package.json (root `devDependencies`: insert `@anthropic-ai/mcpb` only)
 - package-lock.json
+- gateway/src/app.ts, gateway/src/mcp/degraded.ts, gateway/src/mcp/session.ts (logging capability and pairing-code notice), gateway/test/bin/link-conflict.test.ts, gateway/src/bin/cli.ts (`--allow-origin` normalisation) (widened, Andrew, 2026-10-13)
 
 ## Goal
 Give Claude Desktop users a one-click install: a `.mcpb` bundle that runs the
@@ -29,10 +30,15 @@ same stdio gateway that 61 makes installable from npm. Built locally from the
 - [x] `node --test scripts/test/build-mcpb.test.mjs` passes and `npm run verify` passes
 - [ ] Manual check on the Mac: install the bundle in Claude Desktop, pair with foundry.local v14 with the GM tab open, and call `world_info` successfully; PR includes the log or screenshot. If Claude Desktop's built-in Node cannot load `node:sqlite`, stop and report the exact error; do not change runtime type or storage engine
 
+## Amendments (Andrew, 2026-10-13)
+- A second gateway instance that cannot take the link port or db stays up as a degraded MCP server (`gateway_status`; tool calls return `LINK_UNAVAILABLE`), because Claude Desktop starts extra copies for probes and Cowork/Code sessions.
+- `user_config.foundry_url` is passed as `--allow-origin`; `cli.ts` normalises each value with `new URL(v).origin` and exits 2 with a one-line error on invalid or non-http(s) values.
+- The primary also sends the pairing code as an MCP `notice` log message.
+
 ## Out of scope
 - Uploading the bundle or any GitHub release (64, 66)
 - Signing with `mcpb sign`: MVP A ships the bundle unsigned (Andrew, 2026-10-13); signing is for a later release
-- Changes to gateway source or `gateway/package.json` (61)
+- Changes to gateway source or `gateway/package.json` (61), except the files widened under Owns
 - Root `package.json` `scripts` (64)
 
 ## Attempt 1 — implemented, manual check pending (Andrew)

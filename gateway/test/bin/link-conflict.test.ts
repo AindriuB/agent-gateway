@@ -117,3 +117,20 @@ describe('second gateway instance (built cli)', () => {
     expect(second.child.exitCode).toBeNull();
   }, 20_000);
 });
+
+describe('--allow-origin validation (built cli)', () => {
+  const cli = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));
+  for (const bad of ['not a url', 'ftp://foundry.local', 'file:///etc/passwd']) {
+    it(`exits 2 naming ${bad}`, async () => {
+      const child = spawn(process.execPath, [cli, `--allow-origin=${bad}`], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let err = '';
+      child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+      const code = await new Promise((r) => child.on('close', r));
+      expect(code).toBe(2);
+      expect(err.trim().split('\n')).toHaveLength(1);
+      expect(err).toContain(bad);
+    });
+  }
+});

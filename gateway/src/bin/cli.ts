@@ -24,6 +24,24 @@ Options:
   --help              Print this help
 `;
 
+/** Reduce each --allow-origin to a bare origin (no path, no trailing slash); http(s) only. */
+function normalizeOrigins(values: readonly string[]): string[] {
+  return values.map((v) => {
+    let url: URL;
+    try {
+      url = new URL(v);
+    } catch {
+      process.stderr.write(`Invalid --allow-origin value: ${v}\n`);
+      process.exit(2);
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      process.stderr.write(`Invalid --allow-origin value (must be http or https): ${v}\n`);
+      process.exit(2);
+    }
+    return url.origin;
+  });
+}
+
 function main(): void {
   let values;
   try {
@@ -66,7 +84,9 @@ function main(): void {
   const app = createApp(config, {
     version: pkg.version,
     selector: { world: values.world, user: values.user },
-    ...(values['allow-origin']?.length ? { allowedOrigins: values['allow-origin'] } : {}),
+    ...(values['allow-origin']?.length
+      ? { allowedOrigins: normalizeOrigins(values['allow-origin']) }
+      : {}),
     ...((values.db ?? process.env.AGENT_GATEWAY_DB)
       ? { dbPath: values.db ?? process.env.AGENT_GATEWAY_DB }
       : {}),
