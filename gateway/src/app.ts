@@ -3,7 +3,7 @@ import { EventBuffer } from './events/index.js';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Readable, Writable } from 'node:stream';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -15,7 +15,14 @@ import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
-import { makeRelayConfig, RelaySecondary, RelayServer, relayEndpoint } from './relay/index.js';
+import {
+  LocalUpstream,
+  makeRelayConfig,
+  RelaySecondary,
+  RelayServer,
+  relayEndpoint,
+  StdioRelayProxy,
+} from './relay/index.js';
 
 export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
 
@@ -97,6 +104,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let queue: OfflineQueue | undefined;
   let relay: RelayServer | undefined;
   let secondary: RelaySecondary | undefined;
+  let stdioProxy: StdioRelayProxy | undefined;
   // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
   const dbPath = deps.dbPath ?? defaultDbPath();
   const startedAt = Date.now();
@@ -106,7 +114,17 @@ export function createApp(config: Config, deps: AppDeps): App {
   const app: App = {
     async start() {
       try {
-        await startPrimary(new StdioServerTransport(deps.stdin, deps.stdout));
+        // The client's stdio goes through the same proxy as a relay's, so every instance gets the
+        // same stdout back-pressure, cap and oversized-line handling. It only starts reading
+        // stdin once this instance really is the primary.
+        const [sessionSide, stdioSide] = InMemoryTransport.createLinkedPair();
+        try {
+          await startPrimary(sessionSide);
+        } catch (err) {
+          void stdioSide.close();
+          throw err;
+        }
+        await attachStdio(stdioSide);
       } catch (err) {
         await this.stop();
         // Only a conflict with another running gateway degrades. A real failure of the
@@ -123,6 +141,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
     },
     async stop() {
+      stdioProxy?.stop();
+      stdioProxy = undefined;
       await secondary?.stop();
       secondary = undefined;
       await relay?.close();
@@ -144,6 +164,24 @@ export function createApp(config: Config, deps: AppDeps): App {
   function openedStore(): Store {
     if (!store) throw new Error('store is not open yet');
     return store;
+  }
+
+  /** Serve the in-process session to the client on stdio, through the bounded proxy. */
+  async function attachStdio(stdioSide: InMemoryTransport, exitWhenGone = false): Promise<void> {
+    const proxy = new StdioRelayProxy(
+      deps.stdin ?? process.stdin,
+      deps.stdout ?? process.stdout,
+      writeStatus,
+    );
+    // A client that stops reading is dropped; a primary keeps serving other instances' sessions.
+    proxy.onClientGone = () => {
+      if (exitWhenGone) void app.stop().finally(() => process.exit(0));
+    };
+    const up = new LocalUpstream(stdioSide);
+    await up.start();
+    stdioProxy = proxy;
+    proxy.attach(up);
+    proxy.start();
   }
 
   async function startRelay(linkPort: number, createSession: () => Server): Promise<void> {
@@ -203,7 +241,9 @@ export function createApp(config: Config, deps: AppDeps): App {
         version: deps.version,
         reason: `${reason} (relaying is off: ${why})`,
       });
-      await server.connect(new StdioServerTransport(deps.stdin, deps.stdout));
+      const [sessionSide, stdioSide] = InMemoryTransport.createLinkedPair();
+      await server.connect(sessionSide);
+      await attachStdio(stdioSide, true);
       return;
     }
     secondary = new RelaySecondary({

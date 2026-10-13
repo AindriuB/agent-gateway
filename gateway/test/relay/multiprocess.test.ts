@@ -289,4 +289,48 @@ describe('relay between built CLI instances', () => {
     stuck.kill();
     await new Promise((r) => stuck.once('close', r));
   }, 90_000);
+
+  it('(h) the primary whose own client never reads stdout stays bounded and keeps serving relays', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const port = await freePort();
+    const stuck = spawn(
+      process.execPath,
+      [cliPath, '--link-port', String(port), '--db', state.db],
+      { stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH ?? '', HOME: tmpdir() } },
+    );
+    let err = '';
+    stuck.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    stuck.stdout.pause(); // never reads
+    stuck.stdin.on('error', () => undefined);
+    await until(() => /Pairing code: /.test(err), 10_000, 'pairing code');
+    const module = new FakeModule(port);
+    await module.connect({ code: /Pairing code: (\S+)/.exec(err)![1]! });
+    modules.push(module);
+    const send = (m: object) => stuck.stdin.write(`${JSON.stringify(m)}\n`);
+    send({
+      jsonrpc: '2.0',
+      id: 0,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 't', version: '0' },
+      },
+    });
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    for (let i = 1; i <= 3000; i++) send({ jsonrpc: '2.0', id: i, method: 'tools/list' });
+    const healthy = track(await startCli(port, state.db));
+    for (let n = 0; n < 5; n++) {
+      expect(await echo(healthy, `ok${n}`)).toContain(`echo:ok${n}`);
+      await sleep(200);
+    }
+    expect(stuck.exitCode).toBeNull(); // the primary keeps serving other instances
+    const rss = Number(
+      execFileSync('ps', ['-o', 'rss=', '-p', String(stuck.pid)], { encoding: 'utf8' }).trim() || 0,
+    );
+    expect(rss / 1024).toBeLessThan(400);
+    stuck.kill();
+    await new Promise((r) => stuck.once('close', r));
+  }, 90_000);
 });
