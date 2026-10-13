@@ -148,7 +148,7 @@ describe('pf2e ChoiceSet answers headless (set AGENT_GATEWAY_E2E_PF2E=1 and _WRI
         const state = (await session.browser.page.evaluate(`(async () => {
           const actor = await fromUuid(${q(actorUuid)});
           const selections = {};
-          for (const item of actor.items) Object.assign(selections, item.flags?.pf2e?.rulesSelections ?? {});
+          for (const item of actor.items) Object.assign(selections, item.flags?.pf2e?.rulesSelections ?? item.flags?.system?.rulesSelections ?? {});
           return { prompts: globalThis.__agPromptCount, selections, items: actor.items.size };
         })()`)) as { prompts: number; selections: Record<string, unknown>; items: number };
         expect(state.prompts).toBe(0);
@@ -225,7 +225,7 @@ describe('pf2e ChoiceSet answers headless (set AGENT_GATEWAY_E2E_PF2E=1 and _WRI
         const state = (await session.browser.page.evaluate(`(async () => {
           const actor = await fromUuid(${q(actorUuid)});
           const selections = {};
-          for (const item of actor.items) Object.assign(selections, item.flags?.pf2e?.rulesSelections ?? {});
+          for (const item of actor.items) Object.assign(selections, item.flags?.pf2e?.rulesSelections ?? item.flags?.system?.rulesSelections ?? {});
           return { prompts: globalThis.__agPromptCount, selections };
         })()`)) as { prompts: number; selections: Record<string, unknown> };
         expect(state.prompts).toBe(0);

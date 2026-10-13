@@ -78,7 +78,7 @@ function grantUuids(src: any, srcUuid: string, rules: any[], scan: ScanCtx): str
   return out;
 }
 /**
- * `{item|flags.pf2e.rulesSelections.x}` resolves to a preselected ChoiceSet, or else to the
+ * `{item|flags.pf2e.rulesSelections.x}` (or the `flags.system` alias) resolves to a preselected ChoiceSet, or else to the
  * agent's decision for that flag (validated against the choice's options afterwards). Otherwise
  * refuse, or in listing mode skip the grant.
  */
@@ -90,7 +90,9 @@ function substituteSelection(
   scan: ScanCtx,
 ): string | undefined {
   if (!uuid.includes('{')) return uuid;
-  const m = /^\{item\|flags\.pf2e\.rulesSelections\.([A-Za-z0-9_-]{1,64})\}$/.exec(uuid);
+  // pf2e resolves `{item|path}` with getProperty on the item (pf2e.mjs:31822-31850); the item's
+  // system flags are reachable as `flags.pf2e` and as the alias `flags.system`.
+  const m = /^\{item\|flags\.(?:pf2e|system)\.rulesSelections\.([A-Za-z0-9_-]{1,64})\}$/.exec(uuid);
   const choice = m
     ? rules.find(
         (r) => keyIs(r, 'ChoiceSet') && choiceFlag(r, src?.name, src?.system?.slug) === m[1],

@@ -773,6 +773,43 @@ describe('review fixes', () => {
       ).resolves.toBeDefined();
       expect(g.fromUuid).toHaveBeenCalledWith('Compendium.p.c.Item.granted');
     });
+    it.each(['pf2e', 'system'])('resolves the flags.%s form of the placeholder', async (ns) => {
+      const aliased = structuredClone(src);
+      (aliased.system.rules[1] as any).uuid = `{item|flags.${ns}.rulesSelections.pick}`;
+      const decisions = [
+        { flag: 'pick', value: 'Compendium.p.c.Item.granted' },
+        { flag: 'inner', value: 'a' },
+      ];
+      await expect(
+        pf2eEmbedHook.prepare({
+          systemId: 'pf2e',
+          actor: { feats: new Map() },
+          entry: { uuid: 'Compendium.p.c.Top' },
+          source: aliased,
+          overrides: {},
+          user: { id: 'u' },
+          choices: decisions,
+        }),
+      ).resolves.toBeDefined();
+      expect(g.fromUuid).toHaveBeenCalledWith('Compendium.p.c.Item.granted');
+      const listed = await listChoices(aliased, 'Compendium.p.c.Top');
+      expect(listed.message).toMatch(/1 grant/);
+    });
+    it('still refuses an unknown namespace', async () => {
+      const bad = structuredClone(src);
+      (bad.system.rules[1] as any).uuid = '{item|flags.other.rulesSelections.pick}';
+      await expect(
+        pf2eEmbedHook.prepare({
+          systemId: 'pf2e',
+          actor: { feats: new Map() },
+          entry: { uuid: 'x' },
+          source: bad,
+          overrides: {},
+          user: { id: 'u' },
+          choices: [{ flag: 'pick', value: 'Compendium.p.c.Item.granted' }],
+        }),
+      ).rejects.toThrow(/cannot be resolved headless/);
+    });
     it('never loads a decided uuid that the choice does not offer', async () => {
       await expect(prep({ choices: [{ flag: 'pick', value: 'Actor.x.Item.y' }] })).rejects.toThrow(
         /not one of its options|cannot be resolved/,
