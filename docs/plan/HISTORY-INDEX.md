@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-13 | 46 | character_build tool (describe and bounded apply) with build-hook registry, pf2e hook validates the whole batch first, native v14 2/2 | ## 2026-10-13 — character-build interface, pf2e first (task 46) |
 | 2026-10-13 | 45 | compendium_import embeds into an owned Actor (actorUuid + bounded overrides), per-system embed hook, pf2e native v14 2/2 | ## 2026-10-13 — compendium entry embedded in an owned Actor (task 45) |
 | 2026-10-12 | 33 | pf2e adapter (summary, actions, inventory, conditions), native v14 7/7, known Undo limits to task 44 | ## 2026-10-12 — pf2e system adapter (task 33) |
 | 2026-10-12 | 31, 33 | PR84 merged, task31 archived; 28 done / 14 active; pf2e33 in progress on Mac; homelab deploy-only | ## 2026-10-12 — Task 31 validation merged and archived; pf2e adapter started (tasks 31, 33) |

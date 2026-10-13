@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** none
-**Status:** Next (Andrew, 2026-10-13): wave 1, before 32
+**Status:** Complete. Offline gate green; native v14 acceptance passed 2/2 (Foundry 14.369 / pf2e 8.6.0). Merge PR number is added when Andrew merges. Lore skills, ChoiceSet answers and non-undoable rule-element side effects are follow-ups (Task49, Task44).
 **Owns:**
 - protocol/src/tools/character-build.ts (new)
 - protocol/src/tools/index.ts (insertion only)
@@ -103,3 +103,6 @@ Head `54d54b7`, bundle `67403dc9…`; `test-world` v14, approved by Andrew 2026-
 - **Structural guard.** After writes have been applied, the result must never be lost:
   - Bound and sanitise every output field the adapter produces, so the post-write result always passes the schema.
   - Cover that with a test that runs a real-shaped post-write result through `boundedAdapterData` and `characterBuild.output.parse`.
+
+## Attempt 4 — passed
+Fresh options copy per update (an options object shared across updates received `parent` from Foundry, so the later Actor update looked embedded and level boosts were lost); level boosts written through pf2e's whole `system.build` merge; a post-write guard keeps results and bounds every field. Final review approved with three suggestions, applied. Gate at `30d5538`: 3,738 fast / 2,227 slow; e2e-unit 163. Live `pf2e-build` passed 2/2 on v14.
