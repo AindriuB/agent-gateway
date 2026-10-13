@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 38 contracts have merged implementations and recorded evidence. Task 19's
+These 39 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -37,8 +37,9 @@ over unchecked historical boxes.
 | 57 | Complete; `LinkServer.listen()` rejects with typed `LinkListenError` (EADDRINUSE/EACCES); CLI prints one stderr line and exits 1, stdout untouched; local HTTP port 7421 has no equivalent | Task 57 PR (number added on merge); `npm run verify` green |
 | 60 | Complete; `module.json` declares no `relationships` (Andrew, 2026-10-13: a `systems` list hides the module from other systems); `download` tied to `version`; `scripts/pack-module.mjs` zip packer, 6/6 tests; live unpack-and-enable deferred to task 66 | Task 60 PR (number added on merge); gate 3,878 fast / 2,227 slow at `8770991` |
 | 61 | Complete; gateway is one esbuild bundle (`dist/bin/cli.js`, protocol inlined; `@modelcontextprotocol/sdk`, `ws`, `zod` external), `engines.node >=22.13`, MIT; package is 4 files, 37.7 kB; packed-tarball smoke passes; `npm publish --dry-run` only, nothing published | Task 61 PR (number added on merge); gate 3,879 fast / 2,227 slow at `3a33cd9` |
-| 62 | Implemented, reviewed once; manual Claude Desktop check pending (Andrew) before merge. `node scripts/build-mcpb.mjs` builds an unsigned `.mcpb` (about 261 KB, pinned `@anthropic-ai/mcpb` 2.1.2) from an esbuild re-bundle of the gateway CLI; manifest 0.3, Node >=22.13, darwin and win32; `THIRD_PARTY_NOTICES` for 9 packages; 4/4 build tests | Task 62 PR (number added on merge); gate 3,880 fast / 2,227 slow |
+| 62 | Complete; unsigned `.mcpb` built by `node scripts/build-mcpb.mjs` (about 261 KB, pinned `@anthropic-ai/mcpb` 2.1.2); manual Claude Desktop check passed; degraded secondaries are replaced by 69's relay | PR #102 |
 | 63 | Complete; stdio-only MCP conformance (Inspector 2.10.1 pinned, fake paired module, `tools/list` and a `demo-echo` call over the link), core and fixture-pack schema checks, compatibility matrix; HTTP/OAuth/hosted clients are MVP B | Task 63 PR (number added on merge); gate 3,879 fast / 2,227 slow at `187f24b` |
+| 69 | Implemented on its branch, reviewed in four rounds; relay of secondary stdio to the primary over a 0600 Unix socket / named pipe with a per-boot secret; manual Cowork `world_info` check pending (Andrew); live takeover verified; no live Windows run | Task 69 PR (number added on merge); gate 3,943 fast / 2,227 slow at `cdbfeaa` |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains
