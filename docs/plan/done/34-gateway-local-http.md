@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 13, 69, 70, 71
-**Status:** MVP A (Andrew, 2026-10-13); after 71 (which follows 69 and 70)
+**Status:** Done on branch `claude/task-34` (2026-10-13); manual Claude Code check pending Andrew
 **Owns:**
 - gateway/src/http/**
 - gateway/src/status/**
@@ -13,6 +13,7 @@
 - scripts/conformance.sh (add the local HTTP mode; the stdio mode is unchanged)
 - gateway/test/conformance/** (insertions only: HTTP helpers)
 - docs/compatibility.md (the Local HTTP column for Claude Code only)
+- gateway/src/store/** and gateway/test/store/** (added; approved by Andrew for migration 009 and the store accessors)
 
 ## Goal
 Serve MCP over Streamable HTTP on `127.0.0.1` with a bearer token, for desktop
@@ -51,3 +52,25 @@ only, and everything remote stays in MVP B.
 - The OAuth conformance mode and the remote matrix rows (40)
 - User docs for `--http` (65)
 - The relay transport itself (69)
+
+## Decisions (Andrew)
+- (a) The token hash lives in the SQLite store (migration 009, `gateway_settings`), not a file.
+- (b) `--http-rotate-token` is a one-shot CLI that writes the store, prints the token after the commit and exits. It refuses if the db's user_version differs from the binary's; it never migrates. The primary reads the hash on every request, so rotation takes effect with no restart.
+- (c) On a takeover whose HTTP listen fails, the instance keeps the link and relay, logs "HTTP off ... retrying", and retries on a single timer with 5-60 s backoff. First start still exits 1 on a port conflict.
+
+## Review
+Five rounds, final APPROVE at d849927.
+- Round 1: the token was persisted before listen, so it was lost on EADDRINUSE. Fixed by committing after listen.
+- Round 2: a commit versus rotate race printed a dead token. Fixed with `INSERT OR IGNORE` plus `changes > 0`. Also taken: rotate must not migrate, and a takeover-path test.
+- Round 3: approved. The failed-takeover behaviour went to Andrew, giving decision (c).
+- Round 4: a stop() race left an orphaned HTTP server and re-armed the timer. Fixed with a synchronous `httpGen` generation counter.
+- Round 5: approved.
+
+## Known gaps, not fixed
+- The generation is captured after `startPrimary`'s earlier awaits, so an embedder calling stop() during startup could still race. The CLI is unaffected because stop is followed by process.exit.
+- The guard on timer entry and the "HTTP still off" reason-change log have no tests; EACCES cannot be produced portably.
+- `gateway_status` does not show whether HTTP is on or off (mcp/** is outside Owns).
+- The secondary's HTTP log line is neutral; the relay handshake does not report HTTP state (relay/** is outside Owns).
+
+## Manual check
+PENDING (Andrew): run `foundry-agent-gateway --http` and connect Claude Code over HTTP with the bearer token.

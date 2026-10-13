@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-13 | 34 | local Streamable HTTP on 127.0.0.1:7421/mcp, bearer token hashed in SQLite (migration 009), 413/429/503 limits, per-session servers with idle close, loopback /status, `--http-rotate-token`, takeover HTTP retry, conformance over stdio and http; manual Claude Code check pending | ## 2026-10-13 — local Streamable HTTP for Claude Code (task 34) |
 | 2026-10-13 | 71 | follow-mode binding with re-bind on pairing switch and 30 s grace, migration 008 retires NULL-origin pairings, one self-refreshing pairing code, code in not_connected errors and `gateway_status`, re-bind notice capped 5 per 60 s (stderr uncapped); manual Desktop check pending | ## 2026-10-13 — pairing usability: follow-mode binding, self-refreshing code, code in chat (task 71) |
 | 2026-10-13 | 70 | zero-config pairing: pairings bound to exact browser origin (migration 007), loopback Host check, global code-guess limit, pre-hello caps, role only from hello isGM, zero-setting .mcpb; manual Desktop check pending | ## 2026-10-13 — zero-config pairing: origin-bound pairings and Foundry-sourced role (task 70) |
 | 2026-10-13 | 69 | secondary gateways relay stdio to the primary over a 0600 socket/pipe with per-boot secret; own session each; takeover; newer-config step-down; pairing notice after initialized; manual Cowork check pending | ## 2026-10-13 — secondary gateway relay to the primary (task 69) |
