@@ -23,6 +23,16 @@ function isInstanceConflict(err: unknown): boolean {
   return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
 }
 
+const MAX_WARNED_ORIGINS = 20;
+const MAX_ORIGIN_CHARS = 100;
+
+/** Make an untrusted Origin header safe for a log line: printable ASCII only, bounded. */
+export function sanitizeOrigin(origin: string | undefined): string {
+  if (origin === undefined) return '(absent)';
+  const clean = origin.replace(/[^\x21-\x7e]/g, '?');
+  return clean.length > MAX_ORIGIN_CHARS ? `${clean.slice(0, MAX_ORIGIN_CHARS)}...` : clean;
+}
+
 export function defaultDbPath(): string {
   return join(homedir(), '.foundry-agent-gateway', 'gateway.db');
 }
@@ -118,14 +128,24 @@ export function createApp(config: Config, deps: AppDeps): App {
     // connection can be handled, so the lazy getters below are never read while unset.
     const registry = new LinkRegistry();
     const codes = new PairingCodes();
+    const allowed = deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
+    const warned = new Set<string>();
     link = new LinkServer({
       port: config.linkPort,
+      onOriginRejected: (origin) => {
+        const shown = sanitizeOrigin(origin);
+        if (warned.has(shown) || warned.size >= MAX_WARNED_ORIGINS) return;
+        warned.add(shown);
+        writeStatus(
+          `rejected link connection from origin ${shown}; allowed: ${allowed.join(', ')}. Set the extension's Foundry URL to match, e.g. https://foundry.local`,
+        );
+      },
       get store() {
         return openedStore();
       },
       codes,
       registry,
-      allowedOrigins: deps.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
+      allowedOrigins: allowed,
       gatewayVersion: deps.version,
       get events() {
         return events;

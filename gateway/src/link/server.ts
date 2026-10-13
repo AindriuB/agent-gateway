@@ -36,6 +36,8 @@ export interface LinkServerOptions {
   helloTimeoutMs?: number;
   events?: EventBuffer;
   queue?: OfflineQueue;
+  /** Called when an upgrade is refused for its `Origin`; `undefined` means no header. */
+  onOriginRejected?: (origin: string | undefined) => void;
 }
 
 export const hashToken = (token: string): string =>
@@ -99,6 +101,7 @@ export class LinkServer {
   private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
     const origin = req.headers.origin;
     if (origin === undefined || !this.opts.allowedOrigins.includes(origin)) {
+      this.opts.onOriginRejected?.(origin);
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       return;
     }

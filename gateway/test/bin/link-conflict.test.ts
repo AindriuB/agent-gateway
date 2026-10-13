@@ -270,6 +270,32 @@ describe('startup failures and origins (built cli)', () => {
     }
   }, 120_000);
 
+  it('warns once per distinct rejected origin, sanitised', async () => {
+    const port = await freePort();
+    const r = run(['--link-port', String(port), '--db', join(tmp(), 'g.db')]);
+    await waitFor(() => r.err().includes('Link URL'));
+    const attempt = (origin: string) =>
+      new Promise<void>((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
+        ws.on('error', () => resolve());
+        ws.on('open', () => resolve());
+      });
+    await attempt('https://evil.example');
+    await attempt('https://evil.example');
+    await attempt(`https://${'a'.repeat(300)}`);
+    await waitFor(() => r.err().includes('aaaa'));
+    const lines = r
+      .err()
+      .split('\n')
+      .filter((l) => l.startsWith('rejected link connection'));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('origin https://evil.example;');
+    expect(lines[0]).toContain('allowed: http://localhost:30000, http://127.0.0.1:30000');
+    expect(lines[0]).toContain('e.g. https://foundry.local');
+    expect(lines[1]).toContain('...');
+    expect(lines[1].length).toBeLessThan(400);
+  }, 20_000);
+
   it('accepts a normalised --allow-origin', async () => {
     const args = ['--allow-origin=http://Foundry.Local:30000/'];
     expect(await originAccepted(args, 'http://foundry.local:30000')).toBe(true);
@@ -283,4 +309,13 @@ describe('startup failures and origins (built cli)', () => {
   it('falls back to the default origins for an empty --allow-origin=', async () => {
     expect(await originAccepted(['--allow-origin='], 'http://localhost:30000')).toBe(true);
   }, 20_000);
+});
+
+describe('sanitizeOrigin', () => {
+  it('bounds and escapes untrusted text', async () => {
+    const { sanitizeOrigin } = await import('../../src/app.js');
+    expect(sanitizeOrigin(undefined)).toBe('(absent)');
+    expect(sanitizeOrigin('http://a b\r\n\x1b[31m')).toBe('http://a?b???[31m');
+    expect(sanitizeOrigin('x'.repeat(500))).toHaveLength(103);
+  });
 });
