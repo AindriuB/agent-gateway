@@ -347,7 +347,7 @@ export const pf2eEmbedHook: EmbedHook = Object.freeze({
   },
   async run<T>(input: EmbedRunInput, create: () => Promise<T>) {
     // No wrapper (a non-choice item on a system whose install failed): the create is unchanged.
-    if (!choiceWrapperInstalled()) return { value: await create(), report: [] };
+    if (!choiceWrapperInstalled()) return { value: await create(), report: [], timedOut: false };
     return withChoiceCall(input.callId, String(input.actor?.id ?? ''), input.choices ?? [], create);
   },
   observe,

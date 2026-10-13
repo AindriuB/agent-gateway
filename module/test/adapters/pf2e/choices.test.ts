@@ -233,11 +233,21 @@ describe('registry lifetime', () => {
     ).rejects.toThrow('boom');
     expect(liveChoiceCalls()).toBe(0);
   });
-  it('is empty after a timeout', async () => {
-    await expect(withChoiceCall('c1', 'act', [], () => new Promise(() => {}), 20)).rejects.toThrow(
-      /Timed out/,
-    );
+  it('does not return on timeout; it waits for create, then the registry is empty', async () => {
+    let finish!: () => void;
+    const gate = new Promise<void>((r) => (finish = r));
+    let settled = false;
+    const run = withChoiceCall('c1', 'act', [], () => gate.then(() => 'made'), 10).then((r) => {
+      settled = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(settled).toBe(false);
     expect(liveChoiceCalls()).toBe(0);
+    expect(choiceTombstones()).toBe(1);
+    finish();
+    await expect(run).resolves.toMatchObject({ value: 'made', timedOut: true });
+    expect(choiceTombstones()).toBe(0);
     expect(CALL_TTL_MS).toBeGreaterThan(20);
   });
   it('refuses a ninth concurrent call before any write', async () => {
@@ -416,6 +426,49 @@ describe('compendium_import handler', () => {
     expect(ctx.intendCreate).not.toHaveBeenCalled();
     expect(f.mutations.filter((m: any) => m.kind === 'createEmbedded')).toHaveLength(0);
     expect(prompt).not.toHaveBeenCalled();
+  });
+  it('records every document the late create makes through ctx.created, then reports incomplete', async () => {
+    const { entry } = f.pack('Item');
+    (entry as any).toObject = () => ({
+      _id: 'source',
+      name: 'Feat',
+      type: 'feat',
+      system: { rules: [{ key: 'ChoiceSet', flag: 'pick', choices: OPTIONS }] },
+      flags: {},
+    });
+    const actor = f.doc('Actor', { _id: 'act', name: 'A', type: 'character' });
+    let late: ((v: any) => void) | undefined;
+    actor.createEmbeddedDocuments.mockImplementation(
+      async (name: string, entries: any[], options: any) => {
+        await new Promise<void>((r) => (late = r));
+        // The ChoiceSet fires after the time limit: ignored, not prompted.
+        await fire(rules(cls)('pick'), options.agentGateway.callId, entry.uuid);
+        return entries.map((d) => f.doc(name, d, actor));
+      },
+    );
+    const ctx = f.ctx('compendium_import', {
+      uuid: entry.uuid,
+      actorUuid: actor.uuid,
+      choices: [{ flag: 'pick', value: 'a' }],
+    });
+    vi.useFakeTimers();
+    try {
+      const pending = Promise.resolve(HANDLERS.compendium_import!(ctx));
+      await vi.advanceTimersByTimeAsync(CALL_TTL_MS + 1000);
+      expect(ctx.created).not.toHaveBeenCalled();
+      late!(undefined);
+      const out: any = await pending;
+      expect(out.error).toBeUndefined();
+      expect(ctx.created).toHaveBeenCalledTimes(1);
+      expect(out.structured.incomplete).toBe(true);
+      expect(out.structured.choiceReport).toMatchObject([{ flag: 'pick', status: 'unanswered' }]);
+      expect(out.text).toMatch(/past the time limit/);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(prompt).not.toHaveBeenCalled();
+    expect(liveChoiceCalls()).toBe(0);
+    expect(choiceTombstones()).toBe(0);
   });
   it('creates with an answer, passes the audit callId and returns a choiceReport', async () => {
     const { entry } = f.pack('Item');
@@ -890,12 +943,11 @@ describe('review fixes', () => {
     beforeEach(() => {
       installChoiceWrapper();
     });
-    it('keeps a bounded tombstone so a late ChoiceSet never prompts, then clears it', async () => {
+    it('keeps a bounded tombstone so a late ChoiceSet never prompts, reports it, then clears it', async () => {
       let finish!: () => void;
       const gate = new Promise<void>((r) => (finish = r));
-      await expect(
-        withChoiceCall('c1', 'act', [{ flag: 'pick', value: 'a' }], () => gate, 10),
-      ).rejects.toThrow(/Timed out/);
+      const run = withChoiceCall('c1', 'act', [{ flag: 'pick', value: 'a' }], () => gate, 10);
+      await new Promise((r) => setTimeout(r, 40));
       expect(liveChoiceCalls()).toBe(0);
       expect(choiceTombstones()).toBe(1);
       const late = rules(cls)('pick');
@@ -908,16 +960,38 @@ describe('review fixes', () => {
       await fire(rules(cls, 'other')('pick'), 'c1');
       expect(cls.original).toHaveBeenCalledTimes(1);
       finish();
-      await gate;
-      await Promise.resolve();
+      const done = await run;
+      expect(done.timedOut).toBe(true);
+      expect(done.report).toMatchObject([{ flag: 'pick', status: 'unanswered' }]);
       expect(choiceTombstones()).toBe(0);
+    });
+    it('cleans up the tombstone when create rejects after the timeout', async () => {
+      let fail!: (e: Error) => void;
+      const gate = new Promise<void>((_, r) => (fail = r));
+      const run = withChoiceCall('c1', 'act', [], () => gate, 5);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(choiceTombstones()).toBe(1);
+      fail(new Error('native failure'));
+      await expect(run).rejects.toThrow('native failure');
+      expect(choiceTombstones()).toBe(0);
+      expect(liveChoiceCalls()).toBe(0);
     });
     it('refuses new calls once the tombstone bound is reached', async () => {
       const gates: Array<() => void> = [];
-      for (let i = 0; i < MAX_TOMBSTONES; i++) {
-        await expect(
-          withChoiceCall(`t${i}`, 'act', [], () => new Promise<void>((r) => gates.push(r)), 1),
-        ).rejects.toThrow(/Timed out/);
+      const runs: Array<Promise<unknown>> = [];
+      // Eight at a time: that is the live-call limit; each becomes a tombstone after 1 ms.
+      for (let batch = 0; batch < MAX_TOMBSTONES / MAX_LIVE_CALLS; batch++) {
+        for (let i = 0; i < MAX_LIVE_CALLS; i++)
+          runs.push(
+            withChoiceCall(
+              `t${batch}-${i}`,
+              'act',
+              [],
+              () => new Promise<void>((r) => gates.push(r)),
+              1,
+            ),
+          );
+        await new Promise((r) => setTimeout(r, 15));
       }
       expect(choiceTombstones()).toBe(MAX_TOMBSTONES);
       const write = vi.fn();
@@ -926,7 +1000,7 @@ describe('review fixes', () => {
       });
       expect(write).not.toHaveBeenCalled();
       gates.forEach((r) => r());
-      await new Promise((r) => setTimeout(r, 0));
+      await Promise.all(runs);
       expect(choiceTombstones()).toBe(0);
     });
   });

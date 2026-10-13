@@ -83,10 +83,10 @@ async function embed(
         },
         create,
       )
-    : { value: await create(), report: [] };
+    : { value: await create(), report: [], timedOut: false };
   const batch = ran.value;
   const report = ran.report.slice(0, 64);
-  const incomplete = report.some((r) => r.status !== 'answered');
+  const incomplete = ran.timedOut === true || report.some((r) => r.status !== 'answered');
   const lines = [`Compendium entry embedded: ${batch.uuids[0]}`];
   if (batch.uuids.length > 1)
     lines.push(`Created ${batch.uuids.length} documents including grants.`);
@@ -97,6 +97,10 @@ async function embed(
   if (batch.uncorrelated > 0)
     lines.push(
       `${batch.uncorrelated} native write(s) made by the system during creation are uncorrelated with this audit entry and are not undoable here (task 44 owns that). The count may include concurrent writes to the same Actor, and a possible unawaited Actor update after creation is not counted.`,
+    );
+  if (ran.timedOut)
+    lines.push(
+      'The create ran past the time limit for answering choices; any choice raised after that was ignored.',
     );
   if (report.length) {
     lines.push(
@@ -115,7 +119,7 @@ async function embed(
     structured: {
       uuid: batch.uuids[0]!,
       created: batch.uuids.slice(0, AUDIT_LIMITS.targets),
-      ...(report.length ? { choiceReport: report, incomplete } : {}),
+      ...(report.length || ran.timedOut ? { choiceReport: report, incomplete } : {}),
     },
   };
 }

@@ -316,8 +316,10 @@ interface CallEntry {
  * live on globalThis so that a wrapper left by an earlier copy of this module reads the same state.
  */
 const SHARED = Symbol.for('agent-gateway.pf2e.choiceState');
-const shared: { registry: Map<string, CallEntry>; tombstones: Map<string, string> } = (G[SHARED] ??=
-  { registry: new Map(), tombstones: new Map() });
+const shared: {
+  registry: Map<string, CallEntry>;
+  tombstones: Map<string, { actorId: string; entry: CallEntry }>;
+} = (G[SHARED] ??= { registry: new Map(), tombstones: new Map() });
 const registry = shared.registry;
 const tombstones = shared.tombstones;
 export const MAX_TOMBSTONES = 32;
@@ -422,8 +424,15 @@ function makeWrapper(original: (...a: any[]) => any): (...a: any[]) => unknown {
     const actorId = this?.actor?.id;
     if (typeof callId !== 'string' || typeof actorId !== 'string') return original.call(this, args);
     // A call that timed out while its create still runs: never prompt, never answer.
-    if (tombstones.get(callId) === actorId) {
-      if (isPlain(args?.ruleSource)) args.ruleSource.ignored = true;
+    const tomb = tombstones.get(callId);
+    if (tomb?.actorId === actorId) {
+      const rule = args?.ruleSource;
+      if (isPlain(rule)) rule.ignored = true;
+      const flag =
+        typeof this.flag === 'string' && this.flag
+          ? this.flag
+          : choiceFlag(rule, args?.itemSource?.name);
+      record(tomb.entry, flag, sourceUuid(this, args), 'unanswered');
       return undefined;
     }
     const entry = registry.get(callId);
@@ -466,9 +475,13 @@ export function resetChoicesForTest(): void {
 
 /**
  * Run `create` with these decisions registered for `callId` and `actorId`, and return its result
- * with the report. The entry is removed on every exit. When the time limit passes while `create`
- * is still running, the call becomes a tombstone (bounded, see MAX_TOMBSTONES): the wrapper then
- * ignores every remaining ChoiceSet of that call, so none can prompt, until `create` settles.
+ * with the report. The entry is removed on every exit.
+ *
+ * The time limit never abandons `create`: the caller records every created document only after the
+ * native create resolves, so returning early would leave late creations outside the audit entry.
+ * When the limit passes while `create` is still running, the call turns into a tombstone (bounded,
+ * see MAX_TOMBSTONES): the wrapper stops answering and ignores (and reports) every remaining
+ * ChoiceSet, so none can prompt, and this function keeps awaiting `create` until it settles.
  */
 export async function withChoiceCall<T>(
   callId: string,
@@ -476,7 +489,7 @@ export async function withChoiceCall<T>(
   decisions: readonly ChoiceDecision[],
   create: () => Promise<T>,
   ttlMs = CALL_TTL_MS,
-): Promise<{ value: T; report: ChoiceReportEntry[] }> {
+): Promise<{ value: T; report: ChoiceReportEntry[]; timedOut: boolean }> {
   if (!choiceWrapperInstalled())
     invalid(`Choice answering is unavailable: ${choiceWrapperError()}`);
   if (registry.has(callId) || tombstones.has(callId))
@@ -487,30 +500,19 @@ export async function withChoiceCall<T>(
     invalid('Earlier imports that timed out are still finishing; try again shortly');
   const entry: CallEntry = { callId, actorId, decisions, report: [] };
   registry.set(callId, entry);
-  const created = (async () => create())();
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
-  try {
-    const value = await Promise.race([
-      created,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          reject(new Error('Timed out while creating with choice answers'));
-        }, ttlMs);
-      }),
-    ]);
-    return { value, report: entry.report };
-  } catch (error) {
-    if (timedOut) {
-      tombstones.set(callId, actorId);
-      const done = () => void tombstones.delete(callId);
-      created.then(done, done);
-    }
-    throw error;
-  } finally {
-    if (timer) clearTimeout(timer);
+  const timer = setTimeout(() => {
+    timedOut = true;
     registry.delete(callId);
+    tombstones.set(callId, { actorId, entry });
+  }, ttlMs);
+  try {
+    const value = await create();
+    return { value, report: entry.report, timedOut };
+  } finally {
+    clearTimeout(timer);
+    registry.delete(callId);
+    tombstones.delete(callId);
   }
 }
 

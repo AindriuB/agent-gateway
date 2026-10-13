@@ -58,7 +58,7 @@ export interface EmbedHook {
   run?<T>(
     input: EmbedRunInput,
     create: () => Promise<T>,
-  ): Promise<{ value: T; report: ChoiceReportEntry[] }>;
+  ): Promise<{ value: T; report: ChoiceReportEntry[]; timedOut?: boolean }>;
   /** Start counting native writes that carry no audit callOptions. */
   observe?(actor: any): EmbedObservation;
 }
