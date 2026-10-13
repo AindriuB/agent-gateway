@@ -1,22 +1,37 @@
 {
   "name": "foundry-agent-gateway",
   "version": "0.1.0",
+  "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AindriuB/agent-gateway.git",
+    "directory": "gateway"
+  },
+  "homepage": "https://github.com/AindriuB/agent-gateway#readme",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "bin": {
     "foundry-agent-gateway": "dist/bin/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noEmit && node build.mjs",
+    "prepack": "npm run build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@agent-gateway/protocol": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "ws": "^8.22.0",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }
