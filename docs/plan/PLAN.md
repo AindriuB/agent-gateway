@@ -129,7 +129,7 @@ Native coverage uses the actual GM `ask_owner` policy. Forced approval under all
 ## Next
 
 ### System adapters: pf2e complete; character-creation gaps (45, 46, 49) come before dnd5e and write-audit correlation
-Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 30 done / 12 active; Task18 stays blocked.
+Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 31 done / 24 active; Task18 stays blocked.
 
 Next (Andrew, 2026-10-13), in order: character-creation gaps from the 2026-10-13 usability session come before dnd5e, because dnd5e needs the same interfaces.
 1. Task 45 (embed a compendium entry in an owned actor) and Task 46 (character-build interface, pf2e first; `character_build` tool, build-hook registry) are complete and archived in `docs/plan/done/`. 45: native v14 2/2, ChoiceSet items refused until 49. 46: native v14 2/2; lore skills rejected; rule-element Item side effects disclosed as not undoable (44). v13 not run for either.
