@@ -255,11 +255,15 @@ async function withActorLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   locks.set(key, tail);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([
-      prev,
-      new Promise<void>((resolve) => (timer = setTimeout(resolve, BUILD_LOCK_WAIT_MS))),
+    const turn = await Promise.race([
+      prev.then(() => true),
+      new Promise<boolean>(
+        (resolve) => (timer = setTimeout(() => resolve(false), BUILD_LOCK_WAIT_MS)),
+      ),
     ]);
     clearTimeout(timer);
+    // Never run beside the holder: a successor still waits on `prev` through the chain.
+    if (!turn) invalid('Another build is still running on this Actor; retry shortly.');
     return await fn();
   } finally {
     clearTimeout(timer);

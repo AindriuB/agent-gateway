@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterBuildChange } from '@agent-gateway/protocol';
 import { characterBuild } from '@agent-gateway/protocol';
 import { boundedAdapterData } from '../../../src/tools/_adapters.js';
-import { pf2eBuildHook } from '../../../src/adapters/pf2e/build.js';
+import { BUILD_LOCK_WAIT_MS, pf2eBuildHook } from '../../../src/adapters/pf2e/build.js';
 import { selectBuildHook } from '../../../src/adapters/build.js';
 import { genericBuildHook } from '../../../src/adapters/generic/build.js';
 import { AdapterUnsupportedError } from '../../../src/adapters/types.js';
@@ -436,6 +436,39 @@ describe('concurrent builds on one Actor', () => {
       ]),
     ).rejects.toMatchObject({ message: expect.stringMatching(/Already applied: cls/) });
     expect(actor.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('lock timeout', () => {
+  afterEach(() => vi.useRealTimers());
+  it('refuses a waiter without running it, and later calls get the lock after the holder ends', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    actor.class.update = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const holder = apply([{ kind: 'key_attribute', attribute: 'dex' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const waiter = apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
+    const refused = expect(waiter).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/Another build is still running/),
+    });
+    const queued = expect(
+      apply([{ kind: 'skill_rank', skill: 'athletics', rank: 2 }]),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    await vi.advanceTimersByTimeAsync(BUILD_LOCK_WAIT_MS + 1);
+    await refused;
+    await queued;
+    expect(actor.update).not.toHaveBeenCalled();
+    finish();
+    await holder;
+    expect(actor.update).not.toHaveBeenCalled();
+    await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 2 }]);
+    expect(actor.update).toHaveBeenCalledTimes(1);
   });
 });
 
