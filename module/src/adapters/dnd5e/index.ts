@@ -208,7 +208,13 @@ function listActions(actor: any) {
       if (act.type === 'attack' && typeof act.rollAttack === 'function')
         add('attack', ' (attack roll)', 'Roll the attack without a dialog');
       if (DAMAGING.has(act.type) && typeof act.rollDamage === 'function')
-        add('damage', ' (damage roll)', 'Roll the damage without a dialog');
+        add(
+          'damage',
+          ' (damage roll)',
+          item.type === 'spell' && level > 0
+            ? 'Roll the damage without a dialog; options.level rolls it upcast to that slot level'
+            : 'Roll the damage without a dialog',
+        );
     }
   }
   rows.sort((a, b) => a.order - b.order || a.level - b.level);
@@ -273,6 +279,24 @@ async function exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
   } finally {
     if (queues.get(key) === tail) queues.delete(key);
   }
+}
+
+/**
+ * The activity of a clone of `item` prepared at `scaling` levels above its base level, the way
+ * Activity#use prepares one (dnd5e.mjs:17655, :17957-17961). Returns undefined if it cannot.
+ */
+function scaledActivity(item: any, activity: any, scaling: number): any {
+  const clone = item.clone({}, { keepId: true });
+  const actor = clone?.actor;
+  if (!clone || !actor) return undefined;
+  actor._embeddedPreparation = true;
+  try {
+    clone.updateSource({ 'flags.dnd5e.scaling': scaling });
+  } finally {
+    delete actor._embeddedPreparation;
+  }
+  clone.prepareFinalAttributes();
+  return clone.system?.activities?.get?.(activity.id);
 }
 
 /** Escape and bound a name that goes into a result message. */
@@ -357,15 +381,16 @@ async function performAction(
   let slot: string | undefined;
   if (level !== undefined) {
     if (
-      kind !== 'use' ||
+      (kind !== 'use' && kind !== 'damage') ||
       item.type !== 'spell' ||
+      spellLevel(item) < 1 ||
       typeof level !== 'number' ||
       !Number.isInteger(level) ||
       level < 1 ||
       level > 9
     )
       return invalid(
-        'Spell level must be an integer from 1 to 9 and only applies to using a spell',
+        'Spell level must be an integer from 1 to 9 and only applies to using a spell or rolling its damage (cantrips scale with character level)',
       );
     if (level < Math.max(1, spellLevel(item)))
       return invalid(`Spell level must be at least ${Math.max(1, spellLevel(item))}`);
@@ -420,11 +445,17 @@ async function performAction(
       const results = outcome as any;
       if (results) recorded = await postData(results.message, context);
     } else {
+      // Upcast damage: dnd5e scales on a temporary clone of the Item whose flags.dnd5e.scaling is
+      // set, exactly as Activity#_prepareUsageScaling does for `use` (dnd5e.mjs:17946-17963); the
+      // clone's own activity rolls the scaled damage. Nothing is written for the clone.
+      const scaling = level === undefined ? 0 : (level as number) - spellLevel(item);
+      const rolling = scaling > 0 ? scaledActivity(item, activity, scaling) : activity;
+      if (!rolling) return invalid('Could not prepare the upcast damage roll');
       const rolled = await exclusive(String(actor.uuid), () =>
-        rollUnsaved(activity, (message) =>
+        rollUnsaved(rolling, (message) =>
           kind === 'attack'
-            ? activity.rollAttack({}, { configure: false }, message)
-            : activity.rollDamage({}, { configure: false }, message),
+            ? rolling.rollAttack({}, { configure: false }, message)
+            : rolling.rollDamage({}, { configure: false }, message),
         ),
       );
       outcome = Array.isArray(rolled.rolls) && rolled.rolls.length ? rolled.rolls : undefined;

@@ -318,6 +318,59 @@ describe('dnd5e adapter', () => {
       expect(snapshot).toHaveBeenCalledWith('Actor.a.ActiveEffect.c1');
       expect(r.message).toContain('concentration on Bless ended');
     });
+    it('rolls upcast damage on a scaled clone, and rejects bad levels', async () => {
+      const dice = (spell: any) => (spell.flags?.dnd5e?.scaling ?? 0) + 8;
+      const rolled: string[] = [];
+      const mkActivity = (owner: any) => ({
+        id: 'a2',
+        type: 'save',
+        use,
+        rollAttack,
+        rollDamage: async (_c: any, _d: any, m: any) => {
+          rolled.push(`${dice(owner)}d6`);
+          hooks.get('dnd5e.preRollV2')?.(
+            { subject: owner.system.activities[0] },
+            {},
+            { data: { n: 1 }, create: m.create },
+          );
+          return [{ total: 1 }];
+        },
+        activation: { type: 'action' },
+      });
+      const base: any = { ...fireball, flags: {} };
+      base.system = { ...fireball.system, activities: coll([]) };
+      base.system.activities.push(mkActivity(base));
+      base.clone = () => {
+        const c: any = {
+          ...base,
+          flags: {},
+          actor: {},
+          system: { ...base.system, activities: coll([]) },
+        };
+        c.updateSource = (d: any) => (c.flags = { dnd5e: { scaling: d['flags.dnd5e.scaling'] } });
+        c.prepareFinalAttributes = () => {};
+        c.system.activities.push(mkActivity(c));
+        return c;
+      };
+      base.actor = actor;
+      const a: any = { ...actor, items: coll([base]) };
+      a.system = {
+        ...actor.system,
+        spells: { spell3: { value: 2, max: 3, level: 3 }, spell4: { value: 1, max: 1, level: 4 } },
+      };
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.d' });
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', {}, ctx);
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 3 }, ctx);
+      await dnd5eAdapter.performAction(a, 'damage:s1:a2', { level: 4 }, ctx);
+      expect(rolled).toEqual(['8d6', '8d6', '9d6']);
+      for (const level of [2, 5, 10, 'x', 4.5])
+        await expect(
+          dnd5eAdapter.performAction(a, 'damage:s1:a2', { level }, ctx),
+        ).rejects.toBeDefined();
+      await expect(
+        dnd5eAdapter.performAction(a, 'attack:w1:a1', { level: 3 }, ctx),
+      ).rejects.toBeDefined();
+    });
     it('serialises roll actions per actor so captures cannot cross', async () => {
       const order: string[] = [];
       let release!: () => void;
