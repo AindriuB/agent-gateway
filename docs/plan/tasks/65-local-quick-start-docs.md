@@ -1,7 +1,7 @@
 # 65 — Write the local quick start, security model and privacy statement
 
 **Repo:** .
-**Depends on:** 60, 61, 62, 69, 34
+**Depends on:** 60, 61, 62, 69, 70, 34
 **Status:** MVP A
 **Owns:**
 - README.md
@@ -26,6 +26,7 @@ Nothing about remote, HTTP, headless or Docker; those docs stay in 43.
 - docs/packs/README.md (20f)
 - docs/plan/done/28-gateway-event-buffer.md, 29-offline-event-reading.md, 30-offline-write-queue.md — what the gateway stores
 - docs/plan/tasks/69-secondary-relay-to-primary.md "Design" — secondary instances relay to the primary over a user-only local socket (named pipe on Windows) with a per-boot secret in the state dir; the security model must state this, and the Claude Desktop guide must no longer say Foundry tools work in only one Desktop session
+- docs/plan/tasks/70-zero-config-pairing-origin-and-role.md "Design": the `.mcpb` has no Foundry URL or role setting. A new pairing from any http(s) origin needs the one-time code. A token works only from the origin it was paired from, so http and https of one host pair separately. Pairings made before 70 need one re-pair. Failed code attempts are rate-limited. The tool tier is the Foundry user's own role. The security model must state these rules and their threat model, and the guides must drop the Foundry URL scheme limit noted in PLAN A2.
 - docs/plan/tasks/34-gateway-local-http.md: local Streamable HTTP on `127.0.0.1:7421` with a bearer token (MVP A since Andrew, 2026-10-13); the option for clients that prefer HTTP
 
 ## Acceptance

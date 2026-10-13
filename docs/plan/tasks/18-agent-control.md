@@ -1,7 +1,7 @@
 # 18 — Add agent management: kill switch, pause, revoke and per-agent overrides
 
 **Repo:** .
-**Depends on:** 14
+**Depends on:** 14, 70
 **Owns:**
 - module/src/agents/**
 - module/src/apps/agents/**
