@@ -221,6 +221,48 @@ describe('--http in the app', () => {
     await new Promise((r) => blocker.close(r));
   }, 40_000);
 
+  it('stop() with a successful retry listen in flight leaves no server, token or timer', async () => {
+    const { state, port, blocker, timers, successor } = await blockedTakeover();
+    await new Promise((r) => blocker.close(r));
+    const armed = timers.armed;
+    timers.fire(); // the listen is now in flight
+    await successor.app.stop();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await reachable(port)).toBe(false);
+    expect(successor.lines.some((l) => l.startsWith('HTTP bearer token'))).toBe(false);
+    expect(successor.lines.some((l) => l.startsWith('MCP HTTP at'))).toBe(false);
+    expect(timers.pending).toBeUndefined();
+    expect(timers.armed).toBe(armed);
+    const check = openStore(state.db);
+    expect(check.getHttpTokenHash()).toBeUndefined();
+    check.close();
+  }, 40_000);
+
+  it('stop() with a failing retry listen in flight does not re-arm the timer', async () => {
+    const { timers, successor, blocker } = await blockedTakeover();
+    const armed = timers.armed;
+    timers.fire(); // fails again: the port is still blocked
+    await successor.app.stop();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(timers.pending).toBeUndefined();
+    expect(timers.armed).toBe(armed);
+    expect(successor.lines.some((l) => l.startsWith('HTTP still off'))).toBe(false);
+    await new Promise((r) => blocker.close(r));
+  }, 40_000);
+
+  it('logs a retry failure only when its reason changes', async () => {
+    const { timers, successor, blocker } = await blockedTakeover();
+    const count = () => successor.lines.filter((l) => l.startsWith('HTTP still off')).length;
+    const armed = () => timers.armed;
+    for (let i = 0; i < 2; i++) {
+      const before = armed();
+      timers.fire();
+      await until(() => armed() > before, 5000, 're-armed');
+    }
+    expect(count()).toBe(0); // same EADDRINUSE reason as the first line
+    await new Promise((r) => blocker.close(r));
+  }, 40_000);
+
   it.each([
     ['behind', -1, /start the gateway once/],
     ['ahead', 99, /older than the database/],

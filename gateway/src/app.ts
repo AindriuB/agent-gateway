@@ -126,6 +126,8 @@ export function createApp(config: Config, deps: AppDeps): App {
   let relay: RelayServer | undefined;
   let httpServer: HttpServer | undefined;
   let httpRetryTimer: unknown;
+  // Bumped synchronously by stop() and teardown(): work begun under an older value is stale.
+  let httpGen = 0;
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
@@ -165,6 +167,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
     },
     async stop() {
+      httpGen++;
       cancelHttpRetry();
       stdioProxy?.stop();
       stdioProxy = undefined;
@@ -255,19 +258,36 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   /** At most one timer is ever armed; each failed attempt re-arms it with a longer, capped delay. */
-  function scheduleHttpRetry(attempt: () => Promise<void>, delay: number): void {
+  function scheduleHttpRetry(
+    gen: number,
+    attempt: () => Promise<void>,
+    delay: number,
+    lastReason: string,
+  ): void {
     cancelHttpRetry();
     const set = deps.httpRetryTimers?.setTimer ?? ((fn, ms) => setTimeout(fn, ms).unref());
     httpRetryTimer = set(() => {
       httpRetryTimer = undefined;
-      attempt().catch(() => {
-        if (link) scheduleHttpRetry(attempt, Math.min(delay * 2, HTTP_RETRY_MAX_MS));
+      if (gen !== httpGen) return;
+      attempt().catch((err: unknown) => {
+        // Never re-arm for an app that was stopped while the attempt was in flight.
+        if (gen !== httpGen) return;
+        const reason = httpFailure(err);
+        if (reason !== lastReason) writeStatus(`HTTP still off: ${reason}; retrying`);
+        scheduleHttpRetry(gen, attempt, Math.min(delay * 2, HTTP_RETRY_MAX_MS), reason);
       });
     }, delay);
   }
 
+  function httpFailure(err: unknown): string {
+    return (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
+      ? `${HTTP_BIND_HOST}:${config.httpPort} in use`
+      : (err as Error).message;
+  }
+
   /** Undo a failed or finished startPrimary. */
   async function teardown(): Promise<void> {
+    httpGen++;
     cancelHttpRetry();
     codes?.stop();
     codes = undefined;
@@ -448,6 +468,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     await startRelay(port, () =>
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
+    const gen = httpGen;
     const startHttp = async (): Promise<void> => {
       const token = loadOrCreateToken(openedStore());
       const lim = deps.httpLimits ?? {};
@@ -465,8 +486,8 @@ export function createApp(config: Config, deps: AppDeps): App {
         idleMs: lim.idleMs ?? HTTP_SESSION_IDLE_MS,
       });
       const httpPort = await candidate.listen();
-      // The app was stopped while the listen was pending.
-      if (!store) {
+      // The app was stopped while the listen was pending: commit and print nothing.
+      if (gen !== httpGen) {
         await candidate.close();
         return;
       }
@@ -490,12 +511,9 @@ export function createApp(config: Config, deps: AppDeps): App {
         // First start exits at once so the user sees the conflict. A takeover keeps Foundry
         // working and retries HTTP in the background.
         if (!retryHttp) throw err;
-        const why =
-          (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
-            ? `${HTTP_BIND_HOST}:${config.httpPort} in use`
-            : (err as Error).message;
+        const why = httpFailure(err);
         writeStatus(`HTTP off: ${why}; retrying`);
-        scheduleHttpRetry(startHttp, HTTP_RETRY_MIN_MS);
+        if (gen === httpGen) scheduleHttpRetry(gen, startHttp, HTTP_RETRY_MIN_MS, why);
       }
     }
     logger.info(`MCP stdio server started`);
