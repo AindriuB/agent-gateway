@@ -277,10 +277,6 @@ export function createApp(config: Config, deps: AppDeps): App {
     });
     const ready = { events, queue };
     server = createSessionServer(sessionOptions(ready.events, ready.queue));
-    await server.connect(transport);
-    // Relayed sessions are accepted only once everything they share is ready.
-    await startRelay(port, () => createSessionServer(sessionOptions(ready.events, ready.queue)));
-    logger.info(`MCP stdio server started`);
     // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
     // Only after the client has finished its handshake: a notification before `initialize` is
     // out of order and some clients drop or reject it. Relayed sessions never send it.
@@ -290,5 +286,9 @@ export function createApp(config: Config, deps: AppDeps): App {
       void primarySession
         .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: notice })
         .catch(() => undefined);
+    await server.connect(transport);
+    // Relayed sessions are accepted only once everything they share is ready.
+    await startRelay(port, () => createSessionServer(sessionOptions(ready.events, ready.queue)));
+    logger.info(`MCP stdio server started`);
   }
 }
