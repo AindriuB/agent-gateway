@@ -40,3 +40,49 @@ Bounded generic native validation is accepted on Foundry 13.351 and 14.369. V13 
 
 ## Local HTTP transport — task 34
 `--http` serves MCP on `127.0.0.1` only; any other bind address is refused. Every request needs a bearer token, which is generated on first run, printed once, and stored only as a hash in the SQLite store (`gateway_settings`). Comparison is constant-time and the hash is read on every request, so `--http-rotate-token` takes effect without a restart. Rotation never migrates the database. Requests are bounded by a body size limit (413), a per-token rate limit (429), a session cap (503) and idle session close. `/status` is loopback-only and shows no secrets, with world and user names HTML-escaped. Only the primary serves HTTP. This adds a local network surface: any local process holding the token can use the gateway as the paired user.
+
+## The permission model in this release — task 65
+
+This section describes what the local release enforces. Layers apply strictest-first, and a call must pass every one.
+
+1. **Role tool set.** The tools an agent sees come from the bound Foundry user's role, as Foundry reports it over the authenticated link. No gateway setting and no MCP input chooses the role. A GM-only tool is refused for a non-GM at call time as well as hidden from the list.
+2. **World policy.** The GM sets, per role and tool category (read, write, destructive, code), whether a call is allowed, asked of the owner, asked of a GM or denied. Agents for non-GM users are off until a GM enables them. Code execution cannot be set to run without asking.
+3. **Rate limits.** Per-category limits are enforced in the module, so a runaway agent is slowed whatever the client does.
+4. **Approvals.** A call that needs approval waits for a human in Foundry and returns a pending status if nobody answers in time. A denial carries its reason back to the agent. Nothing changes in the world until the call is approved.
+5. **Audit and Undo.** Every write is recorded in the GM-only Agent Gateway Audit journal, and a GM can undo it from there.
+6. **Foundry's own permission checks** apply to the user the agent acts as, on top of all of the above.
+
+OAuth token scopes are a remote-mode layer and are not in this release. There are no remote clients yet.
+
+### Pairing, code confirmation and token storage
+
+A browser pairs with the gateway only by entering a one-time pairing code. The gateway shows the code in its own stderr, in the connected client's MCP log, and through `gateway_status` or a not-connected error in chat. All of those are local to the owner. A code is valid for 10 minutes and works once. More than 10 wrong codes in 60 seconds, counted across all origins, make the gateway refuse further codes until the window passes. A wrong guess does not spend the real code. The gateway also checks the `Host` header of the link connection against DNS rebinding.
+
+A pairing is made from a specific browser origin and its token works only from that origin, so `http://` and `https://` addresses of one host pair separately. A page on any other origin cannot reuse a token it learned. Pairings made before origin binding were retired and need one re-pair.
+
+The pairing token is stored in two places. The browser keeps it in that origin's localStorage as a client-side Foundry setting. The gateway keeps only a hash of it, in the `pairings` table of its SQLite store at `~/.foundry-agent-gateway/gateway.db`. A leaked database does not reveal tokens, but anyone who can read the browser's localStorage for that origin can use that browser's pairing.
+
+### HTTP bearer token
+
+The local HTTP option (above, "Local HTTP transport") binds to `127.0.0.1` only. Its bearer token is shown once on first run and only its hash is stored, in the same SQLite store. Whoever holds the token can use the gateway as the paired user, so keep it out of chat, logs and version control, and rotate it with `--http-rotate-token` if it leaks.
+
+### Relay between gateway instances
+
+Claude Desktop can start several gateway processes from one extension. One holds the link port and the store. The others forward their MCP traffic to it over a private local channel: a Unix domain socket in the state directory on macOS and Linux, and a named pipe on Windows. The channel is protected twice. The state directory and socket are readable by your user only, and the primary writes a per-boot random secret, mode 0600, in the state directory, which a relaying instance must present first. On Windows the pipe name also carries a random per-boot suffix published only in that secret file. The relay carries MCP messages only; identity is never read from them. Each relayed connection gets its own full session on the primary. The Windows pipe path is untested in this release.
+
+### Multi-user isolation
+
+- An MCP session is bound to one (world, user) pair for its whole life. Its calls are routed to that user's connection only, and when that user is offline the call fails as offline. There is no fallback to another user's connection. Tests are in `gateway/test/routing/isolation.test.ts`.
+- Module calls run as the real `game.user` that Foundry set for the connection, never as a user named in the call. Foundry's server attaches the sender's user id to every module socket message from the logged-in session, and a modified client could not change it in the experiments in `docs/spikes/foundry-socket-identity.md`. The payload of a message is attacker-controlled, so identity is never read from it. What Foundry cannot prove is who is at the keyboard, only which logged-in session sent the message.
+- A pending call settles only from the socket it was sent to. A result or error frame from another connection carrying the same call id is ignored, and a replaced old socket cannot settle a call on the new one.
+- **Local mode's trust assumption.** On first pairing the gateway trusts the world and user ids in the module's `hello` message, and it has no way to check them. Anyone who can reach the link port with a valid pairing code can therefore claim any user id. Local mode assumes that only the owner's machine can reach the link, and the gateway listens on loopback, checks the `Host` header and requires the one-time code for that reason. If you expose that port to other machines or let others use the machine, this assumption no longer holds.
+
+### What a malicious agent can and cannot do
+
+A compromised or misled agent can do anything its user's role, the world policy and the approvals allow, and nothing else. It cannot execute code or change a destructive target without a human approving, cannot run a tool its role does not list, cannot exceed the rate limits, cannot act as another user, and cannot hide a write from the audit journal or stop a GM from undoing it. It can still waste approvals, read everything its user can read, and write what you approve. Be careful about approving anything you have not read, because the diff is the safeguard. Text in tool results, journal pages and pack descriptions is untrusted, and can try to steer the agent towards other tools you have connected to it.
+
+### Tool packs
+
+A tool pack is a separate Foundry module, so it is unsandboxed JavaScript in the GM's or player's browser with the same access as any other module. The core cannot stop a pack from reading what its user can read or calling Foundry directly.
+
+What the core does guarantee is that every call to a pack tool goes through the same dispatcher pipeline as a core tool: argument validation, role, agent control, world policy, rate limit, approval and audit. A pack cannot shadow a core tool, register a tool without a category, or reach a handler that skips the pipeline. Pack tools carry a "Third-party tool pack" tag in approvals. Pack tool descriptions and results are untrusted text. To remove a pack, a GM disables the module and reloads the world, which also removes its tools.
