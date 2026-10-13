@@ -31,11 +31,15 @@ function normalizeOrigins(values: readonly string[]): string[] {
     try {
       url = new URL(v);
     } catch {
-      process.stderr.write(`Invalid --allow-origin value: ${v}\n`);
+      process.stderr.write(
+        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+      );
       process.exit(2);
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      process.stderr.write(`Invalid --allow-origin value (must be http or https): ${v}\n`);
+      process.stderr.write(
+        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+      );
       process.exit(2);
     }
     return url.origin;
