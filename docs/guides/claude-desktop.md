@@ -44,9 +44,9 @@ Several chats can use Foundry at the same time. Every chat runs through the one 
 
 ## If something goes wrong
 
-- **`link port 7420 is in use; is another gateway running?`** Another program holds the port, or a gateway started by something else is running. Quit the other gateway. Or change the extension's link port, or use `AGENT_GATEWAY_LINK_PORT` in the config file, and use the same port in the module's gateway URL (`ws://localhost:<port>`). If a gateway instance cannot reach the one that holds the port, its tools answer `LINK_UNAVAILABLE` and say why.
+- **`LINK_UNAVAILABLE: this gateway instance is not connected to Foundry: …`** Tool calls fail with this reply when the gateway cannot take the link port or reach the one that holds it. The reason follows, for example `link port 7420 is in use; is another gateway running?`. Another program holds the port, or a gateway started by something else is running. Quit the other gateway. Or change the extension's link port, or use `AGENT_GATEWAY_LINK_PORT` in the config file, and use the same port in the module's gateway URL (`ws://localhost:<port>`).
 - **"Not connected to Foundry yet" or "is not connected".** The gateway is running but no module is paired. Open the world in a browser as the right user, keep that tab open, and enter the pairing code shown in the message.
-- **The pairing is refused.** The code may have expired or been used, the address may differ from the one you paired from, or there were more than 10 wrong codes in a minute. Ask for `gateway_status` to get a fresh code, or wait a minute.
+- **The pairing is refused.** The code may have expired or been used, the address may differ from the one you paired from, or there have been 10 wrong codes in a minute. Ask for `gateway_status` to get a fresh code, or wait a minute.
 - **The tool list is shorter than you expect.** Tools follow your Foundry user's role, and agents for non-GM users stay off until a GM turns them on in the module's policy settings.
 
 Claude Code can also use the gateway; see [the Claude Code guide](claude-code.md). The [security model](../security.md) and [privacy statement](../privacy.md) say what the agent can do and what is stored.

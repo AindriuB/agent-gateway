@@ -56,7 +56,7 @@ OAuth token scopes are a remote-mode layer and are not in this release. There ar
 
 ### Pairing, code confirmation and token storage
 
-A browser pairs with the gateway only by entering a one-time pairing code. The gateway shows the code in its own stderr, in the connected client's MCP log, and through `gateway_status` or a not-connected error in chat. All of those are local to the owner. A code is valid for 10 minutes and works once. More than 10 wrong codes in 60 seconds, counted across all origins, make the gateway refuse further codes until the window passes. A wrong guess does not spend the real code. The gateway also checks the `Host` header of the link connection against DNS rebinding.
+A browser pairs with the gateway only by entering a one-time pairing code. The gateway shows the code in its own stderr, in the connected client's MCP log, and through `gateway_status` or a not-connected error in chat. All of those are local to the owner. A code is valid for 10 minutes and works once. After 10 wrong codes in 60 seconds, counted across all origins, make the gateway refuse further codes until the window passes. A wrong guess does not spend the real code. The gateway also checks the `Host` header of the link connection against DNS rebinding.
 
 A pairing is made from a specific browser origin and its token works only from that origin, so `http://` and `https://` addresses of one host pair separately. A page on any other origin cannot reuse a token it learned. Pairings made before origin binding were retired and need one re-pair.
 
@@ -79,7 +79,7 @@ Claude Desktop can start several gateway processes from one extension. One holds
 
 ### What a malicious agent can and cannot do
 
-A compromised or misled agent can do anything its user's role, the world policy and the approvals allow, and nothing else. It cannot execute code or change a destructive target without a human approving, cannot run a tool its role does not list, cannot exceed the rate limits, cannot act as another user, and cannot hide a write from the audit journal or stop a GM from undoing it. It can still waste approvals, read everything its user can read, and write what you approve. Be careful about approving anything you have not read, because the diff is the safeguard. Text in tool results, journal pages and pack descriptions is untrusted, and can try to steer the agent towards other tools you have connected to it.
+A compromised or misled agent can do anything its user's role, the world policy and the approvals allow, and nothing else. Code execution always needs a human approval. Destructive changes need approval by default, unless a GM's world policy allows them. It cannot run a tool its role does not list, cannot exceed the rate limits, cannot act as another user, and cannot hide a write from the audit journal or stop a GM from undoing it. It can still waste approvals, read everything its user can read, and write what you approve. Be careful about approving anything you have not read, because the diff is the safeguard. Text in tool results, journal pages and pack descriptions is untrusted, and can try to steer the agent towards other tools you have connected to it.
 
 ### Tool packs
 

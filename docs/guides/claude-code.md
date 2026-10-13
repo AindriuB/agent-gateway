@@ -42,9 +42,9 @@ A code lasts 10 minutes and works once; `gateway_status` shows a fresh one when 
 
 ## If something goes wrong
 
-- **`link port 7420 is in use; is another gateway running?`** Another program or another gateway holds the port. Stop it, or start this one with `--link-port <n>` and set the module's gateway URL to `ws://localhost:<n>`. A gateway instance that cannot reach the one holding the port answers `LINK_UNAVAILABLE` and says why.
+- **`LINK_UNAVAILABLE: this gateway instance is not connected to Foundry: …`** Tool calls fail with this reply when the gateway cannot take the link port. The reason follows, for example `link port 7420 is in use; is another gateway running?`, or `another gateway holds link port 7420`. Another program or another gateway holds the port. Stop it, or start this one with `--link-port <n>` and set the module's gateway URL to `ws://localhost:<n>`. If you start the gateway in a terminal, the same reason is printed there.
 - **"Not connected to Foundry yet" or "is not connected".** No module is paired. Open the world as the right user in a browser, keep the tab open, and enter the code from the message.
 - **HTTP answers 401.** The token is missing, wrong or rotated. Use the current token.
-- **The pairing is refused.** The code may have expired, been used already or come from a different address, or there were more than 10 wrong codes in a minute. Ask for `gateway_status` for a fresh code.
+- **The pairing is refused.** The code may have expired, been used already or come from a different address, or there have been 10 wrong codes in a minute. Ask for `gateway_status` for a fresh code.
 
 See also [the Claude Desktop guide](claude-desktop.md), the [security model](../security.md) and the [privacy statement](../privacy.md).
