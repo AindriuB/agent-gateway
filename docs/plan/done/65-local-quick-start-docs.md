@@ -51,5 +51,6 @@ Nothing about remote, HTTP, headless or Docker; those docs stay in 43.
 Landed on `claude/task-65` (docs only).
 
 - Review: one round requested changes (an overclaim about destructive approvals, the off-by-one on the code limit, and the LINK_UNAVAILABLE framing). Fixed in 89f70be and checked.
+- Review round 3 (external review of PR #111): two overclaims in `docs/security.md`. Sessions were described as bound to one identity for life, which is true only with `--user`; without it, follow mode can re-bind to another user or world. Undo was promised for every approved action, but approved code can make changes Undo cannot reverse, and Undo excludes some document classes. Fixed in 8153f84, with the code evidence checked.
 - Not verified live: the `.mcpb` install in Claude Desktop, the module menu path in a live Foundry, and Windows paths.
 - Manual check pending (Andrew): follow the README quick start end to end.
