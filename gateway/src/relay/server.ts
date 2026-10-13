@@ -11,7 +11,13 @@ import {
   STEPDOWN_GRACE_MS,
   type RelayRefusal,
 } from './constants.js';
-import { describeConfigDiff, parseRelayConfig, sameConfig, sameSessionConfig, type RelayConfig } from './config.js';
+import {
+  describeConfigDiff,
+  parseRelayConfig,
+  sameConfig,
+  sameSessionConfig,
+  type RelayConfig,
+} from './config.js';
 import { LineSplitter } from './lines.js';
 import { newSecret, parseSecretFile, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';

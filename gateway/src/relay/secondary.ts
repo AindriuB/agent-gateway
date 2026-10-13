@@ -222,10 +222,7 @@ export class RelaySecondary {
     await old?.close();
   }
 
-  private async acquire(
-    tryPrimary: boolean,
-    failedWith: string,
-  ): Promise<Outcome> {
+  private async acquire(tryPrimary: boolean, failedWith: string): Promise<Outcome> {
     let last = failedWith;
     // Set once a primary agrees to step down for us: from then on we also try to take its place.
     let takeOver = tryPrimary;
