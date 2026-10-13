@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-13 | 32 | dnd5e adapter (summary, use/attack/damage actions, conditions, embed hook, skill_rank build hook), native v14 7/7, advancements not applied | ## 2026-10-13 — dnd5e system adapter (task 32) |
 | 2026-10-13 | 49 | pf2e ChoiceSet answered headlessly (compendium_import choices, character_build listChoices), call-keyed preCreate wrapper, bounded filter resolution, native v14 2/2 | ## 2026-10-13 — pf2e ChoiceSet answered headlessly (task 49) |
 | 2026-10-13 | 46 | character_build tool (describe and bounded apply) with build-hook registry, pf2e hook validates the whole batch first, native v14 2/2 | ## 2026-10-13 — character-build interface, pf2e first (task 46) |
 | 2026-10-13 | 45 | compendium_import embeds into an owned Actor (actorUuid + bounded overrides), per-system embed hook, pf2e native v14 2/2 | ## 2026-10-13 — compendium entry embedded in an owned Actor (task 45) |
