@@ -118,6 +118,11 @@ describe('pf2e validation refuses before any write', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
     expect(events).toEqual([]);
   });
+  it('accepts an untrained core skill absent from the sparse source data', async () => {
+    expect(actor._source.system.skills.athletics).toBeUndefined();
+    await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]);
+    expect(actor.lastPatch).toEqual({ 'system.skills.athletics.rank': 1 });
+  });
   it('allows rank 3 at level 7 and rank 4 at level 15', async () => {
     await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 3 }]);
     actor = pf2eActor(15);

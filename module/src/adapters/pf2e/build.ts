@@ -160,7 +160,7 @@ function plan(actor: any, changes: readonly CharacterBuildChange[]): Plan {
         patch(cls, 'system.keyAbility.selected', c.attribute);
       }
     } else if (c.kind === 'skill_rank') {
-      const skills = actor._source?.system?.skills ?? actor.system?.skills;
+      const skills = actor.system?.skills;
       if (!c.skill || !own(skills, c.skill)) invalid('Unknown skill');
       if (c.rank === undefined) invalid('A skill rank is required');
       const cap = level < 7 ? 2 : level < 15 ? 3 : 4;

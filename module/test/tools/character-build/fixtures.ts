@@ -52,7 +52,8 @@ export function pf2eActor(level = 7): any {
       skills: { acrobatics: { rank: 1 }, athletics: { rank: 0 } },
       details: { keyability: { value: 'str' } },
     },
-    _source: { system: { skills: { acrobatics: {}, athletics: {} } } },
+    // pf2e 8.6.0 stores a sparse source (pf2e.mjs:35316); prepared system.skills is complete.
+    _source: { system: { skills: { acrobatics: { rank: 1 } } } },
     update: vi.fn(async (patch: any, options: any) => {
       events.push('update:Actor.a');
       actor.lastPatch = patch;
