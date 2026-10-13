@@ -152,8 +152,23 @@ describe('pf2e character_build (set AGENT_GATEWAY_E2E_PF2E=1 and AGENT_GATEWAY_E
     'applies ancestry, background, class, level boosts, a skill rank and a feat slot in one call',
     async () => {
       const before = await call('character_build');
-      const open = ((before.structured?.featSlots ?? []) as Row[]).find((s) => !s.itemUuid);
-      expect(open, 'the character has an open feat slot').toBeDefined();
+      const openSlots = ((before.structured?.featSlots ?? []) as Row[]).filter((s) => !s.itemUuid);
+      // The temporary feat has category 'class', so only a class group slot accepts it.
+      const open = openSlots.find((s) => s.group === 'class');
+      expect(open, 'the character has an open class feat slot').toBeDefined();
+      const wrong = openSlots.find((s) => s.group === 'ancestry');
+      if (wrong) {
+        const refused = await call('character_build', {
+          changes: [{ kind: 'feat_slot', slot: wrong.slot, itemUuid: featUuid }],
+        });
+        expect(refused.isError).toBe(true);
+        expect(refused.text).toMatch(/INVALID_ARGS|cannot fill/);
+        const unchanged = await call('character_build');
+        expect(
+          ((unchanged.structured?.featSlots ?? []) as Row[]).find((f) => f.slot === wrong.slot)
+            ?.itemUuid,
+        ).toBeUndefined();
+      }
       const changes = [
         { kind: 'attribute_boost', source: 'ancestry', slot: '0', attribute: 'str' },
         { kind: 'attribute_boost', source: 'background', slot: '1', attribute: 'con' },

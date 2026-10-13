@@ -133,6 +133,14 @@ describe('pf2e validation refuses before any write', () => {
     expect(ctx.snapshot).not.toHaveBeenCalled();
     expect(events).toEqual([]);
   });
+  it('rejects a feat whose category the slot group does not accept, with no write', async () => {
+    actor.feats[0].isFeatValid = () => false;
+    const ctx = context();
+    await expect(
+      apply([{ kind: 'feat_slot', slot: 'class-1', itemUuid: 'Actor.a.Item.feat1' }], ctx),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGS', message: 'This feat cannot fill that slot' });
+    expect(events).toEqual([]);
+  });
   it('allows rank 3 at level 7 and rank 4 at level 15', async () => {
     await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 3 }]);
     actor = pf2eActor(15);
