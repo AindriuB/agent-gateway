@@ -278,7 +278,6 @@ async function exclusive<T>(key: string, fn: () => Promise<T>): Promise<T> {
 /** Escape and bound a name that goes into a result message. */
 const safeName = (v: unknown, max = 80): string =>
   text(v, max * 2)
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
     .slice(0, max);
