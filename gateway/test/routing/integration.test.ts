@@ -35,7 +35,11 @@ async function start(isGM = false) {
 describe('gateway end to end with a fake module', () => {
   it('lists and calls a fixture tool, then reports WORLD_OFFLINE after disconnect', async () => {
     const { h, m, s } = await start();
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['fixture_tool']);
 
     const pending = s.client.callTool({ name: 'fixture_tool', arguments: { a: 'hi' } });
     const frame = (await m.tc.next('call')) as CallFrame;
@@ -91,7 +95,11 @@ describe('gateway end to end with a fake module', () => {
 
   it('filters the tool list by the bound user role and hides GM tools from players', async () => {
     const player = await start(false);
-    expect((await player.s.client.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
+    expect(
+      (await player.s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['fixture_tool']);
     const res = await player.s.client.callTool({ name: 'fixture_gm_tool', arguments: {} });
     expectErrorCode(res, 'FORBIDDEN');
     expect(player.m.tc.messages).toEqual([]);
@@ -99,25 +107,34 @@ describe('gateway end to end with a fake module', () => {
 
   it('lists GM tools for a GM connection', async () => {
     const { s } = await start(true);
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual([
-      'fixture_tool',
-      'fixture_gm_tool',
-    ]);
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['fixture_tool', 'fixture_gm_tool']);
   });
 
   it('sends tools/list_changed when the bound connection appears and disappears', async () => {
     h = await startServer();
     const s = await openSession(h, { world: 'w1', user: 'alice' });
     sessions.push(s);
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual(['fixture_tool']);
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['fixture_tool']);
     const m = await pairModule(h, 'uA', { userName: 'alice', isGM: true });
     modules.push(m);
     await until(() => s.listChanged.count >= 1);
-    expect((await s.client.listTools()).tools).toHaveLength(2);
+    expect(
+      (await s.client.listTools()).tools.filter((t) => t.name !== 'gateway_status'),
+    ).toHaveLength(2);
     const before = s.listChanged.count;
     m.tc.ws.close();
     await until(() => s.listChanged.count > before);
-    expect((await s.client.listTools()).tools).toHaveLength(1);
+    expect(
+      (await s.client.listTools()).tools.filter((t) => t.name !== 'gateway_status'),
+    ).toHaveLength(1);
   });
 
   it('does not notify for other users connections', async () => {

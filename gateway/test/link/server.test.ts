@@ -69,14 +69,14 @@ describe('PairingCodes', () => {
     expect(codes.consume(fine)).toBe(true);
   });
 
-  it('prunes expired unused codes when generating', () => {
+  it('holds one live code: generate returns it until it expires', () => {
     let t = 0;
     const codes = new PairingCodes(() => t);
-    codes.generate();
-    codes.generate();
-    expect(codes.size).toBe(2);
+    const first = codes.generate();
+    expect(codes.generate()).toBe(first);
+    expect(codes.size).toBe(1);
     t = 10 * 60 * 1000;
-    codes.generate();
+    expect(codes.generate()).not.toBe(first);
     expect(codes.size).toBe(1);
   });
 });

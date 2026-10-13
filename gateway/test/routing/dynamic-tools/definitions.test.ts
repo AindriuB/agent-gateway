@@ -92,7 +92,7 @@ describe('dynamic definitions', () => {
         ],
       },
     });
-    expect(list).toHaveLength(TOOLS.length + 1);
+    expect(list).toHaveLength(TOOLS.length + 2); // plus the pack tool and gateway_status
     expect(list.slice(0, TOOLS.length)).toEqual(
       TOOLS.map((t) => ({
         name: t.name,
@@ -107,7 +107,7 @@ describe('dynamic definitions', () => {
         },
       })),
     );
-    expect(list.at(-1)?.description).toBe(
+    expect(list.at(-2)?.description).toBe(
       '[Third-party tool pack demo: demo-pack 1.0.0] Fixture pack tool',
     );
     expect(logs.some((l) => l.includes('version skew'))).toBe(true);
@@ -189,7 +189,11 @@ describe('dynamic definitions', () => {
     const bad = structuredClone(pack('demo-bad'));
     mutate(bad);
     store.set(conn, [core(), bad]);
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual([core().name]);
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual([core().name]);
     expect(logs.some((l) => l.startsWith('dropped tool '))).toBe(true);
     expect(logs.every((l) => !/[\x00-\x1f\x7f-\x9f\p{Cf}]/u.test(l))).toBe(true);
   });
@@ -202,7 +206,11 @@ describe('dynamic definitions', () => {
       Array.from({ length: 65 }, () => pack()),
     );
     store.set(conn, [{ ...pack(), description: 'x'.repeat(300 * 1024) }]);
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual(['demo-tool']);
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['demo-tool']);
     expect(logs.filter((l) => l.includes('ignored toolset'))).toHaveLength(2);
   });
 
@@ -212,7 +220,11 @@ describe('dynamic definitions', () => {
       pack(`demo-tool${String(i).padStart(2, '0')}`),
     ).reverse();
     store.set(conn, tools);
-    expect((await s.client.listTools()).tools.map((t) => t.name)).toEqual(
+    expect(
+      (await s.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(
       [...tools]
         .reverse()
         .slice(0, 24)
@@ -229,7 +241,11 @@ describe('dynamic definitions', () => {
     store.set(h.registry.get('w1', 'player')!, [pack('demo-player')]);
     const ps = await openSession(h, { user: 'player' }, TOOLS, 5000, { toolsets: store });
     sessions.push(ps);
-    expect((await ps.client.listTools()).tools.map((t) => t.name)).toEqual(['demo-player']);
+    expect(
+      (await ps.client.listTools()).tools
+        .filter((t) => t.name !== 'gateway_status')
+        .map((t) => t.name),
+    ).toEqual(['demo-player']);
     expectErrorCode(
       await ps.client.callTool({ name: 'demo-tool', arguments: { value: 'x' } }),
       'FORBIDDEN',

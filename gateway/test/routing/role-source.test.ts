@@ -28,7 +28,9 @@ async function start(isGM: boolean) {
   return s;
 }
 const names = async (s: McpSession, meta?: Record<string, unknown>) =>
-  (await s.client.listTools(meta ? { _meta: meta } : undefined)).tools.map((t) => t.name);
+  (await s.client.listTools(meta ? { _meta: meta } : undefined)).tools
+    .filter((t) => t.name !== 'gateway_status')
+    .map((t) => t.name);
 
 // The tier is read from the authenticated hello, so no gateway setting can be involved. Loading the
 // config with each value proves that setting changes nothing about the session built beside it.

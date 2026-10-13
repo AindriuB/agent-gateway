@@ -85,9 +85,11 @@ describe('gateway event tools over authenticated link and real SDK', () => {
   };
   it('requires affirmative metadata and never announces history or forwards polls to module', async () => {
     const c = await session();
-    expect((await c.listTools()).tools).toEqual([]);
+    expect((await c.listTools()).tools.filter((t) => t.name !== 'gateway_status')).toEqual([]);
     await announce(true);
-    expect((await c.listTools()).tools.map((t) => t.name)).toEqual(['events_poll']);
+    expect(
+      (await c.listTools()).tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name),
+    ).toEqual(['events_poll']);
     expectErrorCode(
       await c.callTool({ name: 'events_history', arguments: { since: '2026-01-01T00:00:00Z' } }),
       'FORBIDDEN',
@@ -207,7 +209,9 @@ describe('gateway event tools over authenticated link and real SDK', () => {
       expectErrorCode(await pending, 'FORBIDDEN');
       expect(events.pendingCount).toBe(0);
       expect(toolsets.get(conn)).toBe(previous);
-      expect((await c.listTools()).tools.map((t) => t.name)).toEqual([packTool.name]);
+      expect(
+        (await c.listTools()).tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name),
+      ).toEqual([packTool.name]);
       expectErrorCode(
         await c.callTool({ name: 'events_poll', arguments: { after: 0 } }),
         'FORBIDDEN',
@@ -225,9 +229,9 @@ describe('gateway event tools over authenticated link and real SDK', () => {
       // A later valid identical definition may grant again; cached signatures must not suppress it.
       tc.send({ type: 'toolset', tools: [packTool], eventReadAllowed: true });
       await until(() => toolsets.eventReadAllowed(conn));
-      expect((await c.listTools()).tools.map((t) => t.name)).toEqual(
-        expect.arrayContaining(['events_poll', packTool.name]),
-      );
+      expect(
+        (await c.listTools()).tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name),
+      ).toEqual(expect.arrayContaining(['events_poll', packTool.name]));
     },
   );
   it('revokes before closing a schema-invalid authenticated announcement', async () => {
@@ -266,10 +270,9 @@ describe('gateway event tools over authenticated link and real SDK', () => {
     tc.send({ type: 'eventPolicy', enabled: true, retentionDays: 14 });
     await until(() => store.events.policy('w1').enabled);
     const bound = await session();
-    expect((await bound.listTools()).tools.map((t) => t.name)).toEqual([
-      'events_poll',
-      'events_history',
-    ]);
+    expect(
+      (await bound.listTools()).tools.filter((t) => t.name !== 'gateway_status').map((t) => t.name),
+    ).toEqual(['events_poll', 'events_history']);
     tc.ws.close();
     await tc.untilClosed();
     await until(() => registry.list().length === 0);
@@ -290,7 +293,7 @@ describe('gateway event tools over authenticated link and real SDK', () => {
     expectErrorCode(await named.callTool({ name: 'events_poll', arguments: {} }), 'WORLD_OFFLINE');
     store.events.setPolicy('w1', { enabled: false, retentionDays: 14 });
     expectErrorCode(await exact.callTool({ name: 'events_poll', arguments: {} }), 'WORLD_OFFLINE');
-    expect((await exact.listTools()).tools).toEqual([]);
+    expect((await exact.listTools()).tools.filter((t) => t.name !== 'gateway_status')).toEqual([]);
   });
   it('purges only authenticated world rows and replies to the exact request with a count', async () => {
     await announce(true);
