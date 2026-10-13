@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-13 — link port bind failures reported as one stderr line (task 57)
+
+`LinkServer.listen()` now rejects with a typed `LinkListenError` (`code` EADDRINUSE or EACCES, plus `port`) instead of Node's raw `listen EADDRINUSE ...` text. The CLI routes start failures through a new `reportStartFailure` (`gateway/src/bin/start-failure.ts`), which writes exactly one stderr line (`link port N is in use; is another gateway running?`, or `permission denied binding link port N`) and exits 1; other errors keep the `Failed to start:` line. Other bind codes pass through unchanged. `npm run verify` passed, and a real check against an occupied port gave one stderr line, exit 1 and empty stdout, which matters because stdout is the MCP stdio channel.
+
+**Cost:** The trigger was task 32's dnd5e live e2e run, where two gateways both took port 7429 and the MCP client saw only `MCP error -32000: Connection closed`. `app.ts` was deliberately not touched, so the store opened before `listen()` is still not closed on a failed start; the process exits anyway. Reviewer left two test-only nits unfixed: `listen-errors.test.ts:17` leaks the second harness's SQLite store when `startServer` fails, and `start-failure.test.ts:20` does not assert a single write for the generic error. The local HTTP port (7421) has no equivalent mapping.
+
 ## 2026-10-13 — pf2e ChoiceSet answered headlessly (task 49)
 
 `compendium_import` gains `choices`, `onUnanswered` and `choiceReport`, and `character_build` gains a GM-only `listChoices`, so ChoiceSet prompts on embedded items can be answered without a dialog. A permanent preCreate wrapper, detected by marker and installed at ready, routes each prompt to a per-call registry keyed by callId (cap 8, 120 s, plus timeout tombstones capped at 32). Filter choices are resolved index-only within bounds (12 packs, 30,000 entries, 8 queries); otherwise, and for any actor-dependent filter, they are `dynamic` and enforced at create time. The default flag mirrors pf2e (`aBCFeat`). GrantItem placeholders accept `flags.pf2e.` and `flags.system.` and load only validated values, and observability fails closed. A spike on test-world v14.369 / pf2e 8.6.0 at `fe2f51e` showed the callId reaching ChoiceSet.preCreate at all three layers (top-level, class `system.items` grant, GrantItem child) with 0 prompts. The gate at `7a77f08` passed `npm run verify` (3,815 fast / 2,227 slow); live `pf2e-choices` passed 2 of 2 on v14. v13 was not run.
