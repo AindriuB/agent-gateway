@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 34, 35
-**Status:** Deferred beyond B.
+**Status:** Deferred beyond B. Lands after 71: 71 takes migration 008 (this task takes the next free number) and edits `session.ts` and `app.ts`, which this task then only inserts into.
 **Owns:**
 - gateway/src/audit/**
 - gateway/test/audit/**

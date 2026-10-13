@@ -3,6 +3,7 @@
 **Repo:** .
 **Depends on:** 70
 **Status:** MVP A (Andrew approved 2026-10-13); before 34
+**Decisions (Andrew, 2026-10-13):** defaults approved as written.
 **Owns:**
 - gateway/src/routing/binding.ts
 - gateway/src/mcp/session.ts
