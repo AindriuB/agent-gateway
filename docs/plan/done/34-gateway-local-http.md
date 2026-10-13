@@ -59,18 +59,20 @@ only, and everything remote stays in MVP B.
 - (c) On a takeover whose HTTP listen fails, the instance keeps the link and relay, logs "HTTP off ... retrying", and retries on a single timer with 5-60 s backoff. First start still exits 1 on a port conflict.
 
 ## Review
-Five rounds, final APPROVE at d849927.
+Six rounds (the sixth was an external review of PR #109), final APPROVE at 50887d1.
 - Round 1: the token was persisted before listen, so it was lost on EADDRINUSE. Fixed by committing after listen.
 - Round 2: a commit versus rotate race printed a dead token. Fixed with `INSERT OR IGNORE` plus `changes > 0`. Also taken: rotate must not migrate, and a takeover-path test.
 - Round 3: approved. The failed-takeover behaviour went to Andrew, giving decision (c).
 - Round 4: a stop() race left an orphaned HTTP server and re-armed the timer. Fixed with a synchronous `httpGen` generation counter.
 - Round 5: approved.
+- Round 6 (external review of PR #109): P2, during takeover a token commit that failed after a successful listen (SQLite busy) left the listener running. Retries hit EADDRINUSE against our own port, and the orphan 401'd every request. Fixed in 50887d1 by closing the candidate before the error propagates. The regression test failed without the fix and the reviewer mutation-checked it two ways. Reviewer APPROVE. Tester PASS at 50887d1: verify twice (4053 + 2227), mcpb, conformance ok, real gateway unchanged.
 
 ## Known gaps, not fixed
 - The generation is captured after `startPrimary`'s earlier awaits, so an embedder calling stop() during startup could still race. The CLI is unaffected because stop is followed by process.exit.
 - The guard on timer entry and the "HTTP still off" reason-change log have no tests; EACCES cannot be produced portably.
 - `gateway_status` does not show whether HTTP is on or off (mcp/** is outside Owns).
 - The secondary's HTTP log line is neutral; the relay handshake does not report HTTP state (relay/** is outside Owns).
+- An injected `writeStatus` that throws after the assignment could still make a retry hit our own listener. The default writer cannot throw.
 
 ## Manual check
 PENDING (Andrew): run `foundry-agent-gateway --http` and connect Claude Code over HTTP with the bearer token.
