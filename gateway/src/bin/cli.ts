@@ -81,12 +81,12 @@ function main(): void {
     }
     throw err;
   }
+  // An empty value (a cleared host setting) means "use the defaults".
+  const allowOrigins = (values['allow-origin'] ?? []).filter((v) => v !== '');
   const app = createApp(config, {
     version: pkg.version,
     selector: { world: values.world, user: values.user },
-    ...(values['allow-origin']?.length
-      ? { allowedOrigins: normalizeOrigins(values['allow-origin']) }
-      : {}),
+    ...(allowOrigins.length ? { allowedOrigins: normalizeOrigins(allowOrigins) } : {}),
     ...((values.db ?? process.env.AGENT_GATEWAY_DB)
       ? { dbPath: values.db ?? process.env.AGENT_GATEWAY_DB }
       : {}),

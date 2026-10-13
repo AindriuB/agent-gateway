@@ -1,11 +1,13 @@
 import { OfflineQueue } from './offline-queue/service.js';
 import { EventBuffer } from './events/index.js';
 import { mkdirSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
+import { LinkListenError, mapListenError } from './link/server.js';
 import { LinkRegistry, LinkServer, PairingCodes, PAIRING_CODE_TTL_MS } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
 import { createDegradedServer } from './mcp/degraded.js';
@@ -14,6 +16,23 @@ import type { UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 
 export const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:30000', 'http://127.0.0.1:30000'];
+
+/** True for failures caused by another running gateway owning the link port or the db. */
+function isInstanceConflict(err: unknown): boolean {
+  if (err instanceof LinkListenError) return err.code === 'EADDRINUSE';
+  const e = err as { errcode?: number; message?: string } | null;
+  return e?.errcode === 5 || /database is locked/i.test(e?.message ?? '');
+}
+
+/** Bind and release the link port, so a taken port fails before the store is opened. */
+async function probeLinkPort(port: number): Promise<void> {
+  const probe = createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', (err) => reject(mapListenError(err, port)));
+    probe.listen(port, '127.0.0.1', () => resolve());
+  });
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+}
 
 export function defaultDbPath(): string {
   return join(homedir(), '.foundry-agent-gateway', 'gateway.db');
@@ -69,11 +88,12 @@ export function createApp(config: Config, deps: AppDeps): App {
       try {
         await startPrimary();
       } catch (err) {
-        // Another gateway owns the link port or the pairing store. Release anything
-        // half-opened and stay up as an MCP server that reports the conflict.
         await this.stop();
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.warn(`running without a Foundry link: ${reason}`);
+        // Only a conflict with another running gateway degrades. A real failure of the
+        // only instance (corrupt db, permissions) must still exit 1 via reportStartFailure.
+        if (!isInstanceConflict(err)) throw err;
+        const reason = (err as Error).message;
+        logger.error(`running without a Foundry link: ${reason}`);
         writeStatus(`Failed to start link: ${reason}`);
         server = createDegradedServer({ version: deps.version, reason });
         await server.connect(new StdioServerTransport());
@@ -95,6 +115,9 @@ export function createApp(config: Config, deps: AppDeps): App {
   };
 
   async function startPrimary(): Promise<void> {
+    // Learn whether another gateway holds the link port before touching the shared db:
+    // opening it runs migrations and retention deletes, which a secondary must not do.
+    await probeLinkPort(config.linkPort);
     const dbPath = deps.dbPath ?? defaultDbPath();
     if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true, mode: 0o700 });
     store = openStore(dbPath);

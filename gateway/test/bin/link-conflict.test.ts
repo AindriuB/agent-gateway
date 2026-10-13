@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
+import { DatabaseSync } from 'node:sqlite';
+import WebSocket from 'ws';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +31,7 @@ describe('second gateway instance (built cli)', () => {
   const dirs: string[] = [];
   afterEach(async () => {
     for (const c of children.splice(0)) {
+      if (c.exitCode !== null) continue;
       c.kill();
       await new Promise((r) => c.once('close', r));
     }
@@ -133,4 +136,114 @@ describe('--allow-origin validation (built cli)', () => {
       expect(err).toContain(bad);
     });
   }
+});
+
+describe('startup failures and origins (built cli)', () => {
+  const cli = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));
+  const dirs: string[] = [];
+  const children: ChildProcessWithoutNullStreams[] = [];
+  const servers: ReturnType<typeof createNetServer>[] = [];
+  afterEach(async () => {
+    for (const c of children.splice(0)) {
+      if (c.exitCode !== null) continue;
+      c.kill();
+      await new Promise((r) => c.once('close', r));
+    }
+    for (const sv of servers.splice(0)) await new Promise((r) => sv.close(r));
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  const tmp = () => {
+    const d = mkdtempSync(join(tmpdir(), 'ag-start-'));
+    dirs.push(d);
+    return d;
+  };
+  const hold = (): Promise<number> =>
+    new Promise((resolve) => {
+      const sv = createNetServer().listen(0, '127.0.0.1', () => {
+        servers.push(sv);
+        resolve((sv.address() as { port: number }).port);
+      });
+    });
+  const freePort = async (): Promise<number> => {
+    const port = await hold();
+    await new Promise((r) => servers.pop()?.close(r));
+    return port;
+  };
+  const run = (args: string[]) => {
+    const child = spawn(process.execPath, [cli, ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
+    children.push(child);
+    let err = '';
+    let out = '';
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    return { child, err: () => err, out: () => out };
+  };
+  const waitFor = async (cond: () => boolean) => {
+    for (let n = 0; n < 100 && !cond(); n++) await new Promise((r) => setTimeout(r, 50));
+    expect(cond()).toBe(true);
+  };
+
+  it('exits 1 for a corrupt db when the port is free', async () => {
+    const dir = tmp();
+    const db = join(dir, 'g.db');
+    writeFileSync(db, 'this is not a sqlite database'.repeat(100));
+    const r = run(['--link-port', String(await freePort()), '--db', db]);
+    const code = await new Promise((res) => r.child.on('close', res));
+    expect(code).toBe(1);
+    expect(r.err()).toContain('Failed to start');
+  }, 20_000);
+
+  it('goes degraded when the port is taken, without touching the db', async () => {
+    const dir = tmp();
+    const db = join(dir, 'g.db');
+    const seed = new DatabaseSync(db);
+    seed.exec('CREATE TABLE t (a)');
+    seed.close();
+    const before = statSync(db);
+    const port = await hold();
+    const r = run(['--link-port', String(port), '--db', db]);
+    r.child.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 't', version: '0' },
+        },
+      })}\n`,
+    );
+    await waitFor(() => r.out().includes('"id":1'));
+    expect(r.err()).toContain('[error] running without a Foundry link');
+    expect(r.child.exitCode).toBeNull();
+    const after = statSync(db);
+    expect([after.size, after.mtimeMs]).toEqual([before.size, before.mtimeMs]);
+    expect(readdirSync(dir)).toEqual(['g.db']);
+  }, 20_000);
+
+  async function originAccepted(args: string[], origin: string): Promise<boolean> {
+    const port = await freePort();
+    const r = run(['--link-port', String(port), '--db', join(tmp(), 'g.db'), ...args]);
+    await waitFor(() => r.err().includes('Link URL'));
+    return new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
+      ws.on('open', () => (ws.close(), resolve(true)));
+      ws.on('error', () => resolve(false));
+    });
+  }
+
+  it('accepts a normalised --allow-origin', async () => {
+    const args = ['--allow-origin=http://Foundry.Local:30000/'];
+    expect(await originAccepted(args, 'http://foundry.local:30000')).toBe(true);
+  }, 20_000);
+
+  it('rejects other origins when --allow-origin is set', async () => {
+    const args = ['--allow-origin=http://Foundry.Local:30000/'];
+    expect(await originAccepted(args, 'http://localhost:30000')).toBe(false);
+  }, 20_000);
+
+  it('falls back to the default origins for an empty --allow-origin=', async () => {
+    expect(await originAccepted(['--allow-origin='], 'http://localhost:30000')).toBe(true);
+  }, 20_000);
 });

@@ -61,6 +61,8 @@ function toRow(r: Row): PairingRow {
 
 export function openStore(path: string, now: () => number = Date.now): Store {
   const db = new DatabaseSync(path);
+  // Wait briefly for a concurrent reader instead of failing with SQLITE_BUSY.
+  db.exec('PRAGMA busy_timeout = 5000');
   db.exec('PRAGMA journal_mode = DELETE');
   applyMigrations(db, MIGRATIONS);
   const revokedListeners = new Set<() => void>();
