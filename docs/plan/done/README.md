@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 39 contracts have merged implementations and recorded evidence. Task 19's
+These 40 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in
@@ -40,6 +40,7 @@ over unchecked historical boxes.
 | 62 | Complete; unsigned `.mcpb` built by `node scripts/build-mcpb.mjs` (about 261 KB, pinned `@anthropic-ai/mcpb` 2.1.2); manual Claude Desktop check passed; degraded secondaries are replaced by 69's relay | PR #102 |
 | 63 | Complete; stdio-only MCP conformance (Inspector 2.10.1 pinned, fake paired module, `tools/list` and a `demo-echo` call over the link), core and fixture-pack schema checks, compatibility matrix; HTTP/OAuth/hosted clients are MVP B | Task 63 PR (number added on merge); gate 3,879 fast / 2,227 slow at `187f24b` |
 | 69 | Implemented on its branch, reviewed in four rounds; relay of secondary stdio to the primary over a 0600 Unix socket / named pipe with a per-boot secret; manual Cowork `world_info` check pending (Andrew); live takeover verified; no live Windows run | Task 69 PR (number added on merge); gate 3,943 fast / 2,227 slow at `cdbfeaa` |
+| 70 | Implemented on its branch; adversarial security review found no code defects; pairings bound to the exact browser origin (migration 007), tokens work only from their origin, legacy NULL-origin pairings refused (re-pair once), loopback Host check, global code-guess limit, pre-hello caps, role only from the authenticated hello, zero-setting `.mcpb`; manual Desktop check pending (Andrew) | Task 70 PR (number added on merge); gate 3,992 fast / 2,227 slow at `b9b254a` |
 
 Prior wave offline gate: 2,626 fast / 2,227 slow on `c6421ee`; independent parser and
 settlement checks: 26. Native GM/Player1 write proof on v13.351/v14.369 remains

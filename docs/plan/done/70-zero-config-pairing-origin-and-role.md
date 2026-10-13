@@ -27,7 +27,9 @@
 - gateway/test/link/code-attempts.test.ts (new)
 - gateway/test/routing/role-source.test.ts (new)
 - gateway/test/mcp/server.test.ts (remove the `createMcpServer` cases only; the CLI cases stay)
-- gateway/test/relay/server.test.ts (the `relay config fingerprint` describe block only)
+- gateway/test/relay/server.test.ts (the `relay config fingerprint` describe block only; amended 2026-10-13: also the CFG constant)
+- gateway/test/relay/app.test.ts (amended 2026-10-13)
+- gateway/test/routing/binding.test.ts (amended 2026-10-13)
 - gateway/test/bin/link-conflict.test.ts (the origin-warning and `--allow-origin` cases, plus one new origin-pairing case)
 
 ## Goal
@@ -171,3 +173,19 @@ and no MCP input can choose it.
 - `e2e/**`: the harness keeps passing `--allow-origin`, which is still valid
 - User docs, the security model and the threat model write-up for users: 65 (`docs/security.md`, guides) and the scribe (`docs/architecture.md`)
 - Binding by user id instead of name (PLAN "Follow-ups from wave 4")
+
+## Amendments (Andrew, 2026-10-13)
+- Owns adds `gateway/test/relay/app.test.ts`, `gateway/test/routing/binding.test.ts` and the CFG constant in `gateway/test/relay/server.test.ts`. All three were forced by in-scope changes (the removed `role` and the new fingerprint), with no behaviour change.
+
+## Attempt 1 — implemented; adversarial security review found no code defects; manual Desktop check pending
+Built as designed. Pairings bind to the exact canonical origin (http(s), at most 255 chars) in a nullable `origin` column (migration 007). A one-time code approves a new origin; a token works only from its own origin; legacy NULL-origin pairings are refused, so Andrew must re-pair once and re-run `npm run test:e2e:setup` once. `--allow-origin` is an optional restriction and `DEFAULT_ALLOWED_ORIGINS` is gone.
+
+Guards: a loopback Host check (`localhost:<port>` or `127.0.0.1:<port>`); a global code-guess limit of 10 failures per 60 s, checked before consume so a valid code is not spent; a pre-hello cap of 16 global and 4 per origin with a 10 s hello timeout. Log reasons are distinct: per-origin says "close this page"; the global cap names the top holders and does not blame the refused origin. Token refusals log a token reason with no code hint, and peer messages are indistinguishable. Role comes only from the authenticated hello's `isGM`; `config.role` and `AGENT_GATEWAY_ROLE` were removed, a leftover is ignored with one warning, and the legacy `mcp/server.ts` was deleted. The relay fingerprint is `{allowOrigins, httpPort, logLevel, startedAt}`. The manifest has no `foundry_url`, `role` or `--allow-origin` arg; only `link_port`, `http_port` and `log_level` remain, optional and marked "Advanced.".
+
+Review suggestions, all fixed: a per-origin pre-hello cap so one page cannot block the GM's reconnect; a comment; token-refusal log wording; the global-cap log no longer blames the refused origin.
+
+Known limits: a page controlling several origins can still fill the global 16, which the design accepts (the log names the holders). `gateway/test/relay/multiprocess.test.ts` (e) still sets `AGENT_GATEWAY_ROLE` harmlessly; it is outside Owns.
+
+Gates at `b9b254a`: verify green (3992 fast / 2227 slow); mcpb 6/6; conformance ok.
+
+Manual check pending (Andrew): a fresh install with zero settings; pair from https://foundry.local with the code; `world_info` in a normal and a Cowork chat with no restart; http://foundry.local is asked for a code.
