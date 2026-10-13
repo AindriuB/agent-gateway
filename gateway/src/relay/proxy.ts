@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import {
   MAX_RELAY_LINE_BYTES,
@@ -9,8 +10,6 @@ import {
 } from './constants.js';
 import { LineSplitter } from './lines.js';
 import type { RpcMessage, Upstream } from './upstream.js';
-
-const REPLAY_ID = 'relay-replay-initialize';
 
 const isRequest = (m: RpcMessage): boolean =>
   typeof m.method === 'string' && m.id !== undefined && m.id !== null;
@@ -31,6 +30,8 @@ export class StdioRelayProxy {
   private readonly pending = new Set<string>();
   private initialize: RpcMessage | undefined;
   private initialized = false;
+  /** Private to this proxy and unguessable, so it can never collide with a client's own id. */
+  private readonly replayId = `relay-replay-${randomUUID()}`;
   private readonly splitter = new LineSplitter(MAX_RELAY_LINE_BYTES, true);
   private started = false;
   private stopped = false;
@@ -79,7 +80,7 @@ export class StdioRelayProxy {
       if (this.up === up) this.input.resume();
     };
     if (this.initialize) {
-      up.send({ ...this.initialize, id: REPLAY_ID });
+      up.send({ ...this.initialize, id: this.replayId });
       if (this.initialized) up.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
       this.write({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
     }
@@ -124,7 +125,7 @@ export class StdioRelayProxy {
 
   private fromUpstream(m: RpcMessage): void {
     if (isResponse(m)) {
-      if (m.id === REPLAY_ID) return;
+      if (m.id === this.replayId) return;
       this.pending.delete(key(m.id));
     }
     this.write(m);

@@ -1,5 +1,5 @@
-import { chmodSync, existsSync, rmSync, statSync } from 'node:fs';
-import { createServer, type Server as NetServer, type Socket } from 'node:net';
+import { chmodSync, existsSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { connect, createServer, type Server as NetServer, type Socket } from 'node:net';
 import type { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { safeText, type UserSelector } from '../routing/index.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from './constants.js';
 import { describeConfigDiff, parseRelayConfig, sameConfig, type RelayConfig } from './config.js';
 import { LineSplitter } from './lines.js';
-import { newSecret, secretMatches, writeSecret } from './secret.js';
+import { newSecret, parseSecretFile, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';
 
 export interface RelayServerOptions {
@@ -36,6 +36,19 @@ export interface RelayServerOptions {
 
 const REFUSAL_GRACE_MS = 500;
 
+/** True when something accepts connections at `path`. */
+function isLive(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = connect(path);
+    const done = (live: boolean) => {
+      s.destroy();
+      resolve(live);
+    };
+    s.once('connect', () => done(true));
+    s.once('error', () => done(false));
+  });
+}
+
 const norm = (s: UserSelector | undefined) => ({ world: s?.world || '', user: s?.user || '' });
 
 /**
@@ -51,6 +64,7 @@ export class RelayServer {
   private readonly platform: NodeJS.Platform;
   private readonly isWin: boolean;
   private secret = '';
+  private socketIno: number | undefined;
   private steppingDown = false;
   private endpoint: string;
 
@@ -77,13 +91,21 @@ export class RelayServer {
         throw new Error(
           `state dir ${safeText(stateDir)} is accessible to other users (mode ${(mode & 0o777).toString(8)}); expected 0700`,
         );
-      // Holding the link port proves any socket file left behind is stale.
+      // Holding the link port makes a leftover socket file very likely stale, but never unlink
+      // one that still answers: it belongs to someone else.
+      if (existsSync(endpoint) && (await isLive(endpoint)))
+        throw new Error(`relay endpoint ${safeText(endpoint)} is already in use`);
       rmSync(endpoint, { force: true });
     }
     this.secret = newSecret();
     // win32: a random per-boot pipe name, published only in the secret file (see relayEndpoint).
     if (this.isWin) this.endpoint = `${endpoint}-${newSecret().slice(0, 16)}`;
-    this.secretFile = writeSecret(stateDir, this.secret, this.isWin ? this.endpoint : undefined);
+    this.secretFile = writeSecret(
+      stateDir,
+      this.opts.linkPort,
+      this.secret,
+      this.isWin ? this.endpoint : undefined,
+    );
     const net = createServer((s) => this.onConnection(s));
     this.net = net;
     const oldMask = this.isWin ? undefined : process.umask(0o177);
@@ -106,7 +128,10 @@ export class RelayServer {
       await this.close();
       throw err;
     }
-    if (!this.isWin) chmodSync(this.endpoint, 0o600);
+    if (!this.isWin) {
+      chmodSync(this.endpoint, 0o600);
+      this.socketIno = statSync(this.endpoint).ino;
+    }
   }
 
   async close(): Promise<void> {
@@ -114,11 +139,52 @@ export class RelayServer {
     this.net = undefined;
     for (const s of this.sockets) s.destroy();
     this.sockets.clear();
-    if (net?.listening) await new Promise<void>((r) => net.close(() => r()));
-    if (!this.isWin && existsSync(this.opts.endpoint) && net)
-      rmSync(this.opts.endpoint, { force: true });
-    if (this.secretFile) rmSync(this.secretFile, { force: true });
+    if (net?.listening) await this.closeListener(net);
+    // Only remove what this server created: the socket by inode, the secret by its content.
+    if (!this.isWin && this.socketIno !== undefined) {
+      try {
+        if (statSync(this.opts.endpoint).ino === this.socketIno)
+          rmSync(this.opts.endpoint, { force: true });
+      } catch {
+        // already gone
+      }
+    }
+    this.socketIno = undefined;
+    if (this.secretFile) {
+      try {
+        if (parseSecretFile(readFileSync(this.secretFile, 'utf8')).secret === this.secret)
+          rmSync(this.secretFile, { force: true });
+      } catch {
+        // already gone
+      }
+    }
     this.secretFile = undefined;
+  }
+
+  /**
+   * Closing a listening Unix socket makes libuv unlink its path, whoever owns the file by then.
+   * If the path was replaced by someone else's socket, move it aside for the duration.
+   */
+  private async closeListener(net: NetServer): Promise<void> {
+    let aside: string | undefined;
+    if (!this.isWin && this.socketIno !== undefined) {
+      try {
+        if (statSync(this.opts.endpoint).ino !== this.socketIno) {
+          aside = `${this.opts.endpoint}.${process.pid}.aside`;
+          renameSync(this.opts.endpoint, aside);
+        }
+      } catch {
+        aside = undefined;
+      }
+    }
+    await new Promise<void>((r) => net.close(() => r()));
+    if (aside) {
+      try {
+        renameSync(aside, this.opts.endpoint);
+      } catch {
+        // the owner removed it meanwhile
+      }
+    }
   }
 
   /** Keep serving for the grace period so in-flight calls finish, then let the app exit. */
@@ -126,7 +192,7 @@ export class RelayServer {
     if (this.steppingDown) return;
     this.steppingDown = true;
     const net = this.net;
-    if (net?.listening) net.close();
+    if (net?.listening) void this.closeListener(net);
     const timer = setTimeout(() => this.opts.onStepDown?.(why), STEPDOWN_GRACE_MS);
     timer.unref();
   }

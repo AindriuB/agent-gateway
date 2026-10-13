@@ -194,3 +194,34 @@ describe('StdioRelayProxy back-pressure and oversized lines', () => {
     expect(closed).toBe(1);
   });
 });
+
+describe('StdioRelayProxy replay id', () => {
+  it('round-trips a client request whose id looks like an internal one, before and after takeover', async () => {
+    const { proxy, write, out, tick } = rig();
+    const up = new FakeUpstream();
+    proxy.attach(up);
+    const id = 'relay-replay-initialize';
+    write({ jsonrpc: '2.0', id: 0, method: 'initialize', params: {} });
+    write({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    write({ jsonrpc: '2.0', id, method: 'tools/list' });
+    await tick();
+    up.onMessage?.({ jsonrpc: '2.0', id, result: { tools: [] } });
+    expect(out.at(-1)).toMatchObject({ id, result: { tools: [] } });
+    expect(proxy.pendingCount).toBe(1); // only the initialize is still open
+
+    up.close();
+    const next = new FakeUpstream();
+    proxy.attach(next);
+    // The replayed initialize uses a private id and is never shown to the client.
+    const replayId = next.sent[0]!.id;
+    expect(replayId).not.toBe(id);
+    write({ jsonrpc: '2.0', id, method: 'tools/list' });
+    await tick();
+    const before = out.length;
+    next.onMessage?.({ jsonrpc: '2.0', id: replayId, result: {} });
+    expect(out).toHaveLength(before);
+    next.onMessage?.({ jsonrpc: '2.0', id, result: { tools: [1] } });
+    expect(out.at(-1)).toMatchObject({ id, result: { tools: [1] } });
+    expect(proxy.pendingCount).toBe(0);
+  });
+});

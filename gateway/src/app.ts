@@ -147,7 +147,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startRelay(linkPort: number, createSession: () => Server): Promise<void> {
-    const ep = stateDir ? relayEndpoint(stateDir) : undefined;
+    const ep = stateDir ? relayEndpoint(stateDir, linkPort) : undefined;
     if (!stateDir || !ep) return;
     if (!ep.ok) {
       writeStatus(
@@ -196,7 +196,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   }
 
   async function startSecondary(reason: string): Promise<void> {
-    const ep = stateDir ? relayEndpoint(stateDir) : undefined;
+    const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
     if (!stateDir || !ep?.ok) {
       const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
       server = createDegradedServer({

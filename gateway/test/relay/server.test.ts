@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { connect, createServer as createNetServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -56,7 +64,7 @@ async function rig(
 ): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'agr-'));
   chmodSync(dir, 0o700);
-  const ep = relayEndpoint(dir);
+  const ep = relayEndpoint(dir, PORT);
   if (!ep.ok) throw new Error(ep.reason);
   const logs: string[] = [];
   const create = vi.fn(
@@ -78,7 +86,7 @@ async function rig(
   return r;
 }
 
-const secretOf = (r: Rig) => readFileSync(join(r.dir, 'relay.secret'), 'utf8');
+const secretOf = (r: Rig) => readFileSync(join(r.dir, `relay-${PORT}.secret`), 'utf8');
 
 /** Send raw bytes as the first thing on a fresh connection and return the reply line. */
 function rawHello(r: Rig, first: string | undefined): Promise<{ reply: string; closed: boolean }> {
@@ -277,7 +285,7 @@ describe('relay security', () => {
     if (process.platform === 'win32') return;
     const r = await rig();
     expect(statSync(r.sock).mode & 0o777).toBe(0o600);
-    expect(statSync(join(r.dir, 'relay.secret')).mode & 0o777).toBe(0o600);
+    expect(statSync(join(r.dir, `relay-${PORT}.secret`)).mode & 0o777).toBe(0o600);
     expect(statSync(r.dir).mode & 0o777).toBe(0o700);
     expect(secretOf(r)).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -286,7 +294,7 @@ describe('relay security', () => {
     if (process.platform === 'win32') return;
     const dir = mkdtempSync(join(tmpdir(), 'agr-'));
     chmodSync(dir, 0o755);
-    const ep = relayEndpoint(dir);
+    const ep = relayEndpoint(dir, PORT);
     if (!ep.ok) throw new Error(ep.reason);
     const server = new RelayServer({
       endpoint: ep.path,
@@ -298,7 +306,7 @@ describe('relay security', () => {
       log: () => undefined,
     });
     await expect(server.listen()).rejects.toThrow(/accessible to other users/);
-    expect(existsSync(join(dir, 'relay.secret'))).toBe(false);
+    expect(existsSync(join(dir, `relay-${PORT}.secret`))).toBe(false);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -306,7 +314,7 @@ describe('relay security', () => {
     const r = await rig();
     await r.server.close();
     expect(existsSync(r.sock)).toBe(false);
-    expect(existsSync(join(r.dir, 'relay.secret'))).toBe(false);
+    expect(existsSync(join(r.dir, `relay-${PORT}.secret`))).toBe(false);
     const stale = createNetServer();
     await new Promise<void>((res) => stale.listen(r.sock, res));
     stale.close();
@@ -321,6 +329,71 @@ describe('relay security', () => {
     });
     await second.listen();
     await second.close();
+  });
+});
+
+describe('relay endpoints are namespaced by link port', () => {
+  const make = (dir: string, port: number) => {
+    const ep = relayEndpoint(dir, port);
+    if (!ep.ok) throw new Error(ep.reason);
+    return new RelayServer({
+      endpoint: ep.path,
+      stateDir: dir,
+      linkPort: port,
+      config: CFG,
+      selector: {},
+      createSession: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
+      log: () => undefined,
+    });
+  };
+
+  it('two primaries on different ports share a state dir; stopping one leaves the other intact', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agr-'));
+    chmodSync(dir, 0o700);
+    const a = make(dir, PORT);
+    const b = make(dir, PORT + 1);
+    await a.listen();
+    await b.listen();
+    const connectTo = (port: number) =>
+      connectRelay({
+        endpoint: join(dir, `relay-${port}.sock`),
+        stateDir: dir,
+        linkPort: port,
+        config: CFG,
+        selector: {},
+      });
+    for (const port of [PORT, PORT + 1]) {
+      const c = await connectTo(port);
+      expect(c.kind).toBe('ok');
+      if (c.kind === 'ok') c.upstream.close();
+    }
+    await a.close();
+    expect(existsSync(join(dir, `relay-${PORT}.sock`))).toBe(false);
+    expect(existsSync(join(dir, `relay-${PORT + 1}.sock`))).toBe(true);
+    expect(existsSync(join(dir, `relay-${PORT + 1}.secret`))).toBe(true);
+    const c = await connectTo(PORT + 1);
+    expect(c.kind).toBe('ok');
+    if (c.kind === 'ok') c.upstream.close();
+    await b.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never unlinks an endpoint it did not create, and refuses to replace a live one', async () => {
+    const r = await rig();
+    // Someone else takes over the path (a different inode) and writes their own secret.
+    rmSync(r.sock);
+    const other = createNetServer();
+    await new Promise<void>((res) => other.listen(r.sock, res));
+    const secretPath = join(r.dir, `relay-${PORT}.secret`);
+    writeFileSync(secretPath, 'someone-elses-secret', { mode: 0o600 });
+    await r.server.close();
+    expect(existsSync(r.sock)).toBe(true);
+    expect(readFileSync(secretPath, 'utf8')).toBe('someone-elses-secret');
+    // A new server must not clobber the live endpoint either.
+    const again = make(r.dir, PORT);
+    await expect(again.listen()).rejects.toThrow(/already in use/);
+    expect(existsSync(r.sock)).toBe(true);
+    await new Promise((res) => other.close(res));
   });
 });
 

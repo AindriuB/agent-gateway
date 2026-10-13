@@ -35,30 +35,35 @@ describe('relay constants', () => {
 });
 
 describe('relayEndpoint', () => {
-  it('uses <stateDir>/relay.sock on darwin', () => {
-    expect(relayEndpoint('/Users/a/.foundry-agent-gateway', 'darwin')).toEqual({
+  it('uses <stateDir>/relay-<port>.sock on darwin', () => {
+    expect(relayEndpoint('/Users/a/.foundry-agent-gateway', 7420, 'darwin')).toEqual({
       ok: true,
-      path: '/Users/a/.foundry-agent-gateway/relay.sock',
+      path: '/Users/a/.foundry-agent-gateway/relay-7420.sock',
     });
   });
 
   it('refuses a darwin path over 103 bytes and names the length', () => {
     const dir = `/${'d'.repeat(100)}`;
-    const r = relayEndpoint(dir, 'darwin');
+    const r = relayEndpoint(dir, 7420, 'darwin');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain(`${Buffer.byteLength(`${dir}/relay.sock`)} bytes`);
-    expect(relayEndpoint(`/${'d'.repeat(80)}`, 'darwin').ok).toBe(true);
+    if (!r.ok) expect(r.reason).toContain(`${Buffer.byteLength(`${dir}/relay-7420.sock`)} bytes`);
+    expect(relayEndpoint(`/${'d'.repeat(80)}`, 7420, 'darwin').ok).toBe(true);
   });
 
   it('derives a named pipe from the lowercased state dir on win32 (pure function)', () => {
     const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
-    const a = relayEndpoint('C:\\Users\\Andrew\\.foundry-agent-gateway', 'win32');
+    const a = relayEndpoint('C:\\Users\\Andrew\\.foundry-agent-gateway', 7420, 'win32');
     expect(a).toEqual({
       ok: true,
-      path: `\\\\.\\pipe\\foundry-agent-gateway-${hash('c:\\users\\andrew\\.foundry-agent-gateway')}`,
+      path: `\\\\.\\pipe\\foundry-agent-gateway-${hash('c:\\users\\andrew\\.foundry-agent-gateway|7420')}`,
     });
-    expect(relayEndpoint('c:\\USERS\\andrew\\.foundry-agent-gateway', 'win32')).toEqual(a);
-    expect(relayEndpoint('C:\\Other', 'win32')).not.toEqual(a);
+    expect(relayEndpoint('c:\\USERS\\andrew\\.foundry-agent-gateway', 7420, 'win32')).toEqual(a);
+    expect(relayEndpoint('C:\\Other', 7420, 'win32')).not.toEqual(a);
+    expect(relayEndpoint('C:\\Users\\Andrew\\.foundry-agent-gateway', 7421, 'win32')).not.toEqual(
+      a,
+    );
+    const unix = relayEndpoint('/tmp/x', 7421, 'darwin');
+    expect(unix).toEqual({ ok: true, path: '/tmp/x/relay-7421.sock' });
   });
 });
 

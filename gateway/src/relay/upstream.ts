@@ -11,7 +11,7 @@ import {
   RELAY_VERSION,
   type RelayRefusal,
 } from './constants.js';
-import { SECRET_FILE } from './endpoint.js';
+import { secretFile } from './endpoint.js';
 import { parseRelayConfig, type RelayConfig } from './config.js';
 import { LineSplitter } from './lines.js';
 import { parseSecretFile } from './secret.js';
@@ -155,7 +155,9 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
   let secret: string;
   let endpoint = opts.endpoint;
   try {
-    const file = parseSecretFile(readFileSync(join(opts.stateDir, SECRET_FILE), 'utf8'));
+    const file = parseSecretFile(
+      readFileSync(join(opts.stateDir, secretFile(opts.linkPort)), 'utf8'),
+    );
     secret = file.secret;
     if (file.pipe) endpoint = file.pipe;
   } catch (err) {

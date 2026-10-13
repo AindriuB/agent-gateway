@@ -79,7 +79,7 @@ describe('relay between built CLI instances', () => {
     expect(text).toContain('LINK_UNAVAILABLE');
     expect(text).toMatch(/after 10 attempts/);
     expect(text).toContain('cannot read relay secret');
-    expect(existsSync(join(state.dir, 'relay.sock'))).toBe(false);
+    expect(existsSync(join(state.dir, `relay-${port}.sock`))).toBe(false);
   }, 60_000);
 
   it('(c) takeover: killing the primary leaves exactly one new holder and both clients recover', async () => {
@@ -164,8 +164,8 @@ describe('relay between built CLI instances', () => {
     }
     expect(await echo(s1, 'next1')).toContain('echo:next1');
     expect(await echo(s2, 'next2')).toContain('echo:next2');
-    expect(existsSync(join(state.dir, 'relay.sock'))).toBe(true);
-    expect(existsSync(join(state.dir, 'relay.secret'))).toBe(true);
+    expect(existsSync(join(state.dir, `relay-${port}.sock`))).toBe(true);
+    expect(existsSync(join(state.dir, `relay-${port}.secret`))).toBe(true);
     expect(s1.stderr() + s2.stderr()).not.toContain('already holds the link');
     // A third instance can still join the new primary's relay.
     const s3 = track(await startCli(port, state.db));
@@ -216,5 +216,29 @@ describe('relay between built CLI instances', () => {
     const names = (await same.client.listTools()).tools.map((t) => t.name);
     expect(names).not.toEqual([STATUS_TOOL]);
     expect(same.stderr()).not.toContain('Pairing code');
+  }, 90_000);
+
+  it('(f) gateways on different link ports can share one state dir', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const portA = await freePort();
+    const portB = await freePort();
+    const dbA = join(state.dir, 'a.db');
+    const dbB = join(state.dir, 'b.db');
+    const a = track(await startCli(portA, dbA));
+    const b = track(await startCli(portB, dbB));
+    await until(() => /Pairing code/.test(a.stderr()) && /Pairing code/.test(b.stderr()), 10_000);
+    const a2 = track(await startCli(portA, dbA));
+    const b2 = track(await startCli(portB, dbB));
+    for (const c of [a2, b2]) expect(await toolNames(c)).not.toEqual([STATUS_TOOL]);
+    expect(existsSync(join(state.dir, `relay-${portA}.sock`))).toBe(true);
+    expect(existsSync(join(state.dir, `relay-${portB}.sock`))).toBe(true);
+    // Stopping A's primary does not disturb B's endpoint or its relays.
+    process.kill(a.pid, 'SIGTERM');
+    await until(() => a2.listChanged() >= 1, 15_000, 'A takeover');
+    expect(existsSync(join(state.dir, `relay-${portB}.sock`))).toBe(true);
+    expect(await toolNames(b2)).not.toEqual([STATUS_TOOL]);
+    const b3 = track(await startCli(portB, dbB));
+    expect(await toolNames(b3)).not.toEqual([STATUS_TOOL]);
   }, 90_000);
 });

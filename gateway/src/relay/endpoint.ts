@@ -5,8 +5,9 @@ import { MAX_UNIX_SOCKET_PATH_BYTES } from './constants.js';
 export type RelayEndpoint = { ok: true; path: string } | { ok: false; reason: string };
 
 export const PIPE_PREFIX = '\\\\.\\pipe\\foundry-agent-gateway-';
-export const SOCKET_FILE = 'relay.sock';
-export const SECRET_FILE = 'relay.secret';
+/** Both files are namespaced by link port, so gateways on different ports can share a state dir. */
+export const socketFile = (linkPort: number): string => `relay-${linkPort}.sock`;
+export const secretFile = (linkPort: number): string => `relay-${linkPort}.secret`;
 
 /**
  * Where the primary's relay listens, derived from the state dir so that every instance sharing a
@@ -14,6 +15,7 @@ export const SECRET_FILE = 'relay.secret';
  */
 export function relayEndpoint(
   stateDir: string,
+  linkPort: number,
   platform: NodeJS.Platform = process.platform,
 ): RelayEndpoint {
   if (platform === 'win32') {
@@ -22,12 +24,12 @@ export function relayEndpoint(
     // appends a random per-boot suffix (see RelayServer.listen) and publishes the full name in
     // the secret file, which only this user can read. This base name is only the fallback.
     const digest = createHash('sha256')
-      .update(win32.resolve(stateDir).toLowerCase())
+      .update(`${win32.resolve(stateDir).toLowerCase()}|${linkPort}`)
       .digest('hex')
       .slice(0, 16);
     return { ok: true, path: `${PIPE_PREFIX}${digest}` };
   }
-  const path = posix.join(posix.resolve(stateDir), SOCKET_FILE);
+  const path = posix.join(posix.resolve(stateDir), socketFile(linkPort));
   const bytes = Buffer.byteLength(path);
   if (bytes > MAX_UNIX_SOCKET_PATH_BYTES)
     return {

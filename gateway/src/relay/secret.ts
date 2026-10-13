@@ -1,14 +1,19 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PIPE_PREFIX, SECRET_FILE } from './endpoint.js';
+import { PIPE_PREFIX, secretFile } from './endpoint.js';
 
 /** Fresh per-boot secret: 32 random bytes as hex. */
 export const newSecret = (): string => randomBytes(32).toString('hex');
 
 /** Write the secret atomically with mode 0600 (temp file with the mode, then rename). */
-export function writeSecret(stateDir: string, secret: string, pipe?: string): string {
-  const file = join(stateDir, SECRET_FILE);
+export function writeSecret(
+  stateDir: string,
+  linkPort: number,
+  secret: string,
+  pipe?: string,
+): string {
+  const file = join(stateDir, secretFile(linkPort));
   const tmp = `${file}.${process.pid}.tmp`;
   try {
     writeFileSync(tmp, pipe ? `${secret}\n${pipe}\n` : secret, { mode: 0o600 });
