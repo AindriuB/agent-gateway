@@ -56,3 +56,4 @@ Behaviour and limits:
 - Build hook: `skill_rank` only (0/1/2). `attribute_boost`, `key_attribute` and `feat_slot` are refused with a reason. `listChoices` reports the count of unapplied advancements.
 - Supported range for module.json (task 41): dnd5e minimum 6.0, verified 6.0.6; Foundry 14.367+.
 - Abstraction leaks for task 31's interface: the build interface is pf2e-shaped (no ability or HP setters, no 0.5 rank); conditions are level deltas; `invested` maps attunement; one activity yields several action ids; the spell level option is a loose key; the Activity#use and toggleStatusEffect writes take no callOptions, so their targets are snapshotted and disclosed.
+- External review: upcast damage lost its scaling (Fireball at level 4 rolled 8d6). Fixed in 43ab41f and 68fd34a: `damage:` accepts a validated `options.level` and rolls through dnd5e's own scaling; tested with stand-ins only, not live. `npm run verify` green at 68fd34a (3,857 fast / 2,227 slow).
