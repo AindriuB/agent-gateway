@@ -7,7 +7,9 @@ export * from './action-perform.js';
 import { inventory } from './inventory.js';
 export * from './inventory.js';
 import { conditions } from './conditions.js';
+import { characterBuild } from './character-build.js';
 export * from './conditions.js';
+export * from './character-build.js';
 import { eventsPoll } from './events-poll.js';
 import { eventsHistory } from './events-history.js';
 export * from './events-poll.js';
@@ -76,6 +78,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   actionPerform,
   inventory,
   conditions,
+  characterBuild,
 
   macroRun,
   scriptRun,

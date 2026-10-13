@@ -129,13 +129,13 @@ Native coverage uses the actual GM `ask_owner` policy. Forced approval under all
 ## Next
 
 ### System adapters: pf2e complete; character-creation gaps (45, 46, 49) come before dnd5e and write-audit correlation
-Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 30 done / 12 active; Task18 stays blocked.
+Task33 (pf2e adapter) is complete and merged in PR #86 (head `9918aae`, main `899e89a`); its contract is archived in `docs/plan/done/33-pf2e-adapter.md`. Task31 (adapter interface) is complete and archived in `docs/plan/done/31-adapter-interface.md`. Inventory: 31 done / 24 active; Task18 stays blocked.
 
 Next (Andrew, 2026-10-13), in order: character-creation gaps from the 2026-10-13 usability session come before dnd5e, because dnd5e needs the same interfaces.
-1. Task 45 (embed a compendium entry in an owned actor) is complete and archived in `docs/plan/done/45-compendium-embed-in-actor.md` (native v14 2/2; ChoiceSet items refused until 49). Task 46 (character-build interface, pf2e first) is in progress on its own branch; it shares one line in `e2e/vitest.e2e.config.ts` with 45, so expect a conflict to resolve when 46 lands.
-2. Task 49 (answer pf2e ChoiceSet choices headlessly): its architect design gate may run during wave 1, but no implementation until the gate passes and 46 is merged (45 is merged).
-3. Task 32 (dnd5e adapter): extends 45's embed hook and 46's build interface; depends on 31, 45 (done), 46.
-4. Task 44 (native write audit correlation; architect design gate first): queued after 32, because 45, 46 and 49 add files under `module/src/adapters/pf2e/**`, which 44 owns, so 44 must not be in flight alongside them.
+1. Task 45 (embed a compendium entry in an owned actor) and Task 46 (character-build interface, pf2e first; `character_build` tool, build-hook registry) are complete and archived in `docs/plan/done/`. 45: native v14 2/2, ChoiceSet items refused until 49. 46: native v14 2/2; lore skills rejected; rule-element Item side effects disclosed as not undoable (44). v13 not run for either.
+2. Task 49 (answer pf2e ChoiceSet choices headlessly): next. Its spike runs first and its native run needs Andrew's approval; no implementation until the design gate passes.
+3. Task 32 (dnd5e adapter): then. Extends 45's embed hook and 46's build interface; depends on 31, 45, 46 (all done).
+4. Task 44 (native write audit correlation; architect design gate first): after 32, because 49 adds files under `module/src/adapters/pf2e/**`, which 44 owns, so 44 must not be in flight alongside it.
 5. Planned, do not start: 47, 48 (encounter tools), 50-56 (GM builder, including 53 image upload and portraits), plus 34/35 and 18 as already recorded. Task files are under `docs/plan/tasks/`.
 
 Shipped pf2e limits, accepted by Andrew and all owned by Task44: pf2e's condition API, `SpellcastingEntryPF2e#consume` and strike ammunition or thrown-weapon spending write without document options, so their targets are snapshotted, go stale and Undo refuses them; a newly applied condition is not recorded. `action_perform` discloses non-undoable spends. NPC and hazard strike messages are unaudited, and that is disclosed. Condition changes carry no in-band notice because the conditions output has no `message` field. Native acceptance ran on Foundry v14.369 / pf2e 8.6.0 only; v13 was not run because the task asks for v14.

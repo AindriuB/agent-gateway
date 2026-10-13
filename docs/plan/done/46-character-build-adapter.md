@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** none
-**Status:** Next (Andrew, 2026-10-13): wave 1, before 32
+**Status:** Complete. Offline gate green; native v14 acceptance passed 2/2 (Foundry 14.369 / pf2e 8.6.0). Merge PR number is added when Andrew merges. Lore skills, ChoiceSet answers and non-undoable rule-element side effects are follow-ups (Task49, Task44).
 **Owns:**
 - protocol/src/tools/character-build.ts (new)
 - protocol/src/tools/index.ts (insertion only)
@@ -79,3 +79,30 @@ write. pf2e is implemented first; every other system answers "unsupported".
 - Adding Items from compendia (task 45)
 - dnd5e build support (follow-up to 32); changing `SystemAdapter` in module/src/adapters/types.ts
 - Correlating pf2e native side effects (task 44)
+
+## Attempt 1 — failed
+Head `0cd8a6c`. Tester PASS: `npm run verify` 3,689 fast / 2,227 slow; e2e-unit 163; e2e tsc and eslint clean. Reviewer REQUEST CHANGES; scope clean; all other acceptance met; the pf2e 8.6.0 data paths are confirmed.
+- `module/src/adapters/pf2e/build.ts:163-164`: any untrained core skill is rejected as "Unknown skill". For example `{kind:'skill_rank', skill:'athletics', rank:1}` fails on a fresh character, so the e2e will fail.
+  - Cause: a pf2e 8.6.0 character's stored `_source.system.skills` is sparse (`{}`). `CharacterPF2e.prepareBaseData` iterates `CONFIG.PF2E.skills` (pf2e.mjs:35316-35317).
+  - Fix: validate slugs against the prepared `actor.system.skills`, or `CONFIG.PF2E.skills`.
+  - The unit fixture hid the bug by pre-seeding stored skills (`module/test/tools/character-build/fixtures.ts:55`). Add a test on a sparse `_source.system.skills`.
+- Suggestion, accepted as is: e2e cleanup in `afterAll` by exact UUID is equivalent to "in `finally`".
+
+## Attempt 2 — live e2e failed (test bug)
+Head `bbfc99e`, bundle `67403dc9…` deployed to homelab; Foundry 14.369, pf2e 8.6.0, `test-world`, approved by Andrew 2026-10-13. Verify is green: 3,691 fast / 2,227 slow; e2e-unit 163. Result: 1 of 2 live tests passed. "describes the unbuilt character" passed.
+
+The build call returned `INVALID_ARGS: This feat cannot fill that slot`. The cause is in the spec: `e2e/pf2e-build/build.e2e.test.ts` takes the first open `featSlots` entry, which on a fresh character is an ancestry slot, and puts the temporary **class** feat in it. The adapter's refusal was correct. The batch was validated before any write, so nothing was applied. A read-only check afterwards found no leftover actors or items.
+
+Fix the spec: choose an open slot whose group accepts the feat's category (for example `class-*`). If `describe` does not expose enough to choose, expose the slot's group and accepted categories as bounded data. Assert the refusal case too: a class feat put into an ancestry slot must return INVALID_ARGS with no write.
+
+## Attempt 3 — live e2e failed (real bug)
+Head `54d54b7`, bundle `67403dc9…`; `test-world` v14, approved by Andrew 2026-10-13. Result: 1 of 2 live tests passed. The negative wrong-group case behaved correctly live (`INVALID_ARGS: This feat cannot fill that slot`, 1 target, no write). No leftover actors afterwards.
+- **Real bug.** The positive build call passed validation, snapshotted 5 targets and almost certainly applied its writes, then returned `INTERNAL: System adapter returned an invalid result` from `invokeAdapter`'s output check (`module/src/tools/_adapters.ts:145`). The caller is told the call failed while the writes stand. This is worse than either outcome alone.
+  - Find which field breaks `boundedAdapterData` or `characterBuild.output.parse` for real prepared pf2e data, for example unbounded or long `message` text, a `null`/non-string slot or item value, numeric attribute values, or array caps.
+  - Reproduce it with a unit fixture built from real pf2e 8.6.0 post-write shapes.
+- **Structural guard.** After writes have been applied, the result must never be lost:
+  - Bound and sanitise every output field the adapter produces, so the post-write result always passes the schema.
+  - Cover that with a test that runs a real-shaped post-write result through `boundedAdapterData` and `characterBuild.output.parse`.
+
+## Attempt 4 — passed
+Fresh options copy per update (an options object shared across updates received `parent` from Foundry, so the later Actor update looked embedded and level boosts were lost); level boosts written through pf2e's whole `system.build` merge; a post-write guard keeps results and bounds every field. Final review approved with three suggestions, applied. Gate at `30d5538`: 3,738 fast / 2,227 slow; e2e-unit 163. Live `pf2e-build` passed 2/2 on v14.

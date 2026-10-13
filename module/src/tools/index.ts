@@ -3,6 +3,7 @@ import { actionsListHandler } from './actions-list.js';
 import { actionPerformHandler } from './action-perform.js';
 import { inventoryHandler } from './inventory.js';
 import { conditionsHandler } from './conditions.js';
+import { characterBuildHandler } from './character-build.js';
 import { macroRunHandler } from './macro-run.js';
 import { scriptRunHandler } from './script-run.js';
 import { tableRollHandler } from './table-roll.js';
@@ -38,6 +39,7 @@ export const HANDLERS: Record<string, OpHandler> = {
   action_perform: actionPerformHandler,
   inventory: inventoryHandler,
   conditions: conditionsHandler,
+  character_build: characterBuildHandler,
   macro_run: macroRunHandler,
   script_run: scriptRunHandler,
   table_roll: tableRollHandler,
