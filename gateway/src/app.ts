@@ -9,7 +9,13 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkListenError } from './link/server.js';
-import { LinkRegistry, LinkServer, PairingCodes, type LiveCode } from './link/index.js';
+import {
+  LinkRegistry,
+  LinkServer,
+  PairingCodes,
+  type LiveCode,
+  type PairingCodesOptions,
+} from './link/index.js';
 import { createLogger, type Logger } from './log.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
@@ -41,8 +47,8 @@ const TOKEN_REFUSALS: ReadonlySet<string> = new Set([
   'pairing was made from a different origin',
 ]);
 
-const minutesLeft = (expiresAt: number): number =>
-  Math.max(1, Math.ceil((expiresAt - Date.now()) / 60_000));
+const minutesLeft = (expiresAt: number, now: number): number =>
+  Math.max(1, Math.ceil((expiresAt - now) / 60_000));
 
 /** Make an untrusted Origin header safe for a log line: printable ASCII only, bounded. */
 export function sanitizeOrigin(origin: string | undefined): string {
@@ -80,6 +86,8 @@ export interface AppDeps {
    * stopping the app and exiting the process.
    */
   onStepDown?: (why: string) => void;
+  /** Clock and timers for pairing-code expiry; injectable so tests need not wait ten minutes. */
+  codeClock?: Pick<PairingCodesOptions, 'now' | 'setTimer' | 'clearTimer'>;
 }
 
 export function createApp(config: Config, deps: AppDeps): App {
@@ -278,11 +286,12 @@ export function createApp(config: Config, deps: AppDeps): App {
     // connection can be handled, so the lazy getters below are never read while unset.
     const registry = new LinkRegistry();
     let linkPort = config.linkPort;
+    const now = deps.codeClock?.now ?? Date.now;
     // Sessions that finished their handshake; each leaves the set when it closes, and the relay
     // caps how many there can be.
     const initialized = new Set<Server>();
     const linesFor = (c: LiveCode): [string, string] => [
-      `Pairing code: ${c.code} (expires in ${minutesLeft(c.expiresAt)} min)`,
+      `Pairing code: ${c.code} (expires in ${minutesLeft(c.expiresAt, now())} min)`,
       `Link URL: ws://localhost:${linkPort} (pid ${process.pid} holds link port ${linkPort})`,
     ];
     // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
@@ -292,6 +301,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: linesFor(c).join('. ') })
         .catch(() => undefined);
     const thisCodes = new PairingCodes({
+      ...deps.codeClock,
       onIssued: (c) => {
         for (const line of linesFor(c)) writeStatus(line);
         for (const s of initialized) sendNotice(s, c);
@@ -325,7 +335,7 @@ export function createApp(config: Config, deps: AppDeps): App {
           reason === 'no valid pairing code'
             ? " The code is in this log or the client's MCP log."
             : live && TOKEN_REFUSALS.has(reason)
-              ? ` Enter pairing code ${live.code} (expires in ${minutesLeft(live.expiresAt)} min) in the Agent Gateway pairing prompt; it is also in the client's MCP log.`
+              ? ` Enter pairing code ${live.code} (expires in ${minutesLeft(live.expiresAt, now())} min) in the Agent Gateway pairing prompt; it is also in the client's MCP log.`
               : '';
         writeStatus(
           `rejected link connection from origin ${shown}: ${reason}${detail ? ` (${detail})` : ''}.${where}`,
@@ -368,7 +378,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       log: writeStatus,
       pairingHint: () => {
         const c = thisCodes.issue('mcp');
-        return { code: c.code, expiresInMin: minutesLeft(c.expiresAt) };
+        return { code: c.code, expiresInMin: minutesLeft(c.expiresAt, now()) };
       },
     });
     const ready = { events, queue };

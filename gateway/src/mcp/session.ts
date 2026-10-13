@@ -481,7 +481,11 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     binding.noteConnected(c);
     onConnectedChanged(c);
   };
-  const onDisconnected = changed(false);
+  const onDisconnectedChanged = changed(false);
+  const onDisconnected = (c: LinkConnection): void => {
+    binding.noteDisconnected(c);
+    onDisconnectedChanged(c);
+  };
   opts.registry.on('connected', onConnected);
   opts.registry.on('disconnected', onDisconnected);
   const onToolset = changed(false);

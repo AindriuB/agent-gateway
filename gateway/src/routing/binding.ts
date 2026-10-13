@@ -88,6 +88,12 @@ export class SessionBinding {
     return this.selector.user === undefined;
   }
 
+  /** A connection closed. Starts the grace clock if it was the bound pair's; never re-binds. */
+  noteDisconnected(c: LinkConnection): void {
+    if (!this.follow || !this.bound || idOf(c) !== idOf(this.bound)) return;
+    if (!this.live(this.bound)) this.lostAt ??= this.now();
+  }
+
   /**
    * A connection arrived. In follow mode, if the bound pair has none and this is the only
    * connected pairing in the pool, the user has moved (another world): re-bind at once.
