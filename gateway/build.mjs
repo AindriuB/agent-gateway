@@ -2,15 +2,21 @@
 // @agent-gateway/protocol workspace so the published package has no
 // workspace dependency. Real dependencies stay external.
 import { chmodSync, readFileSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-const external = Object.keys(pkg.dependencies ?? {}).filter((n) => !n.startsWith('@agent-gateway/'));
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+const cli = here('./dist/bin/cli.js');
 
-rmSync(new URL('./dist', import.meta.url), { recursive: true, force: true });
+const pkg = JSON.parse(readFileSync(here('./package.json'), 'utf8'));
+const external = Object.keys(pkg.dependencies ?? {}).filter(
+  (n) => !n.startsWith('@agent-gateway/'),
+);
+
+rmSync(here('./dist'), { recursive: true, force: true });
 await build({
-  entryPoints: [new URL('./src/bin/cli.ts', import.meta.url).pathname],
-  outfile: new URL('./dist/bin/cli.js', import.meta.url).pathname,
+  entryPoints: [here('./src/bin/cli.ts')],
+  outfile: cli,
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -19,4 +25,4 @@ await build({
   external: [...external, ...external.map((n) => `${n}/*`)],
   logLevel: 'warning',
 });
-chmodSync(new URL('./dist/bin/cli.js', import.meta.url), 0o755);
+chmodSync(cli, 0o755);
