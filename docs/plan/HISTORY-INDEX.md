@@ -20,7 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
-| 2026-10-13 | 62 | unsigned Claude Desktop `.mcpb` (about 261 KB, mcpb 2.1.2) from re-bundled CLI, generated third-party notices, 4 user_config settings, 4/4 tests; manual Desktop check pending | ## 2026-10-13 — Claude Desktop .mcpb bundle (task 62) |
+| 2026-10-13 | 62 | unsigned Claude Desktop `.mcpb` (about 261 KB, mcpb 2.1.2) plus gateway degraded-secondary mode, single pairing-code holder and `foundry_url` origin allow; manual Desktop check done except `world_info` | ## 2026-10-13 — Claude Desktop .mcpb bundle (task 62) |
 | 2026-10-13 | 63 | `scripts/conformance.sh` (Inspector 2.10.1 over stdio, fake paired module, list and echo call), schema checks, `docs/compatibility.md` | ## 2026-10-13 — stdio MCP conformance and compatibility matrix (task 63) |
 | 2026-10-13 | 61 | gateway built as one esbuild bundle with protocol inlined, 4-file 37.7 kB npm package, pack allowlist test and packed-tarball smoke, not published | ## 2026-10-13 — gateway npm package (task 61) |
 | 2026-10-13 | 60 | release zip packer (no .map, .ts or dotfiles), download tied to version, no relationships in module.json by decision, 6/6 tests | ## 2026-10-13 — module release zip packer (task 60) |
