@@ -79,3 +79,11 @@ write. pf2e is implemented first; every other system answers "unsupported".
 - Adding Items from compendia (task 45)
 - dnd5e build support (follow-up to 32); changing `SystemAdapter` in module/src/adapters/types.ts
 - Correlating pf2e native side effects (task 44)
+
+## Attempt 1 — failed
+Head `0cd8a6c`. Tester PASS: `npm run verify` 3,689 fast / 2,227 slow; e2e-unit 163; e2e tsc and eslint clean. Reviewer REQUEST CHANGES; scope clean; all other acceptance met; the pf2e 8.6.0 data paths are confirmed.
+- `module/src/adapters/pf2e/build.ts:163-164`: any untrained core skill is rejected as "Unknown skill". For example `{kind:'skill_rank', skill:'athletics', rank:1}` fails on a fresh character, so the e2e will fail.
+  - Cause: a pf2e 8.6.0 character's stored `_source.system.skills` is sparse (`{}`). `CharacterPF2e.prepareBaseData` iterates `CONFIG.PF2E.skills` (pf2e.mjs:35316-35317).
+  - Fix: validate slugs against the prepared `actor.system.skills`, or `CONFIG.PF2E.skills`.
+  - The unit fixture hid the bug by pre-seeding stored skills (`module/test/tools/character-build/fixtures.ts:55`). Add a test on a sparse `_source.system.skills`.
+- Suggestion, accepted as is: e2e cleanup in `afterAll` by exact UUID is equivalent to "in `finally`".
