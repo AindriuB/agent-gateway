@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterBuildChange } from '@agent-gateway/protocol';
 import { characterBuild } from '@agent-gateway/protocol';
 import { boundedAdapterData } from '../../../src/tools/_adapters.js';
-import { BUILD_LOCK_WAIT_MS, pf2eBuildHook } from '../../../src/adapters/pf2e/build.js';
+import {
+  BUILD_LOCK_WAIT_MS,
+  pendingBuildLocks,
+  pf2eBuildHook,
+} from '../../../src/adapters/pf2e/build.js';
 import { selectBuildHook } from '../../../src/adapters/build.js';
 import { genericBuildHook } from '../../../src/adapters/generic/build.js';
 import { AdapterUnsupportedError } from '../../../src/adapters/types.js';
@@ -469,6 +473,44 @@ describe('lock timeout', () => {
     expect(actor.update).not.toHaveBeenCalled();
     await apply([{ kind: 'skill_rank', skill: 'athletics', rank: 2 }]);
     expect(actor.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('lock chain after the last waiter times out', () => {
+  afterEach(() => vi.useRealTimers());
+  it('keeps the holder registered so a retry waits for it', async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    let finish!: () => void;
+    actor.class.update = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          order.push('holder:start');
+          finish = () => {
+            order.push('holder:end');
+            resolve();
+          };
+        }),
+    );
+    actor.update = vi.fn(async () => void order.push('retry:write'));
+    const holder = apply([{ kind: 'key_attribute', attribute: 'dex' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const a = expect(
+      apply([{ kind: 'skill_rank', skill: 'athletics', rank: 1 }]),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/Another build is still running/) });
+    await vi.advanceTimersByTimeAsync(BUILD_LOCK_WAIT_MS + 1);
+    await a;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pendingBuildLocks()).toBe(1);
+    const b = apply([{ kind: 'skill_rank', skill: 'athletics', rank: 2 }]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(order).toEqual(['holder:start']);
+    finish();
+    await holder;
+    await b;
+    expect(order).toEqual(['holder:start', 'holder:end', 'retry:write']);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pendingBuildLocks()).toBe(0);
   });
 });
 

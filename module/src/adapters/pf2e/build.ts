@@ -241,6 +241,8 @@ function observe(actor: any): { finish(): { added: number; updated: number; remo
 }
 
 const locks = new Map<string, Promise<void>>();
+/** Number of Actors with a build call queued or running (for tests). */
+export const pendingBuildLocks = (): number => locks.size;
 /** A stuck call cannot hold an Actor's lock longer than this; the next waiter then proceeds. */
 export const BUILD_LOCK_WAIT_MS = 30_000;
 /**
@@ -268,7 +270,11 @@ async function withActorLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   } finally {
     clearTimeout(timer);
     release();
-    if (locks.get(key) === tail) locks.delete(key);
+    // Only forget the chain once it has truly settled: `tail` resolves after every predecessor,
+    // so a timed-out last waiter cannot expose a still-running holder.
+    void tail.then(() => {
+      if (locks.get(key) === tail) locks.delete(key);
+    });
   }
 }
 
