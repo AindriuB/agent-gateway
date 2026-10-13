@@ -54,6 +54,8 @@ interface ScanCtx {
   readonly lenient: boolean;
   skipped: number;
   readonly inflate: Inflater;
+  readonly found: FoundChoice[];
+  readonly user?: unknown;
 }
 
 /** Grant UUIDs an item source names: GrantItem rules and a class-style `system.items` map. */
@@ -100,15 +102,39 @@ function substituteSelection(
         (d) => d.flag === m![1] && (d.itemUuid === undefined || d.itemUuid === srcUuid),
       )
     : undefined;
-  if (decided && UUID_VALUE.test(decided.value)) return decided.value;
+  // Only a value the choice itself offers may be loaded; anything else (or a choice whose options
+  // are unknown until created) is treated as unresolved, never fetched.
+  const offered = decided
+    ? scan.found.find((c) => c.itemUuid === srcUuid.slice(0, 500) && c.flag === decided.flag)
+    : undefined;
+  if (
+    decided &&
+    offered &&
+    !offered.dynamic &&
+    !offered.unsupported &&
+    offered.values?.has(decided.value)
+  )
+    return decided.value;
   if (scan.lenient) {
     scan.skipped += 1;
     return undefined;
   }
   return invalid(`${label(src)}: GrantItem uuid ${uuid.slice(0, 80)} cannot be resolved headless`);
 }
-/** A decided grant value must itself be a document UUID. */
-const UUID_VALUE = /^(?:Compendium|Item|Actor)\.[A-Za-z0-9._-]{1,490}$/;
+
+/** True unless the user is known and cannot observe the document (or its pack). */
+function docVisible(doc: any, user: unknown): boolean {
+  if (user === undefined) return true;
+  const g = globalThis as any;
+  const pack = typeof doc?.pack === 'string' ? g.game?.packs?.get(doc.pack) : undefined;
+  for (const d of [doc, pack])
+    if (
+      typeof d?.testUserPermission === 'function' &&
+      d.testUserPermission(user, 'OBSERVER') !== true
+    )
+      return false;
+  return true;
+}
 
 /** Collect the ChoiceSet rules that still need an answer; refuse the other unanswerable prompts. */
 async function checkSource(
@@ -140,16 +166,24 @@ async function checkSource(
 export async function scanHeadless(
   root: any,
   rootUuid: string,
-  options: { decisions?: readonly ChoiceDecision[]; lenient?: boolean } = {},
+  options: {
+    decisions?: readonly ChoiceDecision[];
+    lenient?: boolean;
+    /** The real target Actor (import) so actor-dependent filters are evaluated correctly. */
+    actor?: unknown;
+    user?: unknown;
+  } = {},
 ): Promise<{ found: FoundChoice[]; labels: Map<FoundChoice, string>; skipped: number }> {
+  const found: FoundChoice[] = [];
   const scan: ScanCtx = {
     decisions: options.decisions ?? [],
     lenient: options.lenient === true,
     skipped: 0,
-    inflate: makeInflater(),
+    inflate: makeInflater({ actor: options.actor, user: options.user }),
+    found,
+    user: options.user,
   };
   const seen = new Set<string>();
-  const found: FoundChoice[] = [];
   const labels = new Map<FoundChoice, string>();
   let docs = 0;
   let level: Array<{ src: any; uuid: string }> = [{ src: root, uuid: rootUuid }];
@@ -167,6 +201,7 @@ export async function scanHeadless(
         if (++docs > MAX_DOCS) invalid(`Grants resolve more than ${MAX_DOCS} documents`);
         const doc = await fromUuid(uuid);
         if (!doc) continue; // The native create skips an unresolvable grant.
+        if (!docVisible(doc, options.user)) invalid('A granted item is not available to this user'); // never names the document
         const source = typeof doc.toObject === 'function' ? doc.toObject() : doc._source;
         if (isPlain(source)) next.push({ src: source, uuid });
       }
@@ -180,8 +215,9 @@ export async function scanHeadless(
 export async function listChoices(
   source: any,
   uuid: string,
+  user?: unknown,
 ): Promise<{ choices: ListedChoice[]; message?: string }> {
-  const { found, skipped } = await scanHeadless(source, uuid, { lenient: true });
+  const { found, skipped } = await scanHeadless(source, uuid, { lenient: true, user });
   const choices = found.map((c) => {
     const listed: Partial<FoundChoice> = { ...c };
     delete listed.values;
@@ -280,6 +316,7 @@ function observe(actor: any): EmbedObservation {
 export const pf2eEmbedHook: EmbedHook = Object.freeze({
   systemId: 'pf2e',
   async prepare({
+    user,
     actor,
     entry,
     source,
@@ -290,6 +327,8 @@ export const pf2eEmbedHook: EmbedHook = Object.freeze({
     const rootUuid = String(entry?.uuid ?? source?._stats?.compendiumSource ?? '');
     const { found, labels } = await scanHeadless(source, rootUuid, {
       decisions: choices ?? [],
+      actor,
+      user,
     });
     const decisions = choices ?? [];
     resolveChoices(

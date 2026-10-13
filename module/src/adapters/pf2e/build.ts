@@ -499,5 +499,5 @@ export const pf2eBuildHook: BuildHook = Object.freeze({
   systemId: 'pf2e',
   describe: (actor: unknown) => (isCharacter(actor) ? finish(actor, []) : describe(actor)),
   apply,
-  listChoices: (source: unknown, uuid: string) => listChoices(source, uuid),
+  listChoices: (source: unknown, uuid: string, user?: unknown) => listChoices(source, uuid, user),
 });

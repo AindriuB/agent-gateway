@@ -55,6 +55,7 @@ async function embed(
     entry,
     source: converted,
     overrides: args.overrides ?? {},
+    user: gm(ctx),
     ...(args.choices ? { choices: args.choices } : {}),
     ...(args.onUnanswered ? { onUnanswered: args.onUnanswered } : {}),
   });

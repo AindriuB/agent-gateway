@@ -11,6 +11,9 @@ import {
   choiceFlag,
   choiceTombstones,
   MAX_TOMBSTONES,
+  MAX_PACKS,
+  MAX_FILTER_QUERIES,
+  MAX_INDEX_ENTRIES,
 } from '../../../src/adapters/pf2e/choices.js';
 import { listChoices, pf2eEmbedHook } from '../../../src/adapters/pf2e/embed.js';
 import { HANDLERS } from '../../../src/tools/index.js';
@@ -493,12 +496,23 @@ describe('review fixes', () => {
     expect(choiceFlag({}, 'Armor-Master Of_Things')).toBe('armorMasterOfThings');
     expect(choiceFlag({}, 'x', 'some-slug')).toBe('someSlug');
     expect(choiceFlag({ slug: 'my-slug' }, 'x')).toBe('mySlug');
+    // An item without a stored slug camel-cases the raw name, not sluggify(name).
+    expect(choiceFlag({}, 'ABC Feat')).toBe('aBCFeat');
+    expect(choiceFlag({}, 'ABC Feat', null)).toBe('aBCFeat');
   });
 
   describe('compendium filter and owned-item choices', () => {
-    const uuids = Array.from({ length: 60 }, (_, i) => `Compendium.p.c.Item.f${i}`);
+    const uuids = Array.from({ length: 60 }, (_, i) => `Compendium.pf2e.eq.Item.f${i}`);
+    let queried: Array<{ parent: unknown; choices: any }>;
+    let packs: Map<string, any>;
+    const pack = (id: string, size = 10, observable = true) => ({
+      collection: id,
+      metadata: { type: 'Item' },
+      index: Object.assign([{ type: 'equipment' }], { size }),
+      testUserPermission: vi.fn(() => observable),
+    });
     beforeEach(() => {
-      installChoiceWrapper();
+      queried = [];
       class FakeActor {
         constructor(public data: unknown) {}
         getRollOptions() {
@@ -508,23 +522,31 @@ describe('review fixes', () => {
       class FakeItem {
         constructor(
           public data: unknown,
-          public opts: unknown,
+          public opts: any,
         ) {}
         getRollOptions() {
           return ['item'];
         }
       }
       class FakeRule {
-        constructor(public source: any) {}
-        async inflateChoices() {
-          return this.source.choices.filter
-            ? uuids.map((u, i) => ({ value: u, label: `F${i}` }))
-            : [];
+        item: any;
+        constructor(
+          public source: any,
+          opts: any,
+        ) {
+          this.item = opts.parent;
+        }
+        async queryCompendium(choices: any) {
+          queried.push({ parent: this.item.opts.parent, choices });
+          return uuids.map((u, i) => ({ value: u, label: `F${i}` }));
         }
       }
       g.CONFIG = { Actor: { documentClass: FakeActor }, Item: { documentClass: FakeItem } };
       (FakeRule.prototype as any).preCreate = vi.fn();
       g.game.pf2e.RuleElements.builtin.ChoiceSet = FakeRule;
+      packs = new Map([['pf2e.eq', pack('pf2e.eq')]]);
+      g.game.packs = { values: () => packs.values(), get: (id: string) => packs.get(id) };
+      g.game.items = { size: 0, get: () => undefined };
       installChoiceWrapper();
       g.fromUuid = vi.fn(async () => undefined);
     });
@@ -532,31 +554,104 @@ describe('review fixes', () => {
       delete g.CONFIG;
       delete g.fromUuid;
     });
-    const filterRule = { key: 'ChoiceSet', flag: 'pick', choices: { filter: ['x'] } };
+    const filterRule = (extra: object = {}) => ({
+      key: 'ChoiceSet',
+      flag: 'pick',
+      choices: { filter: ['x'], itemType: 'equipment', pack: 'pf2e.eq', ...extra },
+    });
     const feat = (rule: object) => ({ name: 'F', type: 'feat', system: { rules: [rule] } });
     const prep = (source: any, extra: object = {}) =>
       pf2eEmbedHook.prepare({
         systemId: 'pf2e',
-        actor: { feats: new Map() },
+        actor: { feats: new Map(), getRollOptions: () => ['real'] },
         entry: { uuid: 'Compendium.p.c.Top' },
         source,
         overrides: {},
         ...extra,
       });
-    it('lists an inflated filter choice (cut at 50, flagged truncated)', async () => {
-      const { choices } = await listChoices(feat(filterRule), 'Compendium.p.c.Top');
+    it('lists a filter choice from index entries only (cut at 50, flagged truncated)', async () => {
+      const { choices } = await listChoices(feat(filterRule()), 'Compendium.p.c.Top');
       expect(choices[0]).toMatchObject({ flag: 'pick', truncated: true });
       expect(choices[0]!.options).toHaveLength(50);
       expect(choices[0]).not.toHaveProperty('values');
-      expect(choices[0]).not.toHaveProperty('unsupported');
+      expect(choices[0]).not.toHaveProperty('dynamic');
+      expect(g.fromUuid).not.toHaveBeenCalled();
     });
-    it('accepts a UUID in the full inflated set and rejects one outside it', async () => {
+    it('accepts a UUID in the full set and rejects one outside it, against the real actor', async () => {
+      const actor = { feats: new Map(), getRollOptions: () => ['real'] };
       await expect(
-        prep(feat(filterRule), { choices: [{ flag: 'pick', value: uuids[59] }] }),
+        prep(feat(filterRule()), { actor, choices: [{ flag: 'pick', value: uuids[59] }] }),
       ).resolves.toBeDefined();
+      expect(queried[0]!.parent).toBe(actor);
       await expect(
-        prep(feat(filterRule), { choices: [{ flag: 'pick', value: 'Compendium.p.c.Item.zzz' }] }),
+        prep(feat(filterRule()), {
+          actor,
+          choices: [{ flag: 'pick', value: 'Compendium.p.c.Item.zzz' }],
+        }),
       ).rejects.toThrow(/not one of its options/);
+    });
+    it('leaves actor-dependent filters dynamic when listing, without querying', async () => {
+      for (const rule of [
+        filterRule({ itemType: undefined }), // default itemType is feat
+        filterRule({ itemType: 'heritage' }),
+        filterRule({ filter: ['{actor|x}'] }),
+      ]) {
+        const { choices } = await listChoices(feat(rule), 'u');
+        expect(choices[0]).toMatchObject({ dynamic: true, options: [] });
+      }
+      expect(queried).toHaveLength(0);
+    });
+    it('leaves a filter dynamic, before any query, when it would scan too much', async () => {
+      packs = new Map(
+        Array.from({ length: MAX_PACKS + 1 }, (_, i) => [`p${i}`, pack(`p${i}`)] as const),
+      );
+      const unnamed = filterRule({ pack: undefined });
+      expect((await listChoices(feat(unnamed), 'u')).choices[0]).toMatchObject({ dynamic: true });
+      packs = new Map([['pf2e.eq', pack('pf2e.eq', MAX_INDEX_ENTRIES + 1)]]);
+      expect((await listChoices(feat(filterRule()), 'u')).choices[0]).toMatchObject({
+        dynamic: true,
+      });
+      expect(queried).toHaveLength(0);
+    });
+    it('shares the query budget across a whole scan', async () => {
+      const rules = Array.from(
+        { length: MAX_FILTER_QUERIES + 1 },
+        (_, i) => filterRule({}) && { ...filterRule(), flag: `f${i}` },
+      );
+      const { choices } = await listChoices({ name: 'T', system: { rules } }, 'u');
+      expect(queried).toHaveLength(MAX_FILTER_QUERIES);
+      expect(choices.filter((c) => c.dynamic)).toHaveLength(1);
+    });
+    it('drops options the user cannot observe and refuses an unobservable named pack', async () => {
+      const user = { id: 'u' };
+      packs = new Map([['pf2e.eq', pack('pf2e.eq', 10, false)]]);
+      expect((await listChoices(feat(filterRule()), 'u', user)).choices[0]).toMatchObject({
+        dynamic: true,
+      });
+      packs = new Map([
+        ['pf2e.eq', pack('pf2e.eq')],
+        ['pf2e.hid', pack('pf2e.hid', 10, false)],
+      ]);
+      const hidden = await listChoices(
+        feat(filterRule({ pack: undefined, itemType: 'equipment' })),
+        'u',
+        user,
+      );
+      expect(hidden.choices[0]!.options.length).toBeLessThanOrEqual(50);
+      const mixed = [
+        { value: 'Compendium.pf2e.hid.Item.a', label: 'hidden' },
+        { value: 'Compendium.pf2e.eq.Item.b', label: 'shown' },
+      ];
+      (g.game.pf2e.RuleElements.builtin.ChoiceSet.prototype as any).queryCompendium = async () =>
+        mixed;
+      const out = await listChoices(
+        feat(filterRule({ pack: undefined, itemType: 'equipment' })),
+        'u',
+        user,
+      );
+      expect(out.choices[0]!.options).toEqual([
+        { value: 'Compendium.pf2e.eq.Item.b', label: 'shown' },
+      ]);
     });
     it('treats owned-item choices with types as dynamic, and without types as unsupported', async () => {
       const owned = {
@@ -623,6 +718,38 @@ describe('review fixes', () => {
       ).resolves.toBeDefined();
       expect(g.fromUuid).toHaveBeenCalledWith('Compendium.p.c.Item.granted');
     });
+    it('never loads a decided uuid that the choice does not offer', async () => {
+      await expect(prep({ choices: [{ flag: 'pick', value: 'Actor.x.Item.y' }] })).rejects.toThrow(
+        /not one of its options|cannot be resolved/,
+      );
+      await expect(
+        prep({ choices: [{ flag: 'pick', value: 'Item.secret' }], onUnanswered: 'ignore' }),
+      ).rejects.toThrow();
+      expect(g.fromUuid).not.toHaveBeenCalledWith('Actor.x.Item.y');
+      expect(g.fromUuid).not.toHaveBeenCalledWith('Item.secret');
+    });
+    it('refuses an unobservable granted item without naming it', async () => {
+      g.fromUuid = vi.fn(async () => ({
+        toObject: () => ({ name: 'TopSecretName', system: { rules: [] } }),
+        testUserPermission: () => false,
+      }));
+      await expect(
+        pf2eEmbedHook.prepare({
+          systemId: 'pf2e',
+          actor: { feats: new Map() },
+          entry: { uuid: 'Compendium.p.c.Top' },
+          source: {
+            name: 'F',
+            type: 'class',
+            system: { rules: [], items: { a: { uuid: 'Compendium.p.c.Item.s' } } },
+          },
+          overrides: {},
+          user: { id: 'u' },
+        }),
+      ).rejects.toSatisfy(
+        (e: Error) => !/TopSecretName/.test(e.message) && /not available/.test(e.message),
+      );
+    });
     it('is skipped (with a note) when listing, refused when importing without a decision', async () => {
       const out = await listChoices(structuredClone(src), 'Compendium.p.c.Top');
       expect(out.choices.map((c) => c.flag)).toEqual(['pick']);
@@ -632,6 +759,14 @@ describe('review fixes', () => {
   });
 
   describe('wrapper marker', () => {
+    it('uses registry-wide symbols so other copies of the module agree', () => {
+      installChoiceWrapper();
+      const wrapped = (cls.ChoiceSet.prototype as any).preCreate;
+      expect(wrapped[Symbol.for('agent-gateway.pf2e.choiceSetWrapper')]).toBe(true);
+      expect(Symbol.for('agent-gateway.pf2e.choiceHandled')).toBe(
+        Symbol.for('agent-gateway.pf2e.choiceHandled'),
+      );
+    });
     it('does not rewrap its own marked method, and survives a module wrapping on top', async () => {
       installChoiceWrapper();
       const ours = (cls.ChoiceSet.prototype as any).preCreate;

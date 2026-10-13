@@ -27,6 +27,8 @@ export interface EmbedInput {
   /** A fresh, owned copy of the converted source; a hook may return it modified. */
   readonly source: Record<string, any>;
   readonly overrides: EmbedOverrides;
+  /** The executing user; used to keep resolved options to documents it may observe. */
+  readonly user?: unknown;
   /** Optional answers to the item's (and its grants') ChoiceSet prompts. */
   readonly choices?: readonly ChoiceDecision[];
   /** `reject` (default) refuses unanswered choices before any write; `ignore` reports them. */

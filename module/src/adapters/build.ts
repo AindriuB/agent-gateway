@@ -25,6 +25,7 @@ export interface BuildHook {
   listChoices?(
     source: unknown,
     uuid: string,
+    user?: unknown,
   ): Promise<{ choices: ChoiceListing[]; message?: string }>;
 }
 /** Bundled hooks only. Future system tasks insert entries here; no public registration. */

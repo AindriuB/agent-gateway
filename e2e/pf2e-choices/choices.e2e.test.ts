@@ -173,13 +173,16 @@ describe('pf2e ChoiceSet answers headless (set AGENT_GATEWAY_E2E_PF2E=1 and _WRI
         globalThis.__agPromptHook = Hooks.on('renderPickAThingPrompt', () => { globalThis.__agPromptCount++; });
       })()`);
       try {
-        // Feats whose ChoiceSet queries the compendium (`choices.filter`), from the pack index.
+        // Feats whose ChoiceSet queries the compendium (`choices.filter`) for a non-feat, non-heritage
+        // type without actor references (anything else is listed as dynamic without an Actor).
         const featUuids = (await session.browser.page.evaluate(`(async () => {
           const index = await game.packs.get('pf2e.feats-srd').getIndex({ fields: ['system.rules'] });
           return index
             .filter((e) => (e.system?.rules ?? []).some((r) => r.key === 'ChoiceSet' && !r.selection &&
-              r.choices && !Array.isArray(r.choices) && Array.isArray(r.choices.filter)))
-            .slice(0, 40)
+              r.choices && !Array.isArray(r.choices) && Array.isArray(r.choices.filter) &&
+              typeof r.choices.itemType === 'string' && !['feat', 'heritage'].includes(r.choices.itemType) &&
+              !JSON.stringify(r.choices).includes('{actor|')))
+            .slice(0, 100)
             .map((e) => e.uuid);
         })()`)) as string[];
         expect(featUuids.length, 'a feat with a filter ChoiceSet').toBeGreaterThan(0);

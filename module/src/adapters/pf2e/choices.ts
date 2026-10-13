@@ -75,20 +75,16 @@ export function sluggify(text: string, camel: 'dromedary' | null = null): string
 }
 
 /**
- * pf2e's default flag (`#setDefaultFlag`, pf2e.mjs:32053): the rule's own flag stripped to
- * `[-a-z0-9]`, else the dromedary slug of `rule.slug ?? item.slug ?? item.name`. An item without a
- * stored slug has the slug `sluggify(name)`.
+ * pf2e's default flag (`#setDefaultFlag`, pf2e.mjs:32050): the rule's own flag stripped to
+ * `[-a-z0-9]`, else `sluggify(rule.slug ?? item.slug ?? item.name, {camel: 'dromedary'})`. The
+ * item's slug is its stored `system.slug`, which is null for most items, so the raw name is
+ * camel-cased (not its slug): "ABC Feat" gives `aBCFeat`.
  */
 export function choiceFlag(rule: any, itemName: unknown, itemSlug?: unknown): string {
   if (typeof rule?.flag === 'string' && rule.flag.length > 0)
     return rule.flag.replace(/[^-a-z0-9]/gi, '').slice(0, 64);
-  const slug =
-    typeof rule?.slug === 'string' && rule.slug
-      ? rule.slug
-      : typeof itemSlug === 'string' && itemSlug
-        ? itemSlug
-        : sluggify(String(itemName ?? ''));
-  return sluggify(slug, 'dromedary').slice(0, 64);
+  const raw = rule?.slug ?? itemSlug ?? itemName;
+  return sluggify(typeof raw === 'string' ? raw : '', 'dromedary').slice(0, 64);
 }
 
 /** Why a ChoiceSet cannot be answered by value, or undefined when it can. */
@@ -125,22 +121,87 @@ function staticOptions(rule: any): Array<{ value: string; label: string }> | und
   return out;
 }
 
-/** Inflates a rule's choices on a temporary Actor and Item. Nothing is written or persisted. */
+/** Inflates a rule's choices (compendium filters only). Nothing is written or persisted. */
 export type Inflater = (rule: any, source: any) => Promise<unknown[] | undefined>;
-export function makeInflater(): Inflater {
-  let actor: any;
+
+// Bounds on filter resolution, checked before anything is loaded and shared by a whole scan.
+export const MAX_FILTER_QUERIES = 8;
+export const MAX_PACKS = 12;
+export const MAX_INDEX_ENTRIES = 30000;
+
+const canObserve = (doc: any, user: unknown): boolean =>
+  user === undefined || typeof doc?.testUserPermission !== 'function'
+    ? true
+    : doc.testUserPermission(user, 'OBSERVER') === true;
+/** True when the user may see the document an option value names (pack index entries only). */
+function valueVisible(value: string, user: unknown): boolean {
+  const parts = value.split('.');
+  if (parts[0] === 'Compendium' && parts.length >= 5)
+    return canObserve(G.game?.packs?.get(`${parts[1]}.${parts[2]}`), user);
+  if (parts[0] === 'Item' && parts.length === 2)
+    return canObserve(G.game?.items?.get(parts[1]), user);
+  return false;
+}
+
+/**
+ * Resolve a compendium `filter` choice with pf2e's own `queryCompendium`, which builds options from
+ * pack index entries and never loads documents (unlike `inflateChoices`, which then loads every
+ * match for its label). It is run against `actor` (the real target) as the parent of an unsaved
+ * temporary item; with no actor, a filter that depends on actor state is left `dynamic`. Packs
+ * and entries are counted first and the choice is left `dynamic` when they exceed the bounds;
+ * results from packs or world items the user cannot observe are dropped.
+ *
+ * pf2e's `queryCompendium` posts a progress notification (`ui.notifications`); there is no clean
+ * way to suppress that without swapping a global, so it is left as is.
+ */
+export function makeInflater(opts: { actor?: any; user?: unknown } = {}): Inflater {
+  let temp: any;
+  const budget = { queries: 0, entries: 0 };
   return async (rule, source) => {
     try {
+      const c = rule?.choices;
+      if (!isPlain(c) || !Array.isArray(c.filter)) return undefined;
+      const itemType = typeof c.itemType === 'string' ? c.itemType : 'feat';
+      if (
+        !opts.actor &&
+        (itemType === 'feat' ||
+          itemType === 'heritage' ||
+          /\{actor\||\bself:/.test(JSON.stringify(c)))
+      )
+        return undefined;
+      if (c.slugsAsValues && typeof c.pack !== 'string') return undefined;
+      if (++budget.queries > MAX_FILTER_QUERIES) return undefined;
+      const all: any[] = Array.from(G.game?.packs?.values?.() ?? []);
+      const packs =
+        typeof c.pack === 'string'
+          ? all.filter((p) => p?.collection === c.pack)
+          : all.filter(
+              (p) =>
+                p?.metadata?.type === 'Item' && p.index?.some?.((e: any) => e.type === itemType),
+            );
+      if (packs.length > MAX_PACKS) return undefined;
+      if (typeof c.pack === 'string' && !packs.every((p) => canObserve(p, opts.user)))
+        return undefined;
+      let entries = G.game?.items?.size ?? 0;
+      for (const p of packs) entries += p.index?.size ?? 0;
+      budget.entries += entries;
+      if (budget.entries > MAX_INDEX_ENTRIES) return undefined;
       const ActorClass = G.CONFIG?.Actor?.documentClass;
       const ItemClass = G.CONFIG?.Item?.documentClass;
       const RuleClass = target();
-      if (!ActorClass || !ItemClass || typeof RuleClass !== 'function') return undefined;
-      actor ??= new ActorClass({ name: 'agent-gateway temporary', type: 'character' });
+      if (!ItemClass || typeof RuleClass !== 'function') return undefined;
+      const actor =
+        opts.actor ??
+        (temp ??= new ActorClass({ name: 'agent-gateway temporary', type: 'character' }));
       const item = new ItemClass(structuredClone(source), { parent: actor });
       const instance = new RuleClass(structuredClone(rule), { parent: item });
       const rollOptions = new Set([actor.getRollOptions(), item.getRollOptions('parent')].flat());
-      const out = await instance.inflateChoices(rollOptions, []);
-      return Array.isArray(out) ? out : undefined;
+      const out = await instance.queryCompendium(c, rollOptions, []);
+      if (!Array.isArray(out) || out.length > MAX_VALUES) return undefined;
+      return out.filter(
+        (o: any) =>
+          typeof o?.value === 'string' && (c.slugsAsValues || valueVisible(o.value, opts.user)),
+      );
     } catch {
       return undefined;
     }
@@ -165,10 +226,10 @@ export async function describeChoice(
   let all = staticOptions(rule);
   if (!all) {
     // Owned items and attacks depend on the real Actor: checked when the item is created.
+    // A compendium filter is resolved, boundedly, from pack index entries.
     const c = rule?.choices;
-    const onActor = isPlain(c) && (c.ownedItems || c.attacks || c.unarmedAttacks);
-    // A compendium filter: ask pf2e itself, on temporary documents.
-    const inflated = onActor ? undefined : await inflate?.(rule, source);
+    const isFilter = isPlain(c) && Array.isArray(c.filter);
+    const inflated = isFilter ? await inflate?.(rule, source) : undefined;
     const list = inflated?.map((o: any) => ({
       value: o?.value,
       label: o?.label,
@@ -255,7 +316,7 @@ const registry = shared.registry;
 const tombstones = shared.tombstones;
 export const MAX_TOMBSTONES = 32;
 const MARK = Symbol.for('agent-gateway.pf2e.choiceSetWrapper');
-const HANDLED = Symbol('agent-gateway.pf2e.choiceHandled');
+const HANDLED = Symbol.for('agent-gateway.pf2e.choiceHandled');
 const state: { error?: string } = {};
 
 function target(): any {
