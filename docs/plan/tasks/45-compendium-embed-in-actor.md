@@ -92,3 +92,13 @@ approval, policy and audit path and declares every document it creates.
 - Correlating pf2e's uncorrelated native writes (task 44)
 - Returning raw source JSON from compendium_get; changing document_create
 - Extracting a shared e2e `settle` helper into e2e/lib/
+
+## Attempt 1 — failed
+Head `f031ced`. Tester PASS: `npm run verify` 2,227 slow on rerun, after one known-flaky protocol timing failure; e2e-unit 163; tsc and eslint clean. Reviewer REQUEST CHANGES; scope clean; the permission, audit and headless-scan core is confirmed. Three defects are pf2e mapping bugs that the unit fixtures copied, so build the fixtures from real pf2e 8.6.0 shapes (pf2e.mjs via `ssh andrew@homelab.local`).
+- `module/src/adapters/pf2e/embed.ts:116`: `FeatGroup.isFeatValid` reads `e.category` from an Item instance (pf2e.mjs:34974-34976), but it is passed a raw source, so every slotted feat is refused. Pass an instance, for example a temp Item, or the equivalent. The stub at `module/test/adapters/pf2e/embed.test.ts:28` hid this.
+- `embed.ts:100-104`: real worn usages have no hyphen (`wornarmor`, `worngloves`, `worncloak`…; getUsageDetails pf2e.mjs:34017+, armor :50938), so the `startsWith('worn-')` check never matches. Worn items are refused, and armor is never `inSlot:true`. The fixture at test :85 invents `worn-gloves`.
+- `embed.ts:10-19`: `PHYSICAL` leaves out `ammo`, which pf2e.mjs:3173-3182 lists as physical, so a quantity override on arrows fails.
+- `embed.ts:157-179`: the Actor monkeypatch leaks under overlapping calls. B wraps A's wrapper, A deletes the own property, B undercounts and then restores A's stale wrapper permanently. Replace it with a scoped `updateItem`/`deleteItem` hook counter that ignores events carrying `agentGateway.callId`, like the watcher at `module/src/audit/stage.ts:58-86`. No monkeypatching.
+- Suggestions to apply:
+  - Treat a ChoiceSet `selection` as present only when it is a string or number. pf2e still prompts on a non-matching value (pf2e.mjs:31902, :32155); state that a non-matching value is out of scope until task 49.
+  - Scan kit `entry.items` nested contents in `grantUuids` (pf2e.mjs:52666-52671).
