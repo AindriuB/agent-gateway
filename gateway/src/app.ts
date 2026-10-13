@@ -491,8 +491,16 @@ export function createApp(config: Config, deps: AppDeps): App {
         await candidate.close();
         return;
       }
+      // Anything failing after a successful listen must release the port, or every retry
+      // would hit EADDRINUSE against our own listener.
+      let stored: boolean;
+      try {
+        stored = token.commit();
+      } catch (err) {
+        await candidate.close().catch(() => undefined);
+        throw err;
+      }
       httpServer = candidate;
-      const stored = token.commit();
       if (token.created && stored) {
         writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
       } else if (token.created) {

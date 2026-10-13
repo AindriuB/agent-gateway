@@ -58,6 +58,7 @@ describe('--http in the app', () => {
     dbPath: string,
     http: boolean,
     httpRetryTimers?: ReturnType<typeof manualTimers>,
+    openStoreFn?: typeof openStore,
   ) {
     const lines: string[] = [];
     const stdin = new PassThrough();
@@ -72,6 +73,7 @@ describe('--http in the app', () => {
       writeStatus: (l) => lines.push(l),
       ...(http ? { http: true } : {}),
       ...(httpRetryTimers ? { httpRetryTimers } : {}),
+      ...(openStoreFn ? { openStore: openStoreFn } : {}),
     });
     apps.push(app);
     return { app, lines, stdin, out: () => out };
@@ -208,6 +210,55 @@ describe('--http in the app', () => {
     const tok =
       (successor.lines.find((l) => l.startsWith('HTTP bearer token')) ?? '').split(': ')[1] ?? '';
     expect(tok).toMatch(/^[0-9a-f]{64}$/);
+    expect(await status(port, tok)).toBe(200);
+    expect(timers.pending).toBeUndefined();
+  }, 40_000);
+
+  it('a commit failure after a successful takeover listen releases the port and recovers', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const link = await freePort();
+    let port = await freePort();
+    while (port === link) port = await freePort();
+    const primary = mk(link, port, state.db, false);
+    await primary.app.start();
+    let failCommit = true;
+    const flaky: typeof openStore = (path) => {
+      const store = openStore(path);
+      const set = store.setHttpTokenHash.bind(store);
+      store.setHttpTokenHash = (hash, onlyIfAbsent) => {
+        if (failCommit) throw new Error('database is busy');
+        return set(hash, onlyIfAbsent);
+      };
+      return store;
+    };
+    const timers = manualTimers();
+    const successor = mk(link, port, state.db, true, timers, flaky);
+    await successor.app.start();
+    await primary.app.stop();
+    await until(
+      () => successor.lines.some((l) => l.startsWith('HTTP off')),
+      20_000,
+      'HTTP retry notice',
+    );
+    expect(successor.lines).toContain('HTTP off: database is busy; retrying');
+    // The failed attempt's listener is gone, and nothing was printed or stored.
+    expect(await reachable(port)).toBe(false);
+    expect(successor.lines.some((l) => l.startsWith('HTTP bearer token'))).toBe(false);
+    const check = openStore(state.db);
+    expect(check.getHttpTokenHash()).toBeUndefined();
+    check.close();
+    // The failure clears; the next attempt brings HTTP up with one working token.
+    failCommit = false;
+    timers.fire();
+    await until(
+      () => successor.lines.some((l) => l.startsWith('HTTP bearer token')),
+      5000,
+      'token line',
+    );
+    expect(successor.lines.filter((l) => l.startsWith('HTTP bearer token'))).toHaveLength(1);
+    const tok =
+      (successor.lines.find((l) => l.startsWith('HTTP bearer token')) ?? '').split(': ')[1] ?? '';
     expect(await status(port, tok)).toBe(200);
     expect(timers.pending).toBeUndefined();
   }, 40_000);
