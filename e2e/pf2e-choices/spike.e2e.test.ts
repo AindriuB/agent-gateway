@@ -51,7 +51,7 @@ describe('task 49 spike: callId reaches ChoiceSet.preCreate (AGENT_GATEWAY_E2E_P
       try {
         // A real compendium feat that carries a ChoiceSet rule (the grant target).
         const pack = game.packs.get('pf2e.feats-srd');
-        const index = await pack.getIndex({ fields: ['system.rules'] });
+        const index = await pack.getIndex({ fields: ['img', 'system.rules'] });
         const target = index.find((e) => (e.system?.rules ?? []).some((r) => r.key === 'ChoiceSet'));
         if (!target) return { fatal: 'no feat with a ChoiceSet in pf2e.feats-srd' };
         out.targetUuid = target.uuid;
@@ -84,7 +84,7 @@ describe('task 49 spike: callId reaches ChoiceSet.preCreate (AGENT_GATEWAY_E2E_P
         await run('top-level', { name: 'spike top-level feat', type: 'feat',
           system: { rules: [{ key: 'ChoiceSet', flag: 'spikeTop', choices: [{ value: 'a', label: 'A' }] }] } });
         await run('class-grant', { name: 'spike class', type: 'class',
-          system: { items: { spike: { uuid: target.uuid, level: 1, name: target.name } } } });
+          system: { items: { spike: { uuid: target.uuid, img: target.img || 'icons/svg/item-bag.svg', name: target.name, level: 1 } } } });
         await run('grantitem-child', { name: 'spike granter', type: 'feat',
           system: { rules: [{ key: 'GrantItem', uuid: target.uuid }] } });
       } finally {
