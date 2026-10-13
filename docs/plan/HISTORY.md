@@ -17,6 +17,12 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-13 — gateway npm package (task 61)
+
+The gateway now builds as one esbuild bundle at `dist/bin/cli.js` that inlines the private `@agent-gateway/protocol`; `@modelcontextprotocol/sdk`, `ws`, `zod` and node builtins stay external. `package.json` has `engines.node >=22.13` (for `node:sqlite`), MIT, and `repository` with directory `gateway`, and `prepack` builds protocol and then the gateway. The package is 4 files (LICENSE, README.md, `dist/bin/cli.js`, `package.json`), 37.7 kB, with a short README and a LICENSE added. `contents.test.ts` checks the packed file allowlist. `smoke.mjs` packs, installs into a temp dir with a temp HOME and npm cache, checks `--version` and that `initialize` writes only to stdout, and checks the real state dir is untouched. `npm publish --dry-run` gives foundry-agent-gateway@0.1.0; nothing was published. `npm run verify` was green twice at `3a33cd9` (3,879 fast / 2,227 slow) and smoke passes.
+
+**Cost:** One review round found a real defect: the pack test ran a rebuild through `prepack` that raced other tests and made `verify` flaky, so it now does a dry-run with `--ignore-scripts`; do not put a build inside a test that runs in parallel. Review also tightened smoke isolation (recursive size and mtime check of the state dir, `AGENT_GATEWAY_DB` removed from the environment), fixed `prepack` on a fresh clone (protocol must be built first) and fixed paths with spaces. Publishing stays with task 66.
+
 ## 2026-10-13 — module release zip packer (task 60)
 
 `scripts/pack-module.mjs` writes `dist/release/agent-gateway.zip` containing only `module.json`, `LICENSE`, `dist/module`, `lang`, `templates` and `styles`, excluding `*.ts`, `*.map` and dotfiles. It fails with one-line errors (for example a missing `dist/module/main.js`) and checks `--root` usage. `module.json` `download` now points at the v0.1.0 release zip, and a test ties it to `version`. `scripts/test/pack-module.test.mjs` passes 6 of 6 and `npm run verify` is green (3,878 fast / 2,227 slow) at `8770991`. The live unpack-and-enable check is deferred to task 66.
