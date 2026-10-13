@@ -8,6 +8,8 @@ export const MAX_RELAY_LINE_BYTES = 4 * 1024 * 1024;
 export const MAX_RELAY_SESSIONS = 16;
 /** Unflushed bytes allowed on one relay socket before it is destroyed. */
 export const MAX_RELAY_BUFFERED_BYTES = 8 * 1024 * 1024;
+/** Longest string request id a secondary tracks; longer ones are rejected. */
+export const MAX_RELAY_ID_CHARS = 200;
 /** In-flight request ids a secondary tracks before answering RELAY_BUSY. */
 export const MAX_RELAY_PENDING = 256;
 /** Connect or takeover attempts before a secondary gives up and serves the degraded server. */

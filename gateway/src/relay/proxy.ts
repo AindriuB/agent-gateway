@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import {
   MAX_RELAY_BUFFERED_BYTES,
+  MAX_RELAY_ID_CHARS,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_PENDING,
   RELAY_BUSY,
@@ -41,6 +42,10 @@ export class StdioRelayProxy {
   private readonly onData = (chunk: Buffer) => this.handleChunk(chunk);
   /** stdout has more queued than it will take right now; stdin and the upstream are paused. */
   private blocked = false;
+  private readonly onIoError = (err: Error) => {
+    if (!this.stopped)
+      this.dropClient(`stdio error (${(err as NodeJS.ErrnoException).code ?? err.message})`);
+  };
   private readonly onDrain = () => {
     if (!this.blocked || this.stopped) return;
     this.blocked = false;
@@ -64,6 +69,10 @@ export class StdioRelayProxy {
     this.input.on('data', this.onData);
     // One drain listener for the proxy's life, not one per write.
     this.output.on('drain', this.onDrain);
+    // A broken pipe on either side means the client is gone. These handlers stay for the
+    // process's life, so a late EPIPE after the drop can never become an unhandled error.
+    this.input.on('error', this.onIoError);
+    this.output.on('error', this.onIoError);
   }
 
   stop(): void {
@@ -119,9 +128,7 @@ export class StdioRelayProxy {
     // Everything the client sees, replies and relay errors alike, goes through this cap: a client
     // that stops reading must not be able to grow this process's memory.
     if (this.output.writableLength + line.length > MAX_RELAY_BUFFERED_BYTES) {
-      this.log('the client stopped reading stdout; dropping its session');
-      this.stop();
-      this.onClientGone?.();
+      this.dropClient('the client stopped reading stdout');
       return;
     }
     if (!this.output.write(line) && !this.blocked) {
@@ -129,6 +136,14 @@ export class StdioRelayProxy {
       this.input.pause();
       this.up?.pause?.();
     }
+  }
+
+  /** The client is dead or stuck: release its session, but keep stdin drained so `end` still fires. */
+  private dropClient(why: string): void {
+    this.log(`${why}; dropping its session`);
+    this.stop();
+    this.input.resume(); // discard anything further; 'end' stays observable for the CLI's shutdown
+    this.onClientGone?.();
   }
 
   private fail(id: unknown, tag: string, text: string): void {
@@ -188,6 +203,15 @@ export class StdioRelayProxy {
     if (msg.method === 'initialize') this.initialize = msg;
     else if (msg.method === 'notifications/initialized') this.initialized = true;
     const request = isRequest(msg);
+    if (request && typeof msg.id === 'string' && msg.id.length > MAX_RELAY_ID_CHARS) {
+      // Never tracked: 256 pending entries must not be able to pin hundreds of MiB of ids.
+      this.write({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32600, message: `request id over ${MAX_RELAY_ID_CHARS} characters` },
+      });
+      return;
+    }
     const up = this.up;
     if (!up) {
       if (request)

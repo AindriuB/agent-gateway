@@ -4,6 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   LocalUpstream,
   MAX_RELAY_BUFFERED_BYTES,
+  MAX_RELAY_ID_CHARS,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_PENDING,
   StdioRelayProxy,
@@ -347,5 +348,86 @@ describe('StdioRelayProxy stdout back-pressure', () => {
     await d.send({ jsonrpc: '2.0', id: 1, method: 'ping' });
     await tick();
     expect(other).toHaveLength(1);
+  });
+});
+
+describe('StdioRelayProxy client errors, stdin end and id length', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 20));
+  function setup() {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const proxy = new StdioRelayProxy(input, output);
+    let gone = 0;
+    proxy.onClientGone = () => void gone++;
+    proxy.start();
+    const up = new FakeUpstream();
+    let closed = 0;
+    const origClose = up.close.bind(up);
+    up.close = () => (closed++, origClose());
+    proxy.attach(up);
+    return { input, output, proxy, up, gone: () => gone, closed: () => closed };
+  }
+
+  for (const side of ['output', 'input'] as const) {
+    it(`treats a ${side} error (EPIPE) as the client going away, without crashing`, async () => {
+      const s = setup();
+      s[side].emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+      await tick();
+      expect(s.gone()).toBe(1);
+      expect(s.closed()).toBeGreaterThan(0);
+      expect(s.proxy.pendingCount).toBe(0);
+      // A late second error is swallowed too: the handlers outlive the drop.
+      s[side].emit('error', new Error('again'));
+      expect(s.gone()).toBe(1);
+    });
+  }
+
+  it('keeps stdin drained after a drop so its end event still fires', async () => {
+    const s = setup();
+    let ended = false;
+    s.input.on('end', () => (ended = true));
+    s.output.emit('error', new Error('EPIPE'));
+    s.input.write('{"jsonrpc":"2.0","id":1,"method":"x"}\n'.repeat(1000));
+    s.input.end();
+    await tick();
+    expect(ended).toBe(true);
+    expect(s.up.sent).toHaveLength(0);
+  });
+
+  it('keeps stdin observable after a cap drop too', async () => {
+    const s = setup();
+    let ended = false;
+    s.input.on('end', () => (ended = true));
+    for (let i = 0; i < 100; i++)
+      s.up.onMessage?.({ jsonrpc: '2.0', method: 'm', params: { big: 'x'.repeat(200 * 1024) } });
+    expect(s.gone()).toBe(1);
+    s.input.end();
+    await tick();
+    expect(ended).toBe(true);
+  });
+
+  it('rejects request ids over the length cap without tracking them', async () => {
+    const s = setup();
+    const out: RpcMessage[] = [];
+    s.output.on('data', (d: Buffer) =>
+      d
+        .toString()
+        .split('\n')
+        .filter(Boolean)
+        .forEach((l) => out.push(JSON.parse(l) as RpcMessage)),
+    );
+    const long = 'i'.repeat(MAX_RELAY_ID_CHARS + 1);
+    s.input.write(`${JSON.stringify({ jsonrpc: '2.0', id: long, method: 'x' })}\n`);
+    await tick();
+    expect(s.proxy.pendingCount).toBe(0);
+    expect(s.up.sent).toHaveLength(0);
+    expect(out[0]).toMatchObject({ id: null, error: { code: -32600 } });
+    expect(JSON.stringify(out[0]).length).toBeLessThan(200);
+    // An id exactly at the cap is fine.
+    s.input.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 'i'.repeat(MAX_RELAY_ID_CHARS), method: 'x' })}\n`,
+    );
+    await tick();
+    expect(s.proxy.pendingCount).toBe(1);
   });
 });
