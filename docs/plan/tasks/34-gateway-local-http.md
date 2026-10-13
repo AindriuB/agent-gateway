@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 13
+**Status:** MVP B (after A). B order 1.
 **Owns:**
 - gateway/src/http/**
 - gateway/src/status/**

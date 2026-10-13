@@ -1,7 +1,8 @@
 # 43 — Write user documentation, security model and privacy statement
 
 **Repo:** .
-**Depends on:** 29, 32, 33, 36, 38, 41, 20f, 35b
+**Depends on:** 65, 35, 38, 42
+**Status:** MVP B (after A), last.
 **Owns:**
 - README.md
 - docs/guides/**
@@ -34,3 +35,6 @@ statement that says exactly what data goes where, ready for the Foundry listing.
 
 ## Out of scope
 - Foundry listing text and submission (manual, Andrew)
+
+## MVP split (2026-10-13)
+Depends was `29, 32, 33, 36, 38, 41, 20f, 35b`. 65 (MVP A) writes the README quick start, the Claude Desktop and Claude Code guides, `docs/privacy.md` and the base security model. This task extends them with the ChatGPT-with-tunnel, Gemini CLI, Gemini app and headless/server-mode guides, and `.github/FUNDING.yml`. The items that need 36 (server-mode pairing confirmation in "Multi-user isolation") and 35b (links to `docs/audit-trail.md`, audit-trail privacy) move with those tasks beyond B unless they land first.

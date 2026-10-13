@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 37, 15, 34
+**Status:** MVP B (after A). B order 3.
 **Owns:**
 - gateway/src/headless/config/**
 - gateway/test/headless/config/**

@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 22
+**Status:** Deferred beyond B. Not a prerequisite for MVP A.
 **Owns:**
 - module/src/quench/**
 - module/src/main.ts (insert the Quench registration call only)

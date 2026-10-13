@@ -1,7 +1,8 @@
 # 40 — Add MCP conformance and cross-vendor schema checks
 
 **Repo:** .
-**Depends on:** 35, 20e
+**Depends on:** 63, 34, 35
+**Status:** MVP B (after A), after 35.
 **Owns:**
 - scripts/conformance.sh
 - gateway/test/conformance/**
@@ -26,3 +27,6 @@ Claude, ChatGPT and Gemini to tick before each release.
 
 ## Out of scope
 - Per-client setup guides (43)
+
+## MVP split (2026-10-13)
+Depends was `35, 20e` (20e is done). 63 (MVP A) creates `scripts/conformance.sh` with the stdio mode, the schema and name checks, and `docs/compatibility.md` with the Claude Desktop and Claude Code rows. This task adds the local HTTP and OAuth modes to that script and fills in the remote rows of the matrix; the stdio acceptance items are already met by 63.

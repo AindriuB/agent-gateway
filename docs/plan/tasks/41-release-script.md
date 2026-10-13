@@ -1,7 +1,8 @@
 # 41 — Add the local release script for module, npm package and .mcpb
 
 **Repo:** .
-**Depends on:** 12a, 12b, 39, 40, 20f
+**Depends on:** 39, 64
+**Status:** Deferred beyond B. Superseded by 64 for MVP A.
 **Owns:**
 - scripts/release.mjs
 - scripts/bump-version.mjs
@@ -36,3 +37,6 @@ confirmation prompt.
 
 ## Out of scope
 - Docker image (42); Foundry listing submission (manual)
+
+## MVP split (2026-10-13)
+Depends was `12a, 12b, 39, 40, 20f`. 64 (MVP A) delivers this contract minus the Quench gate, and 60 delivers the zip-contents and no-pack-dependency checks. What remains here is adding the Quench run (39) as a release gate, and the HTTP/OAuth conformance gate once 40 lands. Re-scope this file before starting it.

@@ -1,7 +1,8 @@
 # 42 — Add the server-mode Docker image
 
 **Repo:** .
-**Depends on:** 38, 41, 36
+**Depends on:** 38, 35, 64
+**Status:** MVP B (after A). B order 5.
 **Owns:**
 - gateway/Dockerfile
 - gateway/.dockerignore
@@ -30,3 +31,6 @@ locally; the registry is not yet chosen.
 ## Out of scope
 - Choosing or configuring the registry
 - Homelab compose wiring (homelab repo)
+
+## MVP split (2026-10-13)
+Depends was `38, 41, 36`. 41's MVP A scope moved to 64, which creates `scripts/release.mjs`. 36 is deferred beyond B, so the two `--server-mode` acceptance items and the server-mode pairing statement in `docs/server-mode.md` cannot be met in B as written. Andrew decides: hold those items for 36, or keep 36's server-mode pairing confirmation in B. Until then, an image that many players reach has no defence against a player pairing as another user.

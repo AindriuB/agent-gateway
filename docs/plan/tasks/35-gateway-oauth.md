@@ -2,6 +2,7 @@
 
 **Repo:** .
 **Depends on:** 34
+**Status:** MVP B (after A). B order 4.
 **Owns:**
 - gateway/src/oauth/**
 - gateway/test/oauth/**
@@ -31,3 +32,6 @@ short-lived access tokens stored hashed, and scopes that form permission layer 1
 ## Out of scope
 - Consent page UI and in-Foundry revocation (36)
 - Tunnel setup (documented in 43)
+
+## MVP split (2026-10-13)
+With 36 deferred beyond B, the consent step stays the auto-deny placeholder named in the Acceptance list, so no remote client can complete authorization in MVP B. Andrew decides how B gets a working consent step (see the MVP split note in 36).
