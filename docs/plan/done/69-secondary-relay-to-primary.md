@@ -10,6 +10,7 @@
 - gateway/src/bin/cli.ts (the `stdin` `end`/shutdown wiring only; no new flags)
 - gateway/test/relay/** (new)
 - gateway/test/bin/link-conflict.test.ts
+- gateway/test/routing/cli.test.ts (amendment, Andrew 2026-10-13)
 
 ## Goal
 Claude Desktop starts several gateway instances from one `.mcpb`, and only the
@@ -96,3 +97,16 @@ primary goes away, a secondary takes over, within a bounded number of attempts.
 - Documenting the relay for users: `docs/security.md` and the guides belong to 65, and `docs/architecture.md` is the scribe's
 - Sending the pairing code to relayed sessions
 - Honouring a secondary's own `--user`/`--world` (see Design 4)
+
+## Amendments (Andrew, 2026-10-13)
+- Owns adds `gateway/test/routing/cli.test.ts`. It changes task 62's pairing-notice timing: the notice is now sent after the client's `initialized`, with the handler registered before connect.
+- Design deviations, approved: a relay config fingerprint `{role, sorted origins, startedAt}`; `RELAY_CONFIG_MISMATCH` refuses a secondary that is not strictly newer, which goes degraded; `RELAY_CONFIG_STEPDOWN` makes a primary that sees a strictly newer secondary stop accepting relays, wait a 2 s grace and exit, and the secondary takes over. The stepped-down primary's own chat loses its gateway. `RELAY_SELECTOR_MISMATCH` carries the primary's selector. The state dir is not chmodded: a non-0700 dir disables the relay with a logged reason. `:memory:` has no relay. On win32 a per-boot random pipe suffix is published in the 0600 secret file; there is no DACL and no live Windows run.
+
+## Attempt 1 — implemented; reviewed in four rounds; manual Cowork check pending
+Built as designed, plus: the primary serves MCP on a 0600 Unix socket in the 0700 state dir with a per-boot 0600 secret compared with `timingSafeEqual`; each connection gets its own session. Bounds as in Design 5, plus 32 pre-auth sockets destroyed after a 500 ms grace. The link port is bound before the store; relays never open the db; `startPrimary` refuses while the link is held; an explicit role state. Oversized client lines are dropped and a `TopLevelIdScanner` replies -32600 to the right id without losing the upstream.
+
+Review findings, all fixed: back-pressure lost across an upstream swap; an oversized-line fleet takedown; a nested-id misreply; the pairing-notice race and timing; pre-auth slots; umask; the config fingerprint. Final verdict: code correct, only the Owns record pending.
+
+Spike: re-initializing the SDK `Server` on a fresh transport works and the client keeps working.
+
+Gates at `cdbfeaa`: verify green (3943 fast / 2227 slow); mcpb test 5/5; conformance ok. Manual: file modes verified owner-only by Andrew (`-rw-------` secret, `srw-------` socket); the `sudo -u nobody` probe was skipped (single-user Mac), and automated tests cover wrong and missing secrets. Live takeover on Andrew's Mac: killing stale primary pid 29505, the instance with the new settings took over in about 1 s. Normal plus Cowork `world_info`: pending Andrew.
