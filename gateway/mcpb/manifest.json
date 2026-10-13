@@ -51,7 +51,7 @@
     "role": {
       "type": "string",
       "title": "Role",
-      "description": "Either 'player' or 'gm' (AGENT_GATEWAY_ROLE).",
+      "description": "Accepted values: 'player' or 'gm' (AGENT_GATEWAY_ROLE). 'gm' exposes GM-only tools; leave as 'player' unless you need them.",
       "default": "player",
       "required": false
     },

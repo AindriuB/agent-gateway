@@ -47,17 +47,23 @@ describe('build-mcpb', () => {
   let unpacked;
   before(() => {
     execFileSync('npm', ['run', 'build', '-w', 'gateway'], { cwd: repo, stdio: 'ignore' });
-    execFileSync(process.execPath, [path.join(repo, 'scripts/build-mcpb.mjs')], {
-      cwd: repo,
-      stdio: 'ignore',
-    });
+    const bundle = path.join(tmp, 'out/foundry-agent-gateway.mcpb');
+    execFileSync(
+      process.execPath,
+      [
+        path.join(repo, 'scripts/build-mcpb.mjs'),
+        '--out',
+        bundle,
+        '--stage',
+        path.join(tmp, 'stage'),
+      ],
+      { cwd: repo, stdio: 'ignore' },
+    );
     unpacked = path.join(tmp, 'unpacked');
     mkdirSync(unpacked);
-    execFileSync(
-      path.join(repo, 'node_modules/.bin/mcpb'),
-      ['unpack', path.join(repo, 'dist/release/foundry-agent-gateway.mcpb'), unpacked],
-      { stdio: 'ignore' },
-    );
+    execFileSync(path.join(repo, 'node_modules/.bin/mcpb'), ['unpack', bundle, unpacked], {
+      stdio: 'ignore',
+    });
   });
 
   it('contains the manifest and its entry point, and the entry runs', () => {
@@ -70,5 +76,22 @@ describe('build-mcpb', () => {
       encoding: 'utf8',
     });
     assert.equal(out.trim(), pkg.version);
+  });
+
+  it('ships notices naming every inlined package', () => {
+    const notices = readFileSync(path.join(unpacked, 'THIRD_PARTY_NOTICES'), 'utf8');
+    for (const name of [
+      '@modelcontextprotocol/sdk',
+      'ajv',
+      'ajv-formats',
+      'fast-deep-equal',
+      'fast-uri',
+      'json-schema-traverse',
+      'ws',
+      'zod',
+      'zod-to-json-schema',
+    ]) {
+      assert.ok(notices.includes(`\n${name}@`) || notices.startsWith(`${name}@`), name);
+    }
   });
 });
