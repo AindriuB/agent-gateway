@@ -40,11 +40,23 @@ export function parseRelayConfig(v: unknown): RelayConfig | undefined {
   };
 }
 
-export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
-  a.httpPort === b.httpPort &&
-  a.logLevel === b.logLevel &&
+/**
+ * The session-affecting part: a relayed MCP session runs on the primary's link, store and
+ * selector, so only `allowOrigins` (which decides who may reach that link) changes what such a
+ * session can do. A mismatch here is never served.
+ */
+export const sameSessionConfig = (a: RelayConfig, b: RelayConfig): boolean =>
   a.allowOrigins.length === b.allowOrigins.length &&
   a.allowOrigins.every((o, i) => o === b.allowOrigins[i]);
+
+/**
+ * Every compared field. `httpPort` and `logLevel` are session-neutral: they do not change what a
+ * relayed session can do, so a primary serves a relay that differs only in those. A strictly newer
+ * caller that differs in any field still makes the primary step down (see `RelayServer`), and an
+ * `allowOrigins` mismatch from an older caller is refused (it becomes a standby).
+ */
+export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
+  a.httpPort === b.httpPort && a.logLevel === b.logLevel && sameSessionConfig(a, b);
 
 /** Names what differs, for logs and the degraded reason. Untrusted text is sanitised. */
 export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | undefined): string {

@@ -222,14 +222,12 @@ describe('relay handshake', () => {
 describe('relay config fingerprint', () => {
   const withConfig = (config: unknown) => (r: Rig) => hello(r, { config });
 
-  it('refuses a differing config that is not newer, with the primary config, and creates no session', async () => {
+  it('refuses a config that differs in allowed origins or is missing, and creates no session', async () => {
     const r = await rig();
     for (const config of [
       { ...CFG, allowOrigins: ['https://foundry.local'] },
-      { ...CFG, httpPort: 7500 },
-      { ...CFG, logLevel: 'debug' },
-      { ...CFG, httpPort: 7500, startedAt: CFG.startedAt }, // tie
-      { ...CFG, logLevel: 'debug', startedAt: CFG.startedAt - 1 },
+      { ...CFG, allowOrigins: [], startedAt: CFG.startedAt }, // tie
+      { ...CFG, allowOrigins: [], httpPort: 7500, startedAt: CFG.startedAt - 1 },
       undefined,
     ]) {
       const res = await rawHello(r, withConfig(config)(r));
@@ -238,6 +236,30 @@ describe('relay config fingerprint', () => {
       expect(reply.config).toEqual(CFG);
     }
     expect(r.create).not.toHaveBeenCalled();
+  });
+
+  it('serves a caller that is not newer and differs only in the http port or log level', async () => {
+    const r = await rig();
+    const ups: SocketUpstream[] = [];
+    for (const over of [
+      { httpPort: 7500 },
+      { logLevel: 'debug' },
+      { httpPort: 7500, logLevel: 'debug', startedAt: CFG.startedAt }, // tie
+      { httpPort: 7501, startedAt: CFG.startedAt - 1 },
+    ]) {
+      const c = await connectRelay({
+        endpoint: r.sock,
+        stateDir: r.dir,
+        linkPort: PORT,
+        config: { ...CFG, allowOrigins: [...CFG.allowOrigins], ...over },
+        selector: {},
+      });
+      expect(c.kind).toBe('ok');
+      if (c.kind === 'ok') ups.push(c.upstream);
+    }
+    expect(r.create).toHaveBeenCalledTimes(4);
+    expect(r.logs.some((l) => l.includes('session-neutral difference'))).toBe(true);
+    ups.forEach((u) => u.close());
   });
 
   it('a strictly newer differing config makes the primary step down after the grace period', async () => {

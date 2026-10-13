@@ -11,7 +11,7 @@ import {
   STEPDOWN_GRACE_MS,
   type RelayRefusal,
 } from './constants.js';
-import { describeConfigDiff, parseRelayConfig, sameConfig, type RelayConfig } from './config.js';
+import { describeConfigDiff, parseRelayConfig, sameConfig, sameSessionConfig, type RelayConfig } from './config.js';
 import { LineSplitter } from './lines.js';
 import { newSecret, parseSecretFile, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';
@@ -271,17 +271,24 @@ export class RelayServer {
     }
     const theirConfig = parseRelayConfig((hello as { config?: unknown }).config);
     if (!theirConfig || !sameConfig(theirConfig, this.opts.config)) {
-      // A relayed session would run with this primary's role and origins, not the caller's, so a
-      // mismatch is never served. A strictly newer caller wins: this primary steps down for it.
+      // A relayed session runs on this primary's link, store and selector, so a difference in
+      // `allowOrigins` is never served. A difference only in the session-neutral ports and log
+      // level is served, unless the caller is strictly newer: then this primary steps down for it.
       const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
+      const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
+      if (newer || !neutralOnly) {
+        this.opts.log(
+          `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
+        );
+        this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
+          config: this.opts.config,
+        });
+        if (newer) this.stepDown(describeConfigDiff(this.opts.config, theirConfig));
+        return;
+      }
       this.opts.log(
-        `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
+        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig)}`,
       );
-      this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
-        config: this.opts.config,
-      });
-      if (newer) this.stepDown(describeConfigDiff(this.opts.config, theirConfig));
-      return;
     }
     if (this.active >= MAX_RELAY_SESSIONS) {
       this.refuse(socket, 'RELAY_FULL');
