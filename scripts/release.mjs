@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 const USAGE =
   'release: usage: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--root <dir>]';
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+// Same text as V13_SKIP_MESSAGE in e2e/lib/args.ts (a test keeps them equal); other SKIP: lines are fine.
+const V13_SKIP_MESSAGE = 'SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)';
 const PLATFORMS_LINE = 'Platforms: macOS verified; Windows untested in this release';
 
 function die(msg, code = 1) {
@@ -80,7 +82,7 @@ console.log('\n== gate: e2e v13 ==');
   process.stdout.write(r.stdout ?? '');
   process.stderr.write(r.stderr ?? '');
   if (r.status !== 0) die('gate failed: e2e v13');
-  if (/^SKIP:/m.test(r.stdout ?? '')) {
+  if ((r.stdout ?? '').split('\n').some((l) => l.startsWith(V13_SKIP_MESSAGE))) {
     if (!allowMissingV13) die('gate failed: v13 was skipped (pass --allow-missing-v13 to accept)');
     notes.push('v13 e2e gate was SKIPPED (--allow-missing-v13)');
   }

@@ -44,6 +44,7 @@ case "$*" in
     echo "$CONFORMANCE_OUT"; exit 0;;
   "run test:e2e -- --foundry v13")
     [ -n "$V13_SKIP" ] && echo "SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)"
+    [ -n "$OTHER_SKIP" ] && echo "SKIP: player2 not configured"
     exit 0;;
   pack\\ *)
     dest="\${@: -1}"
@@ -166,6 +167,20 @@ describe('release gates', () => {
     const b = release(['1.0.0', '--allow-missing-v13'], { input: 'no\n', env });
     assert.equal(b.status, 0, b.stderr);
     assert.match(b.stdout, /SKIPPED \(--allow-missing-v13\)|v13 e2e gate was SKIPPED/);
+  });
+
+  it('ignores an unrelated SKIP line from a configured v13 run', () => {
+    const r = release(['1.0.0'], { input: 'no\n', env: { OTHER_SKIP: '1' } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /SKIPPED/);
+    assert.match(r.stdout, /v13 e2e: passed|Planned actions/);
+  });
+
+  it('uses the same v13 skip text as e2e/lib/args.ts', () => {
+    const ts = readFileSync(path.join(repo, 'e2e/lib/args.ts'), 'utf8');
+    const msg = /V13_SKIP_MESSAGE = '([^']+)'/.exec(ts)[1];
+    const js = readFileSync(path.join(repo, 'scripts/release.mjs'), 'utf8');
+    assert.ok(js.includes(`'${msg}'`));
   });
 
   it('runs the gates in order', () => {

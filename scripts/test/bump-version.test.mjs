@@ -66,6 +66,31 @@ describe('bump-version', () => {
     assert.match(r.stderr, /manifest\.json is 0\.0\.9/);
   });
 
+  it('bumps the internal workspace pin, and --check fails when only the pin disagrees', () => {
+    assert.match(
+      readFileSync(path.join(root, 'module/package.json'), 'utf8'),
+      /"@agent-gateway\/protocol": "0\.1\.0"/,
+    );
+    assert.equal(run('4.5.6').status, 0);
+    assert.equal(json('module/package.json').dependencies['@agent-gateway/protocol'], '4.5.6');
+    assert.equal(
+      json('package-lock.json').packages.module.dependencies['@agent-gateway/protocol'],
+      '4.5.6',
+    );
+    assert.equal(run('--check').status, 0);
+    const f = path.join(root, 'module/package.json');
+    writeFileSync(
+      f,
+      readFileSync(f, 'utf8').replace(
+        '"@agent-gateway/protocol": "4.5.6"',
+        '"@agent-gateway/protocol": "0.1.0"',
+      ),
+    );
+    const r = run('--check');
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /pin @agent-gateway\/protocol is 0\.1\.0/);
+  });
+
   it('--check fails when only the download tag disagrees', () => {
     const f = path.join(root, 'module.json');
     writeFileSync(f, readFileSync(f, 'utf8').replace('/download/v', '/download/v1'));

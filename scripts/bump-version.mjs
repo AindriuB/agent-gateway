@@ -70,6 +70,19 @@ for (const [file, re, label] of targets) {
   if (!m) fail(`bump-version: no version found in ${label}`);
   found.push({ file, re, label, version: m[2] });
 }
+// Internal workspace pins ("@agent-gateway/protocol": "0.1.0"). A file may hold none.
+const pinRe = /("@agent-gateway\/[^"]+": ")(\d[^"]*)(")/g;
+for (const file of [
+  'package.json',
+  'protocol/package.json',
+  'module/package.json',
+  'gateway/package.json',
+  'package-lock.json',
+]) {
+  for (const m of read(file).matchAll(pinRe)) {
+    found.push({ file, re: pinRe, label: `${file} pin ${m[1].slice(1, -4)}`, version: m[2] });
+  }
+}
 
 if (check) {
   const expect = wanted ?? found[0].version;

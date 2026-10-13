@@ -29,8 +29,12 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm]
    `publish foundry-agent-gateway@<version>`.
 
 The script never publishes the draft, never tags and never pushes. The version bump is left
-uncommitted: commit it on a branch and open a PR for Andrew. Land that PR before publishing,
-so the tag points at the bumped tree.
+uncommitted: commit it on a branch and open a PR for Andrew. Land ONLY that version-bump PR
+before publishing the draft. If anything else lands on `main` first, re-run the release,
+because the tag is created from `main`'s HEAD at publish time.
+
+A declined or aborted run leaves the bumped tree dirty. Reset it with `git checkout -- .`
+before retrying.
 
 ## Stops that need Andrew's explicit go-ahead
 
