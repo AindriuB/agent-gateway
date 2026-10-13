@@ -330,6 +330,26 @@ function concentrationEnded(actor: any, activity: any): any {
     }) ?? effects[0]
   );
 }
+/**
+ * Decide what a `use` would do to concentration: which effect (if any) it ends, or why to refuse.
+ * Ending a different spell's concentration is refused; recasting the same one replaces its own
+ * effect, which is snapshotted and disclosed.
+ */
+function concentrationDecision(
+  actor: any,
+  item: any,
+  activity: any,
+): { effect?: any; refusal?: string } {
+  const own = effectiveActivity(item, activity);
+  const effect = concentrationEnded(actor, own);
+  if (!effect) return {};
+  const data = effect.flags?.dnd5e?.item?.data ?? {};
+  if (data !== own.id && data?._id !== own.id && effect.flags?.dnd5e?.item?.id !== item.id)
+    return {
+      refusal: `Cannot use ${text(item.name, 100)}: it would end your concentration on ${concentrationLabel(actor, effect)}. End that first.`,
+    };
+  return { effect };
+}
 const concentrationLabel = (actor: any, effect: any): string =>
   safeName(
     effect?.flags?.dnd5e?.item?.data?.name ??
@@ -418,19 +438,37 @@ async function performAction(
   // effect, which is snapshotted and disclosed.
   let ended: any;
   if (kind === 'use') {
-    ended = concentrationEnded(actor, effectiveActivity(item, activity));
-    if (ended) {
-      const own = effectiveActivity(item, activity).id;
-      const data = ended.flags?.dnd5e?.item?.data ?? {};
-      if (data !== own && data?._id !== own && ended.flags?.dnd5e?.item?.id !== item.id)
-        return invalid(
-          `Cannot use ${text(item.name, 100)}: it would end your concentration on ${concentrationLabel(actor, ended)}. End that first.`,
-        );
-    }
+    const decided = concentrationDecision(actor, item, activity);
+    if (decided.refusal) return invalid(decided.refusal);
+    ended = decided.effect;
   }
   for (const uuid of [item.uuid, actor.uuid, ended?.uuid])
     if (typeof uuid === 'string') await context.snapshot(uuid);
   await context.intendCreate();
+  // Every await is behind us. Native code recomputes a few things from live state when `use` runs
+  // (which concentration to end, :17919-17923; whether the activity can run), so decide again now,
+  // with no await between here and the `use` call, and bind the native call to that decision.
+  let concentrationEnd: string | false | undefined;
+  if (
+    actor.items?.get?.(item.id) !== item ||
+    item.system?.activities?.get?.(activity.id) !== activity
+  )
+    return invalid('The item changed while the action was being checked; try again');
+  if (kind === 'use') {
+    const now = refusal(item, activity);
+    if (now) return invalid(`Cannot use ${text(item.name, 100)}: ${now}`);
+    if (activity.canUse === false) return invalid('This activity cannot be used');
+    const decided = concentrationDecision(actor, item, activity);
+    if (decided.refusal) return invalid(decided.refusal);
+    if ((decided.effect?.id ?? null) !== (ended?.id ?? null))
+      return invalid(
+        `Cannot use ${text(item.name, 100)}: your concentration changed while it was being checked${
+          decided.effect ? ` (it would now end ${concentrationLabel(actor, decided.effect)})` : ''
+        }. Try again.`,
+      );
+    if (effectiveActivity(item, activity)?.requiresConcentration === true)
+      concentrationEnd = decided.effect ? String(decided.effect.id) : false;
+  }
   let recorded: string | undefined;
   let outcome: unknown;
   let summary = '';
@@ -445,6 +483,9 @@ async function performAction(
           subsequentActions: false,
           create: { measuredTemplate: false, summons: false },
           ...(slot ? { spell: { slot } } : {}),
+          // `end ??=` in _prepareUsageConfig (:17919-17923) keeps any value that is not nullish,
+          // so the validated effect id, or false (end nothing), is honoured as given.
+          ...(concentrationEnd === undefined ? {} : { concentration: { end: concentrationEnd } }),
         },
         { configure: false },
         { create: false },

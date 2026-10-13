@@ -290,6 +290,7 @@ describe('dnd5e adapter', () => {
       await expect(dnd5eAdapter.performAction(a, 'use:x1:f2', {}, ctx)).resolves.toBeDefined();
     });
     const conc = (name: string, activityId: string) => ({
+      id: 'e-c1',
       uuid: 'Actor.a.ActiveEffect.c1',
       name: 'Concentrating',
       flags: { dnd5e: { item: { id: 'zz', data: { name, _id: activityId } } } },
@@ -317,6 +318,40 @@ describe('dnd5e adapter', () => {
       const r: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx);
       expect(snapshot).toHaveBeenCalledWith('Actor.a.ActiveEffect.c1');
       expect(r.message).toContain('concentration on Bless ended');
+    });
+    it('binds the native call to the validated concentration decision', async () => {
+      use.mockResolvedValue({ message: { type: 'usage' } });
+      chatCreate.mockResolvedValue({ uuid: 'ChatMessage.m' });
+      const own = spellWithConc();
+      own.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      await dnd5eAdapter.performAction(own, 'use:x1:q1', {}, ctx);
+      expect(use.mock.calls[0]![0].concentration).toEqual({ end: 'e-c1' });
+      const none = spellWithConc();
+      none.system.attributes.concentration = { limit: 2 };
+      none.concentration = { effects: new Set([conc('Bless', 'zz')]) };
+      await dnd5eAdapter.performAction(none, 'use:x1:q1', {}, ctx);
+      expect(use.mock.calls[1]![0].concentration).toEqual({ end: false });
+    });
+    it('refuses when concentration changes during the awaited audit steps', async () => {
+      const a = spellWithConc();
+      a.system.attributes.concentration = { limit: 1 };
+      a.concentration = { effects: new Set() };
+      snapshot.mockImplementationOnce(async () => {
+        a.concentration = { effects: new Set([conc('<i>Hex</i>', 'other')]) };
+      });
+      const err: any = await dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx).catch((e) => e);
+      expect(String(err.message ?? JSON.stringify(err))).toContain('&#60;i&#62;Hex');
+      expect(use).not.toHaveBeenCalled();
+    });
+    it('refuses when the validated effect is replaced by another during the awaits', async () => {
+      const a = spellWithConc();
+      a.concentration = { effects: new Set([conc('Bless', 'q1')]) };
+      snapshot.mockImplementationOnce(async () => {
+        const other = { ...conc('Bane', 'q1'), id: 'e-other', uuid: 'Actor.a.ActiveEffect.c2' };
+        a.concentration = { effects: new Set([other]) };
+      });
+      await expect(dnd5eAdapter.performAction(a, 'use:x1:q1', {}, ctx)).rejects.toBeDefined();
+      expect(use).not.toHaveBeenCalled();
     });
     it('rolls upcast damage on a scaled clone, and rejects bad levels', async () => {
       const dice = (spell: any) => (spell.flags?.dnd5e?.scaling ?? 0) + 8;
