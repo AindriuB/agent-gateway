@@ -240,45 +240,63 @@ function observe(actor: any): { finish(): { added: number; updated: number; remo
   };
 }
 
-const locks = new Map<string, Promise<void>>();
+interface LockState {
+  queue: Array<() => void>;
+}
+const locks = new Map<string, LockState>();
 /** Number of Actors with a build call queued or running (for tests). */
 export const pendingBuildLocks = (): number => locks.size;
-/** A stuck call cannot hold an Actor's lock longer than this; the next waiter then proceeds. */
+/** How long a waiter queues before it is refused. The holder is never timed out. */
 export const BUILD_LOCK_WAIT_MS = 30_000;
+/** Callers allowed to queue behind the holder; further callers are refused at once. */
+export const BUILD_LOCK_MAX_WAITING = 4;
+const BUSY = 'Another build is still running on this Actor; retry shortly.';
 /**
  * Serialise build calls on one Actor in this client (plan, snapshots, updates, post-write read).
- * Writers on other clients are caught by the optimistic check in `apply`.
+ * Waiters are refused after BUILD_LOCK_WAIT_MS or when the queue is full; the holder is not timed
+ * out, because a native write may still land after an early release. Known limit: a holder whose
+ * snapshot or update never settles keeps refusing builds on that Actor until the page reloads.
+ * Writers on other clients are caught by the optimistic check in `applyLocked`.
  */
 async function withActorLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const prev = locks.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const mine = new Promise<void>((resolve) => (release = resolve));
-  const tail = prev.then(() => mine);
-  locks.set(key, tail);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const turn = await Promise.race([
-      prev.then(() => true),
-      new Promise<boolean>(
-        (resolve) => (timer = setTimeout(() => resolve(false), BUILD_LOCK_WAIT_MS)),
-      ),
-    ]);
+  let state = locks.get(key);
+  if (!state) {
+    state = { queue: [] };
+    locks.set(key, state);
+  } else {
+    if (state.queue.length >= BUILD_LOCK_MAX_WAITING) invalid(BUSY);
+    const queue = state.queue;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let granted = false;
+    await new Promise<void>((resolve) => {
+      const grant = () => {
+        granted = true;
+        resolve();
+      };
+      queue.push(grant);
+      timer = setTimeout(() => {
+        const at = queue.indexOf(grant);
+        if (at >= 0) queue.splice(at, 1);
+        resolve();
+      }, BUILD_LOCK_WAIT_MS);
+    });
     clearTimeout(timer);
-    // Never run beside the holder: a successor still waits on `prev` through the chain.
-    if (!turn) invalid('Another build is still running on this Actor; retry shortly.');
+    if (!granted) invalid(BUSY);
+  }
+  try {
     return await fn();
   } finally {
-    clearTimeout(timer);
-    release();
-    // Only forget the chain once it has truly settled: `tail` resolves after every predecessor,
-    // so a timed-out last waiter cannot expose a still-running holder.
-    void tail.then(() => {
-      if (locks.get(key) === tail) locks.delete(key);
-    });
+    // Hand the lock to the next waiter, or forget the Actor when nobody is queued.
+    const next = state.queue.shift();
+    if (next) next();
+    else locks.delete(key);
   }
 }
 
-/** What the plan was built from: the Actor's source build and the source ranks it will set. */
+const itemLocation = (item: any): unknown =>
+  (item?._source?.system ?? item?.system)?.location ?? null;
+
+/** What the plan was built from: everything `plan()` read that another writer could change. */
 function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): string {
   let source: any;
   try {
@@ -289,7 +307,36 @@ function fingerprint(actor: any, changes: readonly CharacterBuildChange[]): stri
   const ranks = changes
     .filter((c) => c.kind === 'skill_rank' && c.skill)
     .map((c) => [c.skill, source?.skills?.[c.skill!]?.rank ?? null]);
-  return JSON.stringify([source?.build ?? null, ranks]);
+  const items = list(actor.items);
+  const sourced = (item: any): any => item?._source?.system ?? item?.system;
+  const picks = changes.map((c) => {
+    if (c.kind === 'attribute_boost' && (c.source === 'ancestry' || c.source === 'background'))
+      return [
+        c.source,
+        c.slot,
+        sourced(c.source === 'ancestry' ? actor.ancestry : actor.background)?.boosts?.[c.slot!]
+          ?.selected ?? null,
+      ];
+    if (c.kind === 'key_attribute')
+      return ['key', sourced(actor.class)?.keyAbility?.selected ?? null];
+    if (c.kind === 'feat_slot')
+      return [
+        'feat',
+        c.itemUuid,
+        itemLocation(items.find((i) => i?.uuid === c.itemUuid)),
+        items
+          .filter((i) => itemLocation(i) === c.slot)
+          .map((i) => i?.uuid)
+          .sort(),
+      ];
+    return null;
+  });
+  return JSON.stringify([
+    source?.build ?? null,
+    source?.details?.level?.value ?? null,
+    ranks,
+    picks,
+  ]);
 }
 
 async function apply(
@@ -328,7 +375,7 @@ async function applyLocked(
   const watch = observe(actor);
   let seen = { added: 0, updated: 0, removed: 0 };
   try {
-    if (Object.keys(p.actor).length) stale();
+    stale();
     for (const [doc, patch] of docs) {
       if (doc === actor) stale();
       try {

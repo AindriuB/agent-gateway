@@ -4,6 +4,7 @@ import type { CharacterBuildChange } from '@agent-gateway/protocol';
 import { characterBuild } from '@agent-gateway/protocol';
 import { boundedAdapterData } from '../../../src/tools/_adapters.js';
 import {
+  BUILD_LOCK_MAX_WAITING,
   BUILD_LOCK_WAIT_MS,
   pendingBuildLocks,
   pf2eBuildHook,
@@ -511,6 +512,73 @@ describe('lock chain after the last waiter times out', () => {
     expect(order).toEqual(['holder:start', 'holder:end', 'retry:write']);
     await vi.advanceTimersByTimeAsync(0);
     expect(pendingBuildLocks()).toBe(0);
+  });
+});
+
+describe('wedged holder', () => {
+  afterEach(() => vi.useRealTimers());
+  it('bounds the queue and refuses extra callers immediately', async () => {
+    vi.useFakeTimers();
+    actor.uuid = 'Actor.wedged'; // its holder never settles, so keep it off the shared key
+    actor.class.update = vi.fn(() => new Promise<void>(() => {}));
+    void apply([{ kind: 'key_attribute', attribute: 'dex' }]);
+    await vi.advanceTimersByTimeAsync(0);
+    const change: CharacterBuildChange = { kind: 'skill_rank', skill: 'athletics', rank: 1 };
+    const queued = Array.from({ length: BUILD_LOCK_MAX_WAITING }, () =>
+      expect(apply([change])).rejects.toMatchObject({ code: 'INVALID_ARGS' }),
+    );
+    for (let i = 0; i < 10; i++)
+      await expect(apply([change])).rejects.toMatchObject({
+        message: expect.stringMatching(/Another build is still running/),
+      });
+    expect(pendingBuildLocks()).toBe(1);
+    await vi.advanceTimersByTimeAsync(BUILD_LOCK_WAIT_MS + 1);
+    await Promise.all(queued);
+    for (let i = 0; i < 10; i++) {
+      const retry = expect(apply([change])).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      await vi.advanceTimersByTimeAsync(BUILD_LOCK_WAIT_MS + 1);
+      await retry;
+    }
+    expect(pendingBuildLocks()).toBe(1);
+  });
+});
+
+describe('staleness covers everything the plan read', () => {
+  it('rejects an item-only batch whose target slot is filled during the snapshots', async () => {
+    const ctx = context();
+    ctx.snapshot = vi.fn(async () => {
+      const other = item('rival', 'feat', { location: 'class-1' }, actor);
+      actor.items = [...actor.itemList, other];
+    });
+    await expect(
+      apply([{ kind: 'feat_slot', slot: 'class-1', itemUuid: 'Actor.a.Item.feat1' }], ctx),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGS',
+      message: expect.stringMatching(/changed during this call/),
+    });
+    expect(actor.feat.update).not.toHaveBeenCalled();
+  });
+  it('rejects a rank-3 write when the level drops during the snapshots', async () => {
+    const source = { details: { level: { value: 7 } } };
+    actor.toObject = () => ({ system: structuredClone(source) });
+    const ctx = context();
+    ctx.snapshot = vi.fn(async () => {
+      source.details.level.value = 5;
+    });
+    await expect(
+      apply([{ kind: 'skill_rank', skill: 'athletics', rank: 3 }], ctx),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/changed during this call/) });
+    expect(actor.update).not.toHaveBeenCalled();
+  });
+  it('rejects when a targeted boost slot is selected during the snapshots', async () => {
+    const ctx = context();
+    ctx.snapshot = vi.fn(async () => {
+      actor.ancestry.system.boosts[0].selected = 'dex';
+    });
+    await expect(
+      apply([{ kind: 'attribute_boost', source: 'ancestry', slot: '0', attribute: 'str' }], ctx),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/changed during this call/) });
+    expect(actor.ancestry.update).not.toHaveBeenCalled();
   });
 });
 
