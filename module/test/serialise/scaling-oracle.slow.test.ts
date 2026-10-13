@@ -1,14 +1,15 @@
 // @vitest-environment happy-dom
 // Generic scaling oracle: every pattern in the corpora, repeated at size n and 4n in several
 // shapes, through the FULL pipeline (DOM -> document -> markdown, and page() through every page).
-// Growth must be near-linear (ratio ~4; quadratic would be ~16). Minimum of several runs per size,
-// because background CPU load only ever adds time. Parsing is untimed and each DOM is dropped
-// after use so only two documents are alive at once.
+// Growth must be near-linear: the log-log slope of time over five sizes spanning 16x stays under
+// the bound in scaling-fit.ts (linear ~1, quadratic ~2), with the noise handling described there.
+// Parsing is untimed and each DOM is dropped after use so only five documents are alive at once.
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { documentToMarkdown, domToDocument, page } from '../../src/serialise/index.js';
 import { BOUNDARIES, PRIVATE_USE, PROBES, SPACING, SPLIT_TAGS } from './corpus.js';
 import { ANCHORS, HTML_PATTERNS, TEXT_PATTERNS, esc } from './paging-corpus.js';
+import { assessScaling, type Sample } from './scaling-fit.js';
 
 const every = <T>(xs: T[], k: number) => xs.filter((_, i) => i % k === 0);
 
@@ -66,10 +67,10 @@ const SHAPES: Shape[] = [
   ['nested wrapper', (p, n) => `${'<div>'.repeat(n)}${p}${'</div>'.repeat(n)}`, 0.05],
 ];
 
-const RUNS = 5;
+const ROUNDS = 5;
+// The corpora sweep hundreds of inputs, so each takes fewer rounds.
+const CORPUS_ROUNDS = 3;
 const LIMIT = 1000;
-const BASE_MS = 4;
-const MAX_RATIO = 10;
 
 interface Run {
   ms: number;
@@ -100,18 +101,13 @@ function pipeline(body: Node, limit = LIMIT): Run {
 // Each document is parsed in its own happy-dom window and closed afterwards: the shared test
 // window keeps every parsed document alive (about 0.5 KB of heap per input byte), which runs a
 // corpus-wide test out of memory.
-async function minTime(html: string, limit = LIMIT): Promise<number> {
-  const win = new Window();
-  try {
-    const body = new win.DOMParser().parseFromString(html, 'text/html').body as unknown as Node;
-    pipeline(body, limit); // warm up
-    let best = Infinity;
-    for (let i = 0; i < RUNS; i++) best = Math.min(best, pipeline(body, limit).ms);
-    return best;
-  } finally {
-    await win.happyDOM.close();
-  }
-}
+const sampleOf =
+  (build: (n: number) => string, limit = LIMIT) =>
+  (n: number): Sample => {
+    const win = new Window();
+    const body = new win.DOMParser().parseFromString(build(n), 'text/html').body as unknown as Node;
+    return { run: () => pipeline(body, limit).ms, close: () => win.happyDOM.close() };
+  };
 
 async function sizes(html: string, limit = LIMIT): Promise<Run> {
   const win = new Window();
@@ -224,13 +220,15 @@ describe('scaling oracle over the corpora', () => {
       const bad: string[] = [];
       for (const [p, chars] of PATTERNS) {
         if (!p) continue;
-        const n = Math.max(2, Math.ceil((chars * scale) / p.length));
-        const small = Math.max(await minTime(build(p, n)), BASE_MS);
-        const large = await minTime(build(p, 4 * n));
-        if (large >= 3000 || large >= small * MAX_RATIO) {
-          bad.push(
-            `${JSON.stringify(p.slice(0, 60))}: ${small.toFixed(1)}ms -> ${large.toFixed(1)}ms`,
-          );
+        // The old two-size test used n and 4n; the five sizes run from n / 4 to 4n.
+        const base = Math.max(2, Math.ceil((chars * scale) / p.length / 4));
+        const r = await assessScaling(
+          base,
+          sampleOf((m) => build(p, m)),
+          CORPUS_ROUNDS,
+        );
+        if (r.largestMs >= 3000 || !r.passed) {
+          bad.push(`${JSON.stringify(p.slice(0, 60))}: ${r.report}`);
         }
       }
       expect(bad).toEqual([]);
@@ -259,9 +257,10 @@ describe('scaling oracle over the corpora', () => {
     async (name, build, limit = LIMIT) => {
       const n = 500;
       expect(await sizeGrowth(name, build(n), build(4 * n), limit)).toEqual([]);
-      const small = Math.max(await minTime(build(n), limit), BASE_MS);
-      const large = await minTime(build(4 * n), limit);
-      expect(large < 3000 && large < small * MAX_RATIO, `${small}ms -> ${large}ms`).toBe(true);
+      // Sizes n / 4 to 4n, as in the corpora sweep.
+      const r = await assessScaling(n / 4, sampleOf(build, limit), ROUNDS);
+      expect(r.largestMs).toBeLessThan(3000);
+      expect(r.passed, r.report).toBe(true);
     },
   );
 });
