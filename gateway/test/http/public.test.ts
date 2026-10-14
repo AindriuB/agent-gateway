@@ -215,7 +215,12 @@ describe('per-client limits', () => {
   it('keys by the TCP peer without --trust-proxy', async () => {
     const { port } = await setup();
     const bad = (ip: string) =>
-      raw(port, { host: '127.0.0.1', 'x-forwarded-for': ip }, '/mcp', initBody);
+      raw(
+        port,
+        { host: '127.0.0.1', 'x-forwarded-for': ip, authorization: 'Bearer nope' },
+        '/mcp',
+        initBody,
+      );
     for (let i = 0; i < 10; i++) await bad(`203.0.113.${i}`);
     expect((await bad('203.0.113.99')).status).toBe(429);
   });
@@ -327,7 +332,12 @@ describe('failed-auth limit and fail-closed sessions', () => {
       now: () => 9_000_000,
     });
     const go = (secret: string) =>
-      raw(port, { host: '127.0.0.1', 'x-secret': secret }, '/mcp', initBody);
+      raw(
+        port,
+        { host: '127.0.0.1', 'x-secret': secret, authorization: 'Bearer x' },
+        '/mcp',
+        initBody,
+      );
     for (let i = 0; i < 10; i++) expect((await go('bad')).status).toBe(401);
     expect((await go('good')).status).toBe(429);
   });

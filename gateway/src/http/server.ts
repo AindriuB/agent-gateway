@@ -15,8 +15,11 @@ import type { HttpToken } from './token.js';
 import { clientKey, loopbackAuthority } from './client-key.js';
 import { publicHostMatches } from './public-url.js';
 import {
+  CountWindows,
+  DISCOVERY_WINDOW_MS,
   FAILED_AUTH_WINDOW_MS,
   FailureWindows,
+  MAX_DISCOVERY_PER_CLIENT,
   MAX_FAILED_AUTH_PER_CLIENT,
   MAX_HTTP_SESSIONS_PER_CLIENT,
   PUBLIC_CLIENT_RPS,
@@ -119,6 +122,7 @@ export class HttpServer {
   private readonly now: () => number;
   private readonly failedAuth: FailureWindows;
   private readonly clientRate: RateWindows;
+  private readonly discovery: CountWindows;
   private readonly publicHost: string | undefined;
   private readonly publicOrigin: string | undefined;
   private readonly authenticate: (req: IncomingMessage) => HttpPrincipal | undefined;
@@ -131,6 +135,7 @@ export class HttpServer {
       this.now,
     );
     this.clientRate = new RateWindows(PUBLIC_CLIENT_RPS, this.now);
+    this.discovery = new CountWindows(MAX_DISCOVERY_PER_CLIENT, DISCOVERY_WINDOW_MS, this.now);
     if (o.publicUrl) {
       const u = new URL(o.publicUrl);
       this.publicHost = u.host;
@@ -294,14 +299,26 @@ export class HttpServer {
     }
     if (path !== '/mcp') return send(res, 404, 'not found');
     // Failed attempts are counted per client and checked before the token is, so a guesser is
-    // stopped without being able to learn anything from the answer.
-    if (this.failedAuth.limited(client)) {
-      res.setHeader('retry-after', String(Math.ceil(FAILED_AUTH_WINDOW_MS / 1000)));
-      return send(res, 429, 'too many failed attempts');
+    // stopped without being able to learn anything from the answer. Only a request that offered
+    // a credential can fail: a credential-free request is OAuth discovery, throttled on its own.
+    const offered = req.headers.authorization !== undefined;
+    let principal: HttpPrincipal | undefined;
+    if (offered || !this.failedAuth.limited(client)) {
+      if (offered && this.failedAuth.limited(client)) {
+        res.setHeader('retry-after', String(Math.ceil(FAILED_AUTH_WINDOW_MS / 1000)));
+        return send(res, 429, 'too many failed attempts');
+      }
+      principal = this.authenticate(req);
+      if (!principal && offered) this.failedAuth.record(client);
     }
-    const principal = this.authenticate(req);
     if (!principal) {
-      this.failedAuth.record(client);
+      if (!offered) {
+        const wait = this.discovery.hit(client);
+        if (wait > 0) {
+          res.setHeader('retry-after', String(Math.ceil(wait / 1000)));
+          return send(res, 429, 'too many requests');
+        }
+      }
       res.setHeader(
         'www-authenticate',
         this.o.oauth ? `Bearer resource_metadata="${this.o.oauth.resourceMetadataUrl}"` : 'Bearer',
