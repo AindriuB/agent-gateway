@@ -10,6 +10,8 @@ export interface GatewayStatus {
   pairingCode?: string;
   codeExpiresInMin?: number;
   candidates?: string[];
+  /** What the gateway's store holds for this (world, user); absent when the caller cannot tell. */
+  pairing?: 'active' | 'revoked' | 'none';
 }
 
 export const statusToolListing = {
@@ -26,6 +28,7 @@ export const statusToolListing = {
       pairingCode: { type: 'string' },
       codeExpiresInMin: { type: 'number' },
       candidates: { type: 'array', items: { type: 'string' } },
+      pairing: { type: 'string', enum: ['active', 'revoked', 'none'] },
     },
     required: ['state'],
     additionalProperties: false,
@@ -34,6 +37,11 @@ export const statusToolListing = {
 
 export const ASK_OPERATOR =
   'Ask the gateway operator for an invite, then open your world in a browser and paste it in the Agent Gateway pairing prompt.';
+
+export const REVOKED_TEXT = 'The pairing for this user was revoked, so a new invite is needed.';
+
+export const activePairingText = (user: string): string =>
+  `A pairing already exists for this user, so no new invite or code is needed: open or reload the Foundry tab as ${user}.`;
 
 /** `askOperator`: this gateway never shows a pairing code to an MCP client. */
 export function statusText(s: GatewayStatus, askOperator = false): string {
@@ -45,11 +53,15 @@ export function statusText(s: GatewayStatus, askOperator = false): string {
       return `Several Foundry users are connected and none is chosen. Available: ${(s.candidates ?? []).join('; ')}. Start the gateway with --world and --user to choose one.`;
     default:
       return `${who ? `Not connected: ${who} is offline. ` : 'Not connected to Foundry yet. '}${
-        s.pairingCode
-          ? `Open your world in a browser and enter code ${s.pairingCode} in the Agent Gateway pairing prompt (expires in ${s.codeExpiresInMin} min).`
-          : askOperator
-            ? ASK_OPERATOR
-            : 'Open your world in a browser.'
+        s.pairing === 'active'
+          ? activePairingText(s.user ?? '')
+          : s.pairing === 'revoked'
+            ? `${REVOKED_TEXT}${s.pairingCode ? ` Enter code ${s.pairingCode} in the Agent Gateway pairing prompt (expires in ${s.codeExpiresInMin} min).` : ''}`
+            : s.pairingCode
+              ? `Open your world in a browser and enter code ${s.pairingCode} in the Agent Gateway pairing prompt (expires in ${s.codeExpiresInMin} min).`
+              : askOperator
+                ? ASK_OPERATOR
+                : 'Open your world in a browser.'
       }`;
   }
 }

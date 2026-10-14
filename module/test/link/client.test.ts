@@ -157,7 +157,7 @@ it('PAIRING_INVALID clears the token and stops retrying', async () => {
   sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
   await vi.advanceTimersByTimeAsync(0);
   expect(token).toBe('');
-  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
   await vi.advanceTimersByTimeAsync(120_000);
   expect(sockets).toHaveLength(1);
 });

@@ -13,6 +13,8 @@ import {
   ASK_OPERATOR,
   STATUS_TOOL,
   statusText,
+  REVOKED_TEXT,
+  activePairingText,
   statusToolListing,
   type GatewayStatus,
 } from './status-tool.js';
@@ -50,6 +52,11 @@ export interface SessionServerOptions {
    * not on offer. Called only when a result needs it, so it must be cheap and return the live code.
    */
   pairingHint?: () => { code: string; expiresInMin: number } | undefined;
+  /**
+   * What the store knows about a (world, user)'s pairing. Lets the not-connected texts stop asking
+   * for a new invite when a valid pairing exists. Absent: the older wording is used verbatim.
+   */
+  pairingState?: (worldId: string, userId: string) => 'active' | 'revoked' | 'none';
   /**
    * The gateway never shows a pairing code to an MCP client (a public gateway): a session that is
    * not connected is told to ask the gateway operator for one instead.
@@ -267,8 +274,16 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   });
 
   const notConnected = (): ReturnType<typeof failure> => {
-    const clause = pairingClause(opts.pairingHint?.());
     const who = binding.identity;
+    const pairing = who ? opts.pairingState?.(who.worldId, who.userId) : undefined;
+    if (who && pairing === 'active') {
+      const name = safeText(who.userName || who.userId);
+      return failure(
+        'WORLD_OFFLINE',
+        `world ${safeText(who.worldId)} / user ${name} is not connected. ${activePairingText(name)}`,
+      );
+    }
+    const clause = pairingClause(opts.pairingHint?.());
     const operator = opts.askOperator && !clause;
     if (!who)
       return failure(
@@ -280,7 +295,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     const name = safeText(who.userName || who.userId);
     return failure(
       'WORLD_OFFLINE',
-      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : operator ? '; to pair a different browser, ask the gateway operator for an invite' : ''}.`,
+      `world ${safeText(who.worldId)} / user ${name} is not connected. ${pairing === 'revoked' ? `${REVOKED_TEXT} ` : ''}Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : operator ? '; to pair a different browser, ask the gateway operator for an invite' : ''}.`,
     );
   };
 
@@ -306,7 +321,9 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         status.world = safeText(r.pair.worldId);
         status.user = safeText(binding.identity?.userName || r.pair.userId);
       }
-      const hint = opts.pairingHint?.();
+      if (r.kind === 'bound' && binding.identity && opts.pairingState)
+        status.pairing = opts.pairingState(r.pair.worldId, r.pair.userId);
+      const hint = status.pairing === 'active' ? undefined : opts.pairingHint?.();
       if (hint) {
         status.pairingCode = hint.code;
         status.codeExpiresInMin = hint.expiresInMin;

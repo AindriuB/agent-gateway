@@ -14,7 +14,10 @@ export type CallResult =
 export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResult;
 
 export type LinkState =
-  | { kind: 'disconnected'; reason?: ErrorCode | 'ERROR' | 'REPLACED' | 'PAIRING_REQUIRED' }
+  | {
+      kind: 'disconnected';
+      reason?: ErrorCode | 'ERROR' | 'REPLACED' | 'PAIRING_REQUIRED' | 'TOKEN_REJECTED';
+    }
   | { kind: 'connecting'; codeRejected?: boolean }
   | { kind: 'connected'; user: string; world: string };
 
@@ -438,7 +441,13 @@ export class LinkClient {
         this.setState({ kind: 'disconnected', reason: 'REPLACED' });
         return;
       }
-      if (this.active) this.scheduleRetry('ERROR');
+      if (!this.active) return;
+      if (close?.code === 1008 && close.reason === 'PAIRING_INVALID') {
+        // A revocation can close the socket without the reject message arriving first.
+        void this.pairingInvalid();
+        return;
+      }
+      this.scheduleRetry('ERROR');
     };
   }
 
@@ -517,17 +526,8 @@ export class LinkClient {
         this.cancelTimer();
         this.detach();
         if (msg.code === 'PAIRING_INVALID') {
-          // Only a rejected token is stale; a rejected code leaves a working token alone.
-          const usedToken = this.code === null;
-          this.clearCode();
-          if (usedToken) {
-            await this.deps.setToken(null);
-          } else if (this.tokenForUrl(this.deps.getGatewayUrl()) !== null) {
-            // Rejected code: fall back to the token, which is only held for this same gateway.
-            this.codeRejected = true;
-            this.start();
-            break;
-          }
+          await this.pairingInvalid();
+          break;
         } else if (msg.code === 'PROTOCOL_MAJOR_MISMATCH') {
           this.deps.notifyError(msg.message);
         }
@@ -617,6 +617,39 @@ export class LinkClient {
         message: e instanceof Error ? e.message : String(e),
       });
     }
+  }
+
+  /** The gateway refused this link's credential. Stops retrying; never invents a new credential. */
+  private async pairingInvalid(): Promise<void> {
+    this.active = false;
+    this.resumeMode = null;
+    this.cancelTimer();
+    this.detach();
+    // Only a rejected token is stale; a rejected code leaves a working token alone.
+    const usedToken = this.code === null;
+    this.clearCode();
+    if (usedToken) {
+      await this.deps.setToken(null);
+      this.setState({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+      return;
+    }
+    if (this.tokenForUrl(this.deps.getGatewayUrl()) !== null) {
+      // Rejected code: fall back to the token, which is only held for this same gateway.
+      this.codeRejected = true;
+      this.start();
+      return;
+    }
+    this.setState({ kind: 'disconnected', reason: 'PAIRING_INVALID' });
+  }
+
+  /**
+   * Reconnect now if a retry is waiting (the network or the tab came back). Keeps the backoff
+   * attempt count; does nothing in any other state.
+   */
+  retryNow(): void {
+    if (!this.active || this.timer === null) return;
+    this.cancelTimer();
+    this.connect();
   }
 
   private scheduleRetry(reason: 'ERROR'): void {

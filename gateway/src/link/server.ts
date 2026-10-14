@@ -59,6 +59,18 @@ export type OriginRejection =
   | 'too many sockets waiting to say hello; close this page'
   | 'too many pages are holding gateway connections open without pairing';
 
+export type LinkEvent =
+  | { kind: 'connected'; worldId: string; userName: string; connectionId: string }
+  | {
+      kind: 'disconnected';
+      worldId: string;
+      userName: string;
+      connectionId: string;
+      code: number;
+      reason: string;
+      durationMs: number;
+    };
+
 export interface LinkServerOptions {
   port: number;
   store: Store;
@@ -95,6 +107,8 @@ export interface LinkServerOptions {
   helloTimeoutMs?: number;
   events?: EventBuffer;
   queue?: OfflineQueue;
+  /** Called after an authenticated link connects and when it closes. Never called for rejects. */
+  onLinkEvent?: (event: LinkEvent) => void;
   /** Called when a connection is refused; `origin` is `undefined` when there was no usable header. */
   onOriginRejected?: (
     origin: string | undefined,
@@ -307,11 +321,23 @@ export class LinkServer {
     );
     helloTimer.unref();
 
-    ws.on('close', () => {
+    let connectedAt = 0;
+    ws.on('close', (code: number, reasonBuf: Buffer) => {
       clearTimeout(helloTimer);
       if (heartbeat) clearInterval(heartbeat);
       this.sockets.delete(ws);
-      if (conn) this.opts.registry.remove(conn);
+      if (conn) {
+        this.opts.registry.remove(conn);
+        this.opts.onLinkEvent?.({
+          kind: 'disconnected',
+          worldId: conn.worldId,
+          userName: conn.info.userName,
+          connectionId: conn.id,
+          code,
+          reason: reasonBuf.toString('utf8'),
+          durationMs: (this.opts.now ?? Date.now)() - connectedAt,
+        });
+      }
     });
     ws.on('error', () => {
       if (conn) toolsets.revokeEventReads(conn);
@@ -357,6 +383,13 @@ export class LinkServer {
         releasePending();
         conn = this.handshake(msg, origin, send, reject, ws, client);
         if (conn) {
+          connectedAt = (this.opts.now ?? Date.now)();
+          this.opts.onLinkEvent?.({
+            kind: 'connected',
+            worldId: conn.worldId,
+            userName: conn.info.userName,
+            connectionId: conn.id,
+          });
           heartbeat = setInterval(() => {
             if (missed >= MAX_MISSED_PONGS) {
               ws.terminate();

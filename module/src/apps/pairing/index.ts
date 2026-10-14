@@ -46,6 +46,7 @@ export function describeState(s: LinkState, serverMode = false): string {
       return i18n.format('AGENT_GATEWAY.Link.state.connected', { user: s.user, world: s.world });
     default:
       if (s.reason === 'REPLACED') return i18n.localize('AGENT_GATEWAY.Link.replaced');
+      if (s.reason === 'TOKEN_REJECTED') return i18n.localize('AGENT_GATEWAY.Link.tokenRejected');
       if (s.reason === 'PAIRING_REQUIRED') return i18n.localize(required);
       return s.reason === 'PAIRING_INVALID'
         ? i18n.localize(invalid)
@@ -134,6 +135,7 @@ export function createPairingApp(): any {
         codeHint: i18n.localize(
           serverMode ? 'AGENT_GATEWAY.Pairing.Invite.hint' : 'AGENT_GATEWAY.Pairing.codeHint',
         ),
+        onePairingNotice: i18n.localize('AGENT_GATEWAY.Pairing.OnePerUser.notice'),
         serverLine: serverMode ? i18n.localize('AGENT_GATEWAY.Pairing.Server.line') : '',
         urlWarning: res.clientInvalid ? i18n.localize('AGENT_GATEWAY.Pairing.Address.invalid') : '',
         worldWarning:

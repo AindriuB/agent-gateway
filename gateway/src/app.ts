@@ -29,7 +29,7 @@ import { HttpServer, loadOrCreateToken } from './http/index.js';
 import { OAuthServer, type ConsentStep } from './oauth/index.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
-import type { UserSelector } from './routing/index.js';
+import { safeText, type UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 import {
   LocalUpstream,
@@ -540,6 +540,17 @@ export function createApp(config: Config, deps: AppDeps): App {
       onCodePaired: () => {
         if (isPublic) thisCodes.issue('consumed');
       },
+      onLinkEvent: (e) => {
+        const who = `world ${safeText(e.worldId)} / user ${safeText(e.userName)}`;
+        if (e.kind === 'connected') {
+          writeStatus(`link connected: ${who}`);
+          return;
+        }
+        const reason = e.reason ? `, ${safeText(Array.from(e.reason).slice(0, 64).join(''))}` : '';
+        writeStatus(
+          `link disconnected: ${who} after ${Math.round(e.durationMs / 1000)}s (code ${e.code}${reason})`,
+        );
+      },
       onOriginRejected: (origin, reason, detail) => {
         const shown = sanitizeOrigin(origin);
         if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
@@ -607,6 +618,8 @@ export function createApp(config: Config, deps: AppDeps): App {
           userName: p.userName,
         })) ?? [],
       log: writeStatus,
+      pairingState: (worldId: string, userId: string) =>
+        store?.pairingStateFor(worldId, userId) ?? 'none',
       offlineCategory: (o: Parameters<Store['queue']['catalog']>[0], name: string) =>
         store?.queue.catalog(o)?.find((t) => t.name === name)?.category,
       ...(isPublic || serverMode

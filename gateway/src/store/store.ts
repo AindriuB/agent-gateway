@@ -89,6 +89,8 @@ export interface Store {
   getPairing(id: string): PairingRow | undefined;
   /** Pairings that are not revoked. */
   listActivePairings(): PairingRow[];
+  /** One query: `active` if any unrevoked row exists, `revoked` if rows exist but all are, else `none`. */
+  pairingStateFor(worldId: string, userId: string): 'active' | 'revoked' | 'none';
   /** Every pairing row, revoked or not, oldest first. */
   listPairings(): PairingRow[];
   /** Revokes the row and its (world, user)'s OAuth grants in one transaction. */
@@ -211,6 +213,9 @@ export function openStore(
   const activeFor = db.prepare(
     'SELECT * FROM pairings WHERE world_id = ? AND user_id = ? AND revoked_at IS NULL',
   );
+  const stateFor = db.prepare(
+    'SELECT COUNT(*) AS total, COALESCE(SUM(revoked_at IS NULL), 0) AS live FROM pairings WHERE world_id = ? AND user_id = ?',
+  );
   const allPairings = db.prepare('SELECT * FROM pairings ORDER BY created_at, id');
   const oauth = createOAuthRepository(db);
   const inviteByHash = db.prepare('SELECT * FROM invites WHERE code_hash = ?');
@@ -315,6 +320,10 @@ export function openStore(
     },
     listActivePairings() {
       return (active.all() as unknown as Row[]).map(toRow);
+    },
+    pairingStateFor(worldId, userId) {
+      const r = stateFor.get(worldId, userId) as { total: number; live: number };
+      return Number(r.live) > 0 ? 'active' : Number(r.total) > 0 ? 'revoked' : 'none';
     },
     listPairings() {
       return (allPairings.all() as unknown as Row[]).map(toRow);
