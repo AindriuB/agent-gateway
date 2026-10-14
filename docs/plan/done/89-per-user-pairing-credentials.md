@@ -148,3 +148,12 @@ No DRIFT. 7f335ca changes only the five routed items: the new optional `hasUserT
 NOTE (setup, not a defect): the local `main` ref (5540b1e) is behind origin. `git diff main...HEAD` therefore also shows task 87's gateway and docs changes. `git diff --stat ba4bb02..HEAD -- gateway` is empty.
 
 SCOPE: clean. Every path in 9c18207..HEAD is within Owns as amended by Amendment 1.
+
+## Review round 3 — findings (external review on PR #143)
+
+Reviewed HEAD: cf0cb45. Both findings are in-spec and routed to the implementer. This is the last allowed round.
+
+1. [P2] Clear the credential for the rejecting socket's gateway — runtime.ts:74
+If the gateway setting changes from X to Y, the existing X socket remains open. A subsequent `PAIRING_INVALID` from X resolves the current gateway setting and deletes Y's credential, leaving X's rejected credential intact. Capture the gateway URL with the hello owner and use it when clearing rejected credentials.
+2. [P2] Preserve the legacy credential when migration storage fails — client.ts:535
+When localStorage is readable but full, `credentials().set()` silently swallows the failed write. Migration then clears the legacy setting, destroying the only persisted copy of the accepted token and requiring pairing again on reconnect. Clear the legacy value only after confirming successful persistence; an in-memory fallback would still lose it after reload. The migration contract (this file, around :54) requires writing the keyed entry before clearing the legacy setting.
