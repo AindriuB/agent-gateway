@@ -174,6 +174,7 @@ export class LinkServer {
       if (
         host !== `localhost:${this.boundPort}` &&
         host !== `127.0.0.1:${this.boundPort}` &&
+        host !== `[::1]:${this.boundPort}` &&
         !publicHostMatches(host, this.opts.publicUrl)
       ) {
         refuse('403 Forbidden', 'host header is not loopback');

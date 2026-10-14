@@ -126,3 +126,13 @@ describe('public-mode pairing limits', () => {
     expect(other.ws.readyState).toBe(other.ws.OPEN);
   });
 });
+
+describe('IPv6 loopback Host in local mode', () => {
+  it('accepts [::1] with the bound port and refuses other IPv6 authorities', async () => {
+    h = await startServer();
+    const c = await connect(h.port, { Host: `[::1]:${h.port}` });
+    expect(c.ws.readyState).toBe(c.ws.OPEN);
+    await expect(connect(h.port, { Host: '[::2]:' + h.port })).rejects.toThrow(/403/);
+    await expect(connect(h.port, { Host: `[::1]:${h.port + 1}` })).rejects.toThrow(/403/);
+  });
+});

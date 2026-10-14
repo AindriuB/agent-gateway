@@ -339,3 +339,11 @@ describe('failed-auth limit and fail-closed sessions', () => {
     expect(r.headers['mcp-session-id']).toBeUndefined();
   });
 });
+
+describe('IPv6 loopback Host in local mode', () => {
+  it('accepts [::1]:<port> and refuses [::2]', async () => {
+    const { port } = await setup();
+    expect((await raw(port, { host: `[::1]:${port}` }, '/status')).status).toBe(200);
+    expect((await raw(port, { host: `[::2]:${port}` }, '/status')).status).toBe(403);
+  });
+});
