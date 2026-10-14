@@ -54,6 +54,18 @@ const mcpStatus = (httpPort: number, token: string): Promise<number> =>
     }),
   }).then((r) => r.status);
 
+/** Rotate the e2e db's HTTP token with the built CLI and return the new one (shown once). */
+const rotateToken = (): string | undefined => {
+  const r = spawnSync(
+    process.execPath,
+    [GATEWAY_CLI, '--http-rotate-token', '--db', ctx.paths.db],
+    {
+      encoding: 'utf8',
+    },
+  );
+  return parseBearerToken(`${r.stdout}\n${r.stderr}`);
+};
+
 describe('takeover: the e2e gateway A yields to a newer --http gateway B and takes back over', () => {
   let rig: Rig;
   let b: GatewayProcess | undefined;
@@ -77,6 +89,11 @@ describe('takeover: the e2e gateway A yields to a newer --http gateway B and tak
       const a = rig.gateway!;
       const welcomes = rig.frames(gmUser).welcomes;
 
+      // 0. A has migrated the shared db. Rotate first so the test never depends on whether a
+      // token hash was already stored (B prints a token only when the db has none).
+      const token = rotateToken();
+      expect(token, 'rotate printed a token').toBeDefined();
+
       // 1. B on the same e2e db: HTTP on, and a differing setting (the HTTP port).
       b = new GatewayProcess(ctx.config, ctx.paths, gmUser, takeoverArgs(httpPort));
       await b.start();
@@ -93,8 +110,6 @@ describe('takeover: the e2e gateway A yields to a newer --http gateway B and tak
       expect(relayed, 'A world_info via the relay').toBeDefined();
 
       // 4. world_info over HTTP with the bearer token.
-      const token = parseBearerToken(b.stderr);
-      expect(token, 'B printed its bearer token').toBeDefined();
       const http = new Client({ name: 'e2e-http', version: '0' });
       await http.connect(
         new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${httpPort}/mcp`), {
@@ -110,14 +125,7 @@ describe('takeover: the e2e gateway A yields to a newer --http gateway B and tak
 
       // 5. Rotate: the old token gets 401 and the new one 200.
       expect(await mcpStatus(httpPort, token!)).toBe(200);
-      const rotated = spawnSync(
-        process.execPath,
-        [GATEWAY_CLI, '--http-rotate-token', '--db', ctx.paths.db],
-        {
-          encoding: 'utf8',
-        },
-      );
-      const fresh = parseBearerToken(rotated.stderr);
+      const fresh = rotateToken();
       expect(fresh, 'rotate printed a new token').toBeDefined();
       expect(await mcpStatus(httpPort, token!)).toBe(401);
       expect(await mcpStatus(httpPort, fresh!)).toBe(200);
