@@ -63,3 +63,10 @@ An operator whose VPS already runs Caddy, either installed on the host or in its
 - Support for a shared Docker network, nginx, Traefik, Docker Desktop host networking, or mounting the gateway under a path.
 - Running `docker compose config` in tests, or adding a YAML parser dependency.
 - Installers, and publishing an image.
+
+## Review round 1 — findings
+
+- [P3] gateway/docker/README.md:59-60 — the reason given for why `restart` fails is wrong, although the recommended command is right. Compose pins `network_mode` to `container:<old Caddy container id>`. After Caddy is recreated, `docker compose restart gateway` fails with "joining network namespace of container: No such container: <id>" and leaves the gateway stopped; it does not "reuse the old namespace". Verified on Docker 29.8.2: `up -d --force-recreate gateway` works. route: implementer. Fix the wording to match what the operator sees.
+- [P3, content point 1] gateway/docker/README.md:49-52 — the "Host-installed Caddy" paragraph doesn't mention that `AGENT_GATEWAY_PUBLIC_URL`, `AGENT_GATEWAY_TRUST_PROXY=1` and `AGENT_GATEWAY_ALLOW_ORIGIN` stay set; the compose file sets them. route: implementer. Add one sentence.
+- [P3] gateway/docker/README.md:38-41 — moving from the bundled stack: setting COMPOSE_FILE and running `up -d` without first running `docker compose down` leaves the old caddy container orphaned in the same project. route: implementer. Add the stop step (`docker compose down` with the bundled file before switching, which keeps the volume) and mention `--remove-orphans`.
+- [NOTE for the README, cheap] In host mode, 7420/7421 are on the host's loopback, so any local process on the VPS can reach them and, with TRUST_PROXY=1, choose its own rate-limit bucket via XFF. Nothing is exposed off the machine. route: implementer. Add one sentence so operators know.
