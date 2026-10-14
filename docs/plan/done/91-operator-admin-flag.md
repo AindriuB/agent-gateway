@@ -61,3 +61,49 @@ invites. This is the bootstrap for the vouched pairing flow and for the in-Found
 ## Notes for the scribe
 - README/server docs: the operator onboarding order is to mint the GM's admin invite first, then players pair through the GM. Additional GM users (for example a "ChatGPT" GM) are paired with `--invite … --gm`. Document `--demote` and `--revoke-pairing` as the break-glass.
 - Threat map T21: `--demote` is a second operator control.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 48e7f74. All findings are tests only and routed to the implementer (the two P2s, plus the P3 as optional).
+
+VERDICT: FIX
+
+The code in `gateway/src/bin/cli.ts` handles every guard you listed correctly, and lint and Prettier pass. Two tests in `admin-cli.test.ts` pass even with the guard they cover removed: demote target scoping, and the `--admin`/`--gm` without `--invite` checks. That is two P2s.
+
+FINDINGS
+- [P2] gateway/test/bin/admin-cli.test.ts:177-179 — Nothing tests that `--demote` only touches the named world and user. The `nobody` case runs after gm1 is already demoted, so there is no admin left for a broken filter to hit.
+  route: implementer
+  input: change cli.ts:382 to `p.worldId === cmd.worldId && p.admin` (drop the user check), or drop the world check. Then `--invite w1 gm1 --admin --origin O`, redeem it, and run `--demote w1 nobody`  →  gm1 loses admin and the command exits 0. The test cannot see this.
+  proof: both mutants (user check removed, world check removed) SURVIVED, 16/16 pass. Fix: run `--demote w1 nobody` (and a same user in another world, e.g. `w2 gm1`) before the real demote, and assert gm1 is still `admin: true` and the exit code is 1.
+- [P2] gateway/test/bin/admin-cli.test.ts:83-84 and :216 — The "`--admin`/`--gm` without `--invite` exits 2" checks only look at the exit code, and that exit 2 comes from a different check: the "Unexpected argument" positional guard at cli.ts:494. The new guards at cli.ts:256-257 are never exercised.
+  route: implementer
+  input: delete cli.ts:256 or :257. Then running `foundry-agent-gateway --admin` with no positionals ignores the flag and starts the gateway, and the test does not notice.
+  proof: removing :256 SURVIVED (16/16); removing :257 SURVIVED (16/16). Fix: assert stderr contains `${flag} goes with --invite`, and add the no-positionals case.
+- [P3] gateway/test/bin/admin-cli.test.ts:255 — The secrets check seeds the pairing `tokenHash` values but not the invites' `codeHash`, so `--list-invites` could print the code hash and the test would still pass.
+  route: implementer
+  proof: adding `${i.codeHash}` to the list-invites line (cli.ts:412) SURVIVED. Fix: add `hashInviteCode(code)` for a, g and p to `secrets`.
+- [NOTE] cli.ts:379-385 — Running the demote outside `s.transaction` is not something a test can see: each pairing is a single UPDATE, and the target normally has only one. The code does wrap it in one transaction, as the acceptance asks.
+- [NOTE] cli.ts:382 — `&& p.admin` adds nothing, because the demote SQL already filters on `AND admin = 1` (store.ts:231). Removing it changes nothing, so its surviving mutation is not a test gap.
+- [NOTE] If `--ttl` is given twice, the last value wins (node `parseArgs`, same as before this branch). The cap still holds: `--ttl 1h --ttl 30h` exits 2, and `--ttl 30h --ttl 1h` gives a 1 h invite.
+
+Mutations that the test file caught (scratch copy, branch rebuilt each time, only `admin-cli.test.ts` run):
+- `--origin` requirement removed, or required for `--admin` only.
+- Default TTL as 24 h for `--gm` or for both flags.
+- The 24 h cap removed, changed to `>=`, or applied to `--admin` only.
+- `--gm` setting admin.
+- A plain invite getting gm=1.
+- Allowing `--admin`/`--gm` with a non-invite command.
+- `--demote` revoking grants, cancelling invites, or exiting 0 when nothing changed.
+- `--list-pairings` printing the token hash.
+- Swapped kind order in `--list-invites`.
+
+Argument parsing, run directly against the built CLI (the guards behave correctly, and these are not test results):
+- Exit 2: `--ttl -1h` (parseArgs "ambiguous"), `--ttl=-1h`, `0h`, `1.5h`, `1441m`, `--origin=`.
+- Exit 2: `--list-invites --admin`, `--list-invites --gm`, `--list-pairings --gm`, `--demote w1 u1 --gm`, `--demote … --origin`, `--invite --demote w1 u1`, `--gm --origin O`.
+- Accepted: `1440m` and `1d` (exactly 24 h), and `--admin --admin`.
+
+Setup caveat: the main checkout's `protocol/dist` is stale. It is from before task 90 and has no `attest`. Against it, the "refuses the next attest" test times out. With protocol rebuilt in the scratch copy, the file passes 16/16. This only matters for anyone running tests against main's node_modules without rebuilding.
+
+SCOPE: clean (the branch changes only gateway/src/bin/cli.ts and gateway/test/bin/admin-cli.test.ts)
+
+Scratch copy: /private/tmp/claude-501/-Users-Andrew-workspace-foundry-modules-agent-gateway/2ea49aeb-bebb-47e8-84ee-7042e90a8488/scratchpad/t91; mutation scripts are in the same scratchpad (mut.py, mut2.py, probe.sh).

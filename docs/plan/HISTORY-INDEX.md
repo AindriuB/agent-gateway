@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-15 | 91 | Operator CLI `--invite --admin` (admin+gm) and `--gm` pair directly (needs `--origin`, 1h default, 24h cap); `--demote` clears admin only; list commands gain admin and kind columns, no secrets | `## 2026-10-15 — Operator admin flag (task 91)` |
 | 2026-10-14 | 90 | Protocol 7.0.0 GM-vouched pairing: player invites completed by an admin GM attesting the server-set message author; admin/gm flags (migration 012); `--gm`/`--admin` invites pair directly; bounded pending and attest budgets | `## 2026-10-14 — GM-vouched pairing (task 90)` |
 | 2026-10-14 | 89 | Pairing credentials keyed by (gateway URL, world, user) in browser-local storage, capped at 16; user switch never sends or deletes another user's credential; rejection removes only the presented one; legacy migration; "Unpair this browser" button | `## 2026-10-14 — Per-user pairing credentials (task 89)` |
 | 2026-10-14 | 87 | Link connect/disconnect logged (safeText, 64 chars); `pairingStateFor` and three-way `gateway_status` wording; module clears a rejected token (`TOKEN_REJECTED`, no retry), `retryNow` on online/visibilitychange, Players-list indicator and toast, one-pairing notice | `## 2026-10-14 — Link resilience and diagnostics (task 87)` |
