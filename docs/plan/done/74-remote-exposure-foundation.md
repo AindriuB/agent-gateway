@@ -209,3 +209,7 @@ Deviations accepted by review:
 - Peer relay strings are truncated to 300 characters and sanitised.
 
 Notes for task 35: public `/status` calls `authenticate` with no failure count or rate limit, so 35 must add both once OAuth authenticates it. Every OAuth principal must carry a selector, because 74 now fails closed without one.
+
+### Review round 2 (external, PR #120)
+
+P2, routed to the implementer (in spec, :91-94): the link Host check refused `[::1]:<port>`, so `--link-host ::1` could not pair. Fixed in 4966628 by accepting `[::1]:<bound port>` only; HTTP already accepted it, and a test now pins that. Verify passes (4166 + 2227 tests). A code-reviewer re-review of 71d73d5..HEAD came back CLEAN with no drift, and a mutation proof showed the new link test fails without the fix.
