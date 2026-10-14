@@ -21,6 +21,16 @@ in the same commit.
 The module now keeps pairing credentials in browser-local storage keyed by (gateway URL, world, Foundry user), capped at 16 entries, instead of one credential per browser. A user switch in the same browser neither sends nor deletes another user's credential, and a gateway rejection removes only the credential that was presented. A credential stored in the old single-slot form is migrated to the first user who needs it. The pairing window has an "Unpair this browser" button. Credentials are never put in Foundry server-side settings or flags, because a GM can read those and could impersonate the user.
 **Cost:** The trigger was live: on 2026-10-14 Andrew logged in as a second GM in the same browser and Gamemaster's pairing was wiped. Amendment 1 widened Owns to all of `module/src/link/client.ts`. Two review rounds: round 1 found a test-only copy of the logic, a migrated `authSource`, `hasStoredToken` and an origin check; round 2 found that Unpair did nothing for an entry belonging to an old gateway. The existing test edited is the reload storage assertions in `module/test/link/pairing.test.ts`. Accepted residual: a legacy credential owned by A is cleared if B logs in first and is rejected, so A re-pairs once. Do not move credentials to server-side settings to fix that.
 
+**Round 3:** an external review on PR #143 found two P2s. A rejection cleared the credential of the current setting instead of the presented gateway's; it is now captured with the hello owner. Migration cleared the legacy credential even when the keyed write failed on full storage; `CredentialStore.set` now reports whether the write persisted.
+
+**Amendment 2 (Andrew):** a fourth round was approved. When storage is full, a code-issued token is kept in memory for the session, with one warning that carries no token.
+
+**Round 4:** added a test for the authSource guard.
+
+**Round 5 (Andrew approved):** fixed the `start()` gate ignoring the session token (stuck "connecting"), bound the session token to helloOwner, added invariant tests, and fixed the notifyWarn doc.
+
+**Lesson:** the external review caught a "current setting instead of presented credential" bug class that internal review missed.
+
 ## 2026-10-14 — Link resilience and diagnostics (task 87)
 The gateway now logs each authenticated link connect and disconnect (through `onLinkEvent`, with the reason passed through `safeText` and cut to 64 characters, and no tokens or secrets). `Store.pairingStateFor(worldId, userId)` returns `active`, `revoked` or `none`, and `gateway_status` words the three cases differently: `active` tells the user to reload the Foundry tab, with no new code; `revoked` says the pairing was revoked; `none` is unchanged. This matters because a new code revokes the existing pairing and its OAuth grants.
 

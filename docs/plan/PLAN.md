@@ -36,6 +36,8 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - `gateway/test/invite-cli.test.ts` timed out under full-suite load; treat it as a flake and raise the timeout or lighten the test if it recurs.
   - `--invite` should print the address and code on separate labelled lines, and the docs should say to paste them into Foundry, not open them in a browser.
   - Show the GM a notice when a sign-in code is requested for an offline user.
+  - Capture `helloOwner` before the `setToken` await in the code-welcome path (P3, unreachable in the real runtime).
+  - No test guards the session-token `helloOwner` binding.
   - Accepted residual: a legacy credential owned by A is cleared if B logs in first and is rejected, so A re-pairs once.
 
 ### 3. Priority: invite redemption trusts client-asserted ids
