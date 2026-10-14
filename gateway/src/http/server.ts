@@ -13,6 +13,7 @@ import type { LinkRegistry } from '../link/index.js';
 import { renderStatus } from '../status/page.js';
 import type { HttpToken } from './token.js';
 import { clientKey } from './client-key.js';
+import { publicHostMatches } from './public-url.js';
 import {
   FAILED_AUTH_WINDOW_MS,
   FailureWindows,
@@ -141,13 +142,7 @@ export class HttpServer {
   private hostAllowed(header: string | undefined): boolean {
     const host = hostName(header);
     if (host && LOOPBACK_HOSTS.has(host)) return true;
-    if (!this.publicHost || !header || !this.publicOrigin) return false;
-    try {
-      const scheme = new URL(this.publicOrigin).protocol;
-      return new URL(`${scheme}//${header}`).host === this.publicHost;
-    } catch {
-      return false;
-    }
+    return publicHostMatches(header, this.o.publicUrl);
   }
 
   private originAllowed(origin: string): boolean {
