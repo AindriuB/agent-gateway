@@ -41,7 +41,8 @@ only role that edits `PLAN.md`, `HISTORY*.md` and `docs/`). See `docs/workflow.m
 7. Every change lands via a PR Andrew reviews. Never push to `main`.
 8. Never `git stash` (worktrees share one stash stack) and never `pkill`; stop
    only processes you started, by PID.
-9. `npm run verify` must pass before a change is called done.
+9. `npm run verify` (which also runs the script tests) must pass before a change is
+   called done.
 
 ## Reviewing a PR
 

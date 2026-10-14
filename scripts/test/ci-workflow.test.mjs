@@ -55,7 +55,6 @@ describe('test job', () => {
       "node-version: '22'",
       'npm ci',
       'npm run verify',
-      'npm run test:scripts',
     ];
     let at = -1;
     for (const s of order) {
@@ -63,6 +62,11 @@ describe('test job', () => {
       assert.ok(i > at, `${s} in order`);
       at = i;
     }
+    assert.doesNotMatch(test, /run: npm run test:scripts/);
+  });
+  it('runs the script tests through verify', () => {
+    const pkg = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8'));
+    assert.ok(pkg.scripts.verify.endsWith('npm run test:scripts'));
   });
   it('never mentions live suites', () => {
     assert.doesNotMatch(wf, /test:e2e|e2e\.sh|test:conformance|conformance\.sh/);
