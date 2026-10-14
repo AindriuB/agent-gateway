@@ -64,10 +64,18 @@ Decision (c) was approved by Andrew on 2026-10-14. The others are defaults: foll
     - Two link messages, inserted in protocol/src/link/messages.ts.
       - Gateway to module: `observerRoster { userIds: string[] }` (at most 64). It lists the user ids in that world whose pairings have `verified_role = 'gm'`. It is sent to every observer-eligible connection after `welcome`, and again whenever the world's roster changes.
       - Module to gateway: `observerRoles { roles: { userId: string; isGM: boolean }[] }` (at most 64 entries).
-    - The reporter, `module/src/link/role-sync.ts`, installed from main.ts's `ready` handler next to the existing `updateUser` hook (module/src/main.ts:37-39), sends `observerRoles` in three cases: when a roster arrives; on Foundry's `updateUser` hook when the updated user is in the roster; and on `deleteUser` for a roster user, reported as `isGM: false`. Each role is read from that client's own `game.users.get(id)?.isGM`. The module sends `observerRoles` only after it has received an `observerRoster`, so an older gateway never sees the new type.
+    - The reporter, `module/src/link/role-sync.ts`, is installed from main.ts's `ready` handler next to the existing `updateUser` hook (module/src/main.ts:37-39). Its triggers are: a roster arriving; Foundry's `updateUser` hook when the updated user is in the roster; and `deleteUser` for a roster user. The module sends `observerRoles` only after it has received an `observerRoster`, so an older gateway never sees the new type.
+    - **Trailing-edge coalescing, so no change is lost.** The reporter sends at most once per `ROLE_REPORT_INTERVAL_MS` (5 s), with one pending timer per connection.
+      - A trigger outside the cooldown sends at once.
+      - A trigger inside the cooldown only marks the state dirty and, if no timer is pending, schedules exactly one send at the end of the cooldown.
+      - Every send carries the **current** roles of **all** roster users, read from `game.users.get(id)?.isGM` at send time. It never uses the event payload. A user missing from `game.users`, such as a deleted one, is reported as `isGM: false`.
+      - The pending timer is cleared when the link disconnects. On reconnect, the fresh `observerRoster` triggers a full report.
+      - So the last change in any window is always sent, with the final state, within one cooldown.
     - The gateway handles a report as follows:
       - it is accepted only from a connection that is observer-eligible under (b0), and only about users in that connection's world;
-      - at most one report per connection per 5 s (`ROLE_REPORT_INTERVAL_MS`); extra reports are dropped;
+      - **demotions are never dropped.** An entry that would clear a roster member's `verified_role` is applied whatever the rate window. This is bounded: a report holds at most 64 entries, only eligible observers may send one, only users in the roster of their world count, and clearing a role that is already NULL writes nothing. This was chosen over keeping each connection's latest report for later: there is no queue, no timer and no per-connection state to bound, and the safety-critical change takes effect at once;
+      - a report with no demoting entry is rate-limited to one per connection per `ROLE_REPORT_INTERVAL_MS`, and extra ones are dropped. They change nothing anyway, since a peer report cannot promote;
+      - flood bound: a connection that sends more than `MAX_ROLE_REPORTS_PER_MINUTE` (60) `observerRoles` frames in a rolling minute is closed with 1008 `role report flood`, and the operator log names it. An honest reporter, which coalesces as above, sends at most 12 per minute. The gateway keeps one counter per connection and drops it with the connection;
       - an entry about the reporting connection's own user is ignored;
       - an entry saying user X is **not** a GM clears X's `verified_role` (NULL) at once, re-sends the roster, and logs one operator line naming X, the world and the reporting user. From then on X's connections are not observer-eligible, even with `hello.user.isGM: true`, and any confirmation report X has in flight is ignored;
       - an entry saying X **is** a GM changes nothing: a peer report can only demote, and promotion stays limited to the three paths in (b0);
@@ -100,10 +108,18 @@ Decision (c) was approved by Andrew on 2026-10-14. The others are defaults: foll
 - [ ] An `observerRoles` entry about the reporting connection's own user is ignored, both for `isGM: false` and `isGM: true` (test).
 - [ ] A peer report with `isGM: true` about a user whose `verified_role` is NULL leaves it NULL (test).
 - [ ] An `observerRoles` from a connection that is not observer-eligible (a player, or a forged-`isGM` player with `verified_role` NULL) is ignored, and nobody is demoted (test).
-- [ ] Reports beyond one per 5 s per connection are dropped (injectable clock), and entries about users outside the reporter's world or roster are ignored (test).
+- [ ] Gateway rate handling (injectable clock):
+  - a second **non-demoting** report within 5 s of the first is dropped;
+  - a **demoting** report arriving 2 s after an accepted report is applied at once;
+  - entries about users outside the reporter's world or roster are ignored (tests).
+- [ ] Flood: a connection sending 61 `observerRoles` frames within a minute is closed with 1008 `role report flood`. The gateway's per-connection state for it is gone after the close, and other connections are unaffected (test).
+- [ ] End to end, with a fake clock, the real module reporter on observer B and the gateway: B sends its roster report at t=0, GM A is demoted at t=2 s, and A's `verified_role` is NULL by t=5 s plus 100 ms. A's confirmation report is ignored after that (test).
 - [ ] `--demote-observer w1 uA` clears `verified_role` on uA's active pairings. A running gateway stops treating uA as eligible without a restart. The command exits 1 when nothing changes (gateway/test/bin/demote-observer.test.ts).
 - [ ] Module reporter (module/test/link/role-sync.test.ts):
   - sends nothing before an `observerRoster` arrives;
+  - three role changes inside one cooldown window produce exactly one trailing send, carrying the final state of every roster user from `game.users` at send time;
+  - a pending trailing send is cancelled on disconnect (no frame after the disconnect), and the roster on reconnect triggers one full report;
+  - there is never more than one pending timer, however many events arrive;
   - on a roster, sends roles read from `game.users`;
   - on an `updateUser` for a roster user, sends the new role, and sends nothing for a user outside the roster;
   - on a `deleteUser` for a roster user, sends `isGM: false`.
