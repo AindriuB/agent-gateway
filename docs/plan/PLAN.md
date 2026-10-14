@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 61 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 62 done in `docs/plan/done/` (excluding its README.md), 23 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -74,6 +74,15 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 
 ### Claude Code plugin: 85 (automated done, PR open, live run pending; task file stays in `docs/plan/tasks/`)
 - **85 — Private Claude Code plugin for the hosted gateway.** Repo marketplace `agent-gateway` and a hosted one (`aindriub-dl`) built by `scripts/build-claude-plugin.mjs --base-url`, live at `https://dl.aindriub.app/claude/marketplace.json` since 2026-10-14. Reviewed in three clean rounds, tester PASS, reviewer APPROVE. Pending Andrew: marketplace add, install, `/mcp` OAuth (check which scopes are requested; stop if read only), list tools, one read, one approved write, revoke, logout. Move the task file to `done/` and write the HISTORY entry after that run. Guide: `docs/claude-plugin.md`.
+
+### Server-mode onboarding: 86 (done on branch `claude/task-86`, archived in `docs/plan/done/`; PR pending), then 87
+- **86 — One-paste invite, world default gateway URL, server-mode wording.** Reviewed in three rounds plus Amendment 1. Pending Andrew: the manual check against a live hosted gateway.
+- **87 — Link resilience and diagnostics (next; depends on 86).** Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`: make link drops visible and recoverable without re-pairing.
+- **Follow-ups from 86:**
+  - The "inherited" note in the pairing window is hidden while the state is connecting or unreachable; show it there too.
+  - The env-var error for a missing public URL should name `--public-url`.
+  - `Pairing.Address.connecting` uses `...` where the rest of `lang/en.json` uses `…`; make it consistent.
+  - `module/src/settings/gateway-url-guard.ts:94` reads `self.isActiveGM` in a way that is hard to follow (readability nit only).
 
 ### Later (after MVP B)
 
