@@ -17,12 +17,15 @@
 - gateway/test/store/invites.test.ts and gateway/test/store/revoke-listeners.test.ts (new)
 - gateway/src/bin/cli.ts (the one-shot `--invite`, `--revoke-pairing`, `--cancel-invite`, `--list-invites` and `--list-pairings` commands only, plus what they need from `parseArgs`; see "Overlap with 75")
 - gateway/test/bin/invite-cli.test.ts (new)
-- gateway/src/app.ts (start and stop the revocation sweep with the primary, and the server-mode switch-off of the shared code, its log lines and its hint only; see "Overlap with 75")
+- gateway/src/app.ts (start and stop the revocation sweep with the primary, the server-mode switch-off of the shared code, its log lines and its hint, and the server-mode refusal-log cap, decision (m), only; see "Overlap with 75")
 - protocol/src/link/messages.ts (allowed edit to existing lines: length caps on `HelloMessage` `world.id`, `user.id`, `user.name` and `auth.code`; no other change)
 - protocol/test/link/hello-caps.test.ts (new)
 - module/src/apps/pairing/** and templates/pairing/** (the "Copy my ids" line only)
 - module/test/apps/pairing-ids.test.ts (new)
 - lang/en.json (insertions under `AGENT_GATEWAY.Pairing.CopyIds.*` only)
+- module/src/link/runtime.ts (`getIdentity`'s `user.name` (:58) only: truncate to 100 characters, decision (f); Andrew, review round 1)
+- module/test/link/hello-name.test.ts (new)
+- gateway/test/routing/binding.test.ts (one-line change only at :203-205: `userName: 'n'.repeat(500)` becomes `'n'.repeat(100)`. The 100-character `user.name` cap (decision f) rejects 500, and 100 is still over `safeText`'s 80-character cap, so the test still checks the log cap; Andrew, review round 1)
 - gateway/test/http/app.test.ts, gateway/test/store/retire-legacy-pairings.test.ts and gateway/test/store/store.test.ts (migration-count and slice-index assertions forced by migration 011 only; standing rule, Andrew 2026-10-14, the same rule 35 used for 010. Today these are store.test.ts:146 `toHaveLength(10)`, store.test.ts:170 and retire-legacy-pairings.test.ts:47 `user_version: 10`)
 
 ## Goal
@@ -109,6 +112,7 @@ In server mode (one gateway, many players on the internet), only the operator de
   - `--list-invites` prints the invite's row id, target, created, expiry and status (`live`, `paired`, `mismatch`, `expired` or `cancelled`). `--list-pairings` prints world, user, sanitized name, origin, created and revoked. Neither prints a code, a token or a hash.
 - (f) **Names and caps (F8).**
   - `HelloMessage` caps `world.id` and `user.id` at 64 characters, `user.name` at 100, and `auth.code` at 64. This is an allowed edit of existing schema lines; the module never sends longer values. Over-long frames fail validation and are refused as invalid.
+  - The module truncates `game.user.name` to 100 characters before it sends the hello (module/src/link/runtime.ts:58; Andrew, review round 1), so a long Foundry user name still pairs. The name is display-only and the ids are the identity. `world.id` is a Foundry slug and is not truncated.
   - The name recorded at pairing is display-only: it goes through `safeText` and is stored at most 100 characters long. Identity is always the ids.
   - Every new log line passes untrusted text (ids, names, origins) through `safeText`.
 - (g) **The pairing app's "Copy my ids" line.** It shows this browser's world id and user id (from `game.world.id` and `game.user.id`) with a copy button, so a player can send them to the operator for `--invite`. It is visible in both modes, and the strings are localized.
@@ -120,6 +124,13 @@ In server mode (one gateway, many players on the internet), only the operator de
   - The remaining `onPairingRevoked` listeners are in-memory only (events, queue). They fire after `COMMIT`, with the revoked row. Each is isolated: it runs even if an earlier one throws, and each error is logged through the store's `warn` (one line, with the message through `safeText` and nothing from the row beyond world and user ids). A throwing listener never undoes the commit, and `revokePairing` still returns `true`.
 - (k) **CLI writes take the write lock first (from 35's review).** Every write path of the new CLI commands (`--invite`, `--revoke-pairing`, `--cancel-invite`) runs inside `BEGIN IMMEDIATE ... COMMIT`. Then `busy_timeout` (store.ts:85) covers the lock wait, and the oauth `SAVEPOINT` (repository.ts:194) nests in it instead of opening a deferred transaction that can fail with `SQLITE_BUSY_SNAPSHOT` against a running gateway. On any error the command issues `ROLLBACK` and reports the original error, never one raised by the rollback. If the lock is still held after the timeout, the command exits 1 saying the database is busy and nothing changed.
 - (l) **67's consent codes stay bound to the delivering pairing.** A consent code is accepted only while the pairing it was delivered over (`conn.agentId`) is active (consent/index.ts:263, :292). Replacement and revocation keep this working because they revoke the old row in the database, not only close the socket, so a code delivered over the old connection fails. After a replacement, `registry.get(world, user)` is the new connection, so new codes go to the new pairing.
+- (m) **Refusal-log flood cap in server mode (Andrew, review round 1).** In server mode, refusal log lines (`onOriginRejected` in app.ts) are capped at 20 per minute. When the minute ends, one line reports `N more refusals suppressed`, and none is written when nothing was suppressed. This replaces the rolling `warned` set (app.ts:497, :513-515), which cleared itself when full and so removed the limit. Memory stays bounded: a counter and a window start, plus at most the existing `MAX_WARNED_ORIGINS` (20) keys. The clock is injectable. Local mode keeps its per-origin dedupe unchanged.
+- (n) **Accepted extra store helpers (Andrew, review round 1).** These `Store` members, beyond the Owns list's named insertions, are accepted:
+  - `transaction(fn)`: the `BEGIN IMMEDIATE ... COMMIT` wrapper that nests when a transaction is already open. Used by the CLI writes and the redeem (decision k, decision c).
+  - `revokeActiveFor(worldId, userId)`: the shared step that revokes a target's active pairings and their grants inside an open transaction. Used by the replacement in the redeem and by `revokePairingsFor` (decisions j and d).
+  - `notifyPairingRevoked(row)`: fires the in-memory listeners for an already-revoked row, after COMMIT or from the sweep (decisions j and e).
+  - `getPairing(id)`: the sweep's row lookup for that notification (decision e).
+  - `listPairings()`: every row, revoked or not, for `--list-pairings` (decision e).
 
 ## Acceptance
 Invites:
@@ -137,7 +148,7 @@ Replacement and revocation:
 - [ ] Consent after replacement (decision l): a consent code is delivered to (w1,u1) over the old connection, the replacement invite is redeemed, and then that code is submitted. It is refused and no grant is created. A code requested after the replacement is delivered to the new connection and is accepted (test, through gateway/test/oauth/consent/rig.ts or the same wiring).
 - [ ] Consent after revocation: a consent code is delivered to (w1,u1), `--revoke-pairing w1 u1` runs, and then that code is submitted. It is refused and no grant is created (test).
 - [ ] `--revoke-pairing w1 u1` against a running gateway: the live connection for (w1,u1) receives `reject` `PAIRING_INVALID` and is closed within `REVOCATION_SWEEP_MS` plus 1 s, its grants are revoked, and its token cannot reconnect (test with a short sweep interval).
-- [ ] The sweep never touches grants: (w1,u1) is revoked with `--revoke-pairing`, re-paired with a new invite and given a new grant, all before the next sweep. After the sweep closes the old connection, the new grant and its token are still live (test with a long sweep interval, triggered by hand).
+- [ ] The sweep never touches grants: after (w1,u1)'s pairing is revoked, a grant made for (w1,u1) before the next sweep survives that sweep, with its token live (gateway/test/link/revocation.test.ts, "never touches grants: a grant made after the revoke survives the sweep", with a long sweep interval, triggered by hand). On one server a re-pair cannot leave the old connection for the sweep, because `registry.add` closes and replaces it, so no test claims to guard the sweep through a re-pair.
 - [ ] An unused invite for (w1,u1), issued before `--revoke-pairing w1 u1`, is refused afterwards with `PAIRING_INVALID`, and its row shows `cancelled` (test).
 - [ ] An unused invite for (w1,u1) is refused after `--cancel-invite w1 u1`. The (w1,u1) pairing, if any, stays active, and an unused invite for (w1,u2) still pairs (test).
 - [ ] `--cancel-invite` with no unused invite for the target exits 1 and changes nothing (test).
@@ -153,6 +164,7 @@ Grant revocation, listeners and locking (decisions j and k):
 Safety:
 - [ ] The invite code never appears in the gateway's stderr, in any MCP result or notice, or in `/status`. The test captures all of them during an invite flow and searches for the code.
 - [ ] `HelloMessage` refuses a `world.id` or `user.id` of 65 characters, a `user.name` of 101, and an `auth.code` of 65 (protocol/test/link/hello-caps.test.ts). A name containing `\x1b[31m` and a newline is stored and logged without control characters (test).
+- [ ] Refusal-log cap (decision m): in server mode with an injectable clock, 25 refusals from distinct origins within one minute write exactly 20 refusal lines, and after the minute ends one `5 more refusals suppressed` line (test).
 - [ ] Every new log line in this diff goes through `safeText` (reviewer checks the diff; one test with an ANSI user id in a refused hello asserts there is no ESC byte on stderr).
 
 Local mode and headless seam:
@@ -160,6 +172,7 @@ Local mode and headless seam:
 - [ ] A stub in-memory invite provider with target (w1,agent,origin O) pairs a matching hello in server mode, and a hello for another user or origin is refused and spends it (test of the decision (i) seam).
 
 Module:
+- [ ] The module sends a 150-character `game.user.name` as its first 100 characters, the hello parses under the capped `HelloMessage`, and pairing succeeds (module/test/link/hello-name.test.ts).
 - [ ] The pairing app shows the world id and user id with a copy button. `module/test/apps/pairing-ids.test.ts` asserts the text and the copied value, and the strings are under `AGENT_GATEWAY.Pairing.CopyIds.*`.
 
 Overall:
@@ -181,8 +194,19 @@ Overall:
 - Changing local-mode pairing.
 - docs/security.md (43) and docs/server-mode.md (42), and the README bullets from 42's follow-ups.
 
+## Residuals (accepted, no change in 68)
+- `inviteProvider` (gateway/src/link/server.ts:91) is a seam without app.ts wiring; 37 wires it.
+- The "pairing code" wording in gateway/src/mcp/status-tool.ts:18, :36 and gateway/src/mcp/session.ts:283 stays. Changing it to "invite" in server mode is a possible follow-up.
+- `store.transaction` is synchronous, so a redeem can block the event loop for up to `busy_timeout` (5 s) while a CLI command holds the write lock.
+
 ## History
 - 2026-10-13: split from 36 as server-mode pairing confirmation (observer design).
 - 2026-10-14: rewritten as operator invites (Model I, Andrew). The bootstrap rule's approval was withdrawn (T1), and observers, `verified_role`, role sync and prompts were removed.
 - 2026-10-14: refreshed against main c64dd18 after 35 and 67. Line references re-checked; decisions (j) listener isolation and (k) CLI `BEGIN IMMEDIATE` carried in from 35's review; decision (l) and two acceptance lines for 67's consent-code binding; the overlap with 75 noted.
 - 2026-10-14: Andrew's answers recorded. Grant revocation runs inside the pairing revoke's transaction on every path, and 35's oauth listener moves into `revokePairing` (j). The sweep fires only the in-memory listeners and never touches grants (e). Server mode always uses the per-client and global failed-code buckets (c).
+- 2026-10-14: review round 1 amendments (Andrew). Owns widened to gateway/test/routing/binding.test.ts (one line), module/src/link/runtime.ts and module/test/link/hello-name.test.ts. Decisions (m), the refusal-log cap, and (n), the accepted store helpers, added; the module trims the name (f); residuals recorded; the sweep acceptance line now points at the guarding test.
+
+## Review round 1 — findings
+- [STYLE] gateway/src/link/server.ts:141 — the new field `sockets_` sits next to the existing `sockets` (Set<WebSocket>, :133), and the names differ only by an underscore. Nothing else in gateway/src uses a trailing underscore. route: implementer. Rename it to descriptive camelCase like its neighbours (e.g. `socketByConn`).
+- [P3] gateway/test/link/revocation.test.ts, "revoke, re-pair and a new grant before the sweep" — vacuous: `registry.add` already closes and replaces the old connection on re-pair, so `sweepOnce` never sees it, and a mutation making the sweep revoke grants still passes. The neighbouring test "never touches grants: a grant made after the revoke survives the sweep" guards the property. route: implementer. Remove or relabel this test so it doesn't claim to guard the sweep, and adjust the acceptance line that describes this impossible-on-one-server scenario to point at the guarding test.
+- Plus the three amendments above (binding.test.ts edit, log cap, module name trim) to implement in this round.
