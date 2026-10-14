@@ -132,6 +132,33 @@ describe('--invite', { timeout: 20_000 }, () => {
     expect((await run(db, '--revoke-pairing', 'w1', 'u1', '--ttl', '1h')).status).toBe(2);
   });
 
+  const origin = ['--origin', 'https://f.example.com'];
+  it.each([[[]], [['--gm', ...origin]], [['--admin', ...origin]]])(
+    'refuses a new invite (%j) at 100 open ones: exit 1, clear message, nothing written',
+    async (extra) => {
+      const db = mkDb();
+      withStore(db, (s) =>
+        s.transaction(() => {
+          for (let i = 0; i < 100; i++)
+            s.invites.create({
+              id: `i${i}`,
+              codeHash: `h${i}`,
+              worldId: 'w1',
+              userId: `u${i}`,
+              origin: null,
+              expiresAt: Date.now() + INVITE_TTL_MS,
+            });
+        }),
+      );
+      const r = await run(db, '--invite', 'w1', 'u1', ...extra);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe('');
+      expect(r.stderr).toMatch(/already has 100 open invites; cancel some first/);
+      expect(r.stderr).toMatch(/nothing changed/);
+      expect(withStore(db, (s) => s.invites.list())).toHaveLength(100);
+    },
+  );
+
   it('refuses a database that is behind, without migrating it', async () => {
     const d = mkdtempSync(join(tmpdir(), 'ag-invcli-'));
     dirs.push(d);

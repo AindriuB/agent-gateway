@@ -75,6 +75,8 @@ export const ErrorMessage = z.strictObject({
   id: z.string(),
   code: ErrorCode,
   message: z.string(),
+  /** Set on a refused invite-management request, so the module can match the answer. */
+  requestId: z.string().min(1).max(100).optional(),
 });
 
 export const PingMessage = z.strictObject({ type: z.literal('ping') });
@@ -225,6 +227,50 @@ export const AttestMessage = z.strictObject({
   authorIsGM: z.boolean(),
 });
 
+/**
+ * Delegated invites (task 92). An admin GM manages invites for player users of its own world. No
+ * message names a world: the gateway scopes every one by the connection's binding.
+ */
+export const CreateInviteMessage = z.strictObject({
+  type: z.literal('createInvite'),
+  requestId: z.string().min(1).max(100),
+  userId: z.string().min(1).max(64),
+  ttlMs: z.number().int().optional(),
+});
+export const ListInvitesMessage = z.strictObject({
+  type: z.literal('listInvites'),
+  requestId: z.string().min(1).max(100),
+});
+export const CancelInviteMessage = z.strictObject({
+  type: z.literal('cancelInvite'),
+  requestId: z.string().min(1).max(100),
+  inviteId: z.string().min(1).max(100),
+});
+/** The only place the code ever appears. */
+export const InviteCreatedMessage = z.strictObject({
+  type: z.literal('inviteCreated'),
+  requestId: z.string().min(1).max(100),
+  inviteId: z.string().min(1).max(100),
+  code: z.string().min(1).max(64),
+  expiresAt: z.number().int().min(0),
+});
+export const InviteStatus = z.enum(['unused', 'paired', 'mismatch', 'expired', 'cancelled']);
+export const InvitesMessage = z.strictObject({
+  type: z.literal('invites'),
+  requestId: z.string().min(1).max(100),
+  invites: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(100),
+        userId: z.string().min(1).max(64),
+        createdAt: z.number().int().min(0),
+        expiresAt: z.number().int().min(0),
+        status: InviteStatus,
+      }),
+    )
+    .max(200),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -248,6 +294,11 @@ export const LinkMessage = z.discriminatedUnion('type', [
   ConsentCodeMessage,
   PairingChallengeMessage,
   AttestMessage,
+  CreateInviteMessage,
+  ListInvitesMessage,
+  CancelInviteMessage,
+  InviteCreatedMessage,
+  InvitesMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

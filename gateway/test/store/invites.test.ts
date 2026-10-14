@@ -72,3 +72,80 @@ describe('invite repository', () => {
     expect(byId.i4).toMatchObject({ cancelledAt: null, result: null });
   });
 });
+
+describe('world-scoped invite queries', () => {
+  const mkIn = (s: Store, id: string, worldId: string, expiresAt = 5_000) =>
+    s.invites.create({ id, codeHash: `h-${id}`, worldId, userId: 'u1', origin: null, expiresAt });
+
+  it('listForWorld returns only that world, newest first, up to the limit', () => {
+    let t = 1000;
+    store = openStore(':memory:', () => t++);
+    mkIn(store, 'a1', 'wA');
+    mkIn(store, 'b1', 'wB');
+    mkIn(store, 'a2', 'wA');
+    mkIn(store, 'a3', 'wA');
+    expect(store.invites.listForWorld('wA', 10, 0).map((i) => i.id)).toEqual(['a3', 'a2', 'a1']);
+    expect(store.invites.listForWorld('wA', 2, 10_000)).toHaveLength(2);
+    expect(store.invites.listForWorld('wB', 10, 0).map((i) => i.id)).toEqual(['b1']);
+  });
+
+  it('countUnusedForWorld skips used, cancelled, expired and other-world rows', () => {
+    store = openStore(':memory:', () => 1000);
+    mkIn(store, 'u', 'wA');
+    mkIn(store, 'used', 'wA');
+    mkIn(store, 'canc', 'wA');
+    mkIn(store, 'old', 'wA', 1500);
+    mkIn(store, 'other', 'wB');
+    store.invites.settle('used', 'paired', null);
+    expect(store.invites.cancelInWorld('wA', 'canc')).toBe(true);
+    expect(store.invites.countUnusedForWorld('wA', 2000)).toBe(1);
+    expect(store.invites.countUnusedForWorld('wB', 2000)).toBe(1);
+  });
+
+  it('cancelInWorld cancels one unused invite and refuses another world, used or unknown ids', () => {
+    store = openStore(':memory:', () => 1000);
+    mkIn(store, 'a1', 'wA');
+    mkIn(store, 'a2', 'wA');
+    expect(store.invites.cancelInWorld('wB', 'a1')).toBe(false);
+    expect(store.invites.getById('a1')?.cancelledAt).toBeNull();
+    expect(store.invites.cancelInWorld('wA', 'nope')).toBe(false);
+    expect(store.invites.cancelInWorld('wA', 'a1')).toBe(true);
+    expect(store.invites.getById('a1')).toMatchObject({ result: 'cancelled' });
+    expect(store.invites.cancelInWorld('wA', 'a1')).toBe(false);
+    expect(store.invites.getById('a2')?.cancelledAt).toBeNull();
+  });
+});
+
+describe('invite pruning', () => {
+  const DAY = 86_400_000;
+  it('deletes old settled, cancelled and expired rows and never unused unexpired ones', () => {
+    let t = 1000;
+    store = openStore(':memory:', () => t);
+    const mkAt = (id: string, expiresAt: number) =>
+      store!.invites.create({
+        id,
+        codeHash: `h-${id}`,
+        worldId: 'w1',
+        userId: id,
+        origin: null,
+        expiresAt,
+      });
+    mkAt('paired', 50 * DAY);
+    mkAt('cancelled', 50 * DAY);
+    mkAt('expired', 2000);
+    mkAt('open', 100 * DAY);
+    t = 5 * DAY;
+    mkAt('young-paired', 50 * DAY);
+    store.invites.settle('paired', 'paired', null);
+    store.invites.cancelInWorld('w1', 'cancelled');
+    store.invites.settle('young-paired', 'paired', null);
+    const now = 34 * DAY;
+    expect(store.invites.pruneBefore(now - 30 * DAY, now)).toBe(3);
+    expect(
+      store.invites
+        .list()
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(['open', 'young-paired']);
+  });
+});

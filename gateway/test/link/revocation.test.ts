@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createInvite } from '../../src/link/invites.js';
-import { RevocationSweep, REVOCATION_SWEEP_MS } from '../../src/link/revocation.js';
+import {
+  INVITE_PRUNE_EVERY_MS,
+  INVITE_RETENTION_MS,
+  RevocationSweep,
+  REVOCATION_SWEEP_MS,
+} from '../../src/link/revocation.js';
 import { until } from '../routing/harness.js';
 import { ORIGIN, TestClient, hello, startServer, type Harness } from './helpers.js';
 
@@ -56,6 +61,42 @@ const seedGrant = (id: string, userId = 'u1') => {
     expiresAt: Date.now() + 60_000,
   });
 };
+
+describe('invite pruning on the sweep', () => {
+  it('prunes old finished invites, keeps open ones, and runs at most once per hour', async () => {
+    await boot();
+    let t = Date.now() + 86_400_000;
+    const s = new RevocationSweep({
+      registry: h!.registry,
+      store: () => h!.store,
+      drop: () => {},
+      now: () => t,
+    });
+    const cancelled = (user: string) => {
+      const i = createInvite(h!.store, { worldId: 'w1', userId: user }, Date.now());
+      h!.store.invites.cancelInWorld('w1', i.id);
+      return i.id;
+    };
+    const open = createInvite(
+      h!.store,
+      { worldId: 'w1', userId: 'open', ttlMs: 100 * INVITE_RETENTION_MS },
+      Date.now(),
+    );
+    const young = cancelled('young');
+    s.sweepOnce();
+    expect(h!.store.invites.getById(young)).toBeDefined();
+    t += INVITE_RETENTION_MS + INVITE_PRUNE_EVERY_MS;
+    s.sweepOnce();
+    expect(h!.store.invites.getById(young)).toBeUndefined();
+    expect(h!.store.invites.getById(open.id)).toBeDefined();
+    const again = cancelled('again');
+    s.sweepOnce();
+    expect(h!.store.invites.getById(again)).toBeDefined();
+    t += INVITE_PRUNE_EVERY_MS;
+    s.sweepOnce();
+    expect(h!.store.invites.getById(again)).toBeUndefined();
+  });
+});
 
 describe('revocation sweep', () => {
   it('has a 5 s default', () => expect(REVOCATION_SWEEP_MS).toBe(5000));

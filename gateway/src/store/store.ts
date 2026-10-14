@@ -78,6 +78,20 @@ export interface InviteRepository {
   /** Cancel every unused invite for the target; returns how many. */
   cancelFor(worldId: string, userId: string): number;
   list(): InviteRow[];
+  /**
+   * One world only, newest first. Every open invite (unused, uncancelled, unexpired at `now`) is
+   * always included; history fills the remaining slots up to `limit`.
+   */
+  listForWorld(worldId: string, limit: number, now: number): InviteRow[];
+  /** Invites in the world that are unused, uncancelled and unexpired at `now`. */
+  countUnusedForWorld(worldId: string, now: number): number;
+  /** Cancel one unused invite of the world by id; false when there is no such open invite there. */
+  cancelInWorld(worldId: string, id: string): boolean;
+  /**
+   * Delete invites created before `olderThan` that are settled, cancelled or expired at `now`.
+   * Unused, unexpired invites are never deleted. Returns how many.
+   */
+  pruneBefore(olderThan: number, now: number): number;
 }
 
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
@@ -196,6 +210,9 @@ function toRow(r: Row): PairingRow {
   };
 }
 
+/** `listForWorld` never returns more rows than the protocol's InvitesMessage allows. */
+const MAX_LISTED_ROWS = 200;
+
 export function openStore(
   path: string,
   now: () => number = Date.now,
@@ -256,6 +273,22 @@ export function openStore(
     "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE world_id = ? AND user_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
   );
   const inviteList = db.prepare('SELECT * FROM invites ORDER BY created_at, id');
+  const inviteListForWorld = db.prepare(
+    `SELECT * FROM (
+       SELECT * FROM invites WHERE world_id = ?1
+       ORDER BY (used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2) DESC, created_at DESC, id
+       LIMIT MIN(${MAX_LISTED_ROWS}, MAX(?3, (SELECT COUNT(*) FROM invites WHERE world_id = ?1 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2)))
+     ) ORDER BY created_at DESC, id`,
+  );
+  const inviteCountUnused = db.prepare(
+    'SELECT COUNT(*) AS n FROM invites WHERE world_id = ? AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?',
+  );
+  const inviteCancelInWorld = db.prepare(
+    "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE id = ? AND world_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
+  );
+  const invitePrune = db.prepare(
+    'DELETE FROM invites WHERE created_at < ? AND (used_at IS NOT NULL OR cancelled_at IS NOT NULL OR expires_at <= ?)',
+  );
   let inTx = false;
   const transaction = <T>(fn: () => T): T => {
     if (inTx) return fn();
@@ -332,6 +365,18 @@ export function openStore(
     },
     list() {
       return (inviteList.all() as unknown as InviteDbRow[]).map(toInvite);
+    },
+    listForWorld(worldId, limit, at) {
+      return (inviteListForWorld.all(worldId, at, limit) as unknown as InviteDbRow[]).map(toInvite);
+    },
+    pruneBefore(olderThan, at) {
+      return Number(invitePrune.run(olderThan, at).changes);
+    },
+    countUnusedForWorld(worldId, at) {
+      return Number((inviteCountUnused.get(worldId, at) as { n: number | bigint }).n);
+    },
+    cancelInWorld(worldId, id) {
+      return Number(inviteCancelInWorld.run(now(), id, worldId).changes) > 0;
     },
   };
   return {

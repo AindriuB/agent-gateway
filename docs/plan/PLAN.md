@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 68 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-15).
+Inventory: 69 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-15).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -18,8 +18,8 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 
 ## Now
 
-### 0. Done on branch, PR pending: 95; next: 93
-- **95: HTTP session eviction (branch `claude/task-95`, done; PR pending; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. Ships in 0.2.0. **0.2.0 = 90 + 91 + 92 + 95; protocol 7.0.0, so the module and gateway must be upgraded together. 93 is next.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
+### 0. 95 merged (PR #148); 92 awaiting PR #147; next: 93
+- **95: HTTP session eviction (merged, PR #148; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. **0.2.0 = 90 + 91 + 92 + 95 and is ready to cut once #147 (92) merges; protocol 7.0.0, so the module and gateway must be upgraded together. 93 is next.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
 
 ### 1. Retest ChatGPT on the deployed 0.1.0
 - **Gateway 0.1.0 is deployed on ledger (gw.aindriub.app) as of 2026-10-14. Retry ChatGPT/Codex sign-in.** The deploy carries 88, which fixed the 429 sign-in block (credential-free discovery requests no longer count as failed auth). The AAR for 0.1.0 is now due.
@@ -32,7 +32,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - There is no index on `pairings(world_id, user_id)`, which `pairingStateFor` queries on every status call.
   - The Players-list indicator (hook `renderPlayers`) and the toast still need a live Foundry check.
 
-### 2a. Done on branch, PR pending: 89, 90 and 91; next: 92
+### 2a. Done on branch, PR pending: 89, 90, 91 (merged) and 92 (PR #147); next: 93
 - **89: per-user pairing credentials (branch `claude/task-89`, done; PR pending; archived in `docs/plan/done/`).** Credentials are keyed by (gateway URL, world, user) in browser-local storage, so a second user in the same browser no longer wipes the first user's pairing. Follow-ups:
   - An entry for an old gateway cannot be removed from the UI; "Unpair this browser" only acts on the current gateway.
   - Rename `hasOtherTokens` in `module/src/link/client.ts`; the name no longer says what it checks.
@@ -42,7 +42,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Capture `helloOwner` before the `setToken` await in the code-welcome path (P3, unreachable in the real runtime).
   - No test guards the session-token `helloOwner` binding.
   - Accepted residual: a legacy credential owned by A is cleared if B logs in first and is rejected, so A re-pairs once.
-- **90: GM-vouched pairing (branch `claude/task-90`, done; PR pending; archived in `docs/plan/done/`).** Protocol 7.0.0; player invites are completed by an admin GM's attestation, and `--gm`/`--admin` invites pair directly. **92 (delegated invites) is next.** Module and gateway must be upgraded together, and existing GMs need an admin invite (91) before players can pair. Follow-ups:
+- **90: GM-vouched pairing (branch `claude/task-90`, done; PR pending; archived in `docs/plan/done/`).** Protocol 7.0.0; player invites are completed by an admin GM's attestation, and `--gm`/`--admin` invites pair directly. Module and gateway must be upgraded together, and existing GMs need an admin invite (91) before players can pair. Follow-ups:
   - The `eventResume` 'unstored' guard is untested.
   - The `PAIRING_UNCONFIRMED` `clearCode` path is untested.
   - The close-release test's ordering (hello straight after the close) could flake under load.
@@ -58,10 +58,13 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Task 92's create limit counts refused attempts.
   - Task 92's module-level `creates` limiter is shared across LinkServers.
   - Task 92's stale-connection test name overclaims.
+  - Task 92: share the protocol's 200 max with `store.ts` `MAX_LISTED_ROWS` instead of repeating the literal.
   - The docs should say to pair the Foundry user first, then sign in the AI, and that the tab must stay open until task 37.
+- **92: delegated invites (branch `claude/task-92`, done; PR #147 pending; archived in `docs/plan/done/`).** An admin GM creates, lists and cancels player invites over its link, with limits and a 30-day prune. **93 (the GM management app) is next.** Accepted residual: an admin GM can list and cancel operator-minted invites in its own world, including gm and admin invites.
+  - Round 2 follow-ups: no test guards the outer newest-first re-sort in `listForWorld`, the `expires_at > now` term in the open-first ordering, or the MAX(limit, open count) branch.
 
 ### 3. Invite redemption identity (90 closes it for player targets)
-- **Player invites now need a GM vouch (90), so a leaked player code no longer pairs as the target.** Still open: `gm` and `admin` invites trust the code alone, and a co-GM can falsely vouch. Delegated invites (92) and an operator web console remain undecided beyond the 91-94 plan.
+- **Player invites now need a GM vouch (90), so a leaked player code no longer pairs as the target.** Still open: `gm` and `admin` invites trust the code alone, and a co-GM can falsely vouch. Delegated invites (92, done on branch) and an operator web console remain undecided beyond the 91-94 plan.
 
 ### 4. 85 live run (Andrew)
 - **85 is merged (PR #137); its task file stays in `docs/plan/tasks/` until Andrew's live run:** marketplace add, `/mcp` OAuth with a scope check (stop if read only), a read, an approved write, revoke, logout. Then archive the file and write the HISTORY entry.

@@ -48,6 +48,16 @@ export function parseTtl(value: string): number | undefined {
   return ms > 0 && ms <= MAX_INVITE_TTL_MS ? ms : undefined;
 }
 
+/** Does the user hold an active admin pairing in the world right now? */
+export function holdsAdminPairing(store: Store, worldId: string, userId: string): boolean {
+  return store
+    .listActivePairings()
+    .some((p) => p.worldId === worldId && p.userId === userId && p.admin);
+}
+
+/** Open invites (unused, uncancelled, unexpired) an operator may leave in one world. */
+export const MAX_OPERATOR_OPEN_INVITES_PER_WORLD = 100;
+
 /** Store a new invite and return its code, which exists nowhere else. Call inside a transaction. */
 export function createInvite(
   store: Store,
@@ -67,6 +77,13 @@ export function createInvite(
 ): { code: string; id: string; expiresAt: number } {
   if ((target.createdBy ?? null) !== null && (target.admin === true || target.gm === true))
     throw new Error('only the operator can mint an invite that skips the vouch');
+  if (
+    (target.createdBy ?? null) === null &&
+    store.invites.countUnusedForWorld(target.worldId, now) >= MAX_OPERATOR_OPEN_INVITES_PER_WORLD
+  )
+    throw new Error(
+      `world ${target.worldId} already has ${MAX_OPERATOR_OPEN_INVITES_PER_WORLD} open invites; cancel some first`,
+    );
   const code = generateInviteCode();
   const id = randomUUID();
   const expiresAt = now + (target.ttlMs ?? INVITE_TTL_MS);
@@ -170,6 +187,11 @@ export function redeemInvite(
         store.invites.settle(invite.id, 'mismatch', null);
         return refused;
       }
+      if (invite.createdBy !== null && holdsAdminPairing(store, claim.worldId, claim.userId)) {
+        // A delegated invite never displaces an admin GM, whatever it was minted for.
+        store.invites.settle(invite.id, 'mismatch', null);
+        return refused;
+      }
       if (!invite.gm && !invite.admin) {
         vouch = invite;
         return refused;
@@ -210,6 +232,10 @@ export function completeVouchedInvite(
         !claimMatches(invite, claim)
       )
         return refused;
+      if (invite.createdBy !== null && holdsAdminPairing(store, claim.worldId, claim.userId)) {
+        store.invites.settle(invite.id, 'mismatch', null);
+        return refused;
+      }
       const paired = pairTarget(store, claim, false);
       store.invites.settle(invite.id, 'paired', paired.pairing.id);
       return { ok: true, ...paired };
