@@ -2,6 +2,7 @@ import { registerOfflineEventSettings } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
+import { registerGrantsMenu } from '../apps/grants/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
 declare const game: any;
@@ -56,6 +57,7 @@ settingRegistrars.push(registerPolicySettings);
 settingRegistrars.push(registerRateLimitSettings);
 settingRegistrars.push(registerPolicyMenu);
 settingRegistrars.push(registerOfflineEventSettings);
+settingRegistrars.push(registerGrantsMenu);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {
