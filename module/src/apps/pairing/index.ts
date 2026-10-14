@@ -8,6 +8,17 @@ declare const ui: any;
 
 const NS = 'agent-gateway';
 
+/** This browser's world and user ids, which the operator needs for `--invite`. */
+export function currentIds(): { worldId: string; userId: string } {
+  return { worldId: String(game.world?.id ?? ''), userId: String(game.user?.id ?? '') };
+}
+
+/** What the copy button puts on the clipboard: the ids in `--invite <world id> <user id>` order. */
+export function idsClipboardText(): string {
+  const { worldId, userId } = currentIds();
+  return `${worldId} ${userId}`;
+}
+
 export function describeState(s: LinkState): string {
   const i18n = game.i18n;
   switch (s.kind) {
@@ -37,6 +48,7 @@ export function createPairingApp(): any {
       window: { title: 'AGENT_GATEWAY.Pairing.title', icon: 'fa-solid fa-link' },
       position: { width: 420 },
       form: { handler: PairingApp.onSubmit, closeOnSubmit: false },
+      actions: { copyIds: PairingApp.onCopyIds },
     };
     static PARTS = { form: { template: `modules/${NS}/templates/pairing/pairing.hbs` } };
 
@@ -58,6 +70,10 @@ export function createPairingApp(): any {
       return {
         gatewayUrl: String(game.settings.get(NS, 'gatewayUrl')),
         status: describeState(getLinkClient().state),
+        idsText: game.i18n.format('AGENT_GATEWAY.Pairing.CopyIds.label', {
+          world: currentIds().worldId,
+          user: currentIds().userId,
+        }),
       };
     }
 
@@ -76,6 +92,15 @@ export function createPairingApp(): any {
       this.unsubscribe?.();
       this.unsubscribe = null;
       await super._onClose?.(options);
+    }
+
+    static async onCopyIds(): Promise<void> {
+      try {
+        await navigator.clipboard.writeText(idsClipboardText());
+        ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.Pairing.CopyIds.copied'));
+      } catch {
+        ui.notifications.warn(game.i18n.localize('AGENT_GATEWAY.Pairing.CopyIds.failed'));
+      }
     }
 
     static async onSubmit(_event: Event, _form: HTMLFormElement, data: any): Promise<void> {
