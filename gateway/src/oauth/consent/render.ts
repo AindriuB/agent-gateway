@@ -60,7 +60,7 @@ export function renderRequestPage(v: FormView): string {
   const boxes = v.scopes
     .map(
       (s) =>
-        `<label><input type="checkbox" name="scope" value="${s}" checked> ${escapeHtml(s)}</label><br>`,
+        `<label><input type="checkbox" name="scope" value="${s}" checked> ${escapeHtml(s)}</label>`,
     )
     .join('');
   return shell(
