@@ -1,0 +1,26 @@
+# Agent Gateway without the bundled Caddy, for a VPS that already runs Caddy.
+# Set COMPOSE_FILE=compose.byo-caddy.yaml in .env (see README, "Bring your own Caddy").
+# Never run this file and compose.yaml at the same time.
+name: agent-gateway
+
+services:
+  gateway:
+    image: foundry-agent-gateway:${GATEWAY_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    # host: Caddy installed on the host. container:<name>: Caddy in its own container.
+    network_mode: ${GATEWAY_NETWORK_MODE:-host}
+    environment:
+      AGENT_GATEWAY_SERVER_MODE: "1"
+      AGENT_GATEWAY_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
+      AGENT_GATEWAY_TRUST_PROXY: "1"
+      AGENT_GATEWAY_ALLOW_ORIGIN: ${FOUNDRY_ORIGIN:?set FOUNDRY_ORIGIN in .env}
+      AGENT_GATEWAY_DB: /data/gateway.db
+      AGENT_GATEWAY_LOG_LEVEL: ${AGENT_GATEWAY_LOG_LEVEL:-info}
+    volumes:
+      - gateway-data:/data
+
+volumes:
+  gateway-data:

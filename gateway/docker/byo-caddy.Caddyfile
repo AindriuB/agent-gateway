@@ -1,0 +1,12 @@
+# Paste this site block into your own Caddyfile and change the host.
+# It needs a host of its own, never a path under another site.
+gateway.example.com {
+	# The module's WebSocket link.
+	handle /link* {
+		reverse_proxy 127.0.0.1:7420
+	}
+	# /mcp, /status, the OAuth endpoints and the consent page.
+	handle {
+		reverse_proxy 127.0.0.1:7421
+	}
+}

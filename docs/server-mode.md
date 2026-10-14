@@ -19,6 +19,9 @@ Ports: only 80 and 443 are published (on the `gateway` service, because Caddy sh
 namespace). Volumes: `gateway-data` at `/data` (the database `gateway.db` with its WAL files),
 `caddy-data` and `caddy-config` (certificates).
 
+If the VPS already runs Caddy, use the gateway-only file instead; see "Bring your own Caddy" in
+`gateway/docker/README.md`.
+
 ## The public URL
 
 The stack sets `AGENT_GATEWAY_PUBLIC_URL=https://<domain>`. That derives the allowed Host and
