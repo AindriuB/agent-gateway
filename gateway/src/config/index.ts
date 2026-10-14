@@ -32,6 +32,10 @@ export const ConfigSchema = z.object({
   allowOrigin: stringList.default([]),
   /** The external origin behind a reverse proxy, normalized; '' when unset. */
   publicUrl: z.string().default(''),
+  /** `--privacy-url`: the operator's privacy notice, linked from the consent pages; '' when unset. */
+  privacyUrl: z.string().default(''),
+  /** `--source-url`: where the running source lives, linked from the consent pages; '' when unset. */
+  sourceUrl: z.string().default(''),
   /** Always-on, many users: no stdio session, and stdin ending does not stop the process. */
   serverMode: boolish.default(false),
   linkHost: z.string().min(1).default('127.0.0.1'),
@@ -59,6 +63,8 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_HTTP: 'http',
   AGENT_GATEWAY_ALLOW_ORIGIN: 'allowOrigin',
   AGENT_GATEWAY_PUBLIC_URL: 'publicUrl',
+  AGENT_GATEWAY_PRIVACY_URL: 'privacyUrl',
+  AGENT_GATEWAY_SOURCE_URL: 'sourceUrl',
   AGENT_GATEWAY_SERVER_MODE: 'serverMode',
   AGENT_GATEWAY_LINK_HOST: 'linkHost',
   AGENT_GATEWAY_HTTP_HOST: 'httpHost',
@@ -88,6 +94,32 @@ export function normalizePublicUrl(value: string): string {
   if (url.pathname !== '/' || url.search || url.hash)
     return refuse('it must be an origin only: no path, query or fragment');
   return url.origin;
+}
+
+const MAX_LINK_URL = 2048;
+
+/**
+ * A link target shown on the consent pages: `https:` (`http:` on a loopback host), no credentials,
+ * at most 2048 characters. Returns the parsed `href`. Throws a usage error otherwise.
+ */
+export function normalizeLinkUrl(flag: '--privacy-url' | '--source-url', value: string): string {
+  const refuse = (why: string): never => {
+    throw new ConfigError(`Invalid ${flag} ${value.slice(0, 80)}: ${why}`, 2);
+  };
+  if (value.length > MAX_LINK_URL) return refuse(`longer than ${MAX_LINK_URL} characters`);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return refuse('not a URL (use e.g. https://example.org/privacy)');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    return refuse('the scheme must be https');
+  const bare = url.hostname.replace(/^\[|\]$/g, '');
+  if (url.protocol === 'http:' && !isLoopbackAddress(bare) && bare !== 'localhost')
+    return refuse('http is allowed only on a loopback host; use https');
+  if (url.username || url.password) return refuse('it must not carry credentials');
+  return url.href;
 }
 
 export function readConfigFile(path: string): Record<string, unknown> {
@@ -147,6 +179,10 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   }
   const config = result.data;
   if (config.publicUrl !== '') config.publicUrl = normalizePublicUrl(config.publicUrl);
+  if (config.privacyUrl !== '')
+    config.privacyUrl = normalizeLinkUrl('--privacy-url', config.privacyUrl);
+  if (config.sourceUrl !== '')
+    config.sourceUrl = normalizeLinkUrl('--source-url', config.sourceUrl);
   // Exposing a listener beyond loopback is allowed only behind a public URL (and a reverse proxy).
   for (const [flag, host] of [
     ['--link-host', config.linkHost],

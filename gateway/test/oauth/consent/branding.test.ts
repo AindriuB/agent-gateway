@@ -15,9 +15,16 @@ afterEach(async () => {
 const csp = (origin = ''): string =>
   `default-src 'none'; style-src 'self'; form-action 'self'${origin}; frame-ancestors 'none'; base-uri 'none'`;
 
+const PRIVACY = 'https://example.org/privacy?x=1';
+const SOURCE = 'https://example.org/source';
+
 describe('consent styling', () => {
-  it('every consent page links only the same-origin stylesheet and nothing external', async () => {
-    r = await consentRig();
+  it.each([
+    ['neither URL set', {}],
+    ['both URLs set', { privacyUrl: PRIVACY, sourceUrl: SOURCE }],
+  ])('every consent page links only the same-origin stylesheet (%s)', async (_n, links) => {
+    r = await consentRig(links);
+    const both = 'sourceUrl' in links;
     const u1 = await pairModule(r.h, 'u1');
     modules.push(u1);
     const page = await openConsent(r);
@@ -32,10 +39,21 @@ describe('consent styling', () => {
       expect(p.headers['content-type']).toContain('text/html');
       const links = [...p.body.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]);
       expect(links).toEqual([`<link rel="stylesheet" href="${CONSENT_STYLE_PATH}">`]);
-      expect(p.body).not.toMatch(/<style|style=|<img|<svg|<script/i);
-      const urls = [...p.body.matchAll(/\b(?:src|href)="([^"]*)"|url\(([^)]*)\)/gi)];
-      for (const m of urls) expect(m[1] ?? m[2]).not.toMatch(/^[a-z]+:\/\//i);
-      expect(p.body).not.toMatch(/ascend/i);
+      expect(p.body).not.toMatch(/<style|style=|<img|<script|\ssrc=|url\(|<use|xlink:/i);
+      const foot = /<footer[\s\S]*<\/footer>/.exec(p.body)?.[0] ?? '';
+      const outside = p.body.replace(foot, '');
+      expect(outside).not.toMatch(/<svg|ascend/i);
+      const hrefs = [...p.body.matchAll(/\bhref="([^"]*)"/gi)]
+        .map((m) => m[1]!)
+        .filter((h) => /^[a-z]+:\/\//i.test(h));
+      if (!both) {
+        expect(hrefs).toEqual([]);
+        expect(p.body).not.toMatch(/<svg|ascend/i);
+      } else {
+        expect(hrefs.sort()).toEqual([PRIVACY, SOURCE].sort());
+        expect(p.body.match(/<svg/g)).toHaveLength(2);
+        expect(foot).toMatch(/<svg/);
+      }
     }
   });
 
@@ -68,7 +86,7 @@ describe('consent styling', () => {
   });
 
   it('keeps the CSP exactly as specified on every consent response', async () => {
-    r = await consentRig();
+    r = await consentRig({ privacyUrl: PRIVACY, sourceUrl: SOURCE });
     const page = await openConsent(r);
     const origin = ` ${new URL(REDIRECT).origin}`;
     expect(page.reply.headers['content-security-policy']).toBe(csp(origin));
@@ -84,7 +102,7 @@ describe('consent styling', () => {
   });
 
   it('step-1 responses stay byte-identical across users', async () => {
-    r = await consentRig();
+    r = await consentRig({ privacyUrl: PRIVACY, sourceUrl: SOURCE });
     const u1 = await pairModule(r.h, 'u1');
     modules.push(u1);
     const bodies: string[] = [];

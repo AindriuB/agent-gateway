@@ -14,10 +14,17 @@ export interface ConsentRig {
 }
 
 /** A public gateway with the real consent page (no test consent step). */
-export async function consentRig(): Promise<ConsentRig> {
+export async function consentRig(
+  links: { privacyUrl?: string; sourceUrl?: string } = {},
+): Promise<ConsentRig> {
   const h = await startServer();
   const clock = { t: 1_000_000 };
-  const oauth = new OAuthServer({ repo: h.store.oauth, publicUrl: PUBLIC, now: () => clock.t });
+  const oauth = new OAuthServer({
+    repo: h.store.oauth,
+    publicUrl: PUBLIC,
+    now: () => clock.t,
+    ...links,
+  });
   const http = new HttpServer({
     host: '127.0.0.1',
     port: 0,

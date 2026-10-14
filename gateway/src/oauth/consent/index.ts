@@ -6,9 +6,11 @@ import type { OAuthRepository, Scope } from '../repository.js';
 import { CONSENT_CSS } from './style.js';
 import {
   consentHeaders,
+  COOKIE_PREFIX,
   renderCodePage,
-  renderMessagePage,
+  renderMessagePage as renderMessage,
   renderRequestPage,
+  type FooterLinks,
   type FormView,
 } from './render.js';
 
@@ -29,7 +31,6 @@ export const CODE_SEND_LIMIT = { max: 10, windowMs: 60_000 } as const;
 export const CONSENT_PATH = '/authorize/consent';
 const MAX_TYPED_LENGTH = 200;
 const CODE_DIGITS = 8;
-const COOKIE_PREFIX = '__Host-agcsrf-';
 const RID_PATTERN = /^[0-9a-f]{32}$/;
 
 const sha = (s: string): Buffer => createHash('sha256').update(s).digest();
@@ -74,6 +75,9 @@ export interface ConsentPagesOptions {
   publicUrl: string;
   repo: OAuthRepository;
   now: () => number;
+  /** Footer links; each is shown only when set. */
+  privacyUrl?: string;
+  sourceUrl?: string;
   /** Create the grant and authorization code; returns where to send the browser. */
   finish(seed: ConsentSeed, approved: { worldId: string; userId: string; scopes: Scope[] }): string;
 }
@@ -107,6 +111,17 @@ export class ConsentPages {
     this.failures = new FailureWindows(10, 60_000, o.now);
   }
 
+  private get links(): FooterLinks {
+    return {
+      ...(this.o.privacyUrl ? { privacyUrl: this.o.privacyUrl } : {}),
+      ...(this.o.sourceUrl ? { sourceUrl: this.o.sourceUrl } : {}),
+    };
+  }
+
+  private renderMessagePage(title: string, message: string): string {
+    return renderMessage(title, message, this.links);
+  }
+
   attach(w: ConsentWiring): void {
     this.wiring = w;
     this.failures = w.failures;
@@ -119,7 +134,7 @@ export class ConsentPages {
   /** Refuse any Host that is not the public one (loopback included). True when it answered. */
   refuseHost(req: IncomingMessage, res: ServerResponse): boolean {
     if (this.hostAllowed(req)) return false;
-    send(res, 403, renderMessagePage('Forbidden', 'This page is not served on this address.'));
+    send(res, 403, this.renderMessagePage('Forbidden', 'This page is not served on this address.'));
     return true;
   }
 
@@ -155,6 +170,7 @@ export class ConsentPages {
       csrf: p.csrf,
       clientName: p.clientName,
       scopes: p.scopes,
+      links: this.links,
       ...(notice ? { notice } : {}),
     };
   }
@@ -182,7 +198,7 @@ export class ConsentPages {
   /** POST /authorize/consent. `body` is the already size-limited form text. */
   submit(req: IncomingMessage, res: ServerResponse, client: string, body: string): void {
     const forbidden = (): void =>
-      send(res, 403, renderMessagePage('Forbidden', 'This request was refused.'));
+      send(res, 403, this.renderMessagePage('Forbidden', 'This request was refused.'));
     if (this.refuseHost(req, res)) return;
     // A missing Origin is refused: a browser always sends it on a cross-origin or form POST.
     if (req.headers.origin !== this.origin) return forbidden();
@@ -197,7 +213,7 @@ export class ConsentPages {
       return send(
         res,
         400,
-        renderMessagePage('Request expired', 'Start again from the application.'),
+        this.renderMessagePage('Request expired', 'Start again from the application.'),
       );
     }
     const action = form.get('action');
@@ -208,9 +224,14 @@ export class ConsentPages {
 
   private sendCode(res: ServerResponse, client: string, p: Pending, form: URLSearchParams): void {
     if (this.sends.limited(client)) {
-      return send(res, 429, renderMessagePage('Slow down', 'Too many requests. Try again later.'), {
-        'retry-after': '60',
-      });
+      return send(
+        res,
+        429,
+        this.renderMessagePage('Slow down', 'Too many requests. Try again later.'),
+        {
+          'retry-after': '60',
+        },
+      );
     }
     if (p.sends >= MAX_CODE_SENDS) return this.voidRequest(res, p);
     const chosen = form.getAll('scope').filter((s): s is Scope => p.scopes.includes(s as Scope));
@@ -281,7 +302,7 @@ export class ConsentPages {
       return send(
         res,
         429,
-        renderMessagePage('Slow down', 'Too many wrong codes. Try again later.'),
+        this.renderMessagePage('Slow down', 'Too many wrong codes. Try again later.'),
         {
           'retry-after': '60',
         },
@@ -324,7 +345,7 @@ export class ConsentPages {
     send(
       res,
       400,
-      renderMessagePage(
+      this.renderMessagePage(
         'Request cancelled',
         'Too many attempts. Start again from the application.',
       ),

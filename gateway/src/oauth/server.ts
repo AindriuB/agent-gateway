@@ -50,6 +50,9 @@ export interface OAuthServerOptions {
   consent?: ConsentStep;
   now?: () => number;
   maxClients?: number;
+  /** Footer links on the consent pages (already validated by config). */
+  privacyUrl?: string;
+  sourceUrl?: string;
 }
 
 class OAuthError extends Error {
@@ -162,6 +165,8 @@ export class OAuthServer implements OAuthRoutes {
           publicUrl: o.publicUrl,
           repo: o.repo,
           now: this.now,
+          ...(o.privacyUrl ? { privacyUrl: o.privacyUrl } : {}),
+          ...(o.sourceUrl ? { sourceUrl: o.sourceUrl } : {}),
           finish: (seed, approved) => this.finishConsent(seed, approved),
         });
     this.maxClients = o.maxClients ?? MAX_OAUTH_CLIENTS;
