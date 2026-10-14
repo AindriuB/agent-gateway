@@ -172,3 +172,10 @@ Checkable form:
 - docs/releasing.md:15-17 lists the places bump-version sets. Add the Claude plugin.json to that list.
 
 - Orchestrator note (2026-10-14): `claude plugin validate --strict <dir>` on a temp `<dir>/.claude-plugin/marketplace.json` whose entry uses an `archive` source with `sha256` passed offline with Claude Code 2.1.299 (the hand-built hosted file). Use the temp-dir form.
+
+## Review round 2 — findings
+- [P3] scripts/build-claude-plugin.mjs:63-67 — the staging copy follows symlinks: `cpSync` copies a symlinked source as a symlink, and `zip -r` without `-y` stores the target's content. Input: SKILL.md replaced by a symlink to an outside file containing `SECRET-CONTENT` → exit 0, and the zip's SKILL.md holds `SECRET-CONTENT`, so a local file ends up in a publicly hosted zip. route: implementer. Refuse (exit 1) unless `lstatSync(...).isFile()` holds for each of the three files, with a test.
+- [P3] scripts/build-claude-plugin.mjs:55,59 — the plugin.json `version` goes into the zip path and URL unvalidated. `"x/../../../escaped"` writes the zip outside `dist/release/claude/`. route: implementer. Validate the version against bump-version's semver regex (scripts/bump-version.mjs:10) before building any path, with a test.
+- [P3] scripts/build-claude-plugin.mjs:75-78 — `fail()` exits inside `try`, so `finally` never removes the staging dir, and a failed `zip` leaves a `build-claude-plugin-*` dir in the OS tmpdir. route: implementer. Record the failure in `catch` and call `fail` after `finally`.
+- [P3] scripts/test/build-claude-plugin.test.mjs:63 — the "missing" and "no value" cases only match `/build-claude-plugin/`, which the URL error also matches, though Acceptance requires a usage message. route: implementer. Assert `/usage:/` for those two cases.
+- [NOTE, cheap] The 5 MiB marketplace limit is enforced but untested (disabling it passes all tests). Add a test if cheap.
