@@ -315,8 +315,10 @@ it('rejecting the session token clears only it, leaving the persisted entry', as
   const ws = FakeWs.all[FakeWs.all.length - 1]!;
   ws.onopen();
   expect(ws.sent[0].auth.token).toBe('freshTok');
+  failWrites = false; // so a wrongly attempted removal would really delete the entry
   ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
   await vi.advanceTimersByTimeAsync(0);
+  expect(stored()[key(X)]).toBeDefined();
   expect(stored()[key(X)].token).toBe(`tok-${X}`);
   // Only the persisted entry remains, so it is what a later connect presents.
   c.resume();
@@ -327,6 +329,62 @@ it('rejecting the session token clears only it, leaving the persisted entry', as
   // Its rejection clears the persisted entry.
   w2.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
   await vi.advanceTimersByTimeAsync(0);
-  failWrites = false;
+  expect(stored()[key(X)]).toBeUndefined();
   expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+});
+
+async function pairOnXThenRejectOnY() {
+  const c = await boot();
+  c.pair('CODE-1');
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  ws.recv({ ...welcome(), pairingToken: 'freshTok' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.state.kind).toBe('connected');
+  c.stop();
+  settings.gatewayUrl = Y;
+  c.start();
+  const wy = FakeWs.all[FakeWs.all.length - 1]!;
+  wy.onopen();
+  wy.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+  return { c, wy };
+}
+
+function reconnectOnX(c: Awaited<ReturnType<typeof boot>>) {
+  settings.gatewayUrl = X;
+  c.start();
+  const wx = FakeWs.all[FakeWs.all.length - 1]!;
+  wx.onopen();
+  expect(wx.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'freshTok' });
+}
+
+it('a rejected keyed token for Y leaves the session token for X', async () => {
+  settings = { gatewayUrl: X };
+  seedMap([Y]);
+  failWrites = true;
+  const { c, wy } = await pairOnXThenRejectOnY();
+  expect(wy.sent[0].auth.token).toBe(`tok-${Y}`);
+  reconnectOnX(c);
+});
+
+it('a rejected legacy token for Y leaves the session token for X', async () => {
+  settings = { gatewayUrl: X, pairingCredential: JSON.stringify({ url: Y, token: 'legTok' }) };
+  failWrites = true;
+  const { c, wy } = await pairOnXThenRejectOnY();
+  expect(wy.sent[0].auth.token).toBe('legTok');
+  reconnectOnX(c);
+});
+
+it("the user's own keyed token wins over the legacy credential, which is left alone", async () => {
+  const legacy = JSON.stringify({ url: X, token: 'legTok' });
+  settings = { gatewayUrl: X, pairingCredential: legacy };
+  seedMap([X]);
+  const c = await boot();
+  c.start();
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  expect(ws.sent[0].auth.token).toBe(`tok-${X}`);
+  expect(settings.pairingCredential).toBe(legacy);
 });
