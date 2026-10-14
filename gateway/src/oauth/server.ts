@@ -2,7 +2,13 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HttpPrincipal, OAuthRoutes } from '../http/server.js';
 import { FailureWindows } from '../http/limits.js';
-import { AutoDenyConsent, type ConsentStep } from './consent.js';
+import type { ConsentStep } from './consent.js';
+import {
+  CONSENT_PATH,
+  ConsentPages,
+  type ConsentSeed,
+  type ConsentWiring,
+} from './consent/index.js';
 import { SCOPES, type OAuthClient, type OAuthRepository, type Scope } from './repository.js';
 
 export const ACCESS_TOKEN_TTL_MS = 60 * 60_000;
@@ -35,6 +41,7 @@ export interface OAuthServerOptions {
   repo: OAuthRepository;
   /** The external origin, e.g. `https://gw.example.com` (already normalised by config). */
   publicUrl: string;
+  /** Replaces the consent page with a programmatic decision; tests and embedders only. */
   consent?: ConsentStep;
   now?: () => number;
   maxClients?: number;
@@ -129,7 +136,8 @@ export class OAuthServer implements OAuthRoutes {
   readonly resource: string;
   readonly resourceMetadataUrl: string;
   private readonly repo: OAuthRepository;
-  private readonly consent: ConsentStep;
+  private readonly consent: ConsentStep | undefined;
+  private readonly pages: ConsentPages | undefined;
   private readonly now: () => number;
   private readonly maxClients: number;
   private readonly registerRate: FailureWindows;
@@ -141,8 +149,16 @@ export class OAuthServer implements OAuthRoutes {
     this.resource = `${this.issuer}/mcp`;
     this.resourceMetadataUrl = `${this.issuer}/.well-known/oauth-protected-resource`;
     this.repo = o.repo;
-    this.consent = o.consent ?? new AutoDenyConsent();
+    this.consent = o.consent;
     this.now = o.now ?? Date.now;
+    this.pages = o.consent
+      ? undefined
+      : new ConsentPages({
+          publicUrl: o.publicUrl,
+          repo: o.repo,
+          now: this.now,
+          finish: (seed, approved) => this.finishConsent(seed, approved),
+        });
     this.maxClients = o.maxClients ?? MAX_OAUTH_CLIENTS;
     this.registerRate = new FailureWindows(REGISTER_LIMIT.max, REGISTER_LIMIT.windowMs, this.now);
     this.tokenRate = new FailureWindows(TOKEN_LIMIT.max, TOKEN_LIMIT.windowMs, this.now);
@@ -160,8 +176,14 @@ export class OAuthServer implements OAuthRoutes {
       path === '/.well-known/oauth-protected-resource/mcp' ||
       path === '/register' ||
       path === '/authorize' ||
+      path === CONSENT_PATH ||
       path === '/token'
     );
+  }
+
+  /** Called by the HTTP server: the link registry and the shared failed-attempt bucket. */
+  attach(wiring: ConsentWiring): void {
+    this.pages?.attach(wiring);
   }
 
   /** The principal for a bearer access token, or undefined. Read per request, so revocation is immediate. */
@@ -192,10 +214,11 @@ export class OAuthServer implements OAuthRoutes {
           return json(res, 405, { error: 'invalid_request' });
         return json(res, 200, this.metadata(path));
       }
-      const want = path === '/register' || path === '/token' ? 'POST' : 'GET';
+      const want = path === '/register' || path === '/token' || path === CONSENT_PATH ? 'POST' : 'GET';
       if (method !== want) return json(res, 405, { error: 'invalid_request' }, { allow: want });
       if (path === '/register') return await this.register(req, res, client);
       if (path === '/token') return await this.token(req, res, client);
+      if (path === CONSENT_PATH) return await this.consentPost(req, res, client);
       return await this.authorize(req, res, client);
     } catch (e) {
       if (e instanceof BodyTooLarge) return json(res, 413, { error: 'invalid_request' });
@@ -322,12 +345,59 @@ export class OAuthServer implements OAuthRoutes {
 
   // ---- /authorize ----
 
+  private async consentPost(req: IncomingMessage, res: ServerResponse, client: string): Promise<void> {
+    const pages = this.pages;
+    if (!pages) return json(res, 404, { error: 'invalid_request' });
+    if (pages.refuseHost(req, res)) return;
+    this.limit(this.authorizeRate, client);
+    pages.submit(req, res, client, await this.readBody(req));
+  }
+
+  /** Approved at the consent page: store the grant and its one-time code; return the redirect. */
+  private finishConsent(
+    seed: ConsentSeed,
+    approved: { worldId: string; userId: string; scopes: Scope[] },
+  ): string {
+    // The consent step can narrow what was asked for, never widen it.
+    const granted = approved.scopes.filter((s) => seed.scopes.includes(s));
+    const u = new URL(seed.redirectUri);
+    if (seed.state !== undefined) u.searchParams.set('state', seed.state);
+    if (granted.length === 0) {
+      u.searchParams.set('error', 'access_denied');
+      return u.toString();
+    }
+    const t = this.now();
+    const grantId = randomUUID();
+    this.repo.createGrant({
+      id: grantId,
+      clientId: seed.clientId,
+      worldId: approved.worldId,
+      userId: approved.userId,
+      scopes: granted,
+      createdAt: t,
+    });
+    const code = newSecret();
+    this.repo.insertCode({
+      codeHash: hash(code),
+      grantId,
+      redirectUri: seed.redirectUri,
+      codeChallenge: seed.codeChallenge,
+      resource: this.resource,
+      expiresAt: t + AUTH_CODE_TTL_MS,
+    });
+    this.repo.touchClient(seed.clientId, t);
+    u.searchParams.set('code', code);
+    return u.toString();
+  }
+
   private async authorize(
     req: IncomingMessage,
     res: ServerResponse,
     client: string,
   ): Promise<void> {
     this.limit(this.authorizeRate, client);
+    // The consent page answers only on the public host, so it is never served on a rebinding name.
+    if (this.pages?.refuseHost(req, res)) return;
     const q = new URL(req.url ?? '/', 'http://localhost').searchParams;
     const registered = this.repo.getClient(q.get('client_id') ?? '');
     const redirectUri = q.get('redirect_uri');
@@ -355,6 +425,17 @@ export class OAuthServer implements OAuthRoutes {
       if (resource !== null && resource !== this.resource)
         throw new OAuthError(400, 'invalid_target');
       const scopes = parseScopes(q.get('scope'));
+      if (!this.consent) {
+        this.pages?.begin(res, {
+          clientId: registered.id,
+          clientName: registered.name,
+          redirectUri,
+          codeChallenge: challenge,
+          scopes,
+          state,
+        });
+        return;
+      }
       const decision = await this.consent.decide({
         clientId: registered.id,
         clientName: registered.name,

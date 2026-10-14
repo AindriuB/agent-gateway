@@ -50,6 +50,17 @@ export interface AccessRecord {
   grant: OAuthGrant;
 }
 
+/** A live grant with the registered name of its client, for the owner's grants list. */
+export interface OwnGrant extends OAuthGrant {
+  clientName: string;
+}
+
+/** An unrevoked pairing, as far as consent needs it: who a typed user could mean. */
+export interface PairedUser {
+  userId: string;
+  userName: string;
+}
+
 /**
  * SQL for the OAuth server. Secrets (client secrets, codes, tokens) are passed in already hashed:
  * nothing here ever sees one in the clear.
@@ -67,6 +78,10 @@ export interface OAuthRepository {
   touchGrant(id: string, now: number): void;
   /** Revoke one grant and every token of it. True when it was live. */
   revokeGrant(id: string, now: number): boolean;
+  /** Live grants bound to one (world, user), newest first, with their client's name. */
+  listLiveGrants(worldId: string, userId: string): OwnGrant[];
+  /** Unrevoked pairings in one world (one row per pairing, so a user may appear twice). */
+  activePairedUsers(worldId: string): PairedUser[];
   /** Revoke every live grant of a (world, user) and their tokens. Returns the grants revoked. */
   revokeGrantsFor(worldId: string, userId: string, now: number): number;
 
@@ -200,6 +215,13 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
   const liveGrantsFor = db.prepare(
     'SELECT id FROM oauth_grants WHERE world_id = ? AND user_id = ? AND revoked_at IS NULL',
   );
+  const ownGrants = db.prepare(
+    `SELECT g.*, c.name AS client_name FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
+     WHERE g.world_id = ? AND g.user_id = ? AND g.revoked_at IS NULL ORDER BY g.created_at DESC LIMIT 200`,
+  );
+  const pairedIn = db.prepare(
+    'SELECT user_id, user_name FROM pairings WHERE world_id = ? AND revoked_at IS NULL',
+  );
   const insCode = db.prepare(
     'INSERT INTO oauth_codes (code_hash, grant_id, redirect_uri, code_challenge, resource, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
   );
@@ -245,6 +267,15 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
     touchGrant: (id, now) => {
       touchGrant.run(now, id);
     },
+    listLiveGrants: (worldId, userId) =>
+      (ownGrants.all(worldId, userId) as unknown as (GrantRow & { client_name: string })[]).map(
+        (r) => ({ ...toGrant(r), clientName: r.client_name }),
+      ),
+    activePairedUsers: (worldId) =>
+      (pairedIn.all(worldId) as unknown as { user_id: string; user_name: string }[]).map((r) => ({
+        userId: r.user_id,
+        userName: r.user_name,
+      })),
     revokeGrant: (id, now) => tx(() => revokeGrant(id, now)),
     revokeGrantsFor: (worldId, userId, now) =>
       tx(() => {

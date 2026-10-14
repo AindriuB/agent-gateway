@@ -38,6 +38,8 @@ export interface OAuthRoutes {
   handle(req: IncomingMessage, res: ServerResponse, path: string, client: string): Promise<void>;
   /** The principal for a bearer access token, or undefined. */
   authenticate(bearer: string | undefined): HttpPrincipal | undefined;
+  /** Handed the link registry and the per-client failed-attempt bucket when the server is built. */
+  attach?(wiring: { registry: LinkRegistry; failures: FailureWindows }): void;
   /** Advertised in `WWW-Authenticate` on a 401 from `/mcp`. */
   resourceMetadataUrl: string;
 }
@@ -136,6 +138,7 @@ export class HttpServer {
     }
     const token = o.token;
     const oauth = o.oauth;
+    oauth?.attach?.({ registry: o.registry, failures: this.failedAuth });
     this.authenticate =
       o.authenticate ??
       (oauth

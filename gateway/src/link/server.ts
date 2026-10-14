@@ -25,6 +25,7 @@ import { BoundedMap } from '../http/limits.js';
 import { publicHostMatches } from '../http/public-url.js';
 import { canonicalOrigin } from './origin.js';
 import { toolsets } from '../routing/toolsets.js';
+import { handleGrantMessage } from './grants.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -396,6 +397,15 @@ export class LinkServer {
             this.opts.registry.remove(conn);
             ws.close(1008, 'invalid queued receipt');
           }
+          break;
+        case 'listGrants':
+        case 'revokeGrant':
+          // A replaced connection must not act for the user any more.
+          if (this.opts.registry.get(conn.worldId, conn.userId) !== conn || conn.closed) {
+            ws.close(1008, 'stale grants connection');
+            break;
+          }
+          handleGrantMessage(conn, msg, this.opts.store.oauth, send, this.opts.now);
           break;
         case 'toolset':
           // Only for the connection that sent it, never another's.
