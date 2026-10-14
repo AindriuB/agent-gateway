@@ -122,7 +122,7 @@ describe('/authorize', () => {
     expect(u.searchParams.get('state')).toBe('st');
   });
 
-  it('the shipped default is auto-deny', async () => {
+  it('the shipped default is the consent page, not an automatic denial (task 67)', async () => {
     const { OAuthServer } = await import('../../src/oauth/index.js');
     r = await rig();
     const dflt = new OAuthServer({ repo: r.h.store.oauth, publicUrl: 'https://gw.example.com' });
@@ -132,13 +132,14 @@ describe('/authorize', () => {
       {
         method: 'GET',
         url: `/authorize?${new URLSearchParams(base(c).params)}`,
-        headers: {},
+        headers: { host: 'gw.example.com' },
       } as never,
       fakeRes as never,
       '/authorize',
       'k',
     );
-    expect(new URL(out.headers.location as string).searchParams.get('error')).toBe('access_denied');
+    expect(out.headers.location).toBeUndefined();
+    expect(out.status).toBe(200);
   });
 
   it('the consent step can narrow scopes but not widen them', async () => {

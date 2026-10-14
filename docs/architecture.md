@@ -109,7 +109,11 @@ The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each
 
 ## OAuth for remote clients (task 35)
 
-With `--public-url`, OAuth 2.1 is the only way to authenticate to `/mcp` (`gateway/src/oauth/`). The gateway serves `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource` (and the `/mcp` variant), `/register`, `/authorize` and `/token`. The audience is `<publicUrl>/mcp`; a different `resource` gets `invalid_target`. Access tokens last 1 hour, authorization codes 60 seconds and refresh tokens 30 days, rotated on every use; reusing a rotated refresh token or a used code revokes the whole token family. Scopes are `read` (default), `write`, `destructive` and `code`, and they filter tools before events, the offline queue and the module call. Registration, `/authorize` and `/token` are rate-limited per client. Grants are revoked when their pairing is. Consent is auto-deny until task 67 adds the consent page. Migration 010 holds the four OAuth tables.
+With `--public-url`, OAuth 2.1 is the only way to authenticate to `/mcp` (`gateway/src/oauth/`). The gateway serves `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource` (and the `/mcp` variant), `/register`, `/authorize` and `/token`. The audience is `<publicUrl>/mcp`; a different `resource` gets `invalid_target`. Access tokens last 1 hour, authorization codes 60 seconds and refresh tokens 30 days, rotated on every use; reusing a rotated refresh token or a used code revokes the whole token family. Scopes are `read` (default), `write`, `destructive` and `code`, and they filter tools before events, the offline queue and the module call. Registration, `/authorize` and `/token` are rate-limited per client. Grants are revoked when their pairing is. Migration 010 holds the four OAuth tables.
+
+### Consent and grants (task 67)
+
+`/authorize` shows a consent page (`gateway/src/oauth/consent/`) where the human names the world and the Foundry user, picks scopes, and enters a one-time code. The code is sent to that user's Foundry client over the link and shown there, which proves control of that user's session; identity is never taken from the page. Each Foundry user lists and revokes their own grants under "Connected apps" in the module (`module/src/apps/grants/`). A retention sweep inside the OAuth server deletes expired codes and tokens and dead grants, in bounded batches. The page's styling is served same-origin at `/authorize/consent.css`, so the CSP allows no inline style. A module that predates this task cannot show the code; update the module and gateway together.
 
 ## Docker image and Compose stack (task 42)
 
@@ -117,7 +121,7 @@ With `--public-url`, OAuth 2.1 is the only way to authenticate to `/mcp` (`gatew
 
 ## Planned (MVP B)
 
-Not built yet; `docs/plan/PLAN.md` has the order. The consent page and grant revocation for OAuth (task 67); operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
+Not built yet; `docs/plan/PLAN.md` has the order. Operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
 
 ## Decisions worth knowing
 

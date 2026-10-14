@@ -68,6 +68,35 @@ export interface LinkClientDeps {
 export const REPLACED_CLOSE_CODE = 1000;
 export const REPLACED_CLOSE_REASON = 'replaced';
 
+export type GrantSummary = Extract<LinkMessage, { type: 'grants' }>['grants'][number];
+export type ConsentCodeMessage = Extract<LinkMessage, { type: 'consentCode' }>;
+
+/**
+ * The first gateway version that answers `listGrants` and `revokeGrant`. Every build reports
+ * `0.1.0`, so this gate cannot tell a gateway from before this task apart; it only stops the
+ * module from sending to a gateway that reports a lower version.
+ */
+export const GRANTS_MIN_GATEWAY_VERSION = '0.1.0';
+
+/** True when `version` is a plain `x.y.z` (a suffix is ignored) at or above `min`. */
+export function gatewaySupportsGrants(
+  version: string | null | undefined,
+  min: string = GRANTS_MIN_GATEWAY_VERSION,
+): boolean {
+  const parse = (v: string | null | undefined): number[] | null => {
+    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v ?? '');
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+  };
+  const have = parse(version);
+  const need = parse(min);
+  if (!have || !need) return false;
+  for (let i = 0; i < 3; i++) {
+    if ((have[i] as number) !== (need[i] as number))
+      return (have[i] as number) > (need[i] as number);
+  }
+  return true;
+}
+
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
 
@@ -110,6 +139,59 @@ export class LinkClient {
       } catch (e) {
         clearTimeout(timer);
         this.purges.delete(requestId);
+        reject(e);
+      }
+    });
+  }
+  /** The `gatewayVersion` from `welcome`; null while not connected. */
+  gatewayVersion: string | null = null;
+  private readonly grantRequests = new Map<
+    string,
+    {
+      socket: SocketLike;
+      resolve: (grants: GrantSummary[]) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  private grantSequence = 0;
+  private readonly consentListeners = new Set<(m: ConsentCodeMessage) => void>();
+  /** Be told of each one-time consent code the gateway sends to this user. */
+  onConsentCode(fn: (m: ConsentCodeMessage) => void): () => void {
+    this.consentListeners.add(fn);
+    return () => this.consentListeners.delete(fn);
+  }
+  /** This user's grants. Never sent to a gateway older than `GRANTS_MIN_GATEWAY_VERSION`. */
+  listGrants(): Promise<GrantSummary[]> {
+    return this.grantsRequest((requestId) => ({ type: 'listGrants', requestId }));
+  }
+  /** Revoke one of this user's grants; resolves to the grants that remain. */
+  revokeGrant(grantId: string): Promise<GrantSummary[]> {
+    return this.grantsRequest((requestId) => ({ type: 'revokeGrant', requestId, grantId }));
+  }
+  private grantsRequest(build: (requestId: string) => LinkMessage): Promise<GrantSummary[]> {
+    const socket = this.socket;
+    if (
+      !socket ||
+      this._state.kind !== 'connected' ||
+      (socket.readyState !== undefined && socket.readyState !== 1)
+    )
+      return Promise.reject(new Error('Gateway offline'));
+    if (!gatewaySupportsGrants(this.gatewayVersion))
+      return Promise.reject(new Error('Gateway too old for grants'));
+    if (this.grantRequests.size >= 4) return Promise.reject(new Error('Too many pending requests'));
+    const requestId = `grants-${++this.grantSequence}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.grantRequests.delete(requestId);
+        reject(new Error('Grants request timed out'));
+      }, 10000);
+      this.grantRequests.set(requestId, { socket, resolve, reject, timer });
+      try {
+        this.send(build(requestId));
+      } catch (e) {
+        clearTimeout(timer);
+        this.grantRequests.delete(requestId);
         reject(e);
       }
     });
@@ -387,6 +469,7 @@ export class LinkClient {
         this.codeRejected = false;
         this.attempt = 0;
         this.agentId = msg.agentId;
+        this.gatewayVersion = msg.gatewayVersion;
         const id = this.deps.getIdentity();
         const token = this.tokenForUrl(url);
         this.eventResume = token
@@ -416,6 +499,18 @@ export class LinkClient {
         pending.resolve(msg.count);
         break;
       }
+      case 'grants': {
+        const pending = this.grantRequests.get(msg.requestId);
+        if (this.socket !== origin || !pending || pending.socket !== origin) break;
+        clearTimeout(pending.timer);
+        this.grantRequests.delete(msg.requestId);
+        pending.resolve(msg.grants);
+        break;
+      }
+      case 'consentCode':
+        if (this.socket !== origin || this._state.kind !== 'connected') break;
+        for (const fn of this.consentListeners) fn(msg);
+        break;
       case 'reject':
         this.active = false;
         this.resumeMode = null;
@@ -585,6 +680,14 @@ export class LinkClient {
 
   private setState(s: LinkState): void {
     this._state = s;
+    if (s.kind !== 'connected') {
+      this.gatewayVersion = null;
+      for (const [id, p] of this.grantRequests) {
+        clearTimeout(p.timer);
+        this.grantRequests.delete(id);
+        p.reject(new Error('Gateway disconnected'));
+      }
+    }
     if (s.kind !== 'connected')
       for (const [id, p] of this.purges) {
         clearTimeout(p.timer);

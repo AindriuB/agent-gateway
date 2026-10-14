@@ -174,6 +174,41 @@ export const QueuedStatusMessage = z
     message: 'Only approved execution results carry resultFailed',
   });
 
+/** Remote-client grants (task 67). The gateway takes the user from the connection, never from here. */
+export const GrantScope = z.enum(['read', 'write', 'destructive', 'code']);
+export const ListGrantsMessage = z.strictObject({
+  type: z.literal('listGrants'),
+  requestId: z.string().min(1).max(100),
+});
+export const RevokeGrantMessage = z.strictObject({
+  type: z.literal('revokeGrant'),
+  requestId: z.string().min(1).max(100),
+  grantId: z.string().min(1).max(100),
+});
+export const GrantsMessage = z.strictObject({
+  type: z.literal('grants'),
+  requestId: z.string().min(1).max(100),
+  grants: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(100),
+        clientName: z.string().max(200),
+        scopes: z.array(GrantScope).max(4),
+        createdAt: z.number().int().min(0),
+        lastUsedAt: z.number().int().min(0).nullable(),
+      }),
+    )
+    .max(200),
+});
+/** The one-time consent code, sent only to the chosen user's own connection. */
+export const ConsentCodeMessage = z.strictObject({
+  type: z.literal('consentCode'),
+  code: z.string().min(1).max(32),
+  clientName: z.string().max(200),
+  scopes: z.array(GrantScope).max(4),
+  expiresAt: z.number().int().min(0),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -191,6 +226,10 @@ export const LinkMessage = z.discriminatedUnion('type', [
   PurgeEventsResultMessage,
   QueuedCallsMessage,
   QueuedStatusMessage,
+  ListGrantsMessage,
+  RevokeGrantMessage,
+  GrantsMessage,
+  ConsentCodeMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

@@ -1,0 +1,22 @@
+<section class="agent-gateway-grants">
+  {{#if unavailable}}
+    <p class="notes">{{unavailable}}</p>
+  {{else}}
+    <p class="notes">{{localize "AGENT_GATEWAY.Grants.intro"}}</p>
+    {{#if empty}}
+      <p class="notes">{{localize "AGENT_GATEWAY.Grants.empty"}}</p>
+    {{/if}}
+    <ul class="grant-list">
+      {{#each rows}}
+        <li class="grant" data-grant-id="{{id}}">
+          <strong class="client">{{clientName}}</strong>
+          <span class="scopes">{{scopes}}</span>
+          <span class="used">{{localize "AGENT_GATEWAY.Grants.lastUsed"}}: {{#if lastUsed}}{{lastUsed}}{{else}}{{localize "AGENT_GATEWAY.Grants.never"}}{{/if}}</span>
+          <button type="button" data-action="revoke" data-grant-id="{{id}}">
+            <i class="fa-solid fa-ban"></i> {{localize "AGENT_GATEWAY.Grants.revoke"}}
+          </button>
+        </li>
+      {{/each}}
+    </ul>
+  {{/if}}
+</section>
