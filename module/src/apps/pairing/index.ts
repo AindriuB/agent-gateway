@@ -164,6 +164,9 @@ export function createPairingApp(): any {
       if (el) el.textContent = describeState(state, isServerModeUrl(res.url));
       const addr = this.element?.querySelector?.('[data-role="address"]');
       if (addr) addr.textContent = describeAddress(state, res);
+      // Unpair follows the link state too, by toggling `hidden` so the typed form values survive.
+      const unpair = this.element?.querySelector?.('[data-role="unpair"]');
+      if (unpair) unpair.hidden = getLinkClient().hasCurrentGatewayToken?.() !== true;
     }
 
     async _onClose(options: object): Promise<void> {

@@ -241,7 +241,7 @@ export class LinkClient {
   private resumeMode: 'code' | 'token' | null = null;
   private codeRejected = false;
   /** Which credential the last hello carried, and the user it was sent as. */
-  private authSource: 'code' | 'keyed' | 'legacy' | null = null;
+  private authSource: 'code' | 'session' | 'keyed' | 'legacy' | null = null;
   private helloOwner: TokenOwner | null = null;
   /** A code-issued token that could not be persisted: kept for this session only. */
   private sessionToken: { url: string; worldId: string; userId: string; token: string } | null =
@@ -295,14 +295,24 @@ export class LinkClient {
    * stored value counts as no token.
    */
   private tokenForUrl(url: string): string | null {
-    const cred = this.readCredential();
-    if (cred) {
-      return normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url) ? cred.token : null;
-    }
+    return this.ownTokenForUrl(url)?.token ?? null;
+  }
+
+  /**
+   * The matching session token wins over the persisted one: it exists only because a newer
+   * code-issued token could not be persisted, and is cleared by any successful store.
+   */
+  private ownTokenForUrl(url: string): { token: string; source: 'session' | 'keyed' } | null {
     const s = this.sessionToken;
     if (s && normalizeGatewayUrl(s.url) === normalizeGatewayUrl(url)) {
       const id = this.deps.getIdentity();
-      if (s.worldId === id.world.id && s.userId === id.user.id) return s.token;
+      if (s.worldId === id.world.id && s.userId === id.user.id) {
+        return { token: s.token, source: 'session' };
+      }
+    }
+    const cred = this.readCredential();
+    if (cred && normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url)) {
+      return { token: cred.token, source: 'keyed' };
     }
     return null;
   }
@@ -311,9 +321,9 @@ export class LinkClient {
    * The token to present: this user's own, else the old shared credential (migration) if it was
    * issued by this gateway.
    */
-  private tokenFor(url: string): { token: string; source: 'keyed' | 'legacy' } | null {
-    const own = this.tokenForUrl(url);
-    if (own !== null) return { token: own, source: 'keyed' };
+  private tokenFor(url: string): { token: string; source: 'session' | 'keyed' | 'legacy' } | null {
+    const own = this.ownTokenForUrl(url);
+    if (own !== null) return own;
     const legacy = this.parseCredential(this.deps.getLegacyToken?.());
     if (legacy && normalizeGatewayUrl(legacy.url) === normalizeGatewayUrl(url)) {
       return { token: legacy.token, source: 'legacy' };
@@ -740,10 +750,8 @@ export class LinkClient {
     if (usedToken) {
       // Only the credential that was sent is stale: the old shared one, or this user's own.
       if (this.authSource === 'legacy') await this.deps.clearLegacyToken?.();
-      else {
-        this.sessionToken = null;
-        await this.deps.setToken(null, this.helloOwner ?? undefined);
-      }
+      else if (this.authSource === 'session') this.sessionToken = null;
+      else await this.deps.setToken(null, this.helloOwner ?? undefined);
       this.setState({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
       return;
     }

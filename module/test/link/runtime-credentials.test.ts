@@ -282,3 +282,51 @@ it('a successful later store clears the session token', async () => {
   ls.clear();
   expect(c.hasCurrentGatewayToken()).toBe(false);
 });
+
+async function repairWithStaleStored() {
+  settings = { gatewayUrl: X };
+  seedMap([X]); // an old, superseded token for the same key
+  failWrites = true;
+  const c = await boot();
+  c.pair('CODE-1');
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  ws.recv({ ...welcome(), pairingToken: 'freshTok' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.state.kind).toBe('connected');
+  return { c, ws };
+}
+
+it('re-pair with failing writes, drop and reconnect sends the new session token, not the stale one', async () => {
+  const { c, ws } = await repairWithStaleStored();
+  ws.onclose({ code: 1006 });
+  await vi.advanceTimersByTimeAsync(60_000);
+  const ws2 = FakeWs.all[FakeWs.all.length - 1]!;
+  expect(ws2).not.toBe(ws);
+  ws2.onopen();
+  expect(ws2.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'freshTok' });
+  void c;
+});
+
+it('rejecting the session token clears only it, leaving the persisted entry', async () => {
+  const { c } = await repairWithStaleStored();
+  c.stop();
+  c.resume();
+  const ws = FakeWs.all[FakeWs.all.length - 1]!;
+  ws.onopen();
+  expect(ws.sent[0].auth.token).toBe('freshTok');
+  ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stored()[key(X)].token).toBe(`tok-${X}`);
+  // Only the persisted entry remains, so it is what a later connect presents.
+  c.resume();
+  c.start();
+  const w2 = FakeWs.all[FakeWs.all.length - 1]!;
+  w2.onopen();
+  expect(w2.sent[0].auth.token).toBe(`tok-${X}`);
+  // Its rejection clears the persisted entry.
+  w2.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  failWrites = false;
+  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+});

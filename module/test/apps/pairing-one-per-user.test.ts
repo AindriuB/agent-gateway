@@ -90,7 +90,7 @@ it('the window shows the paired state and Unpair only for the current user, with
   }
   void mod;
   expect(template).toContain('data-action="unpair"');
-  expect(template).toContain('{{#if paired}}');
+  expect(template).toContain('{{#unless paired}} hidden{{/unless}}');
   expect(lang.AGENT_GATEWAY.Pairing.Unpair.button).toBe('Unpair this browser');
 });
 
@@ -109,4 +109,41 @@ it('the Unpair action calls the client unpair', async () => {
   const App = m.createPairingApp();
   await App.onUnpair();
   expect(unpair).toHaveBeenCalledTimes(1);
+});
+
+it('state changes toggle Unpair visibility without re-rendering or touching the form', async () => {
+  await setup('wss://gw.example.com/link');
+  let paired = false;
+  let notify: () => void = () => undefined;
+  vi.doMock('../../src/link/runtime.js', () => ({
+    getLinkClient: () => ({
+      state: { kind: 'connecting' },
+      onState: (fn: () => void) => {
+        notify = fn;
+        return () => undefined;
+      },
+      hasCurrentGatewayToken: () => paired,
+    }),
+  }));
+  vi.resetModules();
+  const m = await import('../../src/apps/pairing/index.js');
+  const app: any = new (m.createPairingApp())();
+  const unpair = { hidden: true };
+  const input = { value: 'typed' };
+  const els: Record<string, any> = {
+    '[data-role="status"]': { textContent: '' },
+    '[data-role="address"]': { textContent: '' },
+    '[data-role="unpair"]': unpair,
+  };
+  app.element = { querySelector: (sel: string) => els[sel] };
+  app.render = vi.fn();
+  await app._onRender({}, {});
+  paired = true;
+  notify();
+  expect(unpair.hidden).toBe(false);
+  paired = false; // TOKEN_REJECTED or unpair
+  notify();
+  expect(unpair.hidden).toBe(true);
+  expect(app.render).not.toHaveBeenCalled();
+  expect(input.value).toBe('typed');
 });
