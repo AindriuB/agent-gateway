@@ -1,0 +1,123 @@
+# Foundry Agent Gateway plugin for ChatGPT
+
+This private plugin connects to Andrew's existing deployment:
+
+- Foundry: <https://foundry.aindriub.app>
+- MCP endpoint: <https://gw.aindriub.app/mcp>
+- OAuth resource metadata: <https://gw.aindriub.app/.well-known/oauth-protected-resource>
+
+It supplies a focused Foundry workflow skill and a Streamable HTTP connection.
+The gateway's existing OAuth grants, Foundry permissions and approval controls
+still govern tool use. World data returned to ChatGPT is processed by the AI
+service; connect only the Foundry user and scopes you intend to use.
+
+## Build and inspect
+
+From the repository root, with Node.js 22.13+ and the `zip` and `unzip` command-line tools:
+
+```sh
+node --test scripts/test/chatgpt-plugin.test.mjs
+node scripts/build-chatgpt-plugin.mjs
+unzip -Z1 dist/release/foundry-agent-gateway-chatgpt.zip
+npm run verify
+```
+
+The archive is `dist/release/foundry-agent-gateway-chatgpt.zip`. It contains exactly:
+
+```text
+foundry-agent-gateway/plugin.json
+foundry-agent-gateway/mcp.json
+foundry-agent-gateway/skills/foundry-workflow/SKILL.md
+```
+
+The packer snapshots and validates those three files, then creates the archive
+outside the source directory. All other files, including notes, dependency
+folders and unreferenced assets, are omitted. Required symlinks (including parent
+directories) and a symlinked output directory are refused. Each input is limited
+to 1 MiB. Validation failure preserves the previous archive; do not mistake an
+older archive for a successful new build.
+
+The local package-contract validator v1 deliberately supports only this package's
+small profile. It checks identity, strict SemVer, required metadata, subtitle
+length, the skill header, and the HTTPS MCP URL. It rejects extra manifest fields,
+asset references, app bindings and authentication headers. New package features
+need explicit validator and test updates. The validator does not certify prose
+or detect every possible secret: review all three source files before saving.
+No credentials, consent codes or world data belong in them.
+
+No icon or custom colors are required for this private package. It does not use
+the gateway consent page's branding assets. Packaging is independent of the
+module release script and does not upload anything.
+
+## Save privately and connect
+
+The supported account-save route documented by plugin-creator 0.1.26 is its
+`create_plugin` tool, passing the absolute local ZIP path as `archive`. It saves
+a private plugin in the authenticated account's active workspace, or the personal
+account when no workspace is active. Use the returned plugin URL and retain the
+returned plugin and release IDs for updates. Check for an existing Foundry plugin
+first and update it rather than creating duplicates. If an upload result is
+uncertain, inspect the account before retrying.
+
+Saving the package does not sign the user in to the gateway. Open the resulting
+plugin in the host, enable/install it through the host's supported flow and use
+its connection action to start OAuth. If that host does not offer a supported
+installation or OAuth flow, retain the ZIP and report that exact blocker rather
+than substituting a static token or claiming success. The save route above is
+available in Codex's plugin-creator integration; successful use in ChatGPT must
+be verified separately. No host build number has yet been recorded for live
+acceptance.
+
+In the gateway consent flow, select the intended world and Foundry user and
+request `read` for inspection. The user completes the consent code shown in their
+paired Foundry session. Add `write` only for user-requested changes; `destructive`
+and `code` are not needed for the acceptance check. Keep the paired Foundry
+session available. Credentials and codes stay in the supported host and Foundry
+interfaces, never in this package or an agent transcript.
+
+To disconnect, use Foundry's Agent Gateway **Connected apps** interface to revoke
+the test grant. The same plugin connection must then lose authenticated access.
+Only reconnect through fresh consent if the user wants to reconnect. Revocation
+of a test grant does not require removing the plugin or revoking the underlying
+Foundry pairing.
+
+The existing [Claude Desktop](guides/claude-desktop.md) and
+[Claude Code](guides/claude-code.md) guides describe those separate clients.
+A general ChatGPT guide and the shared compatibility matrix belong to tasks 43
+and 40; this document records package-specific steps and evidence only.
+
+## Verification record
+
+As of 2026-10-14:
+
+| Check                        | Evidence                                                                                                                                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public MCP resource          | Planning checked the live metadata and confirmed `https://gw.aindriub.app/mcp`, issuer `https://gw.aindriub.app`, and read/write/destructive/code scopes. This is not authenticated discovery. |
+| Portable schemas             | Both manifests passed the published Agent Plugins 1.0.0 JSON schemas with Python `jsonschema` 4.26.0 (`Draft202012Validator`). Schemas were fetched from their `$schema` URLs on 2026-10-14.   |
+| Package contract             | Local validator v1, Node.js 24.19.0: 10 package tests passed; the built archive contains exactly the three listed files with matching source bytes.                                            |
+| Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                       |
+| Full repository gate         | Pending the review/verification phase; run `npm run verify` on the reviewed commit.                                                                                                            |
+| Private account save         | Pending; an archive is not an installed plugin.                                                                                                                                                |
+| ChatGPT host/build and OAuth | Pending live acceptance with Andrew's account.                                                                                                                                                 |
+| Tool discovery and read      | Pending; discover real tools, then call an advertised read such as `world_info`.                                                                                                               |
+| Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
+| Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
+
+Record redacted outcomes and the host/build used when completing the pending
+checks. Do not store tool payloads, tokens or codes as evidence. The task remains
+incomplete until its live acceptance and full repository verification pass.
+
+## Self-hosting and updates
+
+For another deployment, first verify its public OAuth resource metadata and
+actual HTTPS `/mcp` endpoint. Change only the URL in `plugins/foundry-agent-gateway/mcp.json`,
+then update the deployment wording in `plugin.json` and these notes. The source
+test currently asserts Andrew's endpoint; deliberately update that assertion for
+your fork. Rerun the package tests, packer, archive inspection and authenticated
+acceptance. No automatic per-user endpoint setting in ChatGPT is claimed.
+
+The portable format is pinned by the manifests' schema identifiers. Recheck the
+installed plugin-creator package instructions before changing the format or
+saving a new private release. Update the package version intentionally; this
+standalone package is not wired into the gateway's version-bump/release scripts.
+Public directory submission and workspace-wide sharing are separate work.

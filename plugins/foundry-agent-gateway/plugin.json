@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "foundry-agent-gateway",
+  "version": "0.1.0",
+  "description": "Use Andrew’s hosted Foundry VTT gateway with the permissions of your connected Foundry user.",
+  "author": {
+    "name": "AindriuB"
+  },
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Foundry Agent Gateway",
+        "shortDescription": "Work with your Foundry world",
+        "longDescription": "Inspect the connected Foundry world and request supported changes through its existing OAuth, permissions and approval controls. Connects to Andrew’s gateway at gw.aindriub.app.",
+        "developerName": "AindriuB",
+        "category": "Productivity",
+        "capabilities": ["Interactive"],
+        "defaultPrompt": "Summarize my connected Foundry world using read-only tools."
+      }
+    }
+  }
+}
