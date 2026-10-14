@@ -225,3 +225,52 @@ Checks at HEAD, run in a scratch copy: these 6 test files pass (68 tests):
 eslint, prettier and `tsc -p module --noEmit` are clean on the round-3 files.
 
 SCOPE: module/test/link/runtime-credentials.test.ts (new in ae5ccbe) is not in `Owns`, and Amendment 1 widened only client.ts. Route: orchestrator. Either amend `Owns` to include the file, or have the tests moved into pairing.test.ts, which is owned. Every other path in origin/main...HEAD is within `Owns` or is a scribe file under docs/plan.
+
+## Review round 5 — findings (Andrew approved a fifth round, 2026-10-14)
+
+Reviewed HEAD: c9ebf6a. Routed to the implementer: the P2 (the `start()` gate ignores `sessionToken`) and the three P3s (bind `sessionToken` to `helloOwner`; tests for the session-token invariants; the `notifyWarn` doc comment). The NOTE on clearing at `stop()` is not adopted, because Amendment 2 keeps the token for the session.
+
+VERDICT: FIX
+
+Both round-4 items are fixed, and the fix commit has no drift. The verdict is FIX because of one P2 that this round introduced: when the only token is the new in-memory `sessionToken`, `start()` cannot see it.
+
+FINDINGS
+- [P2] module/src/link/client.ts:360-363 (`start()`) — The first check in `start()` looks only at storage (`hasStoredToken()`) and the legacy setting. It ignores `sessionToken`. `pairingInvalid` (client.ts:744-747) and `resume()` both reach the session token through `start()`, so it bails out early. The rejected-code fallback in `pairingInvalid` leaves the link inactive and showing "connecting" for good. Before round 4, `tokenFor` returned null in this case and the state became PAIRING_INVALID.
+  route: implementer — Amendment 2 says reconnects must still use the in-memory token. Let the gate in `start()` accept a token that `tokenFor(currentUrl)` finds, including the session token. No spec change is needed.
+  input: localStorage throws on `setItem`. `pair('CODE-1')`, then `welcome` with `pairingToken:'newTok'` (connected). Then `pair('BAD')`, then `reject PAIRING_INVALID`, then wait 60 s.  →  state stays `{"kind":"connecting"}`, `isActive` is false, and no new socket is created.
+  proof: I ran a scratch probe in runtime-credentials.test.ts against a copy of HEAD and got exactly that. A second probe, `stop()` then `resume()` (the pagehide/pageshow bfcache path in main.ts:55-65), ends in `{"kind":"disconnected"}` with no reason and no socket, while `hasCurrentGatewayToken()` is still true. The same gate fix covers both.
+
+- [P3] module/src/link/client.ts:538-544 — The session token's identity is read from `getIdentity()` when `welcome` arrives. The `setToken` call just above it uses `this.helloOwner`. If the identity changed during the `await`, user A's token would be bound to B and sent in B's next hello. With the runtime as written this cannot happen: `setToken` is synchronous, and in Foundry a user switch reloads the page. The fix is cheap and matches the round-3 rule of using what was presented.
+  route: implementer — build `sessionToken` from `this.helloOwner` (url, worldId, userId).
+  input: a deps `setToken` that resolves `false` after `getIdentity` has switched to B  →  `sessionToken` has userId B and A's token, and B's next hello presents it.
+
+- [P3] module/test/link/runtime-credentials.test.ts:159 — No test guards any of the session-token invariants you listed.
+  route: implementer — add tests for:
+  - a different URL (setting changed) sends nothing;
+  - a different user or world in the same page sends nothing;
+  - the token is cleared on unpair, on token rejection, and after a successful later store.
+  input: each of these mutations to client.ts leaves all 165 tests passing:
+  - drop the world/user check in `tokenForUrl`;
+  - drop the URL check;
+  - drop the clear in `pairingInvalid`;
+  - drop the clear in `unpair`;
+  - drop the clear on a successful store.
+  proof: I ran 9 files (runtime-credentials, credential-store, user-switch, pairing, client, reconnect, pairing-one-per-user, pairing-onboarding, status-indicator). Each mutation passed 165/165. Today's behaviour is correct, but nothing guards it.
+
+- [P3] module/src/link/client.ts:79 — The doc comment on `notifyWarn` says "already localized", but the client passes the i18n key `AGENT_GATEWAY.Link.storageFull`, and runtime.ts:122 localizes it. A future implementer who trusts the comment would show the raw key to the user.
+  route: implementer — correct the comment so it says the argument is an i18n key.
+
+- [NOTE] `sessionToken` is not cleared on `stop()`. Clearing it there would contradict Amendment 2 ("keeps the token in memory for this session"). In this module `stop()` runs only on pagehide, and a page restored from bfcache is the same session and user. The token is also never presented without matching URL, world and user at presentation time (client.ts:302-305). Clearing on stop would be a spec change, so it goes to the orchestrator if you want it. Once the P2 is fixed, resume after bfcache will reconnect with the token.
+
+- [NOTE] Checked and sound at HEAD:
+  - **Wrong gateway or user:** the token is never presented to another gateway, world or user. Both checks are in `tokenForUrl`. A stored credential for the current URL always takes precedence. After a gateway change, `connect` goes to PAIRING_REQUIRED.
+  - **Clearing:** the token is cleared on unpair (client.ts:418), on token rejection (client.ts:738; the legacy branch never used it), and on a successful store (client.ts:550).
+  - **Warning:** it passes only a constant key, so it cannot carry the token. The test asserts this.
+
+FIXED
+- [P3] code-pairing `setToken` result ignored when storage is full — FIXED — client.ts:532-551, runtime.ts:122, lang/en.json:117. Warns once, and the warning carries no token. Proof: changing `stored === false` to `false` fails the new test. The fix follows Amendment 2, but the P2 above leaves a gap in it.
+- [P3] untested `if (saved) this.authSource = 'keyed'` guard — FIXED — runtime-credentials.test.ts:145. Proof: making the assignment unconditional fails that test.
+
+DRIFT: none. f63cfac..HEAD changes only what the two round-4 items need: the optional `notifyWarn` dep, `sessionToken` and `storageWarned`, one lang key added, and two tests. No Acceptance item or decision is weakened. Prettier is clean on the changed files.
+
+SCOPE: clean. client.ts (whole file, Amendment 1), runtime.ts, lang/en.json (one line added) and runtime-credentials.test.ts (Amendment 2) are all within Owns.
