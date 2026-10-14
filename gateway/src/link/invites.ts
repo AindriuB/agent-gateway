@@ -48,6 +48,13 @@ export function parseTtl(value: string): number | undefined {
   return ms > 0 && ms <= MAX_INVITE_TTL_MS ? ms : undefined;
 }
 
+/** Does the user hold an active admin pairing in the world right now? */
+export function holdsAdminPairing(store: Store, worldId: string, userId: string): boolean {
+  return store
+    .listActivePairings()
+    .some((p) => p.worldId === worldId && p.userId === userId && p.admin);
+}
+
 /** Store a new invite and return its code, which exists nowhere else. Call inside a transaction. */
 export function createInvite(
   store: Store,
@@ -170,6 +177,11 @@ export function redeemInvite(
         store.invites.settle(invite.id, 'mismatch', null);
         return refused;
       }
+      if (invite.createdBy !== null && holdsAdminPairing(store, claim.worldId, claim.userId)) {
+        // A delegated invite never displaces an admin GM, whatever it was minted for.
+        store.invites.settle(invite.id, 'mismatch', null);
+        return refused;
+      }
       if (!invite.gm && !invite.admin) {
         vouch = invite;
         return refused;
@@ -210,6 +222,10 @@ export function completeVouchedInvite(
         !claimMatches(invite, claim)
       )
         return refused;
+      if (invite.createdBy !== null && holdsAdminPairing(store, claim.worldId, claim.userId)) {
+        store.invites.settle(invite.id, 'mismatch', null);
+        return refused;
+      }
       const paired = pairTarget(store, claim, false);
       store.invites.settle(invite.id, 'paired', paired.pairing.id);
       return { ok: true, ...paired };

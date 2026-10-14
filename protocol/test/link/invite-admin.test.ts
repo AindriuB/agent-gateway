@@ -19,9 +19,9 @@ describe('delegated invite messages', () => {
         invites: [{ id: 'i', userId: 'u', createdAt: 1, expiresAt: 2, status: 'unused' }],
       }),
     ).toBe(true);
-    expect(
-      ok({ type: 'error', id: '', requestId: 'r', code: 'FORBIDDEN', message: 'no' }),
-    ).toBe(true);
+    expect(ok({ type: 'error', id: '', requestId: 'r', code: 'FORBIDDEN', message: 'no' })).toBe(
+      true,
+    );
   });
 
   it('refuse a world id on any request', () => {

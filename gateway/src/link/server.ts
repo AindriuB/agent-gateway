@@ -37,6 +37,7 @@ import {
   type PairingOutcome,
 } from './invites.js';
 import { handleGrantMessage } from './grants.js';
+import { handleInviteMessage } from './invite-admin.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -500,6 +501,16 @@ export class LinkServer {
             break;
           }
           handleGrantMessage(conn, msg, this.opts.store.oauth, send, this.opts.now);
+          break;
+        case 'createInvite':
+        case 'listInvites':
+        case 'cancelInvite':
+          // A replaced connection must not manage invites for the user any more.
+          if (this.opts.registry.get(conn.worldId, conn.userId) !== conn || conn.closed) {
+            ws.close(1008, 'stale invite connection');
+            break;
+          }
+          handleInviteMessage(conn, msg, this.opts.store, send, this.opts.now);
           break;
         case 'attest':
           // A replaced connection must not vouch for anyone any more.
