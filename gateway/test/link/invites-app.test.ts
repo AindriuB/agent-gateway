@@ -116,13 +116,13 @@ describe('server mode refusal-log cap', () => {
     for (const c of cleanups.splice(0)) c();
   });
 
-  it('writes 20 lines a minute, then one summary line; the clock is injectable', async () => {
+  async function bootCapped() {
     const state = tempState();
     cleanups.push(state.cleanup);
     const linkPort = await freePort();
     let httpPort = await freePort();
     while (httpPort === linkPort) httpPort = await freePort();
-    let t = 1_000_000;
+    const clock = { t: 1_000_000 };
     const timers: (() => void)[] = [];
     const lines: string[] = [];
     const app = createApp(
@@ -133,31 +133,68 @@ describe('server mode refusal-log cap', () => {
         stdin: new PassThrough(),
         stdout: new PassThrough(),
         writeStatus: (l) => lines.push(l),
-        codeClock: { now: () => t, setTimer: (fn) => timers.push(fn) },
+        codeClock: { now: () => clock.t, setTimer: (fn) => timers.push(fn) },
       },
     );
     apps.push(app);
     await app.start();
-    const refuse = async (i: number) => {
-      const c = await TestClient.connect(linkPort, ORIGIN, { host: 'gw.example.com' });
-      clients.push(c);
-      // Distinct users so that a per-message dedupe could not hide the cap.
-      c.send(hello({ kind: 'pairingToken', token: 'bogus' }, { userId: `u${i}` }));
-      await c.next();
+    let n = 0;
+    // Each refusal comes from a distinct origin, so no per-origin dedupe could hide the cap.
+    const refuse = async (count = 1) => {
+      for (let i = 0; i < count; i++) {
+        const c = await TestClient.connect(linkPort, `https://o${n++}.example`, {
+          host: 'gw.example.com',
+        });
+        clients.push(c);
+        c.send(hello({ kind: 'pairingToken', token: 'bogus' }));
+        await c.next();
+      }
     };
     const refusalLines = () => lines.filter((l) => l.startsWith('rejected link connection'));
-    for (let i = 0; i < 25; i++) await refuse(i);
-    expect(refusalLines()).toHaveLength(20);
-    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toEqual([]);
-    t += 60_000;
-    timers.splice(0).forEach((f) => f());
-    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toEqual([
-      '5 more refusals suppressed',
-    ]);
-    await refuse(99);
-    expect(refusalLines()).toHaveLength(21);
-    t += 60_000;
-    timers.splice(0).forEach((f) => f());
-    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toHaveLength(1);
+    const summaries = () => lines.filter((l) => /more refusals suppressed/.test(l));
+    return { clock, timers, lines, refuse, refusalLines, summaries };
+  }
+
+  it('writes 20 lines a minute from 25 distinct origins, then one summary line', async () => {
+    const t = await bootCapped();
+    await t.refuse(25);
+    expect(t.refusalLines()).toHaveLength(20);
+    expect(t.summaries()).toEqual([]);
+    t.clock.t += 60_000;
+    t.timers.splice(0).forEach((f) => f());
+    expect(t.summaries()).toEqual(['5 more refusals suppressed']);
+    await t.refuse();
+    expect(t.refusalLines()).toHaveLength(21);
+    t.clock.t += 60_000;
+    t.timers.splice(0).forEach((f) => f());
+    expect(t.summaries()).toHaveLength(1);
+  });
+
+  it('a refusal after the window ends flushes the pending summary first', async () => {
+    const t = await bootCapped();
+    await t.refuse(25);
+    t.clock.t += 60_000;
+    await t.refuse();
+    const summary = t.lines.indexOf('5 more refusals suppressed');
+    expect(summary).toBeGreaterThanOrEqual(0);
+    expect(t.lines.slice(summary + 1).some((l) => l.startsWith('rejected link connection'))).toBe(
+      true,
+    );
+  });
+
+  it('a late timer after an inline flush writes no second summary', async () => {
+    const t = await bootCapped();
+    await t.refuse(25);
+    const stale = t.timers.splice(0);
+    expect(stale).toHaveLength(1);
+    t.clock.t += 60_000;
+    // The inline flush starts a new window, which then also overflows.
+    await t.refuse(26);
+    expect(t.summaries()).toEqual(['5 more refusals suppressed']);
+    stale.forEach((f) => f());
+    expect(t.summaries()).toEqual(['5 more refusals suppressed']);
+    // The new window's own timer still reports its suppressed refusals.
+    t.timers.splice(0).forEach((f) => f());
+    expect(t.summaries()).toEqual(['5 more refusals suppressed', '6 more refusals suppressed']);
   });
 });

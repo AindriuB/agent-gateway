@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { PROTOCOL_VERSION, HelloMessage } from '@agent-gateway/protocol';
 import { afterEach, expect, it, vi } from 'vitest';
 import { installFoundry, type FoundryStub } from '../stubs/foundry.js';
 
@@ -49,4 +50,18 @@ it('trims a user name over 100 characters to 100', async () => {
 it('leaves a name of 100 characters or fewer alone', async () => {
   expect((await identityFor('n'.repeat(100))).user.name).toBe('n'.repeat(100));
   expect((await identityFor('Alice')).user.name).toBe('Alice');
+});
+
+it('a 150-character name, trimmed, makes a hello that parses under the capped HelloMessage', async () => {
+  const id = await identityFor('n'.repeat(150));
+  const frame = {
+    type: 'hello',
+    protocolVersion: PROTOCOL_VERSION,
+    ...id,
+    auth: { kind: 'pairingCode', code: 'AAAA-AAAA-AAAA' },
+  };
+  expect(HelloMessage.safeParse(frame).success).toBe(true);
+  expect(
+    HelloMessage.safeParse({ ...frame, user: { ...id.user, name: 'n'.repeat(150) } }).success,
+  ).toBe(false);
 });
