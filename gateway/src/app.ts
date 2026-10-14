@@ -621,10 +621,7 @@ export function createApp(config: Config, deps: AppDeps): App {
               ...(principal.scopes
                 ? {
                     allowedCategories: principal.scopes as readonly (
-                      | 'read'
-                      | 'write'
-                      | 'destructive'
-                      | 'code'
+                      'read' | 'write' | 'destructive' | 'code'
                     )[],
                   }
                 : {}),

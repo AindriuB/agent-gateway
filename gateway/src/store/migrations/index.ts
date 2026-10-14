@@ -13,4 +13,15 @@ import m010 from './010-oauth.js';
  * Ordered, insertion-only registry. Each task adds one static import and one
  * array entry. Static imports keep this bundle-safe: no directory scan.
  */
-export const MIGRATIONS: readonly string[] = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010];
+export const MIGRATIONS: readonly string[] = [
+  m001,
+  m002,
+  m003,
+  m004,
+  m005,
+  m006,
+  m007,
+  m008,
+  m009,
+  m010,
+];

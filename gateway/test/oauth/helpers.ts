@@ -158,7 +158,10 @@ export async function rig(
       const res = await r.register({ redirect_uris: [REDIRECT], client_name: 'T', ...extra });
       const b = res.json();
       if (res.status !== 201) throw new Error(`register failed: ${res.body}`);
-      return { id: b.client_id as string, ...(b.client_secret ? { secret: b.client_secret as string } : {}) };
+      return {
+        id: b.client_id as string,
+        ...(b.client_secret ? { secret: b.client_secret as string } : {}),
+      };
     },
     authorize: (params, headers) =>
       call(port, 'GET', `/authorize?${form(params)}`, headers ? { headers } : {}),
@@ -197,7 +200,10 @@ export async function rig(
           authorization: `Bearer ${token}`,
           ...(body === undefined
             ? {}
-            : { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }),
+            : {
+                'content-type': 'application/json',
+                accept: 'application/json, text/event-stream',
+              }),
           ...headers,
         },
         ...(body === undefined ? {} : { body }),

@@ -58,14 +58,22 @@ const baseHeaders = {
   pragma: 'no-cache',
 };
 
-function json(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}): void {
+function json(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  extra: Record<string, string> = {},
+): void {
   if (res.headersSent) return;
-  res.writeHead(status, { ...baseHeaders, 'content-type': 'application/json; charset=utf-8', ...extra });
+  res.writeHead(status, {
+    ...baseHeaders,
+    'content-type': 'application/json; charset=utf-8',
+    ...extra,
+  });
   res.end(JSON.stringify(body));
 }
 
-const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function errorPage(res: ServerResponse, message: string): void {
   if (res.headersSent) return;
@@ -99,7 +107,9 @@ function validRedirectUri(uri: unknown): uri is string {
 /** Trim to printable characters and the name cap; the result is still untrusted text. */
 function cleanName(v: unknown): string {
   if (typeof v !== 'string') return '';
-  return [...v.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '').trim()].slice(0, MAX_CLIENT_NAME_LENGTH).join('');
+  return [...v.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '').trim()]
+    .slice(0, MAX_CLIENT_NAME_LENGTH)
+    .join('');
 }
 
 function parseScopes(raw: string | null | undefined): Scope[] {
@@ -136,7 +146,11 @@ export class OAuthServer implements OAuthRoutes {
     this.maxClients = o.maxClients ?? MAX_OAUTH_CLIENTS;
     this.registerRate = new FailureWindows(REGISTER_LIMIT.max, REGISTER_LIMIT.windowMs, this.now);
     this.tokenRate = new FailureWindows(TOKEN_LIMIT.max, TOKEN_LIMIT.windowMs, this.now);
-    this.authorizeRate = new FailureWindows(AUTHORIZE_LIMIT.max, AUTHORIZE_LIMIT.windowMs, this.now);
+    this.authorizeRate = new FailureWindows(
+      AUTHORIZE_LIMIT.max,
+      AUTHORIZE_LIMIT.windowMs,
+      this.now,
+    );
   }
 
   handles(path: string): boolean {
@@ -174,7 +188,8 @@ export class OAuthServer implements OAuthRoutes {
     try {
       const method = req.method ?? 'GET';
       if (path.startsWith('/.well-known/')) {
-        if (method !== 'GET' && method !== 'HEAD') return json(res, 405, { error: 'invalid_request' });
+        if (method !== 'GET' && method !== 'HEAD')
+          return json(res, 405, { error: 'invalid_request' });
         return json(res, 200, this.metadata(path));
       }
       const want = path === '/register' || path === '/token' ? 'POST' : 'GET';
@@ -263,9 +278,14 @@ export class OAuthServer implements OAuthRoutes {
       );
     const method = meta.token_endpoint_auth_method ?? 'none';
     if (method !== 'none' && method !== 'client_secret_post')
-      throw new OAuthError(400, 'invalid_client_metadata', 'unsupported token_endpoint_auth_method');
+      throw new OAuthError(
+        400,
+        'invalid_client_metadata',
+        'unsupported token_endpoint_auth_method',
+      );
     const within = (v: unknown, ok: string[]): boolean =>
-      v === undefined || (Array.isArray(v) && v.every((x) => typeof x === 'string' && ok.includes(x)));
+      v === undefined ||
+      (Array.isArray(v) && v.every((x) => typeof x === 'string' && ok.includes(x)));
     if (!within(meta.grant_types, ['authorization_code', 'refresh_token']))
       throw new OAuthError(400, 'invalid_client_metadata', 'unsupported grant_types');
     if (!within(meta.response_types, ['code']))
@@ -302,7 +322,11 @@ export class OAuthServer implements OAuthRoutes {
 
   // ---- /authorize ----
 
-  private async authorize(req: IncomingMessage, res: ServerResponse, client: string): Promise<void> {
+  private async authorize(
+    req: IncomingMessage,
+    res: ServerResponse,
+    client: string,
+  ): Promise<void> {
     this.limit(this.authorizeRate, client);
     const q = new URL(req.url ?? '/', 'http://localhost').searchParams;
     const registered = this.repo.getClient(q.get('client_id') ?? '');
@@ -328,7 +352,8 @@ export class OAuthServer implements OAuthRoutes {
       if (q.get('code_challenge_method') !== 'S256')
         throw new OAuthError(400, 'invalid_request', 'code_challenge_method must be S256');
       const resource = q.get('resource');
-      if (resource !== null && resource !== this.resource) throw new OAuthError(400, 'invalid_target');
+      if (resource !== null && resource !== this.resource)
+        throw new OAuthError(400, 'invalid_target');
       const scopes = parseScopes(q.get('scope'));
       const decision = await this.consent.decide({
         clientId: registered.id,
@@ -377,7 +402,8 @@ export class OAuthServer implements OAuthRoutes {
     const registered = this.authenticateClient(form);
     const grantType = form.get('grant_type');
     const resource = form.get('resource');
-    if (resource !== null && resource !== this.resource) throw new OAuthError(400, 'invalid_target');
+    if (resource !== null && resource !== this.resource)
+      throw new OAuthError(400, 'invalid_target');
     if (grantType === 'authorization_code') return this.redeemCode(res, registered, form);
     if (grantType === 'refresh_token') return this.refresh(res, registered, form);
     throw new OAuthError(400, 'unsupported_grant_type');

@@ -26,8 +26,7 @@ const base = (c: { id: string }, extra: Record<string, string> = {}) => {
   };
 };
 
-const codeOf = (loc: unknown): string =>
-  new URL(String(loc)).searchParams.get('code') ?? 'MISSING';
+const codeOf = (loc: unknown): string => new URL(String(loc)).searchParams.get('code') ?? 'MISSING';
 
 const exchange = (
   rr: Rig,
@@ -108,7 +107,11 @@ describe('/authorize', () => {
     const c = await r.client();
     const { fakeRes, out } = capture();
     await denying.handle(
-      { method: 'GET', url: `/authorize?${new URLSearchParams(base(c).params)}`, headers: {} } as never,
+      {
+        method: 'GET',
+        url: `/authorize?${new URLSearchParams(base(c).params)}`,
+        headers: {},
+      } as never,
       fakeRes as never,
       '/authorize',
       'k',
@@ -126,14 +129,16 @@ describe('/authorize', () => {
     const c = await r.client();
     const { fakeRes, out } = capture();
     await dflt.handle(
-      { method: 'GET', url: `/authorize?${new URLSearchParams(base(c).params)}`, headers: {} } as never,
+      {
+        method: 'GET',
+        url: `/authorize?${new URLSearchParams(base(c).params)}`,
+        headers: {},
+      } as never,
       fakeRes as never,
       '/authorize',
       'k',
     );
-    expect(new URL(out.headers.location as string).searchParams.get('error')).toBe(
-      'access_denied',
-    );
+    expect(new URL(out.headers.location as string).searchParams.get('error')).toBe('access_denied');
   });
 
   it('the consent step can narrow scopes but not widen them', async () => {

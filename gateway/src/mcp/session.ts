@@ -340,7 +340,10 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         moduleVisibleFor(r.conn).find((t) => t.definition.name === req.params.name)?.definition
           .category;
       if (!inScope(category))
-        return failure('FORBIDDEN', `Tool not permitted by this token's scopes: ${req.params.name}`);
+        return failure(
+          'FORBIDDEN',
+          `Tool not permitted by this token's scopes: ${req.params.name}`,
+        );
     }
     if (gatewayTool && opts.events) {
       const parsed = gatewayTool.input.safeParse(req.params.arguments ?? {});

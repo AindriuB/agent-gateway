@@ -265,12 +265,17 @@ export class HttpServer {
       const principal = this.isPublic ? this.authenticate(req) : undefined;
       if (offered && !principal) this.failedAuth.record(client);
       const detailed = !this.isPublic || principal !== undefined;
+      // A grant sees only its own (world, user); a credential with no selector sees all.
+      const sel = principal?.selector;
       const worlds = detailed
-        ? this.o.registry.list().map((c) => ({
-            worldId: c.worldId,
-            userId: c.userId,
-            userName: c.info.userName,
-          }))
+        ? this.o.registry
+            .list()
+            .filter((c) => !sel || (c.worldId === sel.worldId && c.userId === sel.userId))
+            .map((c) => ({
+              worldId: c.worldId,
+              userId: c.userId,
+              userName: c.info.userName,
+            }))
         : [];
       return send(
         res,
@@ -296,9 +301,7 @@ export class HttpServer {
       this.failedAuth.record(client);
       res.setHeader(
         'www-authenticate',
-        this.o.oauth
-          ? `Bearer resource_metadata="${this.o.oauth.resourceMetadataUrl}"`
-          : 'Bearer',
+        this.o.oauth ? `Bearer resource_metadata="${this.o.oauth.resourceMetadataUrl}"` : 'Bearer',
       );
       return send(res, 401, 'unauthorized');
     }

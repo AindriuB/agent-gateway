@@ -12,8 +12,7 @@ export interface ConsentRequest {
 }
 
 export type ConsentDecision =
-  | { approve: { worldId: string; userId: string; scopes: Scope[] } }
-  | { deny: string };
+  { approve: { worldId: string; userId: string; scopes: Scope[] } } | { deny: string };
 
 /** The step between a valid /authorize request and a grant. 67 supplies the real one. */
 export interface ConsentStep {
