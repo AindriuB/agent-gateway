@@ -25,7 +25,9 @@ async function open(
     selector: { world: 'w1', user: 'u1' },
     tools: [fixtureTool],
     knownIdentities: () => [{ worldId: 'w1', userId: 'u1', userName: 'Ann' }],
-    ...(state ? { pairingState: () => state } : {}),
+    ...(state
+      ? { pairingState: (w: string, u: string) => (w === 'w1' && u === 'u1' ? state : 'none') }
+      : {}),
     ...over,
   });
   const client = new Client({ name: 't', version: '0' });

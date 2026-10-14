@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import type { LinkState } from '../../src/link/client.js';
 import {
   createStatusIndicator,
+  installStatusIndicator,
   indicatorState,
   type IndicatorElement,
   type IndicatorRoot,
@@ -36,7 +37,9 @@ class El implements IndicatorElement {
     this.attrs[n] = v;
   }
 }
-function rig(opts: { isGM?: boolean; stored?: boolean; state?: LinkState } = {}) {
+function rig(
+  opts: { isGM?: boolean; stored?: boolean; state?: LinkState; exposeSecrets?: boolean } = {},
+) {
   let state: LinkState = opts.state ?? { kind: 'connecting' };
   let listener: (s: LinkState) => void = () => {};
   const warn = vi.fn();
@@ -53,6 +56,15 @@ function rig(opts: { isGM?: boolean; stored?: boolean; state?: LinkState } = {})
         return () => {};
       },
       hasStoredToken: () => opts.stored ?? true,
+      ...(opts.exposeSecrets
+        ? {
+            token: 'secret-token',
+            code: 'ABCD-EFGH',
+            gatewayUrl: 'wss://gw.example.com',
+            getToken: () => 'secret-token',
+            getGatewayUrl: () => 'wss://gw.example.com',
+          }
+        : {}),
     },
     isGM: () => opts.isGM ?? true,
     userId: () => 'u1',
@@ -114,7 +126,9 @@ it('a local-only player (no credential, never connected) sees nothing and no toa
 });
 
 it('never renders the token, the code or the gateway URL', () => {
-  const t = rig({ state: { kind: 'disconnected', reason: 'TOKEN_REJECTED' } });
+  const t = rig({ exposeSecrets: true, state: { kind: 'disconnected', reason: 'TOKEN_REJECTED' } });
+  t.set({ kind: 'connected', user: 'a', world: 'b' });
+  t.set({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
   const shown = JSON.stringify([t.el.textContent, t.el.attrs, t.el.className]);
   for (const secret of ['secret-token', 'ABCD-EFGH', 'wss://gw.example.com']) {
     expect(shown).not.toContain(secret);
@@ -124,4 +138,35 @@ it('never renders the token, the code or the gateway URL', () => {
 it('uses textContent only', () => {
   const src = readFileSync(resolve(__dirname, '../../src/link/status-indicator.ts'), 'utf8');
   expect(src).not.toMatch(/innerHTML|\{\{\{/);
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+it('installStatusIndicator registers one renderPlayers hook that renders into the matching row', () => {
+  const on = vi.fn();
+  const rows: Record<string, { appendChild: ReturnType<typeof vi.fn> }> = {
+    u1: { appendChild: vi.fn() },
+    u2: { appendChild: vi.fn() },
+  };
+  vi.stubGlobal('Hooks', { on });
+  vi.stubGlobal('game', {
+    user: { id: 'u1', isGM: true },
+    i18n: { localize: (k: string) => `L:${k}` },
+  });
+  vi.stubGlobal('ui', { notifications: { warn: vi.fn() } });
+  vi.stubGlobal('document', { createElement: () => new El() });
+  const ind = installStatusIndicator({
+    state: { kind: 'connecting' },
+    onState: () => () => {},
+    hasStoredToken: () => true,
+  });
+  expect(on).toHaveBeenCalledTimes(1);
+  expect(on.mock.calls[0]![0]).toBe('renderPlayers');
+  const root = {
+    querySelector: (sel: string) => rows[/data-user-id="(\w+)"/.exec(sel)![1]!] ?? null,
+  };
+  on.mock.calls[0]![1]({}, root);
+  expect(rows.u1!.appendChild).toHaveBeenCalledTimes(1);
+  expect(rows.u2!.appendChild).not.toHaveBeenCalled();
+  ind.dispose();
 });

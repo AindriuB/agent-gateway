@@ -51,12 +51,12 @@ export interface SessionServerOptions {
    * The pairing code to show a user whose session is not connected, or nothing when pairing is
    * not on offer. Called only when a result needs it, so it must be cheap and return the live code.
    */
+  pairingHint?: () => { code: string; expiresInMin: number } | undefined;
   /**
    * What the store knows about a (world, user)'s pairing. Lets the not-connected texts stop asking
    * for a new invite when a valid pairing exists. Absent: the older wording is used verbatim.
    */
   pairingState?: (worldId: string, userId: string) => 'active' | 'revoked' | 'none';
-  pairingHint?: () => { code: string; expiresInMin: number } | undefined;
   /**
    * The gateway never shows a pairing code to an MCP client (a public gateway): a session that is
    * not connected is told to ask the gateway operator for one instead.
