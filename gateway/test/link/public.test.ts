@@ -113,19 +113,16 @@ describe('public-mode pairing limits', () => {
     expect(n).toBe(1);
   });
 
-  it('caps pre-hello sockets per client key', async () => {
-    h = await startServer({
-      publicUrl: PUBLIC,
-      trustProxy: true,
-      allowedOrigins: [ORIGIN, 'http://other.test:30000'],
-    });
-    for (let i = 0; i < 4; i++) await connect(h.port, from('203.0.113.9'));
-    await expect(connect(h.port, from('203.0.113.9'))).rejects.toThrow(/503/);
-    // Another origin too: the per-origin cap is a separate rule.
-    const other = await connect(h.port, {
-      ...from('203.0.113.10'),
-      origin: 'http://other.test:30000',
-    });
+  it('caps pre-hello sockets per client key, whatever the origin', async () => {
+    const origins = Array.from({ length: 6 }, (_, i) => `http://o${i}.test:30000`);
+    h = await startServer({ publicUrl: PUBLIC, trustProxy: true, allowedOrigins: origins });
+    // Four different origins, so the per-origin cap of 4 is never the rule that fires.
+    for (let i = 0; i < 4; i++)
+      await connect(h.port, { ...from('203.0.113.9'), origin: origins[i]! });
+    await expect(connect(h.port, { ...from('203.0.113.9'), origin: origins[4]! })).rejects.toThrow(
+      /503/,
+    );
+    const other = await connect(h.port, { ...from('203.0.113.10'), origin: origins[5]! });
     expect(other.ws.readyState).toBe(other.ws.OPEN);
   });
 });

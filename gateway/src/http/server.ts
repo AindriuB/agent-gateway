@@ -305,6 +305,11 @@ export class HttpServer {
     if (!isInitializeRequest(parsed.value)) {
       return rpcError(res, 400, 'a session starts with an initialize request');
     }
+    // Fail closed: a public session is bound to the (world, user) its credential grants. A
+    // principal with no selector would otherwise fall back to follow mode, so it is refused (403).
+    if (this.isPublic && !principal.selector) {
+      return rpcError(res, 403, 'this credential does not grant a Foundry user');
+    }
     if (this.sessions.size + this.pending >= this.o.maxSessions) {
       return rpcError(res, 503, 'too many sessions');
     }

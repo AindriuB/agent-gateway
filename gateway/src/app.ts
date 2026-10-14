@@ -569,6 +569,10 @@ export function createApp(config: Config, deps: AppDeps): App {
         writeStatus(
           'listening beyond loopback: TLS must be terminated by a reverse proxy in front of the gateway',
         );
+      if (publicUrl.startsWith('http:'))
+        writeStatus(
+          'warning: --public-url uses http: on a loopback host; this is for local testing only, use https: in production',
+        );
       if (isPublic && !trustProxy)
         writeStatus(
           '--trust-proxy is off: if a reverse proxy is in front, every client shares one rate-limit bucket',
@@ -587,8 +591,12 @@ export function createApp(config: Config, deps: AppDeps): App {
         registry,
         version: deps.version,
         startedAt,
-        createSession: ({ principal }) =>
-          track(
+        createSession: ({ principal }) => {
+          // Fail closed (the HttpServer already answers 403): never fall back to deps.selector or
+          // follow mode for a public session.
+          if (isPublic && !principal.selector)
+            throw new Error('a public session needs a granted (world, user)');
+          return track(
             createSessionServer({
               ...sessionOptions(ready.events, ready.queue),
               ...(principal.selector
@@ -601,7 +609,8 @@ export function createApp(config: Config, deps: AppDeps): App {
                   }
                 : {}),
             }),
-          ),
+          );
+        },
         maxRequestBytes: lim.maxRequestBytes ?? MAX_REQUEST_BYTES,
         rps: lim.rps ?? SELF_PROTECT_RPS,
         maxSessions: lim.maxSessions ?? MAX_HTTP_SESSIONS,

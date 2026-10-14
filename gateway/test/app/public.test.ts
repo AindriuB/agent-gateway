@@ -148,6 +148,14 @@ describe('a public gateway', () => {
     expect(t.lines.some((l) => l.includes('HTTP bearer token (shown once'))).toBe(false);
   });
 
+  it('warns once when the public URL is http: on loopback, and not for https:', async () => {
+    const warn = (l: string) => l.includes('uses http: on a loopback host');
+    const local = await boot({ publicUrl: 'http://127.0.0.1:8080' });
+    expect(local.lines.filter(warn)).toHaveLength(1);
+    const secure = await boot();
+    expect(secure.lines.filter(warn)).toHaveLength(0);
+  });
+
   it('warns once about the shared rate-limit bucket unless --trust-proxy is set', async () => {
     const warn = (l: string) => l.includes('--trust-proxy is off');
     const off = await boot();

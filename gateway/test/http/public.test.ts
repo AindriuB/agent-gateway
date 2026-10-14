@@ -224,7 +224,7 @@ describe('per-client limits', () => {
     const { port } = await setup({
       publicUrl: PUBLIC,
       trustProxy: true,
-      authenticate: () => ({ key: 'p' }),
+      authenticate: () => ({ key: 'p', selector: { worldId: 'w1', userId: 'u1' } }),
     });
     const init = (ip: string) =>
       raw(port, { host: 'gw.example.com', 'x-forwarded-for': ip }, '/mcp', initBody);
@@ -237,7 +237,7 @@ describe('per-client limits', () => {
     const { port } = await setup({
       publicUrl: PUBLIC,
       trustProxy: true,
-      authenticate: () => ({ key: 'p' }),
+      authenticate: () => ({ key: 'p', selector: { worldId: 'w1', userId: 'u1' } }),
       now: () => 5_000_000,
     });
     const poke = (ip: string) =>
@@ -317,5 +317,25 @@ describe('principal selector seam', () => {
       list,
     );
     expect(same.status).toBe(200);
+  });
+});
+
+describe('failed-auth limit and fail-closed sessions', () => {
+  it('a client key at the failed-auth limit gets 429 even with a valid credential', async () => {
+    const { port } = await setup({
+      authenticate: (req) => (req.headers['x-secret'] === 'good' ? { key: 'a' } : undefined),
+      now: () => 9_000_000,
+    });
+    const go = (secret: string) =>
+      raw(port, { host: '127.0.0.1', 'x-secret': secret }, '/mcp', initBody);
+    for (let i = 0; i < 10; i++) expect((await go('bad')).status).toBe(401);
+    expect((await go('good')).status).toBe(429);
+  });
+
+  it('refuses a public session whose principal grants no user', async () => {
+    const { port } = await setup({ publicUrl: PUBLIC, authenticate: () => ({ key: 'p' }) });
+    const r = await raw(port, { host: 'gw.example.com' }, '/mcp', initBody);
+    expect(r.status).toBe(403);
+    expect(r.headers['mcp-session-id']).toBeUndefined();
   });
 });
