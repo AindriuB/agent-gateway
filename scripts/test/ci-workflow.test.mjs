@@ -75,6 +75,10 @@ describe('image job', () => {
     assert.match(image, /^ {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)$/m);
   });
   it('checks the version before login or build', () => {
+    assert.doesNotMatch(wf, /continue-on-error/);
+    const step = image.match(/^ {6}- name: Check tag matches repo version\n((?: {8}.*\n)+)/m);
+    assert.ok(step, 'version-check step');
+    assert.doesNotMatch(step[1], /^ {8}if:/m);
     const check = image.indexOf('node scripts/bump-version.mjs --check "${GITHUB_REF_NAME#v}"');
     assert.ok(check >= 0);
     assert.ok(check < image.indexOf('docker/login-action@'));
@@ -142,7 +146,7 @@ describe('ci.yml hygiene', () => {
   it('sets timeouts and never cancels tag runs', () => {
     assert.ok(Number(test.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 30);
     assert.ok(Number(image.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 60);
-    assert.doesNotMatch(wf, /cancel-in-progress: true/);
+    assert.doesNotMatch(wf, /cancel-in-progress:/);
   });
   it('uses the Node major the image uses', () => {
     const docker = readFileSync(path.join(repo, 'gateway/Dockerfile'), 'utf8');
