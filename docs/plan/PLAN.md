@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 57 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 59 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -32,10 +32,12 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **A7c: 72 (done on branch `claude/task-72`, archived in `docs/plan/done/`; tester PASS, reviewer APPROVED after five rounds; PR pending).** A stepped-down gateway stays alive as a standby and takes over again, using a handover claim, so a separate `--http` gateway alongside Claude Desktop's no longer strands Desktop. Pending Andrew: the live e2e `takeover` scenario and the manual 71 world-switch and Desktop take-back checks. The guides can now describe the mixed setup.
 - **A7d: 73 (done on branch `claude/task-73`, archived in `docs/plan/done/`; live e2e on v14 passed 35/0/23 skipped, Andrew 2026-10-14).** Fixes the e2e ambiguity and takeover suites for the 0.1.0 gate (the suite was stale against 71; the product was correct). The 0.1.0 gate run sets `AGENT_GATEWAY_E2E_PF2E=1`. Follow-up chip: the pre-existing e2e-unit hygiene failure on `scripts/conformance.sh`.
 - **A8: 66 (done, archived in `docs/plan/done/`; 0.1.0 is a PRIVATE DRAFT, deliberately unpublished until MVP B is done, Andrew 2026-10-14).** First real run of the release script on `main` at 975670b: all gates passed (v13 e2e skipped, `--allow-missing-v13`), three artefacts built, draft created, npm dry run only, repo private; the clean-clone from-source check passed. Pending Andrew: the manual Foundry and Claude Desktop install checks, then a follow-up PR ticking the Desktop and Claude Code rows of `docs/compatibility.md`. Follow-up chips raised: bound the `e2e/pf2e` `beforeAll` approval wait, and a `--confirm-draft` flag for the release script.
-- **A9: 77 (done on branch `claude/task-77`, archived in `docs/plan/done/`; PR pending).** `.github/workflows/ci.yml` tests on PR, `main` and `v*` tags and pushes a multi-arch image to private `ghcr.io/aindriub/foundry-agent-gateway` on version tags. Pending Andrew: the rc-tag check (scratch commit with `npm run bump-version -- 0.1.0-rc.1`, tag `v0.1.0-rc.1`, push only the tag). Actions runs on this private repo; the first green CI run was 2026-10-14 (PR #128).
+- **A9: 77 (done on branch `claude/task-77`, archived in `docs/plan/done/`; PR pending).** `.github/workflows/ci.yml` tests on `v*` tags (and, since 81, on demand only) and pushes a multi-arch image to private `ghcr.io/aindriub/foundry-agent-gateway` on version tags. Pending Andrew: the rc-tag check (scratch commit with `npm run bump-version -- 0.1.0-rc.1`, tag `v0.1.0-rc.1`, push only the tag). Actions runs on this private repo; the first green CI run was 2026-10-14 (PR #128).
 - **A9b: 78 (done on branch `claude/task-78`, archived in `docs/plan/done/`; PR #130 pending).** Both Compose files pull `ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` by default and keep `build:` for `--build`; `bump-version` owns `GATEWAY_VERSION` in `.env.example` (`--check` counts 15 places). Pulls fail until v0.1.0 is published, so use `--build` until then.
 - **A10: 80 (done and merged, PR #129; archived in `docs/plan/done/`).** `npm run verify` now also runs `npm run test:scripts`, and CI's separate script-test step is gone. `scripts/release.mjs:77-78` still runs them again after verify; left for Andrew.
-- **Follow-up: CI flake.** `gateway/test/events/repository.test.ts:38` "retains exactly10000 oldest-first…" took 19s on ubuntu-latest against a 15s vitest timeout and failed the v0.1.0-rc.1 tag run (run 38587528849). A re-run of the failed job was triggered. If it recurs, raise the timeout or shrink the test.
+- **A11: 81 (done on branch `claude/task-81`, archived in `docs/plan/done/`; PR pending).** CI now runs only on `v*` tags and on manual "Run workflow"; PR and `main` runs are gone, and the image job also requires a push event, so a manual run never publishes. Retry a failed publish with "Re-run jobs" on the tag run.
+- **A12: 79 (done on branch `claude/task-79`, archived in `docs/plan/done/`; PR pending).** The step-down load flake was the test, not the relay: it counted the bare `holds link port`, which the standby warning also prints, and chose `primary` from a snapshot. It now counts the primary banner and waits on observable state; 20/20 under CPU load.
+- **Follow-up: CI flake.** `gateway/test/events/repository.test.ts:38` "retains exactly10000 oldest-first…" took 19s on ubuntu-latest against a 15s vitest timeout and failed the v0.1.0-rc.1 tag run (run 38587528849). Since 81 it can only affect tag runs and manual runs, but a failure there still blocks a publish. A re-run of the failed job was triggered. If it recurs, raise the timeout or shrink the test.
 
 ## Next
 
@@ -121,6 +123,8 @@ Task 19's original PR #41 evidence remains offline verification and v14 backend 
 - Task 01b's task file was never committed (only HISTORY records it). Future mid-wave tasks put their task file in their PR.
 
 ### Follow-ups from task 05
+- Task 79 fixed its own count in `stepdown.test.ts` (the primary banner only) and found that `takeover.test.ts:138,140`, `link-reconnect.test.ts:76` and the other waits in `stepdown.test.ts:89,107,121,149` count the bare string `holds link port`, which also appears in the standby warning. Most are vacuous rather than wrong, because later gates catch them. Check them for over-counting.
+- `scripts/test/ci-workflow.test.mjs:30`: `.match(...)[1]` has no `assert.ok`, so a non-matching regex throws a TypeError instead of failing clearly.
 - `gateway/test/mcp/server.test.ts:70` waits a fixed 1500 ms; wait for the id:2 response line instead, or it can flake.
 - The CLI tests need a prior build; `npm run verify` builds first, but a bare `npm test` on a clean tree will fail them.
 - The published npm package `foundry-agent-gateway` depends on the private workspace `@agent-gateway/protocol`. Bundle it at build time (release task 41) or publish it.

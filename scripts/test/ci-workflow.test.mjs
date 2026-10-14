@@ -25,13 +25,14 @@ const image = job('image');
 
 describe('ci.yml triggers', () => {
   const on = top('on');
-  it('has exactly pull_request, push branches and push tags', () => {
-    assert.deepEqual(on.match(/^ {2}[\w_]+:/gm), ['  pull_request:', '  push:']);
-    assert.match(on, /^ {2}pull_request:\n {4}branches: \[main\]$/m);
-    assert.match(on, /^ {2}push:\n {4}branches: \[main\]\n {4}tags: \['v\*'\]$/m);
+  it('has exactly push tags and a bare workflow_dispatch', () => {
+    assert.deepEqual(on.match(/^ {2}[\w_]+:/gm), ['  push:', '  workflow_dispatch:']);
+    assert.match(on, /^ {2}push:\n {4}tags: \['v\*'\]\n {2}workflow_dispatch:\n(?! {3})/m);
+    const push = on.match(/^ {2}push:\n((?: {4}.*\n)*)/m)[1];
+    assert.equal(push, "    tags: ['v*']\n");
   });
   it('has no forbidden triggers', () => {
-    for (const t of ['workflow_dispatch', 'pull_request_target', 'schedule', 'release']) {
+    for (const t of ['pull_request', 'pull_request_target', 'schedule', 'release', 'branches']) {
       assert.doesNotMatch(on, new RegExp(`^\\s*${t}:`, 'm'));
     }
   });
@@ -76,7 +77,10 @@ describe('test job', () => {
 describe('image job', () => {
   it('needs test and only runs on v tags', () => {
     assert.match(image, /^ {4}needs: test$/m);
-    assert.match(image, /^ {4}if: startsWith\(github\.ref, 'refs\/tags\/v'\)$/m);
+    assert.match(
+      image,
+      /^ {4}if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/v'\)$/m,
+    );
   });
   it('checks the version before login or build', () => {
     assert.doesNotMatch(wf, /continue-on-error/);
