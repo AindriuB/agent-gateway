@@ -80,3 +80,19 @@ Save GitHub Actions minutes. In Andrew's words: "we should verify locally, and o
 - package.json, scripts/release.mjs, and the double `test:scripts` run in a release (task 80, residual).
 - Branch protection, rulesets, required checks or any repo setting.
 - A path filter, a `workflow_dispatch` input such as a "publish" toggle, or any second workflow file.
+
+## Outcome
+
+Done on branch `claude/task-81` (HEAD 566bbfb before rebase onto `origin/main` 8acb840), 2026-10-14. `/review` was CLEAN. `/verify`: tester PASS (build, lint, 4396 fast, 2227 slow and 58 script tests, all 0 failed), reviewer APPROVE.
+
+Andrew asked for this to save Actions minutes: verify locally, and run the full test on GitHub only for releases.
+
+What landed:
+- The `on:` block of `.github/workflows/ci.yml` is now `push` with `tags: ['v*']` plus a bare `workflow_dispatch`. This replaces task 77's trigger set (PR to `main`, push to `main`, tags). Local `npm run verify` is the PR gate.
+- The `image` job's `if:` also requires `github.event_name == 'push'`, alongside the `v*` ref check. A manual "Run workflow" therefore runs only the `test` job, even with a tag selected, and can never push an image. This was decided on Andrew's behalf, in line with his "manual runs test only". A failed publish is retried with "Re-run jobs" on the original tag run.
+- `scripts/test/ci-workflow.test.mjs` asserts the exact trigger set and the image guard. Review ran 7 mutations plus 2 extra against it, and all failed the static test.
+- `main` has no branch protection, so removing the PR run creates no required-check deadlock.
+
+Residuals:
+- NOTE: `scripts/test/ci-workflow.test.mjs:30` does `.match(...)[1]` with no `assert.ok`. If the regex stops matching, it throws a TypeError instead of failing with a clear message.
+- The `repository.test.ts:38` flake can now only hit tag runs and manual runs, but a failure there still blocks a publish.

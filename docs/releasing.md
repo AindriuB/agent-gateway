@@ -1,8 +1,9 @@
 # Releasing
 
-A release is one local command. GitHub Actions runs only the tests and, on a version tag,
-publishes the server-mode image (see "Publishing the image"). Quench and remote OAuth
-conformance are not gates yet.
+A release is one local command. GitHub Actions runs only on `v*` tags (the tests, then the
+server-mode image; see "Publishing the image") and on demand from "Run workflow" (the tests
+only). It never runs on pull requests or on `main`, so local `npm run verify` is the PR gate.
+Quench and remote OAuth conformance are not gates yet.
 
 ```
 npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
@@ -47,7 +48,8 @@ before retrying.
 
 `.github/workflows/ci.yml` builds and pushes the image when a `v*` tag is pushed. It runs the
 tests first and checks that the tag matches the repo version, so bump the version on `main`
-(the release PR) before tagging. To publish by hand:
+(the release PR) before tagging. "Run workflow" on a branch or tag only runs the tests and
+never publishes; a failed publish is retried with "Re-run jobs" on the tag run. To publish by hand:
 
 ```
 git tag v<version> <commit on main>
