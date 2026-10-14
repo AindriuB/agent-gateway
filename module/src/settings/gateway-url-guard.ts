@@ -78,16 +78,21 @@ export function registerWorldGatewayUrlHooks(): void {
 }
 
 /**
- * Backstop after the write (for example a value set by a module that skipped the hooks). Only the
- * client that wrote the value acts, and only if it is a GM.
+ * Backstop after the write (for example a value set by a module that skipped the hooks). Exactly one
+ * client acts: the writer's own client if the writer is a GM, or, if the writer is not a GM, the
+ * designated active GM's client. Two GMs never both correct.
  */
 export async function onWorldGatewayUrlChange(
   value?: unknown,
   _options?: unknown,
   userId?: string,
 ): Promise<void> {
-  if (!game.user?.isGM) return;
-  if (userId !== undefined && userId !== game.user.id) return;
+  const self = game.user;
+  if (!self) return;
+  const own = userId === undefined || userId === self.id;
+  const writerIsGM = own ? self.isGM : !!game.users?.get(userId)?.isGM;
+  const acts = writerIsGM ? own && self.isGM : !!game.user?.isActiveGM;
+  if (!acts) return;
   const raw = typeof value === 'string' ? value.trim() : '';
   const { value: clean, warn } = cleanWorld(raw);
   if (!warn) return;

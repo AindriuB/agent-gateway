@@ -5,7 +5,7 @@ const CODE = 'ABCD-EFGH-JKMN';
 const ADDR = 'wss://gw.example.com/link';
 const NS = 'agent-gateway';
 
-async function setup(o: { world?: string; isGM?: boolean } = {}) {
+async function setup(o: { world?: string; isGM?: boolean; activeGM?: boolean } = {}) {
   vi.resetModules();
   const g = globalThis as any;
   const store: Record<string, string> = { gatewayUrl: '', defaultGatewayUrl: o.world ?? '' };
@@ -16,7 +16,11 @@ async function setup(o: { world?: string; isGM?: boolean } = {}) {
   const pre: Record<string, Array<(d: any, c: any, o: any, u: string) => void>> = {};
   g.Hooks = { on: (n: string, f: any) => (pre[n] ??= []).push(f) };
   g.game = {
-    user: { id: 'u1', isGM: o.isGM ?? true },
+    user: { id: 'u1', isGM: o.isGM ?? true, isActiveGM: o.activeGM ?? false },
+    users: {
+      get: (id: string) =>
+        id === 'u3' ? { isGM: true } : id === 'u2' ? { isGM: false } : undefined,
+    },
     i18n: { localize: (k: string) => `L:${k}`, format: (k: string) => k },
     settings: {
       register: (_ns: string, key: string, cfg: any) => {
@@ -194,6 +198,26 @@ describe('world defaultGatewayUrl guard', () => {
     await t.paste('defaultGatewayUrl', `${ADDR}#${CODE}`, 'u2');
     expect(t.setSpy).not.toHaveBeenCalled();
     expect(t.warn).not.toHaveBeenCalled();
+  });
+
+  it('onChange corrects a non-GM writer when this client is the active GM', async () => {
+    const t = await setup({ activeGM: true });
+    await t.paste('defaultGatewayUrl', `${ADDR}#${CODE}`, 'u2');
+    expect(t.setSpy).toHaveBeenCalledWith('defaultGatewayUrl', ADDR);
+    expect(t.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('onChange ignores a non-GM writer when this client is a GM but not the active GM', async () => {
+    const t = await setup({ activeGM: false });
+    await t.paste('defaultGatewayUrl', `${ADDR}#${CODE}`, 'u2');
+    expect(t.setSpy).not.toHaveBeenCalled();
+    expect(t.warn).not.toHaveBeenCalled();
+  });
+
+  it('onChange never lets the active GM double-correct another GM writer', async () => {
+    const t = await setup({ activeGM: true });
+    await t.paste('defaultGatewayUrl', `${ADDR}#${CODE}`, 'u3');
+    expect(t.setSpy).not.toHaveBeenCalled();
   });
 
   it('needs no corrective write once the hook has cleaned the value', async () => {
