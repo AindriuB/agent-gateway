@@ -43,7 +43,7 @@ Package the gateway for server mode next to a self-hosted Foundry. Andrew should
   - `AGENT_GATEWAY_ALLOW_ORIGIN=${FOUNDRY_ORIGIN}`;
   - `AGENT_GATEWAY_DB=/data/gateway.db`.
 
-  Volumes: `gateway-data:/data` (0700, owned by the image's non-root user), and `caddy-data` and `caddy-config` for certificates.
+  Volumes: `gateway-data:/data` (0700, owned by the image's non-root user), and `caddy-data` and `caddy-config` for certificates. `/data` also holds the headless agents' Chromium profiles under `/data/headless/profiles/<agent-id>/` once 37 lands, one dir per agent. No extra volume is needed, and backups of `/data` include them.
 - (d) **Missing settings.** If a setting the stack needs has no env key after 74, stop and report. Do not edit gateway/src/**.
 
 ## Acceptance

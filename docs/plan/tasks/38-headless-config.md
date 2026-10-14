@@ -38,7 +38,7 @@ Make headless agents configurable and safe. The operator manages several agents 
 
 ## Decisions
 Defaults. Follow them unless the PR shows a reason not to.
-- (a) **Storage.** Migration 011 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an unnamed extra agent that is not stored.
+- (a) **Storage.** Migration 011 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an extra agent that is not stored. Every agent, stored or not, uses 37's `profileDir(stateDir, worldId, userId)`, so moving the flag/env agent into SQLite with `headless add` reuses its profile with no file moves. 38 does not define profile paths of its own.
 - (b) **Explicit binding, and how it interacts with 71.**
   - Headless identities are removed from the follow pool. app.ts filters them out of `knownIdentities`, which is the whole pool when there is no user selector (binding.ts:232-236).
   - A follow-mode session therefore never binds or re-binds to a headless pairing. A GM tab plus a headless agent is not "ambiguous" for it: it follows the GM tab, and the 30 s re-bind grace never moves it onto the agent.
@@ -53,7 +53,8 @@ Defaults. Follow them unless the PR shows a reason not to.
 ## Acceptance
 - [ ] `foundry-agent-gateway headless add <name> --foundry-url <u> --world <id> --user <id> [--owner <id>]`, `headless list` and `headless remove <name>` manage rows in `headless_agents`. `list` prints no password. A test inspects the SQLite file after `add` with a password in env and finds no password.
 - [ ] `add` refuses a password flag, and refuses `--user` equal to an existing agent's user in the same world.
-- [ ] The primary starts one 37 runner per stored agent that has a password available, and logs one line naming any agent that has none.
+- [ ] The primary starts one 37 runner per stored agent that has a password available, each on its own `profileDir`, and logs one line naming any agent that has none. A test with the fake launcher starts two agents and asserts two different user-data dirs, both under `<state dir>/headless/profiles/`.
+- [ ] Profile cleanup on `headless remove <name>` keeps the profile. The command deletes the row, revokes that agent's active pairings (so the token in the old profile is useless), and prints the profile path, saying it can be deleted once the gateway has restarted. It never deletes files, because a running gateway's Chromium may still hold the dir. Re-adding the same (world, user) reuses the dir, and the runner pairs again with a provisioned code (test).
 - [ ] Follow mode (gateway/test/routing/headless-follow.test.ts):
   - with only a headless agent connected, a follow-mode session is unbound and gets the not-connected error;
   - with a GM tab and a headless agent connected, it binds to the GM tab and is not ambiguous;

@@ -4,7 +4,7 @@
 **Depends on:** 16, 42, 68, 74
 **Status:** MVP B wave 4, after the friend-test milestone; 38 follows it. Rewritten 2026-10-14 in the MVP B re-plan. Headless Chromium moved here from 42's base image.
 **Owns:**
-- gateway/src/headless/** (except gateway/src/headless/config/**, which is 38's)
+- gateway/src/headless/** (except gateway/src/headless/config/**, which is 38's; includes the new `profile.ts` path function)
 - gateway/test/headless/** (except gateway/test/headless/config/**)
 - gateway/src/link/pairing-codes.ts (provisioned codes only)
 - gateway/src/link/server.ts (the headless handshake rules only)
@@ -51,7 +51,12 @@ Defaults. Follow them unless the PR shows a reason not to.
   - Playwright types it, with the gateway URL, into the module's pairing prompt, the same UI a human uses.
   - The handshake accepts a provisioned code only when `hello.world.id` and `hello.user.id` equal its target. Otherwise the code is spent and refused.
 - (d) **The agent user is not for humans.** A human pairing code (not provisioned) whose `hello` claims the configured agent (world, user) is refused with `PAIRING_INVALID`, and the operator log has one line saying that user is the headless agent and pairs only through the runner. At startup, active pairings for the agent identity are listed in the log as a warning. If the runner's page is closed with `replaced`, the runner logs "agent user <name> was taken by another client; the runner is paused" and does not reload until the next world start or 5 min (named constant). It never fights for the slot.
-- (e) **Profile.** `launchPersistentContext` with the profile in `<state dir>/headless/profile` (0700). The token the module stores there survives restarts, so a restart reconnects with the token and mints no code. In Docker the state dir is the `/data` volume from 42.
+- (e) **Profile, one directory per agent.** Chromium cannot run two persistent contexts on one user-data dir, and a shared profile would mix Foundry login cookies and pairing tokens. So every agent gets its own dir from the start.
+  - `profileDir(stateDir, worldId, userId)` in `gateway/src/headless/profile.ts` returns `<state dir>/headless/profiles/<agent-id>/`.
+  - `<agent-id>` is `<slug>-<hash>`. `slug` is `<worldId>-<userId>` lowercased, with every character outside `[a-z0-9-]` replaced by `-`, runs of `-` collapsed, and the result cut to 48 characters. `hash` is the first 12 hex characters of `sha256(JSON.stringify([worldId, userId]))`. The hash is computed on the original, case-sensitive ids, so ids that differ only in case or punctuation still get distinct dirs. The id is stable and depends only on (world id, user id).
+  - The single flag/env-configured agent from decision (a) uses exactly this scheme. There is no unnamed `profile/` dir, so 38's stored agents reuse an existing profile without moving files.
+  - `headless/`, `headless/profiles/` and each agent dir are created 0700 inside the 0700 state dir. The runner refuses to start if any of them is a symlink or is not owned by the current user (`lstat`), and logs which one.
+  - The runner launches `launchPersistentContext` on that dir. The token the module stores there survives restarts, so a restart reconnects with the token and mints no code. In Docker the state dir is the `/data` volume from 42, so profiles live under `/data/headless/profiles/`.
 - (f) **Module flag.** The runner sets a session-storage flag (`agent-gateway.headless`) with an init script before Foundry loads. The module reads it once at load. `LINK_AGENT_HEADLESS` becomes a function used by bridge.ts (:49, :120) and toolset.ts (:86, :120), and runtime.ts sends `headless: true` in `hello` only when the flag is set.
 
 ## Acceptance
@@ -67,13 +72,20 @@ Pairing and identity:
 - [ ] A human code with a `hello` for the configured agent identity is refused with `PAIRING_INVALID`, and the log names the reason (test).
 - [ ] A FakeModule for the agent identity sending `headless: true` and one for another user sending `headless: true` are classified headless and not headless, respectively, and the second produces the mismatch log line (test).
 - [ ] A restart with the same profile dir reconnects with the stored token and mints no provisioned code (test with a fake browser whose storage persists).
+- [ ] `profileDir` (gateway/test/headless/profile.test.ts):
+  - two agents (w1,uA) and (w1,uB) get distinct dirs;
+  - so do ids differing only in case (`(w1,"AbC")` and `(w1,"abc")`);
+  - the same (world, user) always gets the same dir;
+  - every result is under `<state dir>/headless/profiles/` and matches `^[a-z0-9-]{1,48}-[0-9a-f]{12}$`, also for ids containing `/`, `..` or spaces;
+  - created dirs are mode 0700 (skipped on win32), and a symlinked `profiles/` makes the runner refuse to start.
+- [ ] The flag/env agent's runner launches on `profileDir(stateDir, world, user)`, never `<state dir>/headless/profile` (test with the fake launcher).
 
 Module:
 - [ ] With the session flag set, `ctx.agent.headless` is true in both bridge paths, the tool listing uses the same value, and `hello` carries `headless: true`. Without it, `hello` has no `headless` key (`module/test/link/headless-*.test.ts`).
 - [ ] With the flag set and `headlessAgentsEnabled` off, a call through the bridge is denied with `AGENT_GATEWAY.Policy.headlessAgentsDisabled` (the existing policy, now reached).
 
 Docker:
-- [ ] The image from 42 gains Chromium in a final stage (Debian `chromium`), the runner finds it as the system browser, and the profile lives under `/data`. The PR reports the image size before and after. Compose needs no new volume, because `/data` is already one.
+- [ ] The image from 42 gains Chromium in a final stage (Debian `chromium`), the runner finds it as the system browser, and profiles live under `/data/headless/profiles/<agent-id>/`. The PR reports the image size before and after. Compose needs no new volume, because `/data` is already one.
 
 Manual:
 - [ ] Against foundry.local v14 with a dedicated agent user, the runner joins `test-world` with no human copying a code, and `world_info` over a session bound with `--world` and `--user <agent id>` works. Log in the PR.
