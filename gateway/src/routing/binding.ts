@@ -6,6 +6,8 @@ export interface UserSelector {
   world?: string | undefined;
   /** Foundry user id or recorded user name. */
   user?: string | undefined;
+  /** The user is a Foundry user id from a credential's grant: never fall back to a name match. */
+  exactId?: boolean | undefined;
 }
 
 export interface BoundPair {
@@ -224,7 +226,7 @@ export class SessionBinding {
   }
 
   private matching(): Identity[] {
-    const { world, user } = this.selector;
+    const { world, user, exactId } = this.selector;
     // Every active pairing counts, connected or not, so binding never depends on who connects
     // first. Without a user selector only active pairings count, so a pairing revoked while its
     // connection lingers cannot be bound implicitly.
@@ -236,7 +238,7 @@ export class SessionBinding {
     if (user === undefined) return pool;
     // An exact id match wins over any name match.
     const byId = pool.filter((i) => i.userId === user);
-    if (byId.length > 0) return byId;
+    if (byId.length > 0 || exactId) return byId;
     return pool.filter((i) => i.userName !== '' && i.userName === user);
   }
 }
