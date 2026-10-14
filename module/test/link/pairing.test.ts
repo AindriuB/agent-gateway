@@ -169,10 +169,17 @@ it('a state change updates only the status element, never re-rendering the form'
   vi.doUnmock('../../src/link/runtime.js');
 });
 
-it('a credential written by the link survives a reload (string-only storage)', async () => {
+it('a credential written by the link survives a reload, in browser storage and never in settings', async () => {
   vi.resetModules();
   stub = installFoundry(14, { stringStorage: true });
   const g = globalThis as any;
+  const local = new Map<string, string>();
+  g.localStorage = {
+    getItem: (k: string) => local.get(k) ?? null,
+    setItem: (k: string, v: string) => void local.set(k, v),
+  };
+  g.game.world = { id: 'w1', title: 'W' };
+  g.game.user = { id: 'u1', name: 'U', role: 1, isGM: false };
   g.ui = { notifications: { error: vi.fn() } };
   g.game.settings.register('agent-gateway', 'gatewayUrl', {
     scope: 'client',
@@ -205,9 +212,73 @@ it('a credential written by the link survives a reload (string-only storage)', a
     }),
   });
   await new Promise((r) => setTimeout(r, 0));
-  expect(typeof g.game.settings.get('agent-gateway', 'pairingCredential')).toBe('string');
-  // Reload: fresh modules, same stored values.
+  expect([...local.values()].join()).toContain('tok');
+  expect(
+    stub.registeredSettings.has('agent-gateway.pairingCredential')
+      ? g.game.settings.get('agent-gateway', 'pairingCredential')
+      : '',
+  ).toBe('');
+  // Reload: fresh modules, same browser storage.
   vi.resetModules();
   const second = await import('../../src/link/runtime.js');
   expect(second.getLinkClient().hasStoredToken()).toBe(true);
+  delete g.localStorage;
+});
+
+it('the runtime keys credentials per Foundry user: a second user is never sent the first user token', async () => {
+  vi.resetModules();
+  stub = installFoundry(14, { stringStorage: true });
+  const g = globalThis as any;
+  const local = new Map<string, string>();
+  g.localStorage = {
+    getItem: (k: string) => local.get(k) ?? null,
+    setItem: (k: string, v: string) => void local.set(k, v),
+  };
+  g.game.world = { id: 'w1', title: 'W' };
+  g.game.user = { id: 'uA', name: 'A', role: 1, isGM: false };
+  g.ui = { notifications: { error: vi.fn() } };
+  g.game.settings.register('agent-gateway', 'gatewayUrl', {
+    scope: 'client',
+    type: String,
+    default: 'ws://gw',
+  });
+  const made: any[] = [];
+  g.WebSocket = class {
+    sent: string[] = [];
+    constructor() {
+      made.push(this);
+    }
+    send(d: string) {
+      this.sent.push(d);
+    }
+    close() {}
+  };
+  const a = await import('../../src/link/runtime.js');
+  a.getLinkClient().pair('code');
+  made[0].onopen();
+  made[0].onmessage({
+    data: JSON.stringify({
+      type: 'welcome',
+      gatewayVersion: '0.1.0',
+      protocolVersion: PROTOCOL_VERSION,
+      connectionId: 'c1',
+      agentId: 'a1',
+      pairingToken: 'tokA',
+    }),
+  });
+  await new Promise((r) => setTimeout(r, 0));
+  const bytes = [...local.values()].join();
+  expect(bytes).toContain('tokA');
+  made.length = 0;
+  // Same browser, a different Foundry user.
+  vi.resetModules();
+  g.game.user = { id: 'uB', name: 'B', role: 1, isGM: false };
+  const b = await import('../../src/link/runtime.js');
+  const clientB = b.getLinkClient();
+  clientB.start();
+  expect(made.flatMap((m) => m.sent).join()).not.toContain('pairingToken');
+  expect(clientB.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  expect(clientB.hasStoredToken()).toBe(false);
+  expect([...local.values()].join()).toBe(bytes);
+  delete g.localStorage;
 });

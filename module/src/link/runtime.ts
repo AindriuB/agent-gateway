@@ -4,7 +4,13 @@ import {
 } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveInputs } from '../policy/stage.js';
-import { LinkClient } from './client.js';
+import { LinkClient, type TokenOwner } from './client.js';
+import {
+  createCredentialStore,
+  memoryStorage,
+  type CredentialOwner,
+  type CredentialStore,
+} from './credential-store.js';
 import { effectiveFromSettings } from './gateway-url.js';
 import {
   installToolsetAnnouncer,
@@ -19,6 +25,26 @@ declare const ui: any;
 const NS = 'agent-gateway';
 
 let client: LinkClient | null = null;
+let store: CredentialStore | null = null;
+
+/** Browser-local only; if the browser blocks storage, tokens live in memory for this page. */
+function credentials(): CredentialStore {
+  if (!store) {
+    let storage;
+    try {
+      storage = globalThis.localStorage ?? memoryStorage();
+    } catch {
+      storage = memoryStorage();
+    }
+    store = createCredentialStore(storage);
+  }
+  return store;
+}
+
+const owner = (owner?: TokenOwner): Omit<CredentialOwner, 'url'> => ({
+  worldId: owner?.worldId ?? String(game.world?.id ?? ''),
+  userId: owner?.userId ?? String(game.user?.id ?? ''),
+});
 let announcer: ToolsetAnnouncer | null = null;
 
 /**
@@ -38,13 +64,42 @@ export function getLinkClient(): LinkClient {
   if (!client) clearLegacyToken();
   client ??= new LinkClient({
     getGatewayUrl: () => effectiveFromSettings((key) => game.settings.get(NS, key)),
-    getToken: () => game.settings.get(NS, 'pairingCredential'),
-    setToken: (c) =>
-      game.settings.set(
-        NS,
-        'pairingCredential',
-        c ? JSON.stringify({ url: c.url, token: c.token }) : '',
-      ),
+    // The gateway URL is part of the key, so the stored entry is looked up per effective URL.
+    getToken: () => {
+      const url = effectiveFromSettings((key) => game.settings.get(NS, key));
+      const token = credentials().get({ url, ...owner() });
+      return token ? { url, token } : null;
+    },
+    setToken: (c, o) => {
+      const url = c?.url ?? o?.url ?? effectiveFromSettings((key) => game.settings.get(NS, key));
+      if (c) return credentials().set({ url, ...owner(o) }, c.token);
+      credentials().remove({ url, ...owner(o) });
+      return true;
+    },
+    touchToken: (o) =>
+      credentials().touch({
+        url: o?.url ?? effectiveFromSettings((key) => game.settings.get(NS, key)),
+        ...owner(o),
+      }),
+    hasUserToken: () => {
+      const o = owner();
+      return credentials().hasUser(o.worldId, o.userId);
+    },
+    hasOtherTokens: () => credentials().size() > 0,
+    getLegacyToken: () => {
+      try {
+        return game.settings.get(NS, 'pairingCredential');
+      } catch {
+        return '';
+      }
+    },
+    clearLegacyToken: () => {
+      try {
+        return game.settings.set(NS, 'pairingCredential', '');
+      } catch {
+        return undefined;
+      }
+    },
     getIdentity: () => ({
       moduleVersion: String(game.modules?.get(NS)?.version ?? '0.0.0'),
       foundryVersion: String(game.version ?? game.data?.version ?? ''),
@@ -64,6 +119,7 @@ export function getLinkClient(): LinkClient {
     }),
     createSocket: (url) => new WebSocket(url) as any,
     notifyError: (m) => ui.notifications.error(m),
+    notifyWarn: (k) => ui.notifications.warn(game.i18n.localize(k)),
   });
   announcer ??= installToolsetAnnouncer(client, {
     isGM: () => Boolean(game.user?.isGM),

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 89 | Pairing credentials keyed by (gateway URL, world, user) in browser-local storage, capped at 16; user switch never sends or deletes another user's credential; rejection removes only the presented one; legacy migration; "Unpair this browser" button | `## 2026-10-14 — Per-user pairing credentials (task 89)` |
 | 2026-10-14 | 87 | Link connect/disconnect logged (safeText, 64 chars); `pairingStateFor` and three-way `gateway_status` wording; module clears a rejected token (`TOKEN_REJECTED`, no retry), `retryNow` on online/visibilitychange, Players-list indicator and toast, one-pairing notice | `## 2026-10-14 — Link resilience and diagnostics (task 87)` |
 | 2026-10-14 | 88 | `/mcp` requests with no credential get the discovery 401 without counting as failed auth, behind a 120 per 60 s per-client throttle; offered credentials keep the lockout; fixes Codex/ChatGPT sign-in 429s | `## 2026-10-14 — Discovery 401 is not a failed auth (task 88)` |
 | 2026-10-14 | 86 | `--invite` prints a one-paste `wss://host/link#CODE` string with a public URL; invite-string parser; world `defaultGatewayUrl` (client, world, localhost); server-mode pairing wording and address hint; Configure Settings guard; gateway status wording | `## 2026-10-14 — Server-mode onboarding in one paste (task 86)` |

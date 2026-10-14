@@ -170,3 +170,13 @@ it('installStatusIndicator registers one renderPlayers hook that renders into th
   expect(rows.u2!.appendChild).not.toHaveBeenCalled();
   ind.dispose();
 });
+
+it('for a non-GM whose own user has no stored credential (only another user does), nothing shows', () => {
+  const t = rig({
+    isGM: false,
+    stored: false,
+    state: { kind: 'disconnected', reason: 'PAIRING_REQUIRED' },
+  });
+  expect(t.el.hidden).toBe(true);
+  expect(t.warn).not.toHaveBeenCalled();
+});

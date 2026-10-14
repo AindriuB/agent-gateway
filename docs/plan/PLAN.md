@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 64 done in `docs/plan/done/` (excluding its README.md), 22 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 65 done in `docs/plan/done/` (excluding its README.md), 27 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -28,6 +28,17 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - `gateway/src/mcp/status-tool.ts:60` renders "as ." when the user is missing.
   - There is no index on `pairings(world_id, user_id)`, which `pairingStateFor` queries on every status call.
   - The Players-list indicator (hook `renderPlayers`) and the toast still need a live Foundry check.
+
+### 2a. Done on branch, PR pending: 89; next: 90
+- **89: per-user pairing credentials (branch `claude/task-89`, done; PR pending; archived in `docs/plan/done/`).** Credentials are keyed by (gateway URL, world, user) in browser-local storage, so a second user in the same browser no longer wipes the first user's pairing. **90 is next, after PR #142 (the plan for 90-94) merges.** Follow-ups:
+  - An entry for an old gateway cannot be removed from the UI; "Unpair this browser" only acts on the current gateway.
+  - Rename `hasOtherTokens` in `module/src/link/client.ts`; the name no longer says what it checks.
+  - `gateway/test/invite-cli.test.ts` timed out under full-suite load; treat it as a flake and raise the timeout or lighten the test if it recurs.
+  - `--invite` should print the address and code on separate labelled lines, and the docs should say to paste them into Foundry, not open them in a browser.
+  - Show the GM a notice when a sign-in code is requested for an offline user.
+  - Capture `helloOwner` before the `setToken` await in the code-welcome path (P3, unreachable in the real runtime).
+  - No test guards the session-token `helloOwner` binding.
+  - Accepted residual: a legacy credential owned by A is cleared if B logs in first and is rejected, so A re-pairs once.
 
 ### 3. Priority: invite redemption trusts client-asserted ids
 - **Invite redemption takes the world and user ids from the client's hello (`gateway/src/link/server.ts` around :488-494), so a leaked invite code lets a player pair as the target user.** The gateway should verify identity through Foundry rather than the hello. Needs an architect review before a task is written. The same review should settle two open questions: delegated invites (someone other than the operator minting them) and an operator web console.
@@ -231,3 +242,10 @@ Task 19's original PR #41 evidence remains offline verification and v14 backend 
 - Lint e2e with `npx eslint e2e`; `scripts/` holds only .sh files, so `npx eslint e2e scripts` no longer applies.
 - v13 core/read/multi-user acceptance passed; optional v13 Hello Pack lifecycle remains unproven.
 
+
+### Follow-ups from task 89
+- The `input.value` assertion at `pairing-one-per-user.test.ts:132` and `:148` can never fail; make it assert something that can.
+- Clean up the dead third clause in the `start()` gate (`client.ts:357-361`), the `ownTokenForUrl` wrapper, and the `authSource` field comment at `:243`.
+- No test checks that the code-welcome `setToken` uses `helloOwner`.
+- `authSource` is set before the socket-origin check at `client.ts:546`. This is harmless while `setToken` is synchronous.
+- A failed re-pair store with an older persisted entry ends in TOKEN_REJECTED, not PAIRING_REQUIRED.

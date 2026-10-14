@@ -99,7 +99,7 @@ export function createPairingApp(): any {
       window: { title: 'AGENT_GATEWAY.Pairing.title', icon: 'fa-solid fa-link' },
       position: { width: 420 },
       form: { handler: PairingApp.onSubmit, closeOnSubmit: false },
-      actions: { copyIds: PairingApp.onCopyIds },
+      actions: { copyIds: PairingApp.onCopyIds, unpair: PairingApp.onUnpair },
     };
     static PARTS = { form: { template: `modules/${NS}/templates/pairing/pairing.hbs` } };
 
@@ -135,6 +135,8 @@ export function createPairingApp(): any {
         codeHint: i18n.localize(
           serverMode ? 'AGENT_GATEWAY.Pairing.Invite.hint' : 'AGENT_GATEWAY.Pairing.codeHint',
         ),
+        // Only the current user's own pairing counts; another user's token in this browser never shows.
+        paired: getLinkClient().hasCurrentGatewayToken?.() === true,
         onePairingNotice: i18n.localize('AGENT_GATEWAY.Pairing.OnePerUser.notice'),
         serverLine: serverMode ? i18n.localize('AGENT_GATEWAY.Pairing.Server.line') : '',
         urlWarning: res.clientInvalid ? i18n.localize('AGENT_GATEWAY.Pairing.Address.invalid') : '',
@@ -162,12 +164,20 @@ export function createPairingApp(): any {
       if (el) el.textContent = describeState(state, isServerModeUrl(res.url));
       const addr = this.element?.querySelector?.('[data-role="address"]');
       if (addr) addr.textContent = describeAddress(state, res);
+      // Unpair follows the link state too, by toggling `hidden` so the typed form values survive.
+      const unpair = this.element?.querySelector?.('[data-role="unpair"]');
+      if (unpair) unpair.hidden = getLinkClient().hasCurrentGatewayToken?.() !== true;
     }
 
     async _onClose(options: object): Promise<void> {
       this.unsubscribe?.();
       this.unsubscribe = null;
       await super._onClose?.(options);
+    }
+
+    static async onUnpair(): Promise<void> {
+      await getLinkClient().unpair();
+      PairingApp.current?.render?.();
     }
 
     static async onCopyIds(): Promise<void> {
