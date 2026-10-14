@@ -45,6 +45,8 @@ export interface CredentialStore {
   touch(owner: CredentialOwner): void;
   remove(owner: CredentialOwner): void;
   size(): number;
+  /** True if any entry, for any gateway, belongs to this world and user. */
+  hasUser(worldId: string, userId: string): boolean;
 }
 
 /** In-memory fallback when no browser storage is available. */
@@ -108,5 +110,14 @@ export function createCredentialStore(
       if (delete map[credentialKey(o)]) write(map);
     },
     size: () => Object.keys(read()).length,
+    hasUser: (worldId, userId) =>
+      Object.keys(read()).some((k) => {
+        try {
+          const p: unknown = JSON.parse(k);
+          return Array.isArray(p) && p[1] === worldId && p[2] === userId;
+        } catch {
+          return false;
+        }
+      }),
   };
 }

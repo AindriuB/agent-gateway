@@ -66,6 +66,8 @@ export interface LinkClientDeps {
   /** The old client-scoped credential, shared by every user of the browser. Read only for migration. */
   getLegacyToken?(): unknown;
   clearLegacyToken?(): Promise<unknown> | void;
+  /** True if the current user has an entry for any gateway. Falls back to `getToken` when absent. */
+  hasUserToken?(): boolean;
   /** True if this browser holds a token for some other user: a user with none then needs pairing. */
   hasOtherTokens?(): boolean;
   /** Everything in `hello` except `type`, `protocolVersion` and `auth`. */
@@ -325,9 +327,9 @@ export class LinkClient {
     return null;
   }
 
-  /** True if the current user has a token stored (for any gateway). */
+  /** True if the current user has a token stored for any gateway. */
   hasStoredToken(): boolean {
-    return this.readCredential() !== null;
+    return this.deps.hasUserToken ? this.deps.hasUserToken() : this.readCredential() !== null;
   }
 
   /**
@@ -526,6 +528,9 @@ export class LinkClient {
           const legacy = this.parseCredential(this.deps.getLegacyToken?.());
           if (legacy) await this.deps.setToken(legacy, this.helloOwner ?? undefined);
           await this.deps.clearLegacyToken?.();
+          if (this.socket !== origin) return;
+          // The credential now lives in the keyed entry, so a later revocation must clear that.
+          this.authSource = 'keyed';
         } else if (!msg.pairingToken && this.authSource === 'keyed') {
           this.deps.touchToken?.(this.helloOwner ?? undefined);
         }

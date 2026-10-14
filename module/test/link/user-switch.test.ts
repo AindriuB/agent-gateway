@@ -77,6 +77,7 @@ function clientFor(userId: string): LinkClient {
     },
     touchToken: (o) =>
       store.touch({ url: URL_, worldId: o?.worldId ?? 'w', userId: o?.userId ?? userId }),
+    hasUserToken: () => store.hasUser('w', userId),
     hasOtherTokens: () => store.size() > 0,
     getLegacyToken: () => legacy,
     clearLegacyToken: () => {
@@ -257,4 +258,35 @@ it('no token reaches the console or notifications through switch, rejection and 
   await flush();
   const all = [...logs, ...errors].join('\n');
   for (const t of ['SECRET-A', 'SECRET-B', 'legTok']) expect(all).not.toContain(t);
+});
+
+it('a revocation after a legacy migration removes the migrated keyed entry', async () => {
+  setLegacy();
+  const b = clientFor('B');
+  b.start();
+  sockets[0]!.onopen?.();
+  sockets[0]!.recv(welcome());
+  await flush();
+  expect(createCredentialStore(storage).get(owner('B'))).toBe('legTok');
+  sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await flush();
+  expect(createCredentialStore(storage).get(owner('B'))).toBeNull();
+  expect(b.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+});
+
+it('stop during the legacy migration writes does not report connected', async () => {
+  setLegacy();
+  const b = clientFor('B');
+  b.start();
+  sockets[0]!.onopen?.();
+  sockets[0]!.recv(welcome());
+  b.stop();
+  await flush();
+  expect(b.state.kind).not.toBe('connected');
+});
+
+it('hasStoredToken is true for the user entry under any gateway, and false for another user', () => {
+  createCredentialStore(storage).set({ url: 'ws://other', worldId: 'w', userId: 'A' }, 'tokA');
+  expect(clientFor('A').hasStoredToken()).toBe(true);
+  expect(clientFor('B').hasStoredToken()).toBe(false);
 });

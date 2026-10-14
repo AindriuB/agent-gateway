@@ -80,6 +80,10 @@ export function getLinkClient(): LinkClient {
         url: effectiveFromSettings((key) => game.settings.get(NS, key)),
         ...owner(o),
       }),
+    hasUserToken: () => {
+      const o = owner();
+      return credentials().hasUser(o.worldId, o.userId);
+    },
     hasOtherTokens: () => credentials().size() > 0,
     getLegacyToken: () => {
       try {
