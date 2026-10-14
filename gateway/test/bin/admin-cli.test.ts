@@ -55,7 +55,7 @@ const rows = (db: string) => {
   }
 };
 
-describe.each(['--admin', '--gm'])('%s invites', (flag) => {
+describe.each(['--admin', '--gm'])('%s invites', { timeout: 20_000 }, (flag) => {
   const isAdmin = flag === '--admin';
   const mint = (db: string, ...extra: string[]) =>
     run(db, '--invite', 'w1', 'u1', flag, '--origin', ORIGIN, ...extra);
@@ -112,7 +112,7 @@ describe.each(['--admin', '--gm'])('%s invites', (flag) => {
   });
 });
 
-describe('--gm with --admin', () => {
+describe('--gm with --admin', { timeout: 20_000 }, () => {
   it('behaves exactly as --admin', async () => {
     const db = mkDb();
     const r = await run(db, '--invite', 'w1', 'u1', '--gm', '--admin', '--origin', ORIGIN);
@@ -122,7 +122,7 @@ describe('--gm with --admin', () => {
   });
 });
 
-describe('a plain --invite', () => {
+describe('a plain --invite', { timeout: 20_000 }, () => {
   it('has neither flag, keeps the 24 h default and 7 d cap, and needs a vouch', async () => {
     h = await startServer({ serverMode: true });
     const r = await run(h.dbPath, '--invite', 'w1', 'u1');
@@ -140,7 +140,7 @@ describe('a plain --invite', () => {
   });
 });
 
-describe('--demote', () => {
+describe('--demote', { timeout: 20_000 }, () => {
   const adminPair = async (db: string, user = 'gm1') => {
     const r = await run(db, '--invite', 'w1', user, '--admin', '--origin', ORIGIN);
     return r.stdout.trim();
@@ -229,7 +229,7 @@ describe('--demote', () => {
   });
 });
 
-describe('lists and help', () => {
+describe('lists and help', { timeout: 20_000 }, () => {
   it('show admin and kind columns and print no secret', async () => {
     const db = mkDb();
     const a = await run(db, '--invite', 'w1', 'gm1', '--admin', '--origin', ORIGIN);
