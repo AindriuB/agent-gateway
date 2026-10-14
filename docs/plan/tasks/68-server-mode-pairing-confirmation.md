@@ -22,6 +22,7 @@
 - module/src/apps/pairing/** and templates/pairing/** (the "Copy my ids" line only)
 - module/test/apps/pairing-ids.test.ts (new)
 - lang/en.json (insertions under `AGENT_GATEWAY.Pairing.CopyIds.*` only)
+- gateway/test/http/app.test.ts, gateway/test/store/retire-legacy-pairings.test.ts and gateway/test/store/store.test.ts (migration-count and slice-index assertions forced by migration 011 only; standing rule, Andrew 2026-10-14)
 
 ## Goal
 In server mode (one gateway, many players on the internet), only the operator decides who may pair as whom. The operator runs `--invite <world> <user>`, which prints a single-use code bound to exactly that Foundry world and user, and gives it to that person. The link accepts a code in server mode only if it is a live invite whose target matches the `hello` exactly. Re-pairing needs a new invite, which revokes the old pairing. Revocation is an operator command that closes a live connection. Local mode is unchanged.

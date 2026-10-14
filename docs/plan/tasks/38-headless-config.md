@@ -21,6 +21,7 @@
 - module/src/link/client.ts (keep the two `welcome` fields only)
 - module/src/link/bridge.ts (owner and headless from `welcome` only)
 - module/test/link/headless-owner.test.ts (new)
+- gateway/test/http/app.test.ts, gateway/test/store/retire-legacy-pairings.test.ts and gateway/test/store/store.test.ts (migration-count and slice-index assertions forced by migration 012 only; standing rule, Andrew 2026-10-14)
 
 ## Goal
 Make headless agents configurable and safe. The operator manages several agents with CLI subcommands, stored in SQLite, with passwords only in the 0600 config file or env. A headless identity is reached only by an explicit binding, never by follow mode. For connections the gateway classifies as headless from its own config, `welcome` names the configured owner so that ask-owner approvals reach that human.
