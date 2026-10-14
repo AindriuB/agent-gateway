@@ -166,3 +166,7 @@ Additional acceptance:
 - [ ] A test asserts that the CSP on every consent response equals `default-src 'none'; style-src 'self'; form-action 'self'[ <redirect origin>]; frame-ancestors 'none'; base-uri 'none'` exactly. Only the existing per-request form-action origin may vary.
 - [ ] No new font or image file anywhere in the diff, and no path under `~/workspace/branding` in source or build config (`rg -n branding gateway/` is empty outside comments).
 - [ ] Manual: screenshots of the light and dark consent page are in the PR, alongside the Inspector check.
+
+## Review round 5 — findings (attempt 2)
+
+- [STYLE] gateway/src/oauth/consent/index.ts:6 — `CONSENT_STYLE_PATH` is imported but never used; line 15 re-exports it from `./style.js`. eslint `@typescript-eslint/no-unused-vars` fails, so `npm run verify` fails. route: implementer. Fix: drop it from the line 6 import and keep `CONSENT_CSS`.
