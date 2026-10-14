@@ -92,3 +92,83 @@ Deliver a private Claude Code plugin that connects to the existing hosted Foundr
 - Public plugin directory or official marketplace submission, and making the repository public (it stays private for 0.1.0).
 - Verifying claude.ai or Desktop chat plugin loading. Document it as unverified unless Andrew chooses to try it during live acceptance.
 - If a supported plugin layout needs a gateway change or a file outside Owns, stop and report the concrete requirement instead of widening scope.
+
+
+## Amendment 1 — Andrew, 2026-10-14
+
+**Base first.** claude/task-85 (c5be5a3) is behind main. Task 83's `--base-url` pattern is only on main (origin/main scripts/pack-module.mjs:10-41). Before you start, merge `origin/main` into the branch; do not rebase. Line numbers below are from c5be5a3 unless they say `origin/main`.
+
+### Decisions
+
+1. **Version: plugin.json carries the repo version, and bump-version owns it.** This replaces the Decision "No `version` in plugin.json", along with its fallback and its "Do not edit the bump script". `claude plugin validate --strict` requires a version. `plugins/claude/foundry-gateway/.claude-plugin/plugin.json` keeps `"version"` at two-space indent. `scripts/bump-version.mjs` gets one more target, `['plugins/claude/foundry-gateway/.claude-plugin/plugin.json', pkgVersion, 'claude plugin.json']`, next to the targets at scripts/bump-version.mjs:38-61. A bump sets that version, and `--check` counts it as one more place, so the count goes from 15 to 16. As a result every release changes the plugin version, and Claude Code installs pick up the update, because Claude Code re-copies a plugin only when its computed version changes. The repo marketplace entry (`.claude-plugin/marketplace.json`) and the hosted marketplace entry carry no `version`. The version is set in plugin.json only.
+
+   Fixture fallout, the same as task 78's Amendment 1 (docs/plan/done/78-compose-ghcr-image.md:64-69 on origin/main): scripts/release.mjs:62 runs bump-version inside the fixture roots of scripts/test/release.test.mjs:23-34 and scripts/test/docker-release.test.mjs:22-33. Those fixtures fail with "no version found in claude plugin.json" unless their `copied` lists also include `'plugins/claude/foundry-gateway/.claude-plugin/plugin.json'`. The same holds for the `files` list at scripts/test/bump-version.test.mjs:16-25.
+
+2. **Hosted marketplace: a new `scripts/build-claude-plugin.mjs`.** It follows pack-module's `--base-url` handling (origin/main scripts/pack-module.mjs:10-41) and its `zip` invocation and error style (origin/main :66-75). Do not copy pack-module's dotfile exclude (`'.*'`, `'*/.*'`), because it would drop `.claude-plugin/` and `.mcp.json`.
+   - Usage: `node scripts/build-claude-plugin.mjs --base-url <https-url> [--root <dir>]`. `--root` defaults to the repo root, as in pack-module. Output goes to `<root>/dist/release/claude/`.
+   - `--base-url` is required. It must be https and have no credentials, no query and no fragment. Trailing slashes are stripped. Validation runs before any read of the plugin tree and before any write. On failure the script exits 1 and leaves no output.
+   - It writes `dist/release/claude/plugins/foundry-gateway-<version>.zip`, where `<version>` is the plugin.json `version`. The zip holds a single top-level `foundry-gateway/` directory. Both the Claude Code archive source and claude.ai "Upload plugin" accept that layout. The zip contains exactly the plugin's real files (`.claude-plugin/plugin.json`, `.mcp.json`, `skills/foundry-gateway/SKILL.md`), plus directory entries if `zip` adds them. It contains no `.DS_Store`, `__MACOSX/`, `Thumbs.db`, editor backup or other stray file, even when one exists in the source tree. Build the zip from a staging copy or an explicit file list, not from a blanket recursive add.
+   - It writes `dist/release/claude/marketplace.json` with `"name": "aindriub-dl"`. That name matches the marketplace already hosted, and it differs from the repo marketplace `agent-gateway`, so the two cannot collide. The file has `owner.name` `Andrew Bannister` and exactly one plugin entry: `name` `foundry-gateway`, the plugin.json `description`, and `source: {"source": "archive", "url": "<base>/plugins/foundry-gateway-<version>.zip", "sha256": "<lowercase hex of the zip>"}`. The entry has no `version`.
+   - The source must be an absolute archive URL. Relative sources fail in a marketplace served from a URL.
+   - The script refuses (exit 1) to write a marketplace.json over 5 MiB or a zip over 256 MiB, which are the documented limits.
+   - It never modifies anything under `plugins/claude/`, `.claude-plugin/` or any other tracked path. It writes only under `dist/release/claude/`, which is ignored through `dist/` (.gitignore:2).
+   - Its stdout is the two output paths and the sha256. It prints no other content.
+
+   Documented facts (sources: https://code.claude.com/docs/en/plugins/marketplace-reference and https://code.claude.com/docs/en/plugins/host-marketplace):
+   - a relative plugin `source` fails in a marketplace added by URL;
+   - the `archive` source is a zip with an optional `sha256`, and Claude Code refuses an archive whose hash does not match;
+   - users install with `/plugin marketplace add https://…/marketplace.json`;
+   - Claude Code re-copies a plugin only when its computed version changes;
+   - limits: marketplace.json at most 5 MiB, the plugin zip at most 256 MiB.
+
+   Andrew's decision: tests go in a new `scripts/test/build-claude-plugin.test.mjs`. claude-plugin.test.mjs stays the static-contract test.
+
+### Owns additions
+- scripts/build-claude-plugin.mjs (new)
+- scripts/test/build-claude-plugin.test.mjs (new)
+- scripts/bump-version.mjs (one target line, plus the comment if needed)
+- scripts/test/bump-version.test.mjs (the `files` fixture list at :16-25 and assertions that name the new place)
+- scripts/test/release.test.mjs (only the `copied` list at :23-34; insertions only)
+- scripts/test/docker-release.test.mjs (only the `copied` list at :22-33; insertions only)
+
+The release and docker-release entries are there because of the bump-version change. They are not extra scope.
+
+### Acceptance changes
+- The plugin.json Acceptance line now reads "has a `version` equal to the root package.json `version`". The rest of that line stands: no `mcpServers` inline block, no `userConfig`, and every referenced path exists.
+- The line "No change to package.json, CI workflows or release scripts" now reads "No change to package.json, CI workflows, scripts/release.mjs or scripts/pack-module.mjs." scripts/bump-version.mjs changes only as described in Decision 1.
+- The Out of scope bullet about "version-bump automation (41)" now excludes everything except the single bump-version target and the fixture lines named above.
+
+### Acceptance additions
+- [ ] `node scripts/bump-version.mjs --check` prints `all 16 places agree on <version>`. In a fixture root, `bump-version 9.8.7` sets `"version": "9.8.7"` in the Claude plugin.json and changes no other key or formatting in that file. A fixture whose plugin.json version disagrees makes `--check` exit 1 and name `claude plugin.json`. scripts/test/bump-version.test.mjs asserts all three.
+- [ ] `npm run test:scripts` passes, release.test.mjs and docker-release.test.mjs included. The diffs to those two files are single inserted lines in their `copied` lists.
+- [ ] Neither `.claude-plugin/marketplace.json` nor the hosted marketplace entry has a `version` key. A test asserts this for both.
+- [ ] `node scripts/build-claude-plugin.mjs` exits 1 with a usage message, and writes nothing, when `--base-url` is missing or has no value. It also exits 1 and writes nothing for each of `http://x.test`, `https://u:p@x.test`, `https://x.test/?a=1`, `https://x.test/#f` and `not a url`. A test asserts that `dist/release/claude` does not exist afterwards.
+- [ ] `--base-url https://dl.example.test/claude//` produces a source `url` of exactly `https://dl.example.test/claude/plugins/foundry-gateway-<version>.zip`.
+- [ ] The zip listing (`unzip -Z1`, or a JS reader) has every entry under `foundry-gateway/`. Its file entries are exactly `foundry-gateway/.claude-plugin/plugin.json`, `foundry-gateway/.mcp.json` and `foundry-gateway/skills/foundry-gateway/SKILL.md`. The test runs the script with `--root` on a temp copy that has a planted `.DS_Store` in the plugin directory and in `skills/`, and asserts neither appears in the zip. Extracted file bytes equal the source bytes.
+- [ ] The marketplace.json `sha256` equals the sha256 of the written zip, computed independently in the test with `node:crypto`. It is 64 lowercase hex characters.
+- [ ] The marketplace.json parses, has `name` `aindriub-dl` and `owner.name`, and has exactly one plugin whose `name` equals plugin.json `name`. That plugin's `source.source` is `archive` and its `source.url` starts with `https://`.
+- [ ] Repo untouched: the test records the sha256 of every file under `plugins/claude/` and `.claude-plugin/` before running the script with `--root <repo>`, and checks they are byte-identical after. Alternatively, it asserts the script never writes outside `<root>/dist/release/claude/` by running it against a temp root and comparing that root's file list before and after. Either way, `git status --porcelain` in the worktree shows nothing new after `npm run test:scripts`.
+- [ ] When `claude` is on PATH, the test runs `claude plugin validate --strict` (timeout 60 s) on the extracted `foundry-gateway/` directory and on the generated marketplace, and asserts exit 0. For the marketplace, pass the marketplace.json path if the CLI accepts it. Otherwise place it at `<tmp>/.claude-plugin/marketplace.json` and validate `<tmp>`, and record which form worked in the PR. Without `claude` the case is skipped with `t.skip('claude CLI not found')`. If `--strict` rejects or tries to fetch the archive URL offline, stop and report rather than loosening the test.
+- [ ] The tests make no network calls and no changes to Claude Code configuration.
+- [ ] Manual (Andrew): after the built files are uploaded to `https://dl.aindriub.app/claude/`, `/plugin marketplace add https://dl.aindriub.app/claude/marketplace.json` succeeds and `/plugin install foundry-gateway@aindriub-dl` installs the plugin. `/mcp` then lists `agent-gateway`. The PR records the outcome, redacted, separately from the automated results.
+
+### Review round 1 findings
+- [P3] scripts/test/claude-plugin.test.mjs:22 — the `claude --version` probe in `spawnSync` has no timeout, but the validate calls do (line 87). route: implementer. Add a timeout, as Acceptance says ("each with a timeout"). Input: a `claude` on PATH that stalls on start makes `npm run test:scripts` hang at module load.
+- [NOTE, cheap] The tests don't assert the plugin.json Acceptance rules "no `mcpServers` inline block" and "no `userConfig`"; adding `"mcpServers": {}` leaves all 8 tests passing. Add the assertions.
+
+Checkable form:
+- [ ] Every `spawnSync('claude', …)` in scripts/test/claude-plugin.test.mjs and scripts/test/build-claude-plugin.test.mjs passes a `timeout`, the `--version` probe included.
+- [ ] claude-plugin.test.mjs asserts that plugin.json has no `mcpServers` key and no `userConfig` key. Adding `"mcpServers": {}` to plugin.json makes a test fail.
+
+### Scribe items (record time)
+- docs/claude-plugin.md covers both install routes.
+  - The repo marketplace: `/plugin marketplace add AindriuB/agent-gateway`, then `/plugin install foundry-gateway@agent-gateway`, which needs git access to the private repo.
+  - The hosted URL: `/plugin marketplace add https://dl.aindriub.app/claude/marketplace.json`, then `/plugin install foundry-gateway@aindriub-dl`.
+  - How to build: `node scripts/build-claude-plugin.mjs --base-url https://dl.aindriub.app/claude`.
+  - How to upload: both `marketplace.json` and `plugins/foundry-gateway-<version>.zip`, keeping that relative layout, with the zip uploaded before the marketplace.json that points at it.
+  - That claude.ai "Upload plugin" accepts the same zip.
+  - That updates arrive only when the version changes, which every release now does.
+- The hosted files currently on dl.aindriub.app were built by hand by the orchestrator from c5be5a3, not by build-claude-plugin.mjs, with zip sha256 `07ceb540…`. Record that, and that the next upload should come from the script.
+- docs/releasing.md:15-17 lists the places bump-version sets. Add the Claude plugin.json to that list.
+
+- Orchestrator note (2026-10-14): `claude plugin validate --strict <dir>` on a temp `<dir>/.claude-plugin/marketplace.json` whose entry uses an `archive` source with `sha256` passed offline with Claude Code 2.1.299 (the hand-built hosted file). Use the temp-dir form.
