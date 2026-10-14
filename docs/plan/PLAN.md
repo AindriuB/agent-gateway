@@ -46,6 +46,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Sweep-timer scheduling is duplicated at `gateway/src/link/server.ts:767-789` and `:808-818`.
   - Migration `012-admin-pairings.ts` collides with task 38's 012; whichever lands second renumbers it (Andrew, Amendment 4).
   - Accepted residuals: a mismatched hello burns a reserved invite; a co-GM can falsely vouch.
+  - No test pins the caps interaction of the startVouch sweep (8 expired challenges, then a 9th hello must get a challenge). A tests-only round was blocked because the app's worktree-guard hook wrongly attributed this session to another project's worktree (`pf2e-module-setup-c82fb2`).
+  - Optional: move `sweepPending()` above the `adminLive` early return in startVouch.
+  - The app's worktree-guard hook misattributes sessions across concurrent projects; report it to the app.
 
 ### 3. Invite redemption identity (90 closes it for player targets)
 - **Player invites now need a GM vouch (90), so a leaked player code no longer pairs as the target.** Still open: `gm` and `admin` invites trust the code alone, and a co-GM can falsely vouch. Delegated invites (92) and an operator web console remain undecided beyond the 91-94 plan.
