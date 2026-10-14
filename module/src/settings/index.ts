@@ -2,6 +2,11 @@ import { registerOfflineEventSettings } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
+import {
+  onClientGatewayUrlChange,
+  onWorldGatewayUrlChange,
+  registerWorldGatewayUrlHooks,
+} from './gateway-url-guard.js';
 import { registerGrantsMenu } from '../apps/grants/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
@@ -12,11 +17,12 @@ const NS = 'agent-gateway';
 function registerFoundation(): void {
   game.settings.register(NS, 'gatewayUrl', {
     name: 'AGENT_GATEWAY.Settings.gatewayUrl.name',
-    hint: 'AGENT_GATEWAY.Settings.gatewayUrl.hint',
+    hint: 'AGENT_GATEWAY.Settings.gatewayUrlOverride.hint',
     scope: 'client',
     config: true,
     type: String,
-    default: 'ws://localhost:7420',
+    default: '',
+    onChange: onClientGatewayUrlChange,
   });
   game.settings.register(NS, 'pairingToken', {
     name: 'AGENT_GATEWAY.Settings.pairingToken.name',
@@ -49,6 +55,21 @@ function registerPairingCredential(): void {
   });
 }
 
+function registerDefaultGatewayUrl(): void {
+  // The address players inherit unless they set their own; only a GM can change it.
+  game.settings.register(NS, 'defaultGatewayUrl', {
+    name: 'AGENT_GATEWAY.Settings.defaultGatewayUrl.name',
+    hint: 'AGENT_GATEWAY.Settings.defaultGatewayUrl.hint',
+    scope: 'world',
+    config: true,
+    restricted: true,
+    type: String,
+    default: '',
+    onChange: onWorldGatewayUrlChange,
+  });
+  registerWorldGatewayUrlHooks();
+}
+
 /** Per-feature register functions. Later tasks append here (insertion-only). */
 export const settingRegistrars: Array<() => void> = [registerFoundation];
 
@@ -58,6 +79,7 @@ settingRegistrars.push(registerRateLimitSettings);
 settingRegistrars.push(registerPolicyMenu);
 settingRegistrars.push(registerOfflineEventSettings);
 settingRegistrars.push(registerGrantsMenu);
+settingRegistrars.push(registerDefaultGatewayUrl);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {

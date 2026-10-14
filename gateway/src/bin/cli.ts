@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createApp, defaultDbPath } from '../app.js';
-import { ConfigError, loadConfig } from '../config/index.js';
+import { ConfigError, loadConfig, normalizePublicUrl } from '../config/index.js';
 import { rotateToken } from '../http/token.js';
 import { canonicalOrigin } from '../link/origin.js';
 import { INVITE_TTL_MS, createInvite, parseTtl } from '../link/invites.js';
@@ -44,8 +44,10 @@ Options:
   --backup <path>     Write a consistent copy of the database to a new file (mode 0600) and
                       exit; safe while the gateway runs
   --invite <world id> <user id> [--ttl <30m|12h|7d>] [--origin <origin>]
-                      Server mode: print a single-use invite code for exactly that Foundry world
-                      and user, valid 24 h by default (at most 7 d), and exit. Give it to that
+                      Server mode: print a single-use invite for exactly that Foundry world
+                      and user, valid 24 h by default (at most 7 d), and exit. With --public-url
+                      or AGENT_GATEWAY_PUBLIC_URL it is one paste-ready string,
+                      wss://<host>/link#<CODE>; otherwise the bare code. Give it to that
                       person; redeeming it replaces any existing pairing for them
   --revoke-pairing <world id> <user id>
                       Revoke that user's pairing and OAuth grants and cancel their unused
@@ -252,6 +254,31 @@ function operatorCommandOf(
   };
 }
 
+/** The `ws(s)://<host>/link` address from `--public-url`, then AGENT_GATEWAY_PUBLIC_URL; none if unset. */
+function invitePublicLink(): string | undefined {
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: { 'public-url': { type: 'string' } },
+    strict: false,
+  });
+  const flag = values['public-url'];
+  const raw = typeof flag === 'string' ? flag : process.env.AGENT_GATEWAY_PUBLIC_URL;
+  if (raw === undefined || raw === '') return undefined;
+  try {
+    const origin = normalizePublicUrl(raw);
+    return `${origin.replace(/^http/, 'ws')}/link`;
+  } catch (err) {
+    if (!(err instanceof ConfigError)) throw err;
+    process.stderr.write(`${err.message}\n`);
+    return process.exit(2);
+  }
+}
+
+/** The one-paste invite string, or the bare code when there is no public address. */
+function formatInvite(code: string, link: string | undefined): string {
+  return link ? `${link}#${code}` : code;
+}
+
 const when = (ms: number | null): string => (ms === null ? '-' : new Date(ms).toISOString());
 
 /**
@@ -278,12 +305,18 @@ function runOperatorCommand(cmd: OperatorCommand, dbOption: string | undefined):
     const s = store;
     switch (cmd.kind) {
       case 'invite': {
+        // Validate the public URL first, so a bad one creates no invite.
+        const link = invitePublicLink();
         const made = s.transaction(() => createInvite(s, cmd, Date.now()));
         // The code goes to stdout alone; it is never logged or stored.
-        process.stdout.write(`${made.code}\n`);
+        process.stdout.write(`${formatInvite(made.code, link)}\n`);
         process.stderr.write(
           `Invite for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}${cmd.origin ? `, origin ${safeText(cmd.origin)}` : ''}, expires ${when(made.expiresAt)}. It is shown once and works once.\n`,
         );
+        if (link)
+          process.stderr.write(
+            'Players on an older module enter only the part after # as the pairing code.\n',
+          );
         break;
       }
       case 'revoke-pairing': {

@@ -15,7 +15,7 @@ export interface GatewayStatus {
 export const statusToolListing = {
   name: STATUS_TOOL,
   description:
-    'Reports whether this session is connected to Foundry. When it is not, says how to pair: the pairing code to enter in the Agent Gateway pairing prompt in the browser when this gateway offers one, otherwise ask the gateway operator for a code. Never goes to Foundry.',
+    'Reports whether this session is connected to Foundry. When it is not, says how to pair: the pairing code to enter in the Agent Gateway pairing prompt in the browser when this gateway offers one, otherwise ask the gateway operator for an invite. Never goes to Foundry.',
   inputSchema: { type: 'object' as const, properties: {}, additionalProperties: false },
   outputSchema: {
     type: 'object' as const,
@@ -33,7 +33,7 @@ export const statusToolListing = {
 };
 
 export const ASK_OPERATOR =
-  'Ask the gateway operator for a pairing code, then open your world in a browser and enter it in the Agent Gateway pairing prompt.';
+  'Ask the gateway operator for an invite, then open your world in a browser and paste it in the Agent Gateway pairing prompt.';
 
 /** `askOperator`: this gateway never shows a pairing code to an MCP client. */
 export function statusText(s: GatewayStatus, askOperator = false): string {

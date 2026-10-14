@@ -5,6 +5,7 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveInputs } from '../policy/stage.js';
 import { LinkClient } from './client.js';
+import { effectiveFromSettings } from './gateway-url.js';
 import {
   installToolsetAnnouncer,
   policyDenies,
@@ -36,7 +37,7 @@ function clearLegacyToken(): void {
 export function getLinkClient(): LinkClient {
   if (!client) clearLegacyToken();
   client ??= new LinkClient({
-    getGatewayUrl: () => String(game.settings.get(NS, 'gatewayUrl')),
+    getGatewayUrl: () => effectiveFromSettings((key) => game.settings.get(NS, key)),
     getToken: () => game.settings.get(NS, 'pairingCredential'),
     setToken: (c) =>
       game.settings.set(
