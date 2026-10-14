@@ -24,7 +24,8 @@ namespace). Volumes: `gateway-data` at `/data` (the database `gateway.db` with i
 The stack sets `AGENT_GATEWAY_PUBLIC_URL=https://<domain>`. That derives the allowed Host and
 Origin values, turns the static bearer token off, and makes `/status` show only the version and
 uptime. `AGENT_GATEWAY_TRUST_PROXY=1` makes the gateway key clients by the address Caddy
-forwards, so each client has its own rate limit. The module connects to `wss://<domain>/link`.
+forwards, so each client has its own rate limit. The flag applies whenever it is set, with or
+without a public URL, and the gateway reads `X-Forwarded-For` only from a loopback peer. The module connects to `wss://<domain>/link`.
 
 ## Connecting a remote client
 

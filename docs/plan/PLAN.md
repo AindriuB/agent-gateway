@@ -59,6 +59,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
    - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
    - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
+   - **Follow-up for 43, or a small task before the friend test:** a "bring your own Caddy" section in the server-mode docs plus a Compose override. A host-installed Caddy uses a gateway with `network_mode: host`. A containerised Caddy uses `network_mode: "container:<caddy>"`. A shared Docker network does not work, because the gateway trusts `X-Forwarded-For` only from a loopback peer. The gateway needs its own subdomain.
 
 ### Later (after MVP B)
 

@@ -244,6 +244,13 @@ Known residuals (as recorded above):
 - The "pairing code" wording in status-tool.ts:18, :36 and session.ts:283 stays.
 - `store.transaction` is synchronous, so a redeem can block the event loop for up to `busy_timeout` (5 s) while a CLI command holds the write lock.
 
+Rounds 3 and 4 (after the first record, 1c30d35; PR #125):
+- Round 3, from an external PR review (P2): in server mode with `--trust-proxy` and no `--public-url`, `trustProxy` was not forwarded to LinkServer, so all clients behind a loopback proxy shared one invite-failure bucket. Andrew approved fixing the same defect in the HTTP wiring inside 68, together with the "--trust-proxy is off" warning in server mode. Fixed in 92cde13, with tests through the real app wiring. The app.ts Owns entry is widened to those two edits only.
+- Orchestrator's miss: the first code review had flagged the isPublic-gated `trustProxy`, and the orchestrator dismissed it as low-impact. It was a real defect that an outside reviewer then found.
+- Round 4: a flaky revocation sweep test (the client saw the close before the server removed the registry entry). Made event-driven in f044461, plus the `MAX_FAILED_AUTH_PER_CLIENT` constant in the HTTP two-client test.
+- Re-reviews: CLEAN for both rounds. `/verify`: `npm run verify` exit 0 (4365 fast, 2227 slow); revocation.test.ts passed 10/10 standalone and 10/10 under parallel load. HEAD f044461.
+- Local-mode behaviour change: with `--trust-proxy` and no server mode, the HTTP failed-auth bucket now keys by `X-Forwarded-For` from a loopback peer, which matches the flag's help text.
+
 Reviewer notes, not fixed:
 - gateway/src/link/revocation.ts:56, the sweep's warn line, lacks `safeText`. The text is not untrusted.
 - `revokePairing` called inside an open `store.transaction` fires the listeners before the outer COMMIT. No caller does this today.
