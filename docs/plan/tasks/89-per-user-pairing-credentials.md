@@ -122,3 +122,29 @@ FINDINGS
   route: orchestrator — Owns line `module/src/link/client.ts (only the token-auth hello, the welcome handling and pairingInvalid, plus the deps interface)`.
 
 SCOPE: module/src/link/client.ts — changes outside the parts Owns names (`start`, `tokenFor`/`parseCredential`, `unpair`, `connect`); route: orchestrator, see the scope NOTE above. Every other path is inside Owns, and `gateway/` is untouched.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 7f335ca. The new P2 goes to the implementer, with the in-spec fix: the window's `paired` uses the current-gateway lookup.
+
+VERDICT: FIX
+
+All five routed round-1 items are fixed in 7f335ca, and the tests guard each one. Nothing from the original round was lost or only half-applied. However, the fix for the third P2 caused a new defect in the pairing window's Unpair action. That is the reason for FIX.
+
+FINDINGS
+- [P2] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-89/module/src/apps/pairing/index.ts:139 (cause: module/src/link/client.ts:331-333 together with runtime.ts:83-86) — The window's `paired` flag now uses `hasStoredToken()`, which since this round is true for an entry under any gateway. `unpair()` removes only the entry for the current gateway. So when the user's entry belongs to an older gateway address, the window shows "Unpair this browser", the click does nothing, and the token stays in localStorage.
+  route: implementer — the fix keeps the spec: base the window's `paired` on the current-gateway lookup (for example a public wrapper over `tokenFor(getGatewayUrl())`) and leave `hasStoredToken()` as the any-gateway check for the indicator and the submit path. This matches Acceptance "Unpair … removes only the current (gateway, world, user) entry" and "the pairing window reflect[s] only the current user's entry". The other fix, having Unpair remove every entry for the (world, user), would change that Acceptance line and would go to the orchestrator.
+  input: a player is paired with gateway X (entry [X, w, u]). The GM changes `defaultGatewayUrl` to Y, and the player opens the pairing window and clicks Unpair.  →  `unpair()` calls `setToken(null, owner)`. runtime.ts `setToken` resolves the URL to Y and removes [Y, w, u], which does not exist. [X, w, u] remains, `hasUserToken()` is still true, and the window re-renders with the same Unpair button. The user believes the browser is unpaired, but X's token is still stored. At ba4bb02 this did not happen, because the button was hidden in this case.
+
+FIXED
+- [P2] runtime-level per-user keying test — FIXED — module/test/link/pairing.test.ts:228-284. Proof: with `userId: 'shared'` in runtime.ts `owner()`, the new test fails (1 failed / 26 passed). With runtime `hasUserToken` changed to `size() > 0`, it also fails.
+- [P2] `authSource` stays `'legacy'` after migration — FIXED — module/src/link/client.ts:531-533. Test: user-switch.test.ts:263. Proof: removing `this.authSource = 'keyed'` makes that test fail.
+- [P2] `hasStoredToken()` only checked the current gateway — FIXED — client.ts:331-333, credential-store.ts:113-121 (`hasUser`), runtime.ts:83-86. Test: user-switch.test.ts:288. Proof: reverting `hasStoredToken` to `readCredential() !== null` makes it fail. (This fix is what causes the new P2 above.)
+- [P3] no origin check after the migration awaits — FIXED — client.ts:531. Test: user-switch.test.ts:277. Proof: removing the check makes the test fail.
+- [P3] wrong "(for any gateway)" doc comment — FIXED — client.ts:330. The comment now matches the behaviour.
+
+No DRIFT. 7f335ca changes only the five routed items: the new optional `hasUserToken` dep, the store's `hasUser`, the runtime binding, the migration-branch fix and the tests. No Acceptance assertion was edited or weakened, and pairing.test.ts:108 is untouched. 9c18207 changed only the task file, so all of ba4bb02's code is still in HEAD. The five touched test files pass at HEAD in a scratch copy (62 tests). I ran each mutation against user-switch.test.ts and pairing.test.ts.
+
+NOTE (setup, not a defect): the local `main` ref (5540b1e) is behind origin. `git diff main...HEAD` therefore also shows task 87's gateway and docs changes. `git diff --stat ba4bb02..HEAD -- gateway` is empty.
+
+SCOPE: clean. Every path in 9c18207..HEAD is within Owns as amended by Amendment 1.
