@@ -56,7 +56,7 @@ const footer = (l: FooterLinks): string => {
     ? `<p><a href="${escapeHtml(l.privacyUrl)}" ${rel}>Privacy</a></p>`
     : '';
   const source = l.sourceUrl
-    ? `<p><a href="${escapeHtml(l.sourceUrl)}" ${rel} aria-label="Source code on GitHub, by Ascend">${GITHUB_MARK}${ASCEND_MARK}<span>Source code</span></a></p>`
+    ? `<p><a href="${escapeHtml(l.sourceUrl)}" ${rel} aria-label="Source code on GitHub">${GITHUB_MARK}<span>Source code</span></a></p>`
     : '';
   return `<footer>${privacy}<p>This page sets one strictly necessary cookie, <code>${COOKIE_PREFIX}</code> followed by a request id. It is for sign-in only, is not used for tracking, and expires in 15 minutes.</p>${source}</footer>`;
 };
