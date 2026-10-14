@@ -70,6 +70,7 @@ describe('store', () => {
       createdAt: 42,
       revokedAt: null,
       origin: 'https://foundry.local',
+      admin: false,
     });
     expect(s.findPairingByHash('h')?.id).toBe('a1');
     expect(s.findPairingByHash('x')).toBeUndefined();
@@ -142,8 +143,8 @@ describe('store', () => {
     }
   });
 
-  it('has eleven migrations', () => {
-    expect(MIGRATIONS).toHaveLength(11);
+  it('has twelve migrations', () => {
+    expect(MIGRATIONS).toHaveLength(12);
   });
 
   it('migrates a version 6 database with one pairing: origin reads back null, and 008 revokes it', () => {
@@ -167,7 +168,7 @@ describe('store', () => {
     expect(s.listActivePairings()).toEqual([]);
     s.close();
     const check = new DatabaseSync(path);
-    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 });
     check.close();
   });
 

@@ -17,6 +17,8 @@ export interface PairingRow {
   revokedAt: number | null;
   /** Exact browser origin the pairing was made from; null for pairings made before binding. */
   origin: string | null;
+  /** Operator-set admin GM flag; only an admin invite creates it, only `demotePairing` clears it. */
+  admin: boolean;
 }
 
 export interface NewPairing {
@@ -26,6 +28,8 @@ export interface NewPairing {
   userId: string;
   userName?: string;
   origin: string;
+  /** Set at creation only (from an admin invite); never derived from the hello. */
+  admin?: boolean;
 }
 
 export type InviteResult = 'paired' | 'mismatch' | 'expired' | 'cancelled';
@@ -43,6 +47,12 @@ export interface InviteRow {
   cancelledAt: number | null;
   result: InviteResult | null;
   pairingId: string | null;
+  /** Operator invite that pairs an admin GM, with no vouch. */
+  admin: boolean;
+  /** Operator invite for a GM user, paired with no vouch (vouching cannot prove a GM). */
+  gm: boolean;
+  /** NULL means the operator; set by delegated invites, which can never carry `admin` or `gm`. */
+  createdBy: string | null;
 }
 
 export interface NewInvite {
@@ -52,10 +62,14 @@ export interface NewInvite {
   userId: string;
   origin: string | null;
   expiresAt: number;
+  admin?: boolean;
+  gm?: boolean;
+  createdBy?: string | null;
 }
 
 /** Invite rows. None of these opens a transaction; callers wrap them in `Store.transaction`. */
 export interface InviteRepository {
+  /** Throws, writing nothing, when `createdBy` is set and `admin` or `gm` is true. */
   create(i: NewInvite): InviteRow;
   findByHash(codeHash: string): InviteRow | undefined;
   /** Spend an invite: sets `used_at` and the outcome. */
@@ -93,6 +107,8 @@ export interface Store {
   pairingStateFor(worldId: string, userId: string): 'active' | 'revoked' | 'none';
   /** Every pairing row, revoked or not, oldest first. */
   listPairings(): PairingRow[];
+  /** Clear the admin flag. The only API that writes `pairings.admin` after creation. */
+  demotePairing(id: string): boolean;
   /** Revokes the row and its (world, user)'s OAuth grants in one transaction. */
   revokePairing(id: string): boolean;
   /**
@@ -126,6 +142,7 @@ interface Row {
   created_at: number;
   revoked_at: number | null;
   origin: string | null;
+  admin: number;
 }
 
 interface InviteDbRow {
@@ -140,6 +157,9 @@ interface InviteDbRow {
   cancelled_at: number | null;
   result: InviteResult | null;
   pairing_id: string | null;
+  admin: number;
+  gm: number;
+  created_by: string | null;
 }
 
 function toInvite(r: InviteDbRow): InviteRow {
@@ -155,6 +175,9 @@ function toInvite(r: InviteDbRow): InviteRow {
     cancelledAt: r.cancelled_at,
     result: r.result,
     pairingId: r.pairing_id,
+    admin: Number(r.admin) === 1,
+    gm: Number(r.gm) === 1,
+    createdBy: r.created_by,
   };
 }
 
@@ -168,6 +191,7 @@ function toRow(r: Row): PairingRow {
     createdAt: r.created_at,
     revokedAt: r.revoked_at,
     origin: r.origin,
+    admin: Number(r.admin) === 1,
   };
 }
 
@@ -195,7 +219,7 @@ export function openStore(
   }
   const revokedListeners = new Set<(pairing: PairingRow) => void>();
   const insert = db.prepare(
-    'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at, origin, admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const byHash = db.prepare('SELECT * FROM pairings WHERE token_hash = ?');
   const byId = db.prepare('SELECT * FROM pairings WHERE id = ?');
@@ -203,6 +227,7 @@ export function openStore(
   const revoke = db.prepare(
     'UPDATE pairings SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL',
   );
+  const demote = db.prepare('UPDATE pairings SET admin = 0 WHERE id = ? AND admin = 1');
   const getSetting = db.prepare('SELECT value FROM gateway_settings WHERE key = ?');
   const putSetting = db.prepare(
     'INSERT OR REPLACE INTO gateway_settings (key, value) VALUES (?, ?)',
@@ -221,7 +246,7 @@ export function openStore(
   const inviteByHash = db.prepare('SELECT * FROM invites WHERE code_hash = ?');
   const inviteById = db.prepare('SELECT * FROM invites WHERE id = ?');
   const inviteInsert = db.prepare(
-    'INSERT INTO invites (id, code_hash, world_id, user_id, origin, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO invites (id, code_hash, world_id, user_id, origin, created_at, expires_at, admin, gm, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const inviteSettle = db.prepare(
     'UPDATE invites SET used_at = ?, result = ?, pairing_id = ? WHERE id = ?',
@@ -273,7 +298,21 @@ export function openStore(
   };
   const invites: InviteRepository = {
     create(i) {
-      inviteInsert.run(i.id, i.codeHash, i.worldId, i.userId, i.origin, now(), i.expiresAt);
+      const createdBy = i.createdBy ?? null;
+      if (createdBy !== null && (i.admin === true || i.gm === true))
+        throw new Error('only the operator can mint an invite that skips the vouch');
+      inviteInsert.run(
+        i.id,
+        i.codeHash,
+        i.worldId,
+        i.userId,
+        i.origin,
+        now(),
+        i.expiresAt,
+        i.admin === true ? 1 : 0,
+        i.gm === true ? 1 : 0,
+        createdBy,
+      );
       return toInvite(inviteById.get(i.id) as unknown as InviteDbRow);
     },
     findByHash(codeHash) {
@@ -307,7 +346,16 @@ export function openStore(
       return !!r && r.revoked_at === null && r.world_id === worldId && r.user_id === userId;
     },
     createPairing(p) {
-      insert.run(p.id, p.tokenHash, p.worldId, p.userId, p.userName ?? '', now(), p.origin ?? null);
+      insert.run(
+        p.id,
+        p.tokenHash,
+        p.worldId,
+        p.userId,
+        p.userName ?? '',
+        now(),
+        p.origin ?? null,
+        p.admin === true ? 1 : 0,
+      );
       return toRow(byId.get(p.id) as unknown as Row);
     },
     findPairingByHash(tokenHash) {
@@ -327,6 +375,9 @@ export function openStore(
     },
     listPairings() {
       return (allPairings.all() as unknown as Row[]).map(toRow);
+    },
+    demotePairing(id) {
+      return Number(demote.run(id).changes) > 0;
     },
     revokePairing(id) {
       const row = transaction(() => {

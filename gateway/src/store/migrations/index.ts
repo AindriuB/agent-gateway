@@ -9,6 +9,7 @@ import m008 from './008-retire-legacy-pairings.js';
 import m009 from './009-gateway-settings.js';
 import m010 from './010-oauth.js';
 import m011 from './011-invites.js';
+import m012 from './012-admin-pairings.js';
 
 /**
  * Ordered, insertion-only registry. Each task adds one static import and one
@@ -26,4 +27,5 @@ export const MIGRATIONS: readonly string[] = [
   m009,
   m010,
   m011,
+  m012,
 ];
