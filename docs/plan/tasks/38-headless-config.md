@@ -11,7 +11,9 @@
 - gateway/src/store/store.ts (insertion only: one `headless` repository field and its construction)
 - gateway/src/bin/cli.ts (the `headless` subcommands only)
 - gateway/src/config/index.ts (reading the per-agent password keys only)
-- gateway/src/app.ts (several runners from the stored agents, and the follow-pool filter in `knownIdentities` only)
+- gateway/src/app.ts (several runners from the stored agents, their reconcile on 68's sweep, the store-backed `isAgentActive` for 37's provider, and the follow-pool filter in `knownIdentities` only)
+- gateway/src/link/revocation.ts (insertion only: an `onSweep` callback list that 68's sweep runs on each tick)
+- gateway/test/headless/config/remove-live.test.ts (new; under the owned headless/config tests)
 - gateway/src/link/server.ts (the `welcome` fields for headless connections only)
 - gateway/test/routing/headless-follow.test.ts (new)
 - gateway/test/link/headless-welcome.test.ts (new)
@@ -39,7 +41,7 @@ Make headless agents configurable and safe. The operator manages several agents 
 
 ## Decisions
 Defaults. Follow them unless the PR shows a reason not to.
-- (a) **Storage.** Migration 012 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an extra agent that is not stored. Every agent, stored or not, uses 37's `profileDir(stateDir, worldId, userId)`, so moving the flag/env agent into SQLite with `headless add` reuses its profile with no file moves. 38 does not define profile paths of its own.
+- (a) **Storage.** Migration 012 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an extra agent that is not stored. `headless remove` does not apply to it: it is disabled by restarting the gateway without its flags or env (37 decision c). Every agent, stored or not, uses 37's `profileDir(stateDir, worldId, userId)`, so moving the flag/env agent into SQLite with `headless add` reuses its profile with no file moves. 38 does not define profile paths of its own.
 - (b) **Explicit binding, and how it interacts with 71.**
   - Headless identities are removed from the follow pool. app.ts filters them out of `knownIdentities`, which is the whole pool when there is no user selector (binding.ts:232-236).
   - A follow-mode session therefore never binds or re-binds to a headless pairing. A GM tab plus a headless agent is not "ambiguous" for it: it follows the GM tab, and the 30 s re-bind grace never moves it onto the agent.
@@ -55,6 +57,14 @@ Defaults. Follow them unless the PR shows a reason not to.
 - [ ] `foundry-agent-gateway headless add <name> --foundry-url <u> --world <id> --user <id> [--owner <id>]`, `headless list` and `headless remove <name>` manage rows in `headless_agents`. `list` prints no password. A test inspects the SQLite file after `add` with a password in env and finds no password.
 - [ ] `add` refuses a password flag, and refuses `--user` equal to an existing agent's user in the same world.
 - [ ] The primary starts one 37 runner per stored agent that has a password available, each on its own `profileDir`, and logs one line naming any agent that has none. A test with the fake launcher starts two agents and asserts two different user-data dirs, both under `<state dir>/headless/profiles/`.
+- [ ] Removal reaches a running gateway. `headless remove` runs in a separate CLI process that writes SQLite. The running gateway reconciles stored agents on every tick of 68's revocation sweep (`REVOCATION_SWEEP_MS`, through the `onSweep` hook): no second timer.
+  - For an agent whose row is gone, it calls the runner's `stop()` (the browser context closes and the profile is kept), calls the provider's `dropAgent`, and relies on the same sweep to close the agent's live link connection, whose pairings `remove` revoked.
+  - The provider's `isAgentActive` (37 decision c) reads the `headless_agents` row from the store at mint time and again at redeem time. Redeem time is the authority, so an invite minted before removal cannot pair afterwards.
+  - Tests in gateway/test/headless/config/remove-live.test.ts, with a fake launcher and a short sweep:
+    - remove while an invite is outstanding: redeeming it is refused with `PAIRING_INVALID` and creates no row;
+    - after remove, the runner is stopped within one sweep interval plus 1 s, and no new invite is minted;
+    - pairing for that agent stays refused until it is re-added;
+    - `headless add` with the same (world, user) starts a fresh runner on the same `profileDir` within one sweep interval, and it pairs again through a newly minted invite.
 - [ ] Profile cleanup on `headless remove <name>` keeps the profile. The command deletes the row and revokes that agent's active pairings through 68's `store.revokePairingsFor(world, user)`, the same path as `--revoke-pairing`. The token in the old profile is then useless, a running gateway closes the agent's live connection within 68's sweep interval, and the agent's OAuth grants are revoked. The command then prints the profile path, saying it can be deleted once the gateway has restarted. It never deletes files, because a running gateway's Chromium may still hold the dir. Re-adding the same (world, user) reuses the dir, and the runner pairs again through a newly minted invite. Each agent re-pairs (a lost token, a new profile) only through a fresh minted invite redeemed by 68's path, which revokes the old pairing as a replacement (tests).
 - [ ] Follow mode (gateway/test/routing/headless-follow.test.ts):
   - with only a headless agent connected, a follow-mode session is unbound and gets the not-connected error;
