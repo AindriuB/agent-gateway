@@ -1,15 +1,19 @@
 <section class="agent-gateway-pairing">
   <p class="status" data-role="status">{{status}}</p>
+  <p class="hint" data-role="address">{{address}}</p>
+  {{#if worldWarning}}<p class="notification warning">{{worldWarning}}</p>{{/if}}
+  {{#if urlWarning}}<p class="notification warning">{{urlWarning}}</p>{{/if}}
   <div class="form-group">
     <label>{{localize "AGENT_GATEWAY.Pairing.gatewayUrl"}}</label>
     <input type="text" name="gatewayUrl" value="{{gatewayUrl}}" />
   </div>
   <div class="form-group">
-    <label>{{localize "AGENT_GATEWAY.Pairing.code"}}</label>
+    <label>{{codeLabel}}</label>
     <input type="text" name="code" autocomplete="off" />
-    <p class="hint">{{localize "AGENT_GATEWAY.Pairing.codeHint"}}</p>
+    <p class="hint">{{codeHint}}</p>
   </div>
   <div class="form-group agent-gateway-copy-ids">
+    {{#if serverMode}}<p class="hint" data-role="server">{{serverLine}}</p>{{/if}}
     <p data-role="ids">{{idsText}}</p>
     <button type="button" data-action="copyIds"><i class="fa-solid fa-copy"></i> {{localize "AGENT_GATEWAY.Pairing.CopyIds.button"}}</button>
     <p class="hint">{{localize "AGENT_GATEWAY.Pairing.CopyIds.hint"}}</p>

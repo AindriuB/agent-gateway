@@ -39,6 +39,16 @@
         "name": "Gateway URL",
         "hint": "WebSocket address of the Agent Gateway this client connects to."
       },
+      "gatewayUrlOverride": {
+        "hint": "WebSocket address of the Agent Gateway this client connects to. Leave empty to use the address your GM set for this world.",
+        "invalid": "That is not a usable gateway address, so it was cleared. Use a ws:// or wss:// address without a login, query or #."
+      },
+      "defaultGatewayUrl": {
+        "name": "Default gateway URL",
+        "hint": "The wss:// address players in this world connect to, for example wss://gw.example.com/link. A player's own Gateway URL setting overrides it. Leave empty for a gateway on this computer.",
+        "invalid": "That is not a valid default gateway address, so it was cleared. Use a wss:// address (ws:// only for this computer) without a login, query or #.",
+        "codeDropped": "An invite code was not kept in the world default; only the address was saved. Give each player their own invite."
+      },
       "pairingToken": {
         "name": "Pairing token",
         "hint": "Token issued when this client was paired with the gateway."
@@ -118,6 +128,25 @@
         "name": "Pair with gateway",
         "label": "Pair with gateway",
         "hint": "Connect this client to an Agent Gateway using the code it printed."
+      },
+      "Invite": {
+        "label": "Invite",
+        "hint": "Paste the invite your GM or the gateway operator sent you. It sets the address and connects in one step. A bare code also works.",
+        "invalid": "That is not a valid invite. Paste the whole invite exactly as you received it, or ask for a new one."
+      },
+      "Server": {
+        "line": "This is a shared gateway. Ask your GM or the gateway operator for an invite, and send them your ids with the button below.",
+        "pairingRequired": "This gateway has not issued a token to this client. Ask your GM or the gateway operator for an invite and paste it above.",
+        "pairingInvalid": "The invite was not accepted. It may have expired or been used. Ask for a new invite and try again.",
+        "codeRequired": "Paste the invite from your GM or the gateway operator."
+      },
+      "Address": {
+        "current": "Gateway: {address}",
+        "inherited": "Gateway: {address} (your GM's default for this world)",
+        "connecting": "Connecting to {address}...",
+        "unreachable": "Can't reach the gateway at {address}. Check the address and that the gateway is running.",
+        "invalid": "That gateway address is not valid. Use an address like wss://gw.example.com/link, with no # part and no user name.",
+        "worldInvalid": "The default gateway URL for this world is not a valid wss:// address, so it is ignored."
       },
       "gatewayUrl": "Gateway URL",
       "code": "Pairing code",

@@ -16,7 +16,18 @@ describe.each([13, 14] as Generation[])('settings on v%i', (gen) => {
     stub = installFoundry(gen);
     registerSettings();
     const s = stub.registeredSettings;
-    expect(s.get('agent-gateway.gatewayUrl')).toMatchObject({ scope: 'client', config: true });
+    expect(s.get('agent-gateway.gatewayUrl')).toMatchObject({
+      scope: 'client',
+      config: true,
+      default: '',
+    });
+    expect(s.get('agent-gateway.defaultGatewayUrl')).toMatchObject({
+      scope: 'world',
+      restricted: true,
+      config: true,
+      type: String,
+      default: '',
+    });
     expect(s.get('agent-gateway.pairingToken')).toMatchObject({ scope: 'client', config: false });
     expect(s.get('agent-gateway.includeOtherModuleData')).toMatchObject({
       scope: 'world',
