@@ -10,15 +10,18 @@
 - gateway/src/store/migrations/index.ts (insertion only: one import and one array entry)
 - gateway/src/store/store.ts (insertions only: the `verifiedRole` field on `PairingRow`, its parameter on `createPairing`, and the get and set methods for it)
 - gateway/test/store/verified-role.test.ts (new)
-- gateway/src/bin/cli.ts (the one-shot `--promote-observer` command only)
-- gateway/test/bin/promote-observer.test.ts (new)
+- gateway/src/bin/cli.ts (the one-shot `--promote-observer` and `--demote-observer` commands only)
+- gateway/test/bin/promote-observer.test.ts and gateway/test/bin/demote-observer.test.ts (new)
+- gateway/test/link/role-sync*.test.ts (new)
 - protocol/src/link/messages.ts (insertions only)
 - protocol/src/link/errors.ts (insertion only: `PAIRING_REJECTED`)
-- module/src/link/client.ts (pairing-confirmation messages only)
+- module/src/link/client.ts (pairing-confirmation and role-sync messages only)
+- module/src/link/role-sync.ts (new: the peer role reporter)
+- module/test/link/role-sync.test.ts (new)
 - module/src/apps/pairing/** (confirmation prompt only)
 - templates/pairing/** (confirmation prompt only)
 - module/test/link/pairing-confirm.test.ts (new)
-- module/src/main.ts (insert the pairing-confirmation install call only, if the design needs one)
+- module/src/main.ts (insertions in the `ready` handler only: the pairing-confirmation install call, if the design needs one, and `installRoleSync(getLinkClient())`)
 - lang/en.json (insertions under `AGENT_GATEWAY.PairingConfirm.*` only)
 
 ## Goal
@@ -49,13 +52,29 @@ In server mode (one gateway, many players), stop a player from pairing or connec
 Decision (c) was approved by Andrew on 2026-10-14. The others are defaults: follow them unless the PR shows a reason not to, and state the reason in the PR.
 - (a) **Pending before the row.** In server mode, a valid code plus `hello` puts the socket into a pending claim, held in memory. `store.createPairing` (:383-390), the token and `registry.add` (:425) all run only on confirmation. A pending claim has no pairing row, so it is absent from `listActivePairings`, `knownIdentities` and follow mode, and it needs no filter there. The code is spent when the claim is made. Pending claims are capped: 16 in total and 2 per client key (74), both named constants. A claim over the cap is refused with `RATE_LIMITED`.
 - (b0) **Observer eligibility comes from a gateway record, never from `hello`.** Migration **011** (`011-pairing-verified-role.ts`) adds `pairings.verified_role TEXT` (NULL by default). 68 lands before 38, so 68 takes 011 and 38 moves to 012 (see 74 decision h).
-  - A connection is observer-eligible only if its pairing row has `verified_role = 'gm'`, **and** its current `hello.user.isGM` is true, so a GM demoted in Foundry stops being one. A `hello` never sets or raises `verified_role`, and a reconnect never changes it.
+  - A connection is observer-eligible only if its pairing row has `verified_role = 'gm'`, **and** its current `hello.user.isGM` is true. An honest client of a GM demoted in Foundry then drops out. A demoted GM who forges `isGM: true` is not stopped by this check, so (b1) adds a revocation that never relies on that user's own client. A `hello` never sets or raises `verified_role`, and a reconnect never changes it.
   - `verified_role = 'gm'` is set in three ways only:
     1. the bootstrap rule (c), operator-logged;
     2. a confirmation by an already-verified GM observer, where the observer reports the claimed user's role as read from its own client's `game.users`, never from the claimant;
     3. the operator one-shot `foundry-agent-gateway --promote-observer <world id> <user id>`. Like `--http-rotate-token` (cli.ts:60-111), it checks the schema read-only, writes only `verified_role` on that user's active pairings, prints what changed, and refuses when there is no such pairing.
   - Every other pairing has `verified_role` NULL. Provisioned (headless) pairings are written with `'headless'`, which is never eligible.
   - `hello.user.isGM` keeps its current meaning: it selects the tool tier only, and the module enforces real permissions.
+- (b1) **Revoking `verified_role` without trusting the demoted client.**
+  - **Peer role sync.**
+    - Two link messages, inserted in protocol/src/link/messages.ts.
+      - Gateway to module: `observerRoster { userIds: string[] }` (at most 64). It lists the user ids in that world whose pairings have `verified_role = 'gm'`. It is sent to every observer-eligible connection after `welcome`, and again whenever the world's roster changes.
+      - Module to gateway: `observerRoles { roles: { userId: string; isGM: boolean }[] }` (at most 64 entries).
+    - The reporter, `module/src/link/role-sync.ts`, installed from main.ts's `ready` handler next to the existing `updateUser` hook (module/src/main.ts:37-39), sends `observerRoles` in three cases: when a roster arrives; on Foundry's `updateUser` hook when the updated user is in the roster; and on `deleteUser` for a roster user, reported as `isGM: false`. Each role is read from that client's own `game.users.get(id)?.isGM`. The module sends `observerRoles` only after it has received an `observerRoster`, so an older gateway never sees the new type.
+    - The gateway handles a report as follows:
+      - it is accepted only from a connection that is observer-eligible under (b0), and only about users in that connection's world;
+      - at most one report per connection per 5 s (`ROLE_REPORT_INTERVAL_MS`); extra reports are dropped;
+      - an entry about the reporting connection's own user is ignored;
+      - an entry saying user X is **not** a GM clears X's `verified_role` (NULL) at once, re-sends the roster, and logs one operator line naming X, the world and the reporting user. From then on X's connections are not observer-eligible, even with `hello.user.isGM: true`, and any confirmation report X has in flight is ignored;
+      - an entry saying X **is** a GM changes nothing: a peer report can only demote, and promotion stays limited to the three paths in (b0);
+      - entries about users not in the roster are ignored.
+  - **Operator demotion.** `foundry-agent-gateway --demote-observer <world id> <user id>` is a one-shot like `--promote-observer`. It sets `verified_role` to NULL on that user's active pairings, prints what changed, and exits 1 when there is nothing to change or the db is behind the schema. This covers a demoted GM who is the world's only verified observer, where no peer can report. A running gateway reads `verified_role` from the store on every eligibility check, the way it reads the HTTP token hash, so the demotion takes effect without a restart.
+  - **No TTL (recommendation).** `verified_role` does not expire in 68. A TTL would expire the bootstrap GM, the one observer nothing can re-verify without an operator promotion, and every expiry would block the server until someone re-promotes. Peer sync plus operator demotion cover revocation without that cost. If Andrew later wants a TTL, renewal must be automatic: a passing peer report renews the observer it is about, and the sole-observer case renews only through the operator CLI. That would be a separate task.
+  - **Residual risk (for 43's security docs).** If a verified GM is demoted in Foundry while no other verified GM is online for that world, and the operator does not run `--demote-observer`, the demoted user keeps observer powers by forging `isGM: true`. Those powers are approving pairing claims and replacements in that world. This lasts until another verified GM connects (whose reporter then clears them) or the operator demotes them. The tool tier is not affected, because the module enforces real permissions as `game.user`. 43 must state this in docs/security.md "Multi-user isolation".
 - (b) **The observer.** A trusted observer is an open link that is observer-eligible under (b0) and is in the same world. It runs the check with `User#query` where available (spike recommendation (a)), else the socket and code form (option (c)). In either form it reads the replying user only from the server-set argument. The claimed user's own client shows the confirmation prompt. The observer reports the outcome to the gateway over its own link. The gateway accepts the report only from a connection that is observer-eligible under (b0) for that world.
 - (c) **Bootstrap. Approved by Andrew, 2026-10-14.** A world with no active pairing at all has no observer. In server mode, the first GM pairing for a world with no active pairing is accepted without an observer, and written with `verified_role = 'gm'`. The operator log gets a line that names the world, the user and the origin. This leans on Andrew's 2026-10-14 decision that codes go only to the operator's log when `--public-url` is set. Any other claim with no observer online stays pending and times out; it is never approved by default. Rejected alternatives: always requiring a headless observer (it would block the friend test until 37 and 38), and an operator CLI approval.
 - (d) **Replacement.** A new pairing-code claim for a (world, user) that already has an active pairing is held pending. The origin does not matter, because since 70 a token from a different origin is refused outright (:408), so the only way in is a new code. The existing connection keeps working. The new one replaces it only after confirmation in that user's own connected client, or approval by a GM in a prompt in the GM's client. On denial, or after a timeout of 10 min (named constant), the pending socket is closed with a `PAIRING_REJECTED` error frame.
@@ -72,7 +91,22 @@ Decision (c) was approved by Andrew on 2026-10-14. The others are defaults: foll
 - [ ] Confirmation: when the claimed user's client confirms through the observer, the row is created, the socket gets `welcome` with a token, and `registry` lists it (test).
 - [ ] A confirmation report from a non-GM connection, or from a GM connection in another world, is ignored. The claim stays pending (test).
 - [ ] Forged role: a player's pairing (`verified_role` NULL) reconnects with its valid token and `hello.user.isGM: true`. Its confirmation report for another user's pending claim is ignored, the claim stays pending and then closes with `PAIRING_REJECTED`, and the player's row still has `verified_role` NULL afterwards (test).
-- [ ] A verified GM (`verified_role = 'gm'`, `hello.user.isGM: true`) can confirm a claim. The same GM reconnecting with `isGM: false` cannot (test).
+- [ ] A verified GM (`verified_role = 'gm'`, `hello.user.isGM: true`) can confirm a claim. The same GM reconnecting honestly with `isGM: false` cannot (test, kept).
+- [ ] Peer revocation (gateway/test/link/role-sync*.test.ts):
+  - verified GMs A and B are connected, and A is demoted;
+  - A reconnects with a **forged** `isGM: true`;
+  - B's connection sends `observerRoles` with A as `isGM: false`;
+  - A's row now has `verified_role` NULL, the operator log names A, and A's confirmation report for a pending claim is then ignored, so the claim stays pending.
+- [ ] An `observerRoles` entry about the reporting connection's own user is ignored, both for `isGM: false` and `isGM: true` (test).
+- [ ] A peer report with `isGM: true` about a user whose `verified_role` is NULL leaves it NULL (test).
+- [ ] An `observerRoles` from a connection that is not observer-eligible (a player, or a forged-`isGM` player with `verified_role` NULL) is ignored, and nobody is demoted (test).
+- [ ] Reports beyond one per 5 s per connection are dropped (injectable clock), and entries about users outside the reporter's world or roster are ignored (test).
+- [ ] `--demote-observer w1 uA` clears `verified_role` on uA's active pairings. A running gateway stops treating uA as eligible without a restart. The command exits 1 when nothing changes (gateway/test/bin/demote-observer.test.ts).
+- [ ] Module reporter (module/test/link/role-sync.test.ts):
+  - sends nothing before an `observerRoster` arrives;
+  - on a roster, sends roles read from `game.users`;
+  - on an `updateUser` for a roster user, sends the new role, and sends nothing for a user outside the roster;
+  - on a `deleteUser` for a roster user, sends `isGM: false`.
 - [ ] No reconnect, with any `hello`, changes `verified_role` (test over NULL, `'gm'` and `'headless'` rows).
 - [ ] A GM claim confirmed by a verified GM observer, whose report says the user is a GM in the observer's `game.users`, is written with `verified_role = 'gm'`. A claim confirmed for a player is written with NULL (test).
 - [ ] `--promote-observer w1 u1` sets `verified_role = 'gm'` on u1's active pairings in w1. It exits 1 when there is none, and exits 1 on a db behind the schema without migrating it (gateway/test/bin/promote-observer.test.ts).
@@ -97,5 +131,6 @@ Decision (c) was approved by Andrew on 2026-10-14. The others are defaults: foll
 - OAuth consent and grants (67).
 - Minting provisioned codes and the headless runner (37). 68 adds only the kind-aware lookup and the bypass check.
 - Headless agents as observers; provisioned pairings are never eligible.
+- A TTL on `verified_role` (decision b1 recommends none).
 - Session routing and isolation tests in `gateway/test/routing/**` (11, 20).
 - `docs/security.md` (43) and `docs/server-mode.md` (42).
