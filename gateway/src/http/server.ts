@@ -12,7 +12,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { LinkRegistry } from '../link/index.js';
 import { renderStatus } from '../status/page.js';
 import type { HttpToken } from './token.js';
-import { clientKey } from './client-key.js';
+import { clientKey, loopbackAuthority } from './client-key.js';
 import { publicHostMatches } from './public-url.js';
 import {
   FAILED_AUTH_WINDOW_MS,
@@ -73,17 +73,6 @@ interface Entry {
 
 class BodyTooLarge extends Error {}
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
-
-function hostName(hostHeader: string | undefined): string | undefined {
-  if (!hostHeader) return undefined;
-  try {
-    return new URL(`http://${hostHeader}`).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
 function send(res: ServerResponse, code: number, body: string, type = 'text/plain'): void {
   if (res.headersSent) return;
   res.writeHead(code, {
@@ -140,15 +129,13 @@ export class HttpServer {
   }
 
   private hostAllowed(header: string | undefined): boolean {
-    const host = hostName(header);
-    if (host && LOOPBACK_HOSTS.has(host)) return true;
+    if (loopbackAuthority(header)) return true;
     return publicHostMatches(header, this.o.publicUrl);
   }
 
   private originAllowed(origin: string): boolean {
     if (origin === this.publicOrigin) return true;
-    const name = hostName(origin.replace(/^[a-z]+:\/\//i, ''));
-    return !!name && LOOPBACK_HOSTS.has(name);
+    return !!loopbackAuthority(origin.replace(/^[a-z]+:\/\//i, ''));
   }
 
   get sessionCount(): number {

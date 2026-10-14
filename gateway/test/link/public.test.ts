@@ -136,3 +136,16 @@ describe('IPv6 loopback Host in local mode', () => {
     await expect(connect(h.port, { Host: `[::1]:${h.port + 1}` })).rejects.toThrow(/403/);
   });
 });
+
+describe('mapped IPv4 loopback Host in local mode', () => {
+  it('accepts both spellings with the bound port and refuses others', async () => {
+    h = await startServer();
+    for (const host of ['[::ffff:127.0.0.1]', '[::ffff:7f00:1]']) {
+      const c = await connect(h.port, { Host: `${host}:${h.port}` });
+      expect(c.ws.readyState).toBe(c.ws.OPEN);
+      await expect(connect(h.port, { Host: `${host}:${h.port + 1}` })).rejects.toThrow(/403/);
+    }
+    await expect(connect(h.port, { Host: `[::ffff:10.0.0.1]:${h.port}` })).rejects.toThrow(/403/);
+    await expect(connect(h.port, { Host: `[::2]:${h.port}` })).rejects.toThrow(/403/);
+  });
+});

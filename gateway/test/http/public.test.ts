@@ -347,3 +347,13 @@ describe('IPv6 loopback Host in local mode', () => {
     expect((await raw(port, { host: `[::2]:${port}` }, '/status')).status).toBe(403);
   });
 });
+
+describe('mapped IPv4 loopback Host in local mode', () => {
+  it('accepts both spellings and refuses others', async () => {
+    const { port } = await setup();
+    for (const host of ['[::ffff:127.0.0.1]', '[::ffff:7f00:1]'])
+      expect((await raw(port, { host: `${host}:${port}` }, '/status')).status).toBe(200);
+    for (const host of ['[::ffff:10.0.0.1]', '[::2]'])
+      expect((await raw(port, { host: `${host}:${port}` }, '/status')).status).toBe(403);
+  });
+});

@@ -85,3 +85,40 @@ export function clientKey(
   }
   return peerKey(peer);
 }
+
+/**
+ * Split a Host header into its host part (brackets removed) and optional port text. Undefined for
+ * anything that is not `host`, `host:port`, `[v6]` or `[v6]:port`.
+ */
+function parseAuthority(header: string | undefined): { host: string; port?: string } | undefined {
+  if (!header) return undefined;
+  let host: string;
+  let rest: string;
+  if (header.startsWith('[')) {
+    const end = header.indexOf(']');
+    if (end < 0) return undefined;
+    host = header.slice(1, end);
+    rest = header.slice(end + 1);
+  } else {
+    const colon = header.indexOf(':');
+    host = colon < 0 ? header : header.slice(0, colon);
+    rest = colon < 0 ? '' : header.slice(colon);
+  }
+  if (host === '') return undefined;
+  if (rest === '') return { host };
+  return /^:\d{1,5}$/.test(rest) ? { host, port: rest.slice(1) } : undefined;
+}
+
+/**
+ * The parsed Host header when it names loopback: `localhost`, or an IP literal that
+ * `isLoopbackAddress` accepts (the same test the bind-address check uses), in any spelling.
+ * Undefined otherwise.
+ */
+export function loopbackAuthority(
+  header: string | undefined,
+): { host: string; port?: string } | undefined {
+  const a = parseAuthority(header);
+  if (!a) return undefined;
+  if (a.host.toLowerCase() === 'localhost' || isLoopbackAddress(a.host)) return a;
+  return undefined;
+}

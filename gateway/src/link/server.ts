@@ -20,7 +20,7 @@ import {
   MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT,
   MAX_FAILED_CODE_ATTEMPTS_PUBLIC,
 } from './code-attempts.js';
-import { clientKey } from '../http/client-key.js';
+import { clientKey, loopbackAuthority } from '../http/client-key.js';
 import { BoundedMap } from '../http/limits.js';
 import { publicHostMatches } from '../http/public-url.js';
 import { canonicalOrigin } from './origin.js';
@@ -171,10 +171,9 @@ export class LinkServer {
     // The check holds whatever the bind address: only the loopback names and the public host pass.
     {
       const host = req.headers.host;
+      const loopback = loopbackAuthority(host);
       if (
-        host !== `localhost:${this.boundPort}` &&
-        host !== `127.0.0.1:${this.boundPort}` &&
-        host !== `[::1]:${this.boundPort}` &&
+        loopback?.port !== String(this.boundPort) &&
         !publicHostMatches(host, this.opts.publicUrl)
       ) {
         refuse('403 Forbidden', 'host header is not loopback');
