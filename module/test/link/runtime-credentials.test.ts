@@ -186,3 +186,99 @@ it('keeps a code-issued token in memory when storage is full, and warns once wit
   expect(JSON.stringify(warn.mock.calls)).not.toContain('newTok');
   expect(warn.mock.calls[0][0]).toBe('L:AGENT_GATEWAY.Link.storageFull');
 });
+
+async function pairWithFullStorage(token = 'newTok') {
+  settings = { gatewayUrl: X };
+  failWrites = true;
+  const c = await boot();
+  c.pair('CODE-1');
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  ws.recv({ ...welcome(), pairingToken: token });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.state.kind).toBe('connected');
+  return c;
+}
+
+it('a rejected code falls back to the in-memory session token', async () => {
+  const c = await pairWithFullStorage();
+  c.pair('BAD');
+  const bad = FakeWs.all[FakeWs.all.length - 1]!;
+  bad.onopen();
+  bad.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(c.state.kind).not.toBe('disconnected');
+  const last = FakeWs.all[FakeWs.all.length - 1]!;
+  expect(last).not.toBe(bad);
+  last.onopen();
+  expect(last.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
+});
+
+it('stop() then resume() reconnects with the session token', async () => {
+  const c = await pairWithFullStorage();
+  c.stop();
+  const n = FakeWs.all.length;
+  c.resume();
+  expect(FakeWs.all.length).toBe(n + 1);
+  const ws = FakeWs.all[n]!;
+  ws.onopen();
+  expect(ws.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
+});
+
+it('sends nothing to a different gateway URL than the session token was issued for', async () => {
+  const c = await pairWithFullStorage();
+  c.stop();
+  settings.gatewayUrl = Y;
+  const n = FakeWs.all.length;
+  c.resume();
+  expect(FakeWs.all.length).toBe(n);
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+  expect(JSON.stringify(FakeWs.all.slice(n).map((w) => w.sent))).not.toContain('newTok');
+});
+
+it.each([
+  ['user', () => ((globalThis as any).game.user = { id: 'u2', name: 'V', role: 1, isGM: false })],
+  ['world', () => ((globalThis as any).game.world = { id: 'w2', title: 'W2' })],
+])('sends nothing when the %s differs from the session token owner', async (_n, change) => {
+  const c = await pairWithFullStorage();
+  c.stop();
+  change();
+  const n = FakeWs.all.length;
+  c.resume();
+  expect(FakeWs.all.length).toBe(n);
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+});
+
+it('unpair clears the session token', async () => {
+  const c = await pairWithFullStorage();
+  expect(c.hasCurrentGatewayToken()).toBe(true);
+  await c.unpair();
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+});
+
+it('a rejected session token is cleared', async () => {
+  const c = await pairWithFullStorage();
+  c.stop();
+  c.resume();
+  const ws = FakeWs.all[FakeWs.all.length - 1]!;
+  ws.onopen();
+  ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
+});
+
+it('a successful later store clears the session token', async () => {
+  const c = await pairWithFullStorage();
+  expect(c.hasCurrentGatewayToken()).toBe(true);
+  failWrites = false;
+  c.pair('CODE-2');
+  const ws = FakeWs.all[FakeWs.all.length - 1]!;
+  ws.onopen();
+  ws.recv({ ...welcome(), pairingToken: 'stored' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(stored()[key(X)].token).toBe('stored');
+  // The stored credential now wins; wipe it so only a stale session token could remain.
+  ls.clear();
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+});

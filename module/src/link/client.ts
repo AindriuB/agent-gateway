@@ -76,7 +76,7 @@ export interface LinkClientDeps {
   getIdentity(): Omit<HelloMessage, 'type' | 'protocolVersion' | 'auth'>;
   createSocket(url: string): SocketLike;
   notifyError(message: string): void;
-  /** A non-fatal notice, already localized. Never carries a token. */
+  /** A non-fatal notice; the argument is an i18n key, localized by the caller. Never carries a token. */
   notifyWarn?(message: string): void;
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -357,7 +357,11 @@ export class LinkClient {
    * no-op. Token issued elsewhere: nothing is sent and a pairing code is requested.
    */
   start(): void {
-    if (!this.hasStoredToken() && this.parseCredential(this.deps.getLegacyToken?.()) === null) {
+    if (
+      !this.hasStoredToken() &&
+      this.parseCredential(this.deps.getLegacyToken?.()) === null &&
+      this.tokenForUrl(this.deps.getGatewayUrl()) === null
+    ) {
       // Someone else's pairing in this browser is not this user's: say so, and send nothing.
       if (this.deps.hasOtherTokens?.()) this.requirePairing();
       return;
@@ -535,13 +539,15 @@ export class LinkClient {
           );
           if (stored === false) {
             // Storage is full: keep the token for this session so reconnects still authenticate.
-            const id = this.deps.getIdentity();
-            this.sessionToken = {
-              url,
-              worldId: id.world.id,
-              userId: id.user.id,
-              token: msg.pairingToken,
-            };
+            const owner = this.helloOwner;
+            this.sessionToken = owner
+              ? {
+                  url: owner.url ?? url,
+                  worldId: owner.worldId,
+                  userId: owner.userId,
+                  token: msg.pairingToken,
+                }
+              : null;
             if (!this.storageWarned) {
               this.storageWarned = true;
               this.deps.notifyWarn?.('AGENT_GATEWAY.Link.storageFull');
