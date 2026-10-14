@@ -18,7 +18,7 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY protocol/ protocol/
 COPY module/package.json module/
 COPY gateway/ gateway/
-RUN npm ci --ignore-scripts --workspace protocol --workspace gateway --no-audit --no-fund \
+RUN npm ci --ignore-scripts --include-workspace-root --workspace protocol --workspace gateway --no-audit --no-fund \
  && npm run build -w protocol \
  && npm run build -w gateway
 
@@ -31,7 +31,7 @@ COPY --from=deps /src/node_modules ./node_modules
 COPY --from=build /src/gateway/package.json ./gateway/package.json
 COPY --from=build /src/gateway/dist ./gateway/dist
 RUN ln -s /app/gateway/dist/bin/cli.js /usr/local/bin/foundry-agent-gateway \
- && mkdir /data && chown node:node /data && chmod 700 /data
+ && mkdir -p /data/backups && chown -R node:node /data && chmod 700 /data
 USER node
 VOLUME /data
 EXPOSE 7420 7421

@@ -28,9 +28,10 @@ forwards, so each client has its own rate limit. The module connects to `wss://<
 
 ## Pairing
 
-Pairing is by operator invite (task 68). The operator issues a single-use code for one world and
-user, and sends it privately; nobody else can pair, because the gateway never prints or accepts
-a shared code in this mode. Until task 68 lands, the build prints a shared pairing code in the
-operator log.
+Pairing is meant to be by operator invite (task 68): the operator issues a single-use code
+for one world and user and sends it privately, so nobody can pair without one. Task 68 is not
+in this build yet. Until it lands, the gateway prints one shared pairing code in the operator
+log (`docker compose logs gateway`), and anyone who gets that code can pair; share it only with
+the people you mean to pair.
 
 Steps, backup and restore: [gateway/docker/README.md](../gateway/docker/README.md).

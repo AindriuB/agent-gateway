@@ -22,8 +22,15 @@ docker compose ps         # both services should be running; gateway "healthy"
 curl https://<domain>/status
 ```
 
-`/status` shows only the version and uptime. Optional for tests on one machine:
-`HTTP_PORT` and `HTTPS_PORT` in `.env` move the published ports.
+`/status` shows only the version and uptime.
+
+`HTTP_PORT` and `HTTPS_PORT` in `.env` move the published ports. They are for local tests only
+and cannot be used for a real deployment: a browser then sends `Host: <domain>:<port>`, which
+does not match the public URL, so the gateway refuses it. Test with
+`curl -k --connect-to <domain>:443:127.0.0.1:<HTTPS_PORT> https://<domain>/status`.
+
+If the gateway container restarts on its own, run `docker compose restart caddy`: Caddy shares
+the gateway's network namespace and can be left in the old one.
 
 ## Pair each person
 
