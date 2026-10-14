@@ -54,3 +54,24 @@ Remove every trace of the Ascend mark from the gateway source, so the repo can g
 - PLAN.md, the Go public item: the prerequisite on the all-rights-reserved Ascend mark in `marks.ts` is resolved by 82, because the mark was removed. The other prerequisite stays open: Andrew OKs the Ascend style values in the consent CSS being public.
 - PLAN.md's description of 75 says the source link carries "the GitHub and Ascend marks". Add that 82 reduced this to the GitHub mark only.
 - Note for Andrew: the mark remains in git history (task 75's commits) unless history is rewritten.
+
+## Outcome
+
+Done on branch `claude/task-82` (HEAD ac42f98 before rebase onto `origin/main` 072c159), 2026-10-14. `/review` was CLEAN. `/verify`: tester PASS (verify exit 0: 4396 fast, 2227 slow and 63 script tests), reviewer APPROVE. The branch has 3 commits: the plan commit, the removal, and a fix-up ("fix import and exact label") that corrected a leftover import and the exact aria-label string, found when a sed pass missed them.
+
+What landed:
+- `marks.ts` holds only the GitHub mark. `git grep -i ascend -- gateway/src` is empty, and the GitHub mark is byte-identical to `origin/main`.
+- The source link's aria-label is exactly `Source code on GitHub`, and the footer holds at most one `<svg>`, only when `--source-url` is set.
+- The dead `.mark + .mark` CSS rule was removed from `style.ts`. No other byte of `CONSENT_CSS` changed.
+- "ascend" is banned again on every consent page, footer included.
+
+Mutations, each applied one at a time to `src` and each failing at least one test:
+1. A second `<svg>` after `GITHUB_MARK`.
+2. "Ascend" in the aria-label.
+3. "ascend" in the cookie note.
+4. `aria-hidden="true"` dropped from the `svg()` helper.
+5. `fill="#000"` in place of `currentColor`.
+6. `GITHUB_MARK` rendered inside `<main>`.
+7. The source link rendered while `sourceUrl` is unset.
+
+Residual: the Ascend mark remains in task 75's git history (branch `claude/task-75`, PR #127). Andrew chose to leave history as it is (2026-10-14).
