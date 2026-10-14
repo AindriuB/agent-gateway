@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -39,7 +47,8 @@ function fakeRoot(name, withBuild) {
   return root;
 }
 
-const run = (root) => spawnSync('node', [script, '--root', root], { encoding: 'utf8' });
+const run = (root, extra = []) =>
+  spawnSync('node', [script, '--root', root, ...extra], { encoding: 'utf8' });
 
 describe('module.json', () => {
   it('declares no systems, so it loads in any world', () => {
@@ -99,5 +108,107 @@ describe('pack-module', () => {
       ...manifest.languages.map((l) => l.path),
     ];
     for (const p of paths) assert.ok(names.includes(p), `missing ${p}`);
+  });
+
+  describe('--base-url', () => {
+    const base = 'https://dl.example.test/agent-gateway';
+    const unzipJson = (root) =>
+      execFileSync('unzip', [
+        '-p',
+        path.join(root, 'dist/release/agent-gateway.zip'),
+        'module.json',
+      ]);
+
+    it('rewrites manifest and download, with or without a trailing slash', () => {
+      const root = fakeRoot('base', true);
+      const before = readFileSync(path.join(root, 'module.json'));
+      for (const url of [base, `${base}/`, `${base}//`]) {
+        const r = run(root, ['--base-url', url]);
+        assert.equal(r.status, 0, r.stderr);
+        const zipped = unzipJson(root);
+        const m = JSON.parse(zipped);
+        assert.equal(m.manifest, `${base}/module.json`);
+        assert.equal(m.download, `${base}/agent-gateway.zip`);
+        assert.deepEqual(r.stdout.trim().split('\n'), [
+          path.join(root, 'dist/release/agent-gateway.zip'),
+          path.join(root, 'dist/release/module.json'),
+        ]);
+        assert.ok(zipped.equals(readFileSync(path.join(root, 'dist/release/module.json'))));
+        assert.deepEqual(Object.keys(m), Object.keys(manifest));
+        assert.deepEqual(
+          { ...m, manifest: 0, download: 0 },
+          { ...manifest, manifest: 0, download: 0 },
+        );
+        assert.ok(readFileSync(path.join(root, 'module.json')).equals(before));
+        const names = execFileSync(
+          'unzip',
+          ['-Z1', path.join(root, 'dist/release/agent-gateway.zip')],
+          { encoding: 'utf8' },
+        )
+          .split('\n')
+          .filter(Boolean);
+        assert.equal(names.filter((n) => n.endsWith('module.json')).length, 1);
+        assert.ok(names.includes('module.json'));
+      }
+    });
+
+    it('also accepts --base-url before --root', () => {
+      const root = fakeRoot('baseorder', true);
+      const r = spawnSync('node', [script, '--base-url', base, '--root', root], {
+        encoding: 'utf8',
+      });
+      assert.equal(r.status, 0, r.stderr);
+    });
+
+    it('rejects bad urls with one line that does not echo the value', () => {
+      const bad = [
+        'http://dl.example.test/x',
+        'ftp://dl.example.test/x',
+        'dl.example.test/x',
+        'https://u:p@dl.example.test/x',
+        'https://u@dl.example.test/x',
+        'https://:p@dl.example.test/x',
+        'https://dl.example.test/x?a=1',
+        'https://dl.example.test/x#f',
+      ];
+      for (const url of bad) {
+        const root = fakeRoot(`bad${bad.indexOf(url)}`, true);
+        const r = run(root, ['--base-url', url]);
+        assert.equal(r.status, 1, url);
+        const lines = r.stderr.trim().split('\n');
+        assert.equal(lines.length, 1);
+        assert.match(lines[0], /^pack-module: --base-url must be an https URL/);
+        assert.ok(!r.stderr.includes(url));
+        assert.ok(!existsSync(path.join(root, 'dist/release/agent-gateway.zip')));
+      }
+    });
+
+    it('leaves an earlier pack untouched when the url is rejected', () => {
+      const root = fakeRoot('keep', true);
+      assert.equal(run(root, ['--base-url', base]).status, 0);
+      const r = run(root, ['--base-url', 'http://dl.example.test/x']);
+      assert.equal(r.status, 1);
+      assert.ok(existsSync(path.join(root, 'dist/release/agent-gateway.zip')));
+      assert.ok(existsSync(path.join(root, 'dist/release/module.json')));
+    });
+
+    it('gives a usage error when the value is missing', () => {
+      const root = fakeRoot('baseusage', true);
+      for (const extra of [['--base-url'], ['--base-url', '--root']]) {
+        const r = spawnSync('node', [script, '--root', root, ...extra], { encoding: 'utf8' });
+        assert.equal(r.status, 1);
+        assert.match(r.stderr, /^pack-module: usage/);
+      }
+    });
+
+    it('removes a stale standalone module.json when run without the flag', () => {
+      const root = fakeRoot('stale', true);
+      assert.equal(run(root, ['--base-url', base]).status, 0);
+      assert.ok(existsSync(path.join(root, 'dist/release/module.json')));
+      const r = run(root);
+      assert.equal(r.status, 0, r.stderr);
+      assert.ok(!existsSync(path.join(root, 'dist/release/module.json')));
+      assert.equal(r.stdout.trim().split('\n').length, 1);
+    });
   });
 });

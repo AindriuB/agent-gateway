@@ -1,6 +1,6 @@
 import { escapeHtml } from '../../status/page.js';
 import type { Scope } from '../repository.js';
-import { ASCEND_MARK, GITHUB_MARK } from './marks.js';
+import { GITHUB_MARK } from './marks.js';
 import { CONSENT_STYLE_PATH } from './style.js';
 
 /** The CSRF cookie is `<prefix><request id>`. Named in the footer so the two cannot drift. */
@@ -56,7 +56,7 @@ const footer = (l: FooterLinks): string => {
     ? `<p><a href="${escapeHtml(l.privacyUrl)}" ${rel}>Privacy</a></p>`
     : '';
   const source = l.sourceUrl
-    ? `<p><a href="${escapeHtml(l.sourceUrl)}" ${rel} aria-label="Source code on GitHub, by Ascend">${GITHUB_MARK}${ASCEND_MARK}<span>Source code</span></a></p>`
+    ? `<p><a href="${escapeHtml(l.sourceUrl)}" ${rel} aria-label="Source code on GitHub">${GITHUB_MARK}<span>Source code</span></a></p>`
     : '';
   return `<footer>${privacy}<p>This page sets one strictly necessary cookie, <code>${COOKIE_PREFIX}</code> followed by a request id. It is for sign-in only, is not used for tracking, and expires in 15 minutes.</p>${source}</footer>`;
 };
