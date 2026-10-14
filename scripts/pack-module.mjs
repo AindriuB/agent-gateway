@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const usage = 'pack-module: usage: node scripts/pack-module.mjs [--root <dir>] [--base-url <https-url>]';
+const usage =
+  'pack-module: usage: node scripts/pack-module.mjs [--root <dir>] [--base-url <https-url>]';
 const args = process.argv.slice(2);
 function flag(name) {
   const i = args.indexOf(name);
@@ -20,9 +21,7 @@ function flag(name) {
 }
 const rootArg = flag('--root');
 const baseArg = flag('--base-url');
-const root = path.resolve(
-  rootArg ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'),
-);
+const root = path.resolve(rootArg ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 
 let base;
 if (baseArg !== undefined) {
@@ -33,7 +32,9 @@ if (baseArg !== undefined) {
     u = undefined;
   }
   if (!u || u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) {
-    console.error('pack-module: --base-url must be an https URL without credentials, query or fragment');
+    console.error(
+      'pack-module: --base-url must be an https URL without credentials, query or fragment',
+    );
     process.exit(1);
   }
   base = `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
@@ -52,7 +53,14 @@ rmSync(out, { force: true });
 const selfManifest = path.join(outDir, 'module.json');
 rmSync(selfManifest, { force: true });
 
-const inputs = [...(base ? [] : ['module.json']), 'LICENSE', 'dist/module', 'lang', 'templates', 'styles'];
+const inputs = [
+  ...(base ? [] : ['module.json']),
+  'LICENSE',
+  'dist/module',
+  'lang',
+  'templates',
+  'styles',
+];
 // Excluded: TypeScript, source maps (they embed the full source), and any dotfile or dot directory.
 const excludes = ['*.ts', '*.map', '.*', '*/.*'];
 try {
