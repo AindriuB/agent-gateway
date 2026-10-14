@@ -4,14 +4,14 @@ import { BoundedMap, FailureWindows } from '../../http/limits.js';
 import { publicHostMatches } from '../../http/public-url.js';
 import type { OAuthRepository, Scope } from '../repository.js';
 import {
-  CONSENT_HEADERS,
+  consentHeaders,
   renderCodePage,
   renderMessagePage,
   renderRequestPage,
   type FormView,
 } from './render.js';
 
-export { CONSENT_HEADERS, CODE_SENT_TEXT } from './render.js';
+export { consentHeaders, consentCsp, consentJsonSecurity, CODE_SENT_TEXT } from './render.js';
 
 /** The one-time code is valid this long. */
 export const CONSENT_CODE_TTL_MS = 5 * 60_000;
@@ -81,11 +81,15 @@ function send(
   status: number,
   body: string,
   extra: Record<string, string | string[]> = {},
+  redirectOrigin?: string,
 ): void {
   if (res.headersSent) return;
-  res.writeHead(status, { ...CONSENT_HEADERS, ...extra });
+  res.writeHead(status, { ...consentHeaders(redirectOrigin), ...extra });
   res.end(body);
 }
+
+/** The origin of the request's registered (already exact-matched) redirect URI. */
+const originOf = (p: { redirectUri: string }): string => new URL(p.redirectUri).origin;
 
 /** The consent page: world, Foundry user and scopes, then a one-time code shown only in that user's client. */
 export class ConsentPages {
@@ -134,7 +138,7 @@ export class ConsentPages {
       codeExpiresAt: 0,
     };
     this.pending.set(p.id, p);
-    send(res, 200, renderRequestPage(this.view(p)), { 'set-cookie': this.cookie(p) });
+    send(res, 200, renderRequestPage(this.view(p)), { 'set-cookie': this.cookie(p) }, originOf(p));
   }
 
   private view(p: Pending, notice?: string): FormView {
@@ -203,9 +207,13 @@ export class ConsentPages {
     if (p.sends >= MAX_CODE_SENDS) return this.voidRequest(res, p);
     const chosen = form.getAll('scope').filter((s): s is Scope => p.scopes.includes(s as Scope));
     if (chosen.length === 0) {
-      return send(res, 200, renderRequestPage(this.view(p, 'Choose at least one permission.')), {
-        'set-cookie': this.cookie(p),
-      });
+      return send(
+        res,
+        200,
+        renderRequestPage(this.view(p, 'Choose at least one permission.')),
+        { 'set-cookie': this.cookie(p) },
+        originOf(p),
+      );
     }
     this.sends.record(client);
     p.sends++;
@@ -220,7 +228,7 @@ export class ConsentPages {
       this.deliver(p, code);
     }
     // Same body and status whoever was named, or whether they are online.
-    send(res, 200, renderCodePage(this.view(p)), { 'set-cookie': this.cookie(p) });
+    send(res, 200, renderCodePage(this.view(p)), { 'set-cookie': this.cookie(p) }, originOf(p));
   }
 
   /** The Foundry user id, or a name that exactly one active pairing in that world has. */
@@ -278,9 +286,13 @@ export class ConsentPages {
       p.wrong++;
       this.failures.record(client);
       if (p.wrong >= MAX_WRONG_CODES) return this.voidRequest(res, p);
-      return send(res, 400, renderCodePage(this.view(p, 'That code is wrong or has expired.')), {
-        'set-cookie': this.cookie(p),
-      });
+      return send(
+        res,
+        400,
+        renderCodePage(this.view(p, 'That code is wrong or has expired.')),
+        { 'set-cookie': this.cookie(p) },
+        originOf(p),
+      );
     }
     this.pending.delete(p.id);
     const location = this.o.finish(p, { ...p.target, scopes: p.chosen });

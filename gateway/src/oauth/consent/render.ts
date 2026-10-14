@@ -1,17 +1,39 @@
 import { escapeHtml } from '../../status/page.js';
 import type { Scope } from '../repository.js';
 
-/** Every consent response, errors included, carries these. There is no inline script and no asset. */
-export const CONSENT_HEADERS = {
-  'content-type': 'text/html; charset=utf-8',
+/**
+ * Security headers on every consent response, JSON errors included. `same-origin`, not
+ * `no-referrer`: under `no-referrer` Chrome sends `Origin: null` on the same-origin consent POST,
+ * which the strict CSRF Origin check would refuse.
+ */
+export const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
-  'content-security-policy':
-    "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-  'referrer-policy': 'no-referrer',
+  'referrer-policy': 'same-origin',
   'cache-control': 'no-store',
   pragma: 'no-cache',
 } as const;
+
+/**
+ * No external assets, no inline script. A response that can lead to the 302 to the client names
+ * that request's registered redirect origin in `form-action`, because Chrome checks `form-action`
+ * on every redirect hop.
+ */
+export const consentCsp = (redirectOrigin?: string): string =>
+  `default-src 'none'; style-src 'self'; form-action 'self'${redirectOrigin ? ` ${redirectOrigin}` : ''}; frame-ancestors 'none'; base-uri 'none'`;
+
+export const consentHeaders = (redirectOrigin?: string) =>
+  ({
+    ...SECURITY_HEADERS,
+    'content-type': 'text/html; charset=utf-8',
+    'content-security-policy': consentCsp(redirectOrigin),
+  }) as Record<string, string>;
+
+/** Headers for a JSON error on a consent route. */
+export const consentJsonSecurity = (): Record<string, string> => ({
+  ...SECURITY_HEADERS,
+  'content-security-policy': consentCsp(),
+});
 
 /** The same text for a connected, an offline and an unknown user. */
 export const CODE_SENT_TEXT =

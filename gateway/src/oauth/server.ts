@@ -5,6 +5,7 @@ import { FailureWindows } from '../http/limits.js';
 import type { ConsentStep } from './consent.js';
 import {
   CONSENT_PATH,
+  consentJsonSecurity,
   ConsentPages,
   type ConsentSeed,
   type ConsentWiring,
@@ -20,6 +21,9 @@ export const UNUSED_CLIENT_AGE_MS = 24 * 60 * 60_000;
 export const REGISTER_LIMIT = { max: 5, windowMs: 60 * 60_000 } as const;
 export const TOKEN_LIMIT = { max: 30, windowMs: 60_000 } as const;
 export const AUTHORIZE_LIMIT = { max: 30, windowMs: 60_000 } as const;
+/** Retention sweep: at most this many rows per table per run, at most one run per interval. */
+export const SWEEP_BATCH = 500;
+export const SWEEP_INTERVAL_MS = 10 * 60_000;
 export const MAX_REDIRECT_URIS = 5;
 export const MAX_REDIRECT_URI_LENGTH = 512;
 export const MAX_CLIENT_NAME_LENGTH = 100;
@@ -216,22 +220,41 @@ export class OAuthServer implements OAuthRoutes {
       }
       const want =
         path === '/register' || path === '/token' || path === CONSENT_PATH ? 'POST' : 'GET';
-      if (method !== want) return json(res, 405, { error: 'invalid_request' }, { allow: want });
+      // Every consent response carries the anti-framing headers, JSON errors included.
+      const secure = path === CONSENT_PATH ? consentJsonSecurity() : {};
+      if (method !== want)
+        return json(res, 405, { error: 'invalid_request' }, { allow: want, ...secure });
+      this.sweepIfDue();
       if (path === '/register') return await this.register(req, res, client);
       if (path === '/token') return await this.token(req, res, client);
       if (path === CONSENT_PATH) return await this.consentPost(req, res, client);
       return await this.authorize(req, res, client);
     } catch (e) {
-      if (e instanceof BodyTooLarge) return json(res, 413, { error: 'invalid_request' });
+      const secure = path === CONSENT_PATH ? consentJsonSecurity() : {};
+      if (e instanceof BodyTooLarge) return json(res, 413, { error: 'invalid_request' }, secure);
       if (e instanceof OAuthError) {
         return json(
           res,
           e.status,
           { error: e.code, ...(e.message !== e.code ? { error_description: e.message } : {}) },
-          e.status === 429 || e.status === 503 ? { 'retry-after': '60' } : {},
+          { ...(e.status === 429 || e.status === 503 ? { 'retry-after': '60' } : {}), ...secure },
         );
       }
       throw e;
+    }
+  }
+
+  private lastSweep = 0;
+
+  /** Bounded cleanup of spent codes and tokens, run lazily so no timer is needed. */
+  private sweepIfDue(): void {
+    const t = this.now();
+    if (t - this.lastSweep < SWEEP_INTERVAL_MS) return;
+    this.lastSweep = t;
+    try {
+      this.repo.sweep(t, SWEEP_BATCH);
+    } catch {
+      /* Cleanup must never fail a request. */
     }
   }
 

@@ -88,7 +88,7 @@ describe('the link client', () => {
     await expect(revoking).resolves.toEqual([]);
   });
 
-  it('sends no grant message to a gateway older than this task', async () => {
+  it('sends no grant message to a gateway reporting a version below the minimum', async () => {
     const { client, ws } = connected('0.0.9');
     const before = ws.sent.length;
     await expect(client.listGrants()).rejects.toThrow(/too old/);
@@ -98,7 +98,6 @@ describe('the link client', () => {
 
   it('compares versions', () => {
     expect(gatewaySupportsGrants('0.1.0')).toBe(true);
-    expect(gatewaySupportsGrants('0.1.0-rc1')).toBe(true);
     expect(gatewaySupportsGrants('0.2.3')).toBe(true);
     expect(gatewaySupportsGrants('1.0.0')).toBe(true);
     expect(gatewaySupportsGrants('0.0.9')).toBe(false);

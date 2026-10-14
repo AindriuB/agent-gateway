@@ -76,6 +76,12 @@ export interface OAuthRepository {
   createGrant(g: Omit<OAuthGrant, 'lastUsedAt' | 'revokedAt'>): void;
   getGrant(id: string): OAuthGrant | undefined;
   touchGrant(id: string, now: number): void;
+  /**
+   * Delete, oldest first and at most `limit` rows per table: codes past their expiry; tokens past
+   * their TTL (expired or revoked); then revoked grants with no token or code left. Returns the
+   * rows deleted.
+   */
+  sweep(now: number, limit: number): number;
   /** Revoke one grant and every token of it. True when it was live. */
   revokeGrant(id: string, now: number): boolean;
   /** Live grants bound to one (world, user), newest first, with their client's name. */
@@ -222,6 +228,19 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
   const pairedIn = db.prepare(
     'SELECT user_id, user_name FROM pairings WHERE world_id = ? AND revoked_at IS NULL',
   );
+  const sweepCodes = db.prepare(
+    'DELETE FROM oauth_codes WHERE code_hash IN (SELECT code_hash FROM oauth_codes WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)',
+  );
+  const sweepTokens = db.prepare(
+    'DELETE FROM oauth_tokens WHERE token_hash IN (SELECT token_hash FROM oauth_tokens WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)',
+  );
+  const sweepGrants = db.prepare(
+    `DELETE FROM oauth_grants WHERE id IN (
+       SELECT g.id FROM oauth_grants g WHERE g.revoked_at IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
+         AND NOT EXISTS (SELECT 1 FROM oauth_codes c WHERE c.grant_id = g.id)
+       ORDER BY g.revoked_at LIMIT ?)`,
+  );
   const insCode = db.prepare(
     'INSERT INTO oauth_codes (code_hash, grant_id, redirect_uri, code_challenge, resource, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
   );
@@ -276,6 +295,13 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
         userId: r.user_id,
         userName: r.user_name,
       })),
+    sweep: (now, limit) =>
+      tx(
+        () =>
+          Number(sweepCodes.run(now, limit).changes) +
+          Number(sweepTokens.run(now, limit).changes) +
+          Number(sweepGrants.run(limit).changes),
+      ),
     revokeGrant: (id, now) => tx(() => revokeGrant(id, now)),
     revokeGrantsFor: (worldId, userId, now) =>
       tx(() => {

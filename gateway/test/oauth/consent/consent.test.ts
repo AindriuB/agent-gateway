@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PUBLIC, REDIRECT, call } from '../helpers.js';
 import { pairModule, type FakeModule } from '../../routing/harness.js';
@@ -214,18 +215,66 @@ describe('headers, Host and secrets', () => {
       await postConsent(r, page, { action: 'verify', code: 'x' }),
       await postConsent(r, page, {}, { origin: null }),
     ];
+    const csp = (origin = '') =>
+      `default-src 'none'; style-src 'self'; form-action 'self'${origin}; frame-ancestors 'none'; base-uri 'none'`;
+    // The three pages that can lead to the 302 name the registered redirect origin; the 403 does not.
+    const withRedirect = new Set(replies.slice(0, 3));
     for (const rep of replies) {
       expect(rep.headers['x-frame-options']).toBe('DENY');
       expect(rep.headers['content-security-policy']).toBe(
-        "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+        csp(withRedirect.has(rep) ? ` ${new URL(REDIRECT).origin}` : ''),
       );
-      expect(rep.headers['referrer-policy']).toBe('no-referrer');
+      // Guards the Chrome `Origin: null` regression: `no-referrer` makes the same-origin POST fail the strict Origin check.
+      expect(rep.headers['referrer-policy']).toBe('same-origin');
       expect(rep.headers['cache-control']).toBe('no-store');
       expect(rep.body).not.toMatch(/<script|<link|src=/i);
     }
     expect(String(page.reply.headers['set-cookie'])).toMatch(
       /^__Host-agcsrf-[0-9a-f]{32}=.*Secure; HttpOnly; SameSite=Strict; Path=\/$|Path=\//,
     );
+  });
+
+  it('puts the same headers on the 405, 413 and 429 JSON answers of the consent route', async () => {
+    r = await consentRig();
+    const expectSecured = (rep: { headers: Record<string, unknown> }): void => {
+      expect(rep.headers['x-frame-options']).toBe('DENY');
+      expect(rep.headers['referrer-policy']).toBe('same-origin');
+      expect(rep.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+      expect(rep.headers['cache-control']).toBe('no-store');
+    };
+    const get = await call(r.port, 'GET', '/authorize/consent');
+    expect(get.status).toBe(405);
+    expectSecured(get);
+    const big = await call(r.port, 'POST', '/authorize/consent', {
+      body: 'x'.repeat(20_000),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+    expect(big.status).toBe(413);
+    expectSecured(big);
+    let limited: Awaited<ReturnType<typeof call>> | undefined;
+    for (let i = 0; i < 40 && limited?.status !== 429; i++)
+      limited = await call(r.port, 'POST', '/authorize/consent', { body: 'a=b' });
+    expect(limited?.status).toBe(429);
+    expectSecured(limited!);
+  });
+
+  it('writes no grant before approval: GET /authorize and the unapproved steps add no row', async () => {
+    r = await consentRig();
+    const u1 = await pairModule(r.h, 'u1');
+    modules.push(u1);
+    const db = new DatabaseSync(r.h.dbPath, { readOnly: true });
+    const count = (): number =>
+      (db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n;
+    const page = await openConsent(r);
+    expect(page.rid).not.toBe('');
+    expect(count()).toBe(0);
+    await postConsent(r, page, { action: 'send', world: 'w1', user: 'u1', scope: 'read' });
+    await postConsent(r, page, { action: 'verify', code: 'wrong' });
+    expect(count()).toBe(0);
+    // A second GET with the live request id in the query changes nothing either.
+    await call(r.port, 'GET', `/authorize?rid=${page.rid}&client_id=${page.clientId}`);
+    expect(count()).toBe(0);
+    db.close();
   });
 
   it('answers 403 on any Host but the public one, loopback included', async () => {
