@@ -161,3 +161,10 @@ FINDINGS
 - [NOTE] A legitimate user whose earlier pending socket the gateway has not yet seen close is refused `PAIRING_INVALID` on retry ("invite was not accepted, may have expired or been used"), though the invite is still valid. The same refusal lets a holder of a leaked code with a matching claim re-reserve it every 120 s and block the owner. Neither is a regression: either party could already burn the invite with a mismatch, which Amendment 3 records.
 
 SCOPE: gateway/src/store/migrations/012-admin-pairings.ts — Owns names `013-admin-pairings.ts`, because task 38 (`docs/plan/tasks/38-headless-config.md:9`) holds 012. Its header comment acknowledges the clash. Whether to rename it now or at merge is the planner's call. Route: orchestrator.
+
+## Review round 2 — findings (external review on PR #145)
+
+Reviewed HEAD: 1a5bfa6. In-spec, routed to the implementer.
+
+[P2] Reject expired sockets before discarding pending entries — gateway/src/link/attestation.ts:74
+If another player starts pairing after an existing challenge expires but before the scheduled sweep, reserve() calls this.sweep() and discards the expired entries. The scheduled sweep runs at expiry plus 50 ms, leaving a concrete race window. Those sockets disappear from subsequent cleanup sweeps without receiving PAIRING_UNCONFIRMED or closing. Their hello timers have already been cleared and heartbeats have not started, leaving players in awaiting-gm indefinitely and retaining sockets outside the pending-map caps. Process expired entries through the server's rejection path before reserving, or return them to the caller for cleanup.
