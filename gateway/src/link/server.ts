@@ -507,7 +507,7 @@ export class LinkServer {
             ws.close(1008, 'stale attest connection');
             break;
           }
-          if (!attestLimiter.allow()) {
+          if (!attestLimiter.allow(msg.authorId)) {
             send({ type: 'error', id: '', code: 'RATE_LIMITED', message: 'too many attestations' });
             break;
           }

@@ -7,8 +7,23 @@ export const PAIRING_CHALLENGE_TTL_MS = 120_000;
 /** Pending vouches per world, and in all; a hello beyond either gets RATE_LIMITED, unspent. */
 export const MAX_PENDING_PAIRINGS_PER_WORLD = 8;
 export const MAX_PENDING_PAIRINGS_TOTAL = 64;
-/** `attest` messages one connection may send per window, known nonce or not. */
-export const MAX_ATTESTS_PER_WINDOW = 20;
+/**
+ * Attest budgets, per fixed window, known nonce or not.
+ *
+ * Per attested author: 5. A real player needs one attest, and a few retries (a
+ * re-posted message, a flaky link) fit in five; a world member who spams flagged
+ * whispers burns only their own five, so another player's vouch still goes through.
+ * Per connection (the outer ceiling): 120, i.e. 24 authors' full budgets. One author
+ * can never reach it, so exhausting it takes 24 or more colluding accounts in one
+ * world, far past the 8 pending pairings a world may hold at once. Over-budget
+ * attests from an author are refused before they touch the ceiling.
+ * Memory: at most MAX_ATTEST_AUTHORS keys per connection (keys are at most 64 chars
+ * by the schema); expired windows are pruned, and a new author is refused while
+ * the table is full of live windows.
+ */
+export const MAX_ATTESTS_PER_AUTHOR = 5;
+export const MAX_ATTESTS_PER_WINDOW = 120;
+export const MAX_ATTEST_AUTHORS = 256;
 export const ATTEST_WINDOW_MS = 60_000;
 
 export interface PendingPairing<H> {
@@ -112,19 +127,32 @@ export class PendingPairings<H> {
   }
 }
 
-/** A fixed-window counter: unknown and known nonces cost the same. */
+/** Fixed-window counters per attested author, inside an outer per-connection one. */
 export class AttestLimiter {
   private start = 0;
   private count = 0;
+  private readonly authors = new Map<string, { start: number; count: number }>();
 
   constructor(
     private readonly now: () => number = Date.now,
     private readonly max = MAX_ATTESTS_PER_WINDOW,
     private readonly windowMs = ATTEST_WINDOW_MS,
+    private readonly maxPerAuthor = MAX_ATTESTS_PER_AUTHOR,
+    private readonly maxAuthors = MAX_ATTEST_AUTHORS,
   ) {}
 
-  allow(): boolean {
+  allow(authorId: string): boolean {
     const t = this.now();
+    let a = this.authors.get(authorId);
+    if (!a || t - a.start >= this.windowMs) {
+      if (!a && this.authors.size >= this.maxAuthors) {
+        for (const [k, v] of this.authors) if (t - v.start >= this.windowMs) this.authors.delete(k);
+        if (this.authors.size >= this.maxAuthors) return false;
+      }
+      a = { start: t, count: 0 };
+      this.authors.set(authorId, a);
+    }
+    if (++a.count > this.maxPerAuthor) return false;
     if (this.count === 0 || t - this.start >= this.windowMs) {
       this.start = t;
       this.count = 0;

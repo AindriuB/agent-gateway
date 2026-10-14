@@ -3,7 +3,9 @@ import type { LinkMessage } from '@agent-gateway/protocol';
 import {
   AttestLimiter,
   ATTEST_WINDOW_MS,
+  MAX_ATTESTS_PER_AUTHOR,
   MAX_ATTESTS_PER_WINDOW,
+  MAX_ATTEST_AUTHORS,
   MAX_PENDING_PAIRINGS_PER_WORLD,
   MAX_PENDING_PAIRINGS_TOTAL,
   PAIRING_CHALLENGE_TTL_MS,
@@ -296,13 +298,13 @@ describe('the vouch', () => {
       const nonce = challenge(a.first);
       a.c.ws.close();
       await a.c.untilClosed();
-      await new Promise((r) => setTimeout(r, 50));
+      // Straight away, before any attest could free the reservation as a side effect.
+      const b = await player(inv.code);
+      challenge(b.first);
       expect(invite(inv.code).usedAt).toBeNull();
       attest(gm, nonce, 'p1');
       await flush(gm);
       expect(invite(inv.code).usedAt).toBeNull();
-      const b = await player(inv.code);
-      challenge(b.first);
     });
 
     it('expiry rejects the socket PAIRING_UNCONFIRMED and releases the reservation', async () => {
@@ -361,13 +363,30 @@ describe('the vouch', () => {
       expect(invite(inv.code).usedAt).toBeNull();
     });
 
-    it('attests are rate-limited per connection, and unknown nonces count', async () => {
+    it("one author spamming past their budget does not block another author's vouch", async () => {
       await boot();
       const gm = await admin();
-      for (let i = 0; i < MAX_ATTESTS_PER_WINDOW; i++) attest(gm, `unknown-${i}`, 'x');
+      const inv = plain();
+      const { c, first } = await player(inv.code);
+      const nonce = challenge(first);
+      for (let i = 0; i < MAX_ATTESTS_PER_AUTHOR; i++) attest(gm, `unknown-${i}`, 'spammer');
       await flush(gm);
       expect(gm.messages).toEqual([]);
-      attest(gm, 'one-more', 'x');
+      attest(gm, 'one-more', 'spammer');
+      expect(await gm.next('error')).toMatchObject({ code: 'RATE_LIMITED' });
+      attest(gm, nonce, 'p1');
+      expect(await c.next('welcome')).toMatchObject({ type: 'welcome' });
+    });
+
+    it('the per-connection ceiling still holds across many authors', async () => {
+      await boot();
+      const gm = await admin();
+      const authors = MAX_ATTESTS_PER_WINDOW / MAX_ATTESTS_PER_AUTHOR;
+      for (let a = 0; a < authors; a++)
+        for (let i = 0; i < MAX_ATTESTS_PER_AUTHOR; i++) attest(gm, `u-${a}-${i}`, `author-${a}`);
+      await flush(gm);
+      expect(gm.messages).toEqual([]);
+      attest(gm, 'over-ceiling', 'fresh-author');
       expect(await gm.next('error')).toMatchObject({ code: 'RATE_LIMITED' });
     });
   });
@@ -421,11 +440,15 @@ describe('PendingPairings', () => {
     expect(p.size).toBe(0);
   });
 
-  it('AttestLimiter allows the max per window and resets after it', () => {
+  it('AttestLimiter budgets per author, caps the author table, and resets after the window', () => {
     let t = 0;
-    const l = new AttestLimiter(() => t, 3, ATTEST_WINDOW_MS);
-    expect([l.allow(), l.allow(), l.allow(), l.allow()]).toEqual([true, true, true, false]);
+    const l = new AttestLimiter(() => t, 100, ATTEST_WINDOW_MS, 3, 2);
+    expect([1, 2, 3, 4].map(() => l.allow('a'))).toEqual([true, true, true, false]);
+    expect(l.allow('b')).toBe(true);
+    expect(l.allow('c')).toBe(false); // table full of live windows (MAX_ATTEST_AUTHORS)
     t += ATTEST_WINDOW_MS;
-    expect(l.allow()).toBe(true);
+    expect(l.allow('c')).toBe(true); // expired windows are pruned
+    expect(l.allow('a')).toBe(true);
+    expect(MAX_ATTEST_AUTHORS).toBeGreaterThan(MAX_ATTESTS_PER_WINDOW / MAX_ATTESTS_PER_AUTHOR);
   });
 });
