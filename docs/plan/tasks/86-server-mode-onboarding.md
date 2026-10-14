@@ -280,3 +280,33 @@ Proofs I ran (scratch copy of HEAD, not the worktree): module/test/settings/gate
 DRIFT: none. The fix commit dbc0ef9 changes only files the amendment allows. The `redeemInvite` extraction is the shared helper the amendment asked for. No acceptance item or decision is weakened.
 
 SCOPE: docs/plan/tasks/87-link-resilience-diagnostics.md (added on this branch by planner commit 490aede; it is another task's contract). route: orchestrator. Decide whether it ships with PR 86 or moves to its own plan commit on main.
+
+## Review round 3 — findings
+
+Reviewed HEAD: 34f8ada. The verdict was CLEAN with one optional P3. The orchestrator routes that P3 (the activeGM backstop gate) to the implementer, because it is cheap and closes the gap. This is the last allowed round.
+
+VERDICT: CLEAN
+
+FINDINGS
+- [P3] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-86/module/src/settings/gateway-url-guard.ts:90. The `onChange` backstop no longer runs for a write that skips the hooks when the writer is not a GM. Its comment at :80-83 says it covers "writes that skip the hooks", but in that case no client acts.
+  route: implementer. This stays inside Amendment 1 ("onChange, which acts only on a GM's client") and keeps the round 2 P3 fix. Suggested gate: act if `userId === game.user.id` and the user is a GM, or if the writer is not a GM and `game.user.isActiveGM`. `game.users.activeGM` returns one designated GM (v13 foundry.mjs:40953, `isActiveGM` at :47612), so two GMs still never both correct. Add one test for "non-GM writer, this client is the active GM". If that is not wanted, fix the comment so it does not claim more than the code does.
+  input: a non-GM with SETTINGS_MODIFY runs `game.settings.storage.get('world').getSetting('agent-gateway.defaultGatewayUrl').update({value: JSON.stringify('wss://gw.example.com/link#ABCD-EFGH-JKMN')}, {noHook: true})`  →  `preUpdateSetting` is skipped. `noHook` is a real option, read from the operation at v13:58712 and checked at :58740. `onChange` then fires on every client with that writer's userId (v13:46966-46970). The writer's client returns at :89 (`!isGM`), and every GM client returns at :90 (`userId !== self`). The code stays in the world DB and is sent to every client on each load. Before round 2 every online GM would have corrected it.
+
+- [NOTE] This answers your question about the backstop.
+  - A non-GM with SETTINGS_MODIFY who saves normally (the Configure Settings form or `game.settings.set`) is still covered. `preWriteWorldGatewayUrl` (:51-68) has no `isGM` check and runs on the writing client. Its userId check (:57) always passes there, because the backend passes `user.id` of the local user. This closes the path round 2 called verified: "SETTINGS_MODIFY non-GM, no GM online".
+  - The only gap is a script that deliberately uses `noHook: true` or a raw socket `modifyDocument`. A GM doing this is still corrected on their own client. A non-GM doing it is not corrected by anyone.
+  - Offline DB edits never fire `onChange` on any client, before or after this fix. GUESS: I did not test this at world load.
+  - Weighing the two: the round 2 P3 (two GMs both correcting, and a late correction overwriting a newer value) happened on ordinary use. The gap here needs a writer who is trusted with SETTINGS_MODIFY and who deliberately bypasses hooks. That same writer can already set any valid `wss://` address, which the guard never stops. They also already chose to broadcast the code: the update reaches every client before any correction could, so the backstop only limits how long it persists. I judge it an acceptable residual, which is why it is P3 and not P2. The `activeGM` gate above closes it cheaply without bringing back the two-GM race.
+  - The pairing window's GM-only "not a valid wss:// address" warning (acceptance at the task file's Acceptance section) still tells a GM about the stuck value the next time they open the window. GUESS: that `isStrictGatewayUrl` rejects a value containing `#`. I did not re-read gateway-url.ts this round.
+- [NOTE] I checked that the hook rewrite reaches the write in v13 13.351, using the bundle from https://foundry13.local, read in scratch. For create, the `d` passed to `preCreate${type}` is the same object pushed to `toCreate` (v13:58616-58620). For update, `changes` is mutated before `updateSource(changes, {dryRun})` computes the diff that is sent (v13:58741-58760). If the cleaned value equals the stored value, the diff is empty and the update is skipped (`isEmpty(diff)`), so no `onChange` fires and the one warning comes from the hook. I did not re-check v14 this round.
+
+FIXED
+- [P2] The world default was written before it was stripped. FIXED: module/src/settings/gateway-url-guard.ts:51-78, registered at module/src/settings/index.ts:70. The pre-write hooks rewrite `value` before dispatch. Mutation proof: removing `registerWorldGatewayUrlHooks()` makes 7 of 20 tests fail.
+- [P3] Both GMs correcting. FIXED: gateway-url-guard.ts:90. Proof: removing the gate fails "onChange does nothing for a value another user wrote". Removing the userId gate in the hook (:57) fails "leaves other settings and other writers alone".
+- [NOTE] A bare code or any non-strict value in the world setting. FIXED: `cleanWorld` (:38-45) refuses every non-strict value before the write. The `it.each` at the test file :154 covers `CODE`, `http://` and a `ws://` invite, on both the create and the update hook.
+
+Unmodified at HEAD 34f8ada, the test file passes 20/20. I ran it in a scratch copy, not the worktree.
+
+DRIFT: none. Commit 34f8ada touches only gateway-url-guard.ts, settings/index.ts (one inserted call plus the import) and gateway-url-guard.test.ts, all allowed by Amendment 1. It keeps `onChange` and the `isGM` check, and the non-GM `onChange` test (:147) still passes. The pre-write hook also runs for a non-GM writer, which goes beyond "a GM's client". That fits the amendment's "run on the writing client", and it stores nothing extra. The warning wording assumes the reader is a GM, so a non-GM with SETTINGS_MODIFY sees text written for a GM. That is cosmetic.
+
+SCOPE: clean. This round's diff stays inside Owns. The task 87 file from round 2 was settled by the orchestrator: it ships with this PR.
