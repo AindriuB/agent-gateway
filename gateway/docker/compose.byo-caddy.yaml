@@ -5,7 +5,7 @@ name: agent-gateway
 
 services:
   gateway:
-    image: foundry-agent-gateway:${GATEWAY_VERSION:-latest}
+    image: ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION:?set GATEWAY_VERSION in .env}
     build:
       context: ../..
       dockerfile: gateway/Dockerfile

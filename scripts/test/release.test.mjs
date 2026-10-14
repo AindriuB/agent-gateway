@@ -28,6 +28,7 @@ const copied = [
   'package-lock.json',
   'module.json',
   'gateway/mcpb/manifest.json',
+  'gateway/docker/.env.example',
   'docs/releasing.md',
   'scripts/bump-version.mjs',
 ];

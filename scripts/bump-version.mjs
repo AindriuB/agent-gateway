@@ -56,6 +56,7 @@ const targets = [
     'module.json download tag',
   ],
   ['gateway/mcpb/manifest.json', pkgVersion, 'gateway/mcpb/manifest.json'],
+  ['gateway/docker/.env.example', /^(GATEWAY_VERSION=)([^\n]*)()$/m, 'gateway/docker/.env.example'],
 ];
 
 const texts = new Map();

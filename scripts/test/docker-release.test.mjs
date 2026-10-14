@@ -27,6 +27,7 @@ const copied = [
   'package-lock.json',
   'module.json',
   'gateway/mcpb/manifest.json',
+  'gateway/docker/.env.example',
   'docs/releasing.md',
   'scripts/bump-version.mjs',
 ];
@@ -108,5 +109,18 @@ describe('release image step', () => {
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /registry not configured/);
     assert.equal(calls(), '');
+  });
+});
+
+describe('compose image', () => {
+  it('uses the repository that ci.yml publishes', () => {
+    const ci = readFileSync(path.join(repo, '.github/workflows/ci.yml'), 'utf8');
+    const published = ci.match(/^\s*images: (\S+)$/m)?.[1];
+    assert.ok(published, 'ci.yml images:');
+    for (const f of ['compose.yaml', 'compose.byo-caddy.yaml']) {
+      const text = readFileSync(path.join(repo, 'gateway/docker', f), 'utf8');
+      const m = text.match(/^\s+image: ([^:\s]+):/m);
+      assert.equal(m?.[1], published, f);
+    }
   });
 });
