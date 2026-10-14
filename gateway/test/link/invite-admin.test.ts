@@ -6,6 +6,9 @@ import {
   MAX_CREATES_PER_WINDOW,
   MAX_INVITE_MESSAGES_PER_WINDOW,
   MAX_OPEN_INVITES_PER_WORLD,
+  MAX_TRACKED_CREATORS,
+  MIN_DELEGATED_TTL_MS,
+  CreateLimiter,
 } from '../../src/link/invite-admin.js';
 import {
   INVITE_TTL_MS,
@@ -134,11 +137,11 @@ describe('createInvite', () => {
   it('honours a ttl and refuses one above the cap or at or below zero', async () => {
     await boot();
     const gm = await admin();
-    create(gm, 'p1', { ttlMs: 60_000 });
-    expect((await created(gm)).expiresAt).toBe(clock + 60_000);
+    create(gm, 'p1', { ttlMs: MIN_DELEGATED_TTL_MS });
+    expect((await created(gm)).expiresAt).toBe(clock + MIN_DELEGATED_TTL_MS);
     create(gm, 'p1', { ttlMs: MAX_INVITE_TTL_MS });
     await created(gm);
-    for (const ttlMs of [MAX_INVITE_TTL_MS + 1, 0, -5]) {
+    for (const ttlMs of [MAX_INVITE_TTL_MS + 1, MIN_DELEGATED_TTL_MS - 1, 1, 0, -5]) {
       create(gm, 'p1', { ttlMs });
       expect(await gm.next('error')).toMatchObject({ code: 'INVALID_ARGS', requestId: 'r1' });
     }
@@ -181,6 +184,25 @@ describe('redeeming a delegated invite', () => {
     expect(h!.store.listActivePairings().find((p) => p.userId === 'p1')!.admin).toBe(true);
   });
 
+  it('refuses the attest if the target became an admin between challenge and attest', async () => {
+    await boot();
+    const gm = await admin();
+    create(gm, 'p1');
+    const r = await created(gm);
+    const p = await TestClient.connect(h!.port, ORIGIN);
+    clients.push(p);
+    p.send(hello({ kind: 'pairingCode', code: r.code }, { userId: 'p1', isGM: false }));
+    const ch = (await p.next()) as { type: string; nonce: string };
+    expect(ch.type).toBe('pairingChallenge');
+    await admin('w1', 'p1');
+    gm.send({ type: 'attest', nonce: ch.nonce, authorId: 'p1', authorIsGM: false });
+    expect(await p.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
+    expect(h!.store.invites.getById(r.inviteId)).toMatchObject({ result: 'mismatch' });
+    const mine = h!.store.listActivePairings().filter((x) => x.userId === 'p1');
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.admin).toBe(true);
+  });
+
   it('leaves operator invites unaffected by the admin check', async () => {
     await boot();
     await admin('w1', 'p1');
@@ -211,7 +233,56 @@ describe('redeeming a delegated invite', () => {
   });
 });
 
+describe('stale connections', () => {
+  it('closes a replaced connection and writes nothing for any of the three messages', async () => {
+    await boot();
+    const gm = await admin();
+    h!.registry.remove(h!.registry.get('w1', 'gm1')!);
+    create(gm);
+    await gm.untilClosed();
+    expect(h!.store.invites.list().filter((i) => i.createdBy !== null)).toHaveLength(0);
+    expect(gm.messages.filter((m) => m.type === 'inviteCreated' || m.type === 'error')).toEqual([]);
+    const gm2 = await admin('w1', 'gmS');
+    h!.registry.remove(h!.registry.get('w1', 'gmS')!);
+    list(gm2);
+    await gm2.untilClosed();
+    expect(gm2.messages.filter((m) => m.type === 'invites')).toEqual([]);
+  });
+});
+
 describe('caps', () => {
+  it('keeps the create limit across a token reconnect of the same pairing', async () => {
+    await boot();
+    const { code } = createInvite(h!.store, { worldId: 'w1', userId: 'gm1', admin: true }, clock);
+    const first = await TestClient.connect(h!.port, ORIGIN);
+    clients.push(first);
+    first.send(hello({ kind: 'pairingCode', code }, { userId: 'gm1' }));
+    const w = await first.next();
+    if (w.type !== 'welcome' || !w.pairingToken) throw new Error('not paired');
+    for (let i = 0; i < MAX_CREATES_PER_WINDOW; i++) {
+      create(first, `p${i}`, {}, `c${i}`);
+      await created(first);
+    }
+    const again = await TestClient.connect(h!.port, ORIGIN);
+    clients.push(again);
+    again.send(hello({ kind: 'pairingToken', token: w.pairingToken }, { userId: 'gm1' }));
+    expect(await again.next()).toMatchObject({ type: 'welcome' });
+    create(again, 'extra', {}, 'over');
+    expect(await again.next('error')).toMatchObject({ code: 'RATE_LIMITED', requestId: 'over' });
+    expect(h!.store.invites.list().filter((i) => i.userId === 'extra')).toHaveLength(0);
+  });
+
+  it('bounds the tracked pairing keys, evicting expired windows and refusing new keys when full', () => {
+    const l = new CreateLimiter(3);
+    expect(MAX_TRACKED_CREATORS).toBeGreaterThan(0);
+    for (const k of ['a', 'b', 'c']) expect(l.allow(k, 1000)).toBe(true);
+    expect(l.allow('d', 1000)).toBe(false);
+    expect(l.size).toBe(3);
+    expect(l.allow('a', 1000)).toBe(true);
+    expect(l.allow('d', 1000 + CREATE_WINDOW_MS)).toBe(true);
+    expect(l.size).toBeLessThanOrEqual(3);
+  });
+
   it('limits creates per connection per window and writes nothing past it', async () => {
     await boot();
     const gm = await admin();

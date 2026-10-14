@@ -84,6 +84,11 @@ export interface InviteRepository {
   countUnusedForWorld(worldId: string, now: number): number;
   /** Cancel one unused invite of the world by id; false when there is no such open invite there. */
   cancelInWorld(worldId: string, id: string): boolean;
+  /**
+   * Delete invites created before `olderThan` that are settled, cancelled or expired at `now`.
+   * Unused, unexpired invites are never deleted. Returns how many.
+   */
+  pruneBefore(olderThan: number, now: number): number;
 }
 
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
@@ -271,6 +276,9 @@ export function openStore(
   const inviteCancelInWorld = db.prepare(
     "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE id = ? AND world_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
   );
+  const invitePrune = db.prepare(
+    'DELETE FROM invites WHERE created_at < ? AND (used_at IS NOT NULL OR cancelled_at IS NOT NULL OR expires_at <= ?)',
+  );
   let inTx = false;
   const transaction = <T>(fn: () => T): T => {
     if (inTx) return fn();
@@ -350,6 +358,9 @@ export function openStore(
     },
     listForWorld(worldId, limit) {
       return (inviteListForWorld.all(worldId, limit) as unknown as InviteDbRow[]).map(toInvite);
+    },
+    pruneBefore(olderThan, at) {
+      return Number(invitePrune.run(olderThan, at).changes);
     },
     countUnusedForWorld(worldId, at) {
       return Number((inviteCountUnused.get(worldId, at) as { n: number | bigint }).n);

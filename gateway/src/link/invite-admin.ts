@@ -5,9 +5,13 @@ import type { LinkConnection } from './registry.js';
 
 /** Unused, unexpired invites a world may hold at once, however they were minted. */
 export const MAX_OPEN_INVITES_PER_WORLD = 20;
-/** `createInvite` per connection per window. */
+/** `createInvite` per creating pairing per window. */
 export const MAX_CREATES_PER_WINDOW = 10;
 export const CREATE_WINDOW_MS = 10 * 60_000;
+/** The shortest `ttlMs` a delegated invite may have. */
+export const MIN_DELEGATED_TTL_MS = 10 * 60_000;
+/** Pairing ids whose create window is tracked at once. */
+export const MAX_TRACKED_CREATORS = 1000;
 /** All three message types together, per connection per window. */
 export const MAX_INVITE_MESSAGES_PER_WINDOW = 60;
 export const INVITE_MESSAGE_WINDOW_MS = 60_000;
@@ -20,7 +24,7 @@ type InviteRequest = Extract<
 >;
 
 /** Sliding windows of request times per connection; each array is bounded by its cap. */
-const windows = new WeakMap<LinkConnection, { all: number[]; creates: number[] }>();
+const windows = new WeakMap<LinkConnection, { all: number[] }>();
 
 /** Record a hit if fewer than `max` fall in the last `windowMs`. */
 function take(hits: number[], now: number, max: number, windowMs: number): boolean {
@@ -29,6 +33,36 @@ function take(hits: number[], now: number, max: number, windowMs: number): boole
   hits.push(now);
   return true;
 }
+
+/**
+ * Create windows keyed by the creating pairing id, so reconnecting does not reset them. Bounded:
+ * expired windows are evicted when full, and a new key is refused while every slot is live.
+ */
+export class CreateLimiter {
+  private readonly byPairing = new Map<string, number[]>();
+  constructor(private readonly maxKeys = MAX_TRACKED_CREATORS) {}
+
+  allow(key: string, now: number): boolean {
+    let hits = this.byPairing.get(key);
+    if (!hits) {
+      if (this.byPairing.size >= this.maxKeys) this.evictExpired(now);
+      if (this.byPairing.size >= this.maxKeys) return false;
+      this.byPairing.set(key, (hits = []));
+    }
+    return take(hits, now, MAX_CREATES_PER_WINDOW, CREATE_WINDOW_MS);
+  }
+
+  get size(): number {
+    return this.byPairing.size;
+  }
+
+  private evictExpired(now: number): void {
+    for (const [k, hits] of this.byPairing)
+      if (hits.length === 0 || hits[hits.length - 1]! <= now - CREATE_WINDOW_MS)
+        this.byPairing.delete(k);
+  }
+}
+const creates = new CreateLimiter();
 
 /** The stored row decides, read now: never the hello and never a cached value. */
 function senderIsAdmin(store: Store, conn: LinkConnection): boolean {
@@ -93,7 +127,7 @@ export function handleInviteMessage(
   }
   const at = now();
   let w = windows.get(conn);
-  if (!w) windows.set(conn, (w = { all: [], creates: [] }));
+  if (!w) windows.set(conn, (w = { all: [] }));
   if (!take(w.all, at, MAX_INVITE_MESSAGES_PER_WINDOW, INVITE_MESSAGE_WINDOW_MS)) {
     fail('RATE_LIMITED', 'too many invite requests');
     return;
@@ -109,13 +143,13 @@ export function handleInviteMessage(
       }
       send(listReply(store, conn, msg.requestId, at));
     } else {
-      if (!take(w.creates, at, MAX_CREATES_PER_WINDOW, CREATE_WINDOW_MS)) {
+      if (!creates.allow(conn.agentId, at)) {
         fail('RATE_LIMITED', 'too many invites created');
         return;
       }
       const ttlMs = msg.ttlMs ?? INVITE_TTL_MS;
-      if (ttlMs <= 0 || ttlMs > MAX_INVITE_TTL_MS) {
-        fail('INVALID_ARGS', 'ttlMs must be above 0 and at most 7 days');
+      if (ttlMs < MIN_DELEGATED_TTL_MS || ttlMs > MAX_INVITE_TTL_MS) {
+        fail('INVALID_ARGS', 'ttlMs must be between 10 minutes and 7 days');
         return;
       }
       const made = store.transaction(() => {

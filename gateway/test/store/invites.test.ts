@@ -115,3 +115,37 @@ describe('world-scoped invite queries', () => {
     expect(store.invites.getById('a2')?.cancelledAt).toBeNull();
   });
 });
+
+describe('invite pruning', () => {
+  const DAY = 86_400_000;
+  it('deletes old settled, cancelled and expired rows and never unused unexpired ones', () => {
+    let t = 1000;
+    store = openStore(':memory:', () => t);
+    const mkAt = (id: string, expiresAt: number) =>
+      store!.invites.create({
+        id,
+        codeHash: `h-${id}`,
+        worldId: 'w1',
+        userId: id,
+        origin: null,
+        expiresAt,
+      });
+    mkAt('paired', 50 * DAY);
+    mkAt('cancelled', 50 * DAY);
+    mkAt('expired', 2000);
+    mkAt('open', 100 * DAY);
+    t = 5 * DAY;
+    mkAt('young-paired', 50 * DAY);
+    store.invites.settle('paired', 'paired', null);
+    store.invites.cancelInWorld('w1', 'cancelled');
+    store.invites.settle('young-paired', 'paired', null);
+    const now = 34 * DAY;
+    expect(store.invites.pruneBefore(now - 30 * DAY, now)).toBe(3);
+    expect(
+      store.invites
+        .list()
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(['open', 'young-paired']);
+  });
+});
