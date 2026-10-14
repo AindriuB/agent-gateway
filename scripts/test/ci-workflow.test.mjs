@@ -79,6 +79,10 @@ describe('image job', () => {
     const step = image.match(/^ {6}- name: Check tag matches repo version\n((?: {8}.*\n)+)/m);
     assert.ok(step, 'version-check step');
     assert.doesNotMatch(step[1], /^ {8}if:/m);
+    assert.match(
+      step[1],
+      /^ {8}run: node scripts\/bump-version\.mjs --check "\$\{GITHUB_REF_NAME#v\}"\n$/m,
+    );
     const check = image.indexOf('node scripts/bump-version.mjs --check "${GITHUB_REF_NAME#v}"');
     assert.ok(check >= 0);
     assert.ok(check < image.indexOf('docker/login-action@'));
@@ -146,6 +150,7 @@ describe('ci.yml hygiene', () => {
   it('sets timeouts and never cancels tag runs', () => {
     assert.ok(Number(test.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 30);
     assert.ok(Number(image.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 60);
+    assert.doesNotMatch(wf, /^\s*concurrency:/m);
     assert.doesNotMatch(wf, /cancel-in-progress:/);
   });
   it('uses the Node major the image uses', () => {
