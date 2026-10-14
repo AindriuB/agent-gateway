@@ -218,6 +218,48 @@ describe('pairing changes between send and verify', () => {
     expect((db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n).toBe(0);
     db.close();
   });
+
+  describe('two active pairings for one user', () => {
+    const setup = async () => {
+      r = await consentRig();
+      const p1 = await pairModule(r.h, 'u1');
+      modules.push(p1);
+      r.h.store.createPairing({
+        id: 'P2',
+        tokenHash: 'h-p2',
+        worldId: 'w1',
+        userId: 'u1',
+        userName: 'u1',
+        origin: 'http://localhost:30000',
+      });
+      const page = await openConsent(r);
+      await postConsent(r, page, { action: 'send', world: 'w1', user: 'u1', scope: 'read' });
+      const { code } = await codeFrame(p1);
+      return { page, code, p1Id: p1.agentId };
+    };
+    const grants = (): number => {
+      const db = new DatabaseSync(r!.h.dbPath, { readOnly: true });
+      const n = (db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n;
+      db.close();
+      return n;
+    };
+
+    it('revoking the pairing the code went over voids it', async () => {
+      const { page, code, p1Id } = await setup();
+      r!.h.store.revokePairing(p1Id);
+      const res = await postConsent(r!, page, { action: 'verify', code });
+      expect(res.status).toBe(400);
+      expect(grants()).toBe(0);
+    });
+
+    it('revoking the other pairing leaves the code good', async () => {
+      const { page, code } = await setup();
+      r!.h.store.revokePairing('P2');
+      const res = await postConsent(r!, page, { action: 'verify', code });
+      expect(res.status).toBe(302);
+      expect(grants()).toBe(1);
+    });
+  });
 });
 
 describe('CSRF', () => {

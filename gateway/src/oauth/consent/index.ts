@@ -63,7 +63,7 @@ export interface ConsentWiring {
     get(
       worldId: string,
       userId: string,
-    ): { send(data: string): void; closed?: boolean } | undefined;
+    ): { send(data: string): void; closed?: boolean; agentId?: string } | undefined;
   };
   failures: FailureWindows;
 }
@@ -252,6 +252,8 @@ export class ConsentPages {
     const t = p.target;
     const conn = t ? this.wiring?.registry.get(t.worldId, t.userId) : undefined;
     if (!conn || conn.closed) return;
+    // Bind to the pairing of the connection that actually receives the code.
+    if (t && conn.agentId) t.pairingId = conn.agentId;
     try {
       conn.send(
         JSON.stringify({
