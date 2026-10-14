@@ -112,3 +112,56 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 Round 4 approved by Andrew, 2026-10-14, beyond the usual three-round cap, for this finding only.
 
 - [P3, carried from round 3: NOT FIXED when a user holds several active pairings] gateway/src/oauth/consent/index.ts:242 and :251-254 — `resolve` binds `p.target.pairingId` to the newest active pairing, but `deliver` sends the code over whatever connection `registry.get(worldId, userId)` returns, and that connection can be authenticated by an older pairing (`LinkConnection.agentId` is the pairing id, gateway/src/link/server.ts:483-490). route: implementer. In `deliver`, set `p.target.pairingId = conn.agentId`, the pairing the code was actually sent over. Drop the newest-wins choice in `resolve` if it is no longer needed. Add a test with two active pairings for (w1, u1). Input: pairing P1 connects. P2 is created for (w1, u1) without revoking P1. A code is sent for u1, delivered over P1. `revokePairing(P1)`. Verify with the code. → today: 302 and one live grant. Expected: 400 and zero grant rows. The reverse case, revoking P2 while P1 stays live, must then accept the right code.
+
+## Attempt 1 — failed
+
+From /verify on f41abce.
+
+- **Reviewer: REQUEST CHANGES.** The acceptance item "a token for one user never reaches another user's connection" is not met. gateway/test/oauth/grants/grants.test.ts:90-114 sends only MCP `initialize`, which reaches no module, so "u2 received no call" passes whatever the routing. route: implementer. Make a real tool call with u1's token and assert that it lands on u1's connection and never on u2's.
+- **Reviewer suggestions (cheap, do them in the same pass):**
+  - gateway/test/oauth/consent/consent.test.ts:318-320: the cookie regex ends in `|Path=\/`, so it accepts any cookie with `Path=/`. Assert `__Host-`, `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/` separately.
+  - module/src/link/client.ts:74: the `GRANTS_MIN_GATEWAY_VERSION` comment implies that it guards against older gateways. Reword it to match the accepted residual in Acceptance (every build reports `0.1.0`, so the gate cannot tell a pre-67 gateway apart).
+  - gateway/src/oauth/consent/index.ts:52-53: remove the stale stacked doc comment on `target`.
+- **Tester: FAIL, 1 test.** gateway/test/relay/stepdown.test.ts "A (oldest), B and C … settle on C" timed out under full-suite load and passed alone. This branch does not touch relay code. It is the known stepdown load flake, already flagged as a separate follow-up. **Not 67's failure; do not fix it here.**
+
+### Branding (Andrew, 2026-10-14)
+
+Style every HTML page in gateway/src/oauth/consent/render.ts with Andrew's Ascend design system. The source is ~/workspace/branding (private, AindriuB/branding). Read `brand/guidelines.md`, `tokens/ascend.css`, `tokens/themes.json` and `assets/master/ascend.svg` there and copy the values in. Never import from that path at build or run time.
+
+- **No external assets, CSP unchanged.** The page has no inline `<style>` today, and the CSP's `style-src 'self'` forbids inline `<style>` and `style=""` attributes, so an inline block would need a CSP change. Do not loosen the CSP: no `'unsafe-inline'`, no hash or nonce. Instead serve the stylesheet same-origin, which `style-src 'self'` already allows:
+  - The CSS is a string constant in gateway/src/oauth/consent/** and is linked with a relative `<link rel="stylesheet">`.
+  - It is served by a GET route next to the consent path. The registration in gateway/src/oauth/server.ts is the only change outside gateway/src/oauth/consent/**, and it falls under the existing `gateway/src/oauth/**` Owns entry as part of the consent step.
+  - The route answers under the same public-Host rule and with the same security headers as the consent pages, as `text/css`. Its body is static, so it is identical for every user.
+  - If this turns out to need any CSP change, stop and report.
+- **Tokens.** Include only the tokens the page uses, as CSS custom properties. Light and dark themes come from `themes.json` and are switched by `prefers-color-scheme`.
+- **Mark.** Inline SVG of `assets/master/ascend.svg` (about 878 bytes). Drop the `xmlns` attribute, which inline HTML SVG does not need. Make the `<title>` id and the gradient ids (`ribbon`, `fold`) unique to the page. The accessible name is "Ascend". Do not recolour, stretch or add effects. You may add an adjacent "Ascend" label in semibold sans with normal tracking.
+- **Fonts.** Use the token font stacks (Inter, then system fallbacks). Bundle no font files (RIGHTS.md says they are not included).
+- **Layout, per the guidelines:**
+  - 42rem reading measure and a 4px spacing rhythm;
+  - 8px control radii and 16px card radii;
+  - `controlBorder` on inputs;
+  - focus is a 2px outline with a 2px offset in the `focus` token;
+  - `onAccent` text on green, never white on green;
+  - body text contrast of at least 4.5:1;
+  - honour `prefers-reduced-motion`;
+  - do not set a fixed root font size.
+- **Unchanged.** Escaping, CSRF, the anti-framing headers and the identical-response rules stay as they are. The step-1 response stays byte-identical across users, apart from the masked id and the CSRF token.
+- **Files.** Add no new file outside gateway/src/oauth/consent/** and gateway/test/oauth/consent/**.
+- **Rights.** The Ascend assets are all rights reserved, for the owner's use. Embedding them in this private repo is the owner's own use.
+
+**Go-public prerequisite (for the scribe to copy to PLAN.md):** before agent-gateway becomes public, Andrew decides whether the Ascend mark and styling may ship in a public repo.
+
+Additional acceptance:
+- [ ] A test renders every consent page and asserts that the page:
+  - contains no `http://` or `https://` in any `src`, `href` or `url()` other than the form action;
+  - contains the inline Ascend `<svg>` with a `<title>` whose id is referenced by `aria-labelledby`;
+  - links only a same-origin stylesheet.
+- [ ] A test fetches the stylesheet route and asserts that it:
+  - defines the light custom properties and the dark ones inside `@media (prefers-color-scheme: dark)`;
+  - contains a `prefers-reduced-motion` rule;
+  - contains no `http(s)://`, `@import` or `@font-face`;
+  - carries the consent security headers;
+  - gets 403 on a non-public Host.
+- [ ] A test asserts that the CSP on every consent response equals `default-src 'none'; style-src 'self'; form-action 'self'[ <redirect origin>]; frame-ancestors 'none'; base-uri 'none'` exactly. Only the existing per-request form-action origin may vary.
+- [ ] No new font or image file anywhere in the diff, and no path under `~/workspace/branding` in source or build config (`rg -n branding gateway/` is empty outside comments).
+- [ ] Manual: screenshots of the light and dark consent page are in the PR, alongside the Inspector check.
