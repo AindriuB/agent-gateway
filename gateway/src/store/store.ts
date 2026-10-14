@@ -78,6 +78,12 @@ export interface InviteRepository {
   /** Cancel every unused invite for the target; returns how many. */
   cancelFor(worldId: string, userId: string): number;
   list(): InviteRow[];
+  /** Newest first, at most `limit`, for one world only. */
+  listForWorld(worldId: string, limit: number): InviteRow[];
+  /** Invites in the world that are unused, uncancelled and unexpired at `now`. */
+  countUnusedForWorld(worldId: string, now: number): number;
+  /** Cancel one unused invite of the world by id; false when there is no such open invite there. */
+  cancelInWorld(worldId: string, id: string): boolean;
 }
 
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
@@ -256,6 +262,15 @@ export function openStore(
     "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE world_id = ? AND user_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
   );
   const inviteList = db.prepare('SELECT * FROM invites ORDER BY created_at, id');
+  const inviteListForWorld = db.prepare(
+    'SELECT * FROM invites WHERE world_id = ? ORDER BY created_at DESC, id LIMIT ?',
+  );
+  const inviteCountUnused = db.prepare(
+    'SELECT COUNT(*) AS n FROM invites WHERE world_id = ? AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?',
+  );
+  const inviteCancelInWorld = db.prepare(
+    "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE id = ? AND world_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
+  );
   let inTx = false;
   const transaction = <T>(fn: () => T): T => {
     if (inTx) return fn();
@@ -332,6 +347,15 @@ export function openStore(
     },
     list() {
       return (inviteList.all() as unknown as InviteDbRow[]).map(toInvite);
+    },
+    listForWorld(worldId, limit) {
+      return (inviteListForWorld.all(worldId, limit) as unknown as InviteDbRow[]).map(toInvite);
+    },
+    countUnusedForWorld(worldId, at) {
+      return Number((inviteCountUnused.get(worldId, at) as { n: number | bigint }).n);
+    },
+    cancelInWorld(worldId, id) {
+      return Number(inviteCancelInWorld.run(now(), id, worldId).changes) > 0;
     },
   };
   return {
