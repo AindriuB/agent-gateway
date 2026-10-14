@@ -4,7 +4,7 @@ A release is one local command. GitHub Actions is not used. Quench and remote
 OAuth conformance are not gates yet.
 
 ```
-npm run release -- <version> [--allow-missing-v13] [--publish-npm]
+npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
 ```
 
 ## What the script does
@@ -20,13 +20,19 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm]
    `--allow-missing-v13` is passed; the summary then says so.
 4. Builds `agent-gateway.zip`, `foundry-agent-gateway-<version>.tgz` and
    `foundry-agent-gateway.mcpb` into `dist/release/` and prints each SHA-256.
-5. Prints the planned actions and `Ask Foundry checklist: N of 6 answered`, then asks for `yes`.
+5. Builds and tags the server-mode image locally as `foundry-agent-gateway:<version>` with
+   `docker build -f gateway/Dockerfile`. This needs a running Docker daemon whenever
+   `gateway/Dockerfile` exists. Nothing is pushed.
+6. Prints the planned actions and `Ask Foundry checklist: N of 6 answered`, then asks for `yes`.
    Any other answer exits 0 having uploaded nothing.
-6. After `yes`: `gh release create v<version> --draft` with the zip, `module.json` and `.mcpb`
+7. After `yes`: `gh release create v<version> --draft` with the zip, `module.json` and `.mcpb`
    (notes carry the line "Platforms: macOS verified; Windows untested in this release"), then
    `npm publish -w gateway --dry-run`.
-7. A real `npm publish` happens only with `--publish-npm` and a second typed confirmation,
+8. A real `npm publish` happens only with `--publish-npm` and a second typed confirmation,
    `publish foundry-agent-gateway@<version>`.
+
+`--push-image` is refused with "registry not configured" until Andrew chooses GHCR or Docker
+Hub; the image is never pushed.
 
 The script never publishes the draft, never tags and never pushes. The version bump is left
 uncommitted: commit it on a branch and open a PR for Andrew. Land ONLY that version-bump PR

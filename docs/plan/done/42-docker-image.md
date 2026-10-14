@@ -107,3 +107,21 @@ Reviewed HEAD: 77f4c2d (code-reviewer, 2026-10-14). All routed to implementer.
 - [NOTE] compose.yaml:28 network_mode "service:gateway" with restart: Caddy can be left in a dead namespace after a gateway auto-restart; one README line or a Caddy healthcheck.
 - [NOTE] docs/server-mode.md "Pairing" reads backwards for an operator deploying before task 68.
 - [NOTE] scripts/release.mjs:111-116 — releases now need a running Docker daemon when gateway/Dockerfile exists.
+
+## Outcome
+
+Done on branch `claude/task-42` (HEAD fb4435a, based on `origin/main` 0fa6581), 2026-10-14. Review round 1 found P1 (the build stage lacked the root devDependencies, so the image could not build), P2 (`/data/backups` did not exist, so the first backup failed) and P3 (the `HTTPS_PORT` knob breaks the public-URL Host check). All three were fixed in fb4435a and the re-review was clean with no drift.
+
+Real Docker smoke test (Docker 29.4.0 on OrbStack, started with Andrew's approval):
+- The build succeeded at 375 MB; `--version` printed 0.1.0; server mode was healthy with no stdin; `/data` is 0700 and owned by `node`.
+- The compose stack on host ports 18480 and 18443 got a Caddy local certificate; `/status` was minimal; a fake bearer got 401; `--backup` worked through `compose exec`.
+- A raw ws client paired over `wss://.../link` through Caddy and received a welcome.
+- Cleanup was complete: no `ag-smoke` containers, images, volumes or networks remain.
+
+`/verify`: tester PASS (`npm run verify` twice, 4,182 fast and 2,227 slow tests; `test:scripts` 34 including 3 docker-release; mcpb 6/6; `compose config -q` ok; the real gateway was untouched). Acceptance reviewer APPROVE.
+
+Suggestions not fixed: the README's revoke, cancel and list bullets should each carry "(after task 68)"; `GATEWAY_VERSION` (the compose image tag) is undocumented; a Caddy healthcheck could reveal a stranded network namespace.
+
+Notes: releases now need a running Docker daemon when `gateway/Dockerfile` exists. A `gateway-data` volume created before the P2 fix will not have `/data/backups`.
+
+Pending (Andrew): the manual check on a real VPS.
