@@ -280,7 +280,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     const name = safeText(who.userName || who.userId);
     return failure(
       'WORLD_OFFLINE',
-      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : operator ? '; to pair a different browser, ask the gateway operator for a pairing code' : ''}.`,
+      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : operator ? '; to pair a different browser, ask the gateway operator for an invite' : ''}.`,
     );
   };
 
