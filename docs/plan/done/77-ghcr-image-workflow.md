@@ -127,3 +127,19 @@ Add one GitHub Actions workflow with a test gate on every pull request to `main`
 ### Residuals
 
 - A regex static test cannot catch every way to defeat the workflow's gates; the PR review of ci.yml changes remains the main guard.
+
+## Outcome
+
+Done on branch `claude/task-77` (HEAD 6e96562, based on `origin/main` 7c138f3), 2026-10-14. Review round 1 found three P3s (the version-check gate could be neutralised by `continue-on-error` or `if:`, a loose concurrency regex, and an unread `gha` build cache), all fixed in 1a29e7b. Round 2 found two more P3s (the full version-check run line is now anchored against `|| true`, and any `concurrency:` key is banned), fixed in 6e96562. `/verify`: tester PASS (`npm run verify` exit 0, 4396 fast and 2227 slow; `npm run test:scripts` 57/57), reviewer APPROVE.
+
+What landed:
+- `.github/workflows/ci.yml` runs the tests on pull requests, pushes to `main` and `v*` tags. The image job runs only on `v*` tags, after the test job passes and after a check that the tag matches the repo version.
+- The image is multi-arch (amd64 and arm64) and is pushed with `GITHUB_TOKEN` to the private package `ghcr.io/aindriub/foundry-agent-gateway`.
+- Tags: `X.Y.Z`, `X.Y` and `sha-*`. `latest` is set only for non-prereleases.
+- `build-push-action@v6` adds provenance attestations by default, so `imagetools inspect` shows `unknown/unknown` entries beside amd64 and arm64. This is expected.
+
+Residuals:
+- `scripts/test/ci-workflow.test.mjs` is a regex static test and cannot catch every way to defeat the workflow's gates; PR review of any `ci.yml` change remains the main guard.
+- Actions billing is unconfirmed. The spec said billing blocked Actions, so the first PR run will show whether the workflow runs at all.
+
+Pending Andrew (manual): the release-candidate check. On a scratch commit run `npm run bump-version -- 0.1.0-rc.1`, tag it `v0.1.0-rc.1`, and push only the tag. Confirm the image appears with `0.1.0-rc.1` and `sha-*` tags and no `latest`.

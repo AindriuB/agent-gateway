@@ -1,7 +1,8 @@
 # Releasing
 
-A release is one local command. GitHub Actions is not used. Quench and remote
-OAuth conformance are not gates yet.
+A release is one local command. GitHub Actions runs only the tests and, on a version tag,
+publishes the server-mode image (see "Publishing the image"). Quench and remote OAuth
+conformance are not gates yet.
 
 ```
 npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
@@ -31,8 +32,8 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
 8. A real `npm publish` happens only with `--publish-npm` and a second typed confirmation,
    `publish foundry-agent-gateway@<version>`.
 
-`--push-image` is refused with "registry not configured" until Andrew chooses GHCR or Docker
-Hub; the image is never pushed.
+`--push-image` is still refused with "registry not configured"; the script never pushes the
+image. GHCR is the registry, and the tag workflow below does the pushing.
 
 The script never publishes the draft, never tags and never pushes. The version bump is left
 uncommitted: commit it on a branch and open a PR for Andrew. Land ONLY that version-bump PR
@@ -41,6 +42,27 @@ because the tag is created from `main`'s HEAD at publish time.
 
 A declined or aborted run leaves the bumped tree dirty. Reset it with `git checkout -- .`
 before retrying.
+
+## Publishing the image
+
+`.github/workflows/ci.yml` builds and pushes the image when a `v*` tag is pushed. It runs the
+tests first and checks that the tag matches the repo version, so bump the version on `main`
+(the release PR) before tagging. To publish by hand:
+
+```
+git tag v<version> <commit on main>
+git push origin v<version>
+```
+
+Publishing the v0.1.0 draft GitHub release creates the `v0.1.0` tag and so triggers the push of
+`0.1.0`, `0.1` and `latest` (plus `sha-*`) to `ghcr.io/aindriub/foundry-agent-gateway`. A
+prerelease tag such as `v0.1.0-rc.1` gets its exact version and `sha-*` but never `latest`.
+The image is multi-arch (amd64, arm64); the extra `unknown/unknown` entries in
+`docker buildx imagetools inspect` are provenance attestations and are expected.
+
+The package is private. To pull it on a VPS, run `docker login ghcr.io` with a GitHub token
+that has `read:packages`, then in `gateway/docker/` set the gateway service's image to
+`ghcr.io/aindriub/foundry-agent-gateway:<version>` in place of the local build.
 
 ## Stops that need Andrew's explicit go-ahead
 
