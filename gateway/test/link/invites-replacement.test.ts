@@ -68,7 +68,7 @@ async function pairByInvite(
   userId: string,
   origin: string,
 ): Promise<{ tc: TestClient; token: string }> {
-  const { code } = createInvite(rig.h.store, { worldId: 'w1', userId }, Date.now());
+  const { code } = createInvite(rig.h.store, { worldId: 'w1', userId, gm: true }, Date.now());
   const tc = await TestClient.connect(rig.h.port, origin);
   clients.push(tc);
   tc.send(hello({ kind: 'pairingCode', code }, { userId }));
@@ -156,7 +156,7 @@ describe('a grant-revocation failure during a replacement', () => {
   it('refuses with INTERNAL, keeps the old pairing and leaves the invite unused', async () => {
     r = await serverRig();
     const old = await pairByInvite(r, 'u1', OLD_ORIGIN);
-    const { code } = createInvite(r.h.store, { worldId: 'w1', userId: 'u1' }, Date.now());
+    const { code } = createInvite(r.h.store, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
     r.h.store.oauth.createClient({
       id: 'c',
       secretHash: null,

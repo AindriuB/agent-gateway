@@ -72,6 +72,7 @@ export interface InviteRepository {
   /** Throws, writing nothing, when `createdBy` is set and `admin` or `gm` is true. */
   create(i: NewInvite): InviteRow;
   findByHash(codeHash: string): InviteRow | undefined;
+  getById(id: string): InviteRow | undefined;
   /** Spend an invite: sets `used_at` and the outcome. */
   settle(id: string, result: 'paired' | 'mismatch' | 'expired', pairingId: string | null): void;
   /** Cancel every unused invite for the target; returns how many. */
@@ -317,6 +318,10 @@ export function openStore(
     },
     findByHash(codeHash) {
       const r = inviteByHash.get(codeHash) as InviteDbRow | undefined;
+      return r ? toInvite(r) : undefined;
+    },
+    getById(id) {
+      const r = inviteById.get(id) as InviteDbRow | undefined;
       return r ? toInvite(r) : undefined;
     },
     settle(id, result, pairingId) {

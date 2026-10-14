@@ -13,7 +13,7 @@ import {
   type ErrorCode,
   type LinkMessage,
 } from '@agent-gateway/protocol';
-import type { Store } from '../store/index.js';
+import type { InviteRow, Store } from '../store/index.js';
 import type { PairingCodes } from './pairing-codes.js';
 import {
   CodeAttempts,
@@ -26,9 +26,12 @@ import { publicHostMatches } from '../http/public-url.js';
 import { canonicalOrigin } from './origin.js';
 import { toolsets } from '../routing/toolsets.js';
 import { safeText } from '../routing/sanitize.js';
+import { AttestLimiter, PendingPairings } from './attestation.js';
 import {
+  completeVouchedInvite,
   pairFromMemoryInvite,
   redeemInvite,
+  settleInviteMismatch,
   type InviteClaim,
   type MemoryInviteProvider,
   type PairingOutcome,
@@ -52,6 +55,11 @@ export type OriginRejection =
   | 'no valid pairing code'
   | 'no valid invite'
   | 'invite could not be redeemed (internal error)'
+  | 'no admin GM is connected to confirm the pairing'
+  | 'invite is already waiting for a GM to confirm it'
+  | 'too many pairings are waiting for a GM to confirm them'
+  | 'pairing confirmation timed out'
+  | 'pairing was confirmed for a different user'
   | 'pairing was made from a different origin'
   | 'pairing predates origin binding; pair again with a code'
   | 'too many failed pairing codes'
@@ -118,6 +126,18 @@ export interface LinkServerOptions {
   ) => void;
 }
 
+/** What the owner of a pending vouch needs to finish or refuse its socket. */
+interface PendingHandle {
+  hello: Extract<LinkMessage, { type: 'hello' }>;
+  ws: WebSocket;
+  send: (m: LinkMessage) => void;
+  reject: (code: ErrorCode, message: string) => void;
+  admitted: (c: LinkConnection) => void;
+}
+
+export const GM_USER_MESSAGE =
+  'GM users are paired by the operator with a GM invite (--invite ... --gm), not by a vouch.';
+
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
 
@@ -153,10 +173,13 @@ export class LinkServer {
   private readonly isPublic: boolean;
   private boundPort = 0;
   private readonly socketByConnection = new WeakMap<LinkConnection, WebSocket>();
+  private readonly vouches: PendingPairings<PendingHandle>;
+  private sweepTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly opts: LinkServerOptions) {
     this.host = opts.host ?? '127.0.0.1';
     this.isPublic = opts.publicUrl !== undefined;
+    this.vouches = new PendingPairings<PendingHandle>(opts.now);
     this.attempts = new CodeAttempts(
       opts.now,
       this.isPublic || opts.serverMode === true
@@ -190,6 +213,7 @@ export class LinkServer {
   }
 
   async close(): Promise<void> {
+    clearTimeout(this.sweepTimer);
     for (const ws of this.sockets) ws.terminate();
     await new Promise<void>((resolve) => this.http.close(() => resolve()));
   }
@@ -322,10 +346,30 @@ export class LinkServer {
     helloTimer.unref();
 
     let connectedAt = 0;
+    const attestLimiter = new AttestLimiter(this.opts.now);
+    const admitted = (c: LinkConnection): void => {
+      conn = c;
+      connectedAt = (this.opts.now ?? Date.now)();
+      this.opts.onLinkEvent?.({
+        kind: 'connected',
+        worldId: c.worldId,
+        userName: c.info.userName,
+        connectionId: c.id,
+      });
+      heartbeat = setInterval(() => {
+        if (missed >= MAX_MISSED_PONGS) {
+          ws.terminate();
+          return;
+        }
+        missed++;
+        send({ type: 'ping' });
+      }, HEARTBEAT_INTERVAL_MS);
+    };
     ws.on('close', (code: number, reasonBuf: Buffer) => {
       clearTimeout(helloTimer);
       if (heartbeat) clearInterval(heartbeat);
       this.sockets.delete(ws);
+      this.vouches.release(ws);
       if (conn) {
         this.opts.registry.remove(conn);
         this.opts.onLinkEvent?.({
@@ -381,24 +425,7 @@ export class LinkServer {
         handshaking = true;
         clearTimeout(helloTimer);
         releasePending();
-        conn = this.handshake(msg, origin, send, reject, ws, client);
-        if (conn) {
-          connectedAt = (this.opts.now ?? Date.now)();
-          this.opts.onLinkEvent?.({
-            kind: 'connected',
-            worldId: conn.worldId,
-            userName: conn.info.userName,
-            connectionId: conn.id,
-          });
-          heartbeat = setInterval(() => {
-            if (missed >= MAX_MISSED_PONGS) {
-              ws.terminate();
-              return;
-            }
-            missed++;
-            send({ type: 'ping' });
-          }, HEARTBEAT_INTERVAL_MS);
-        }
+        this.handshake(msg, origin, send, reject, ws, client, admitted);
         return;
       }
       switch (msg.type) {
@@ -474,6 +501,18 @@ export class LinkServer {
           }
           handleGrantMessage(conn, msg, this.opts.store.oauth, send, this.opts.now);
           break;
+        case 'attest':
+          // A replaced connection must not vouch for anyone any more.
+          if (this.opts.registry.get(conn.worldId, conn.userId) !== conn || conn.closed) {
+            ws.close(1008, 'stale attest connection');
+            break;
+          }
+          if (!attestLimiter.allow()) {
+            send({ type: 'error', id: '', code: 'RATE_LIMITED', message: 'too many attestations' });
+            break;
+          }
+          this.attest(conn, msg, send);
+          break;
         case 'toolset':
           // Only for the connection that sent it, never another's.
           toolsets.set(conn, msg.tools, msg.eventReadAllowed === true);
@@ -491,11 +530,12 @@ export class LinkServer {
     reject: (code: ErrorCode, message: string) => void,
     ws: WebSocket,
     client: string,
-  ): LinkConnection | undefined {
+    admitted: (c: LinkConnection) => void,
+  ): void {
     const compat = checkCompat(PROTOCOL_VERSION, hello.protocolVersion);
     if (!compat.ok) {
       reject(compat.code, compat.message);
-      return undefined;
+      return;
     }
     const { store, codes } = this.opts;
     const invalid = (
@@ -511,17 +551,21 @@ export class LinkServer {
     let agentId: string;
     let issuedToken: string | undefined;
     let recordedName: string;
+    let admin: boolean | undefined;
     let outcome: PairingOutcome | undefined;
     let claim: InviteClaim | undefined;
+    let fromDatabase = false;
     if (
       hello.auth.kind === 'pairingCode' &&
       (this.opts.serverMode === true || this.opts.inviteProvider !== undefined)
     ) {
       // A socket that closed before this point must not spend an invite it can never be told about.
-      if (ws.readyState !== ws.OPEN) return undefined;
+      if (ws.readyState !== ws.OPEN) return;
       // Checked before the invite store, so a valid invite is neither spent nor found by guessing.
-      if (this.attempts.limited(client))
-        return invalid('too many failed pairing codes', 'RATE_LIMITED');
+      if (this.attempts.limited(client)) {
+        invalid('too many failed pairing codes', 'RATE_LIMITED');
+        return;
+      }
       const code = hello.auth.code;
       claim = {
         worldId: hello.world.id,
@@ -543,36 +587,51 @@ export class LinkServer {
       });
       if (memory === 'match') outcome = pairFromMemoryInvite(store, claim, onError);
       else if (memory === 'mismatch') outcome = { ok: false, reason: 'refused' };
-      else if (this.opts.serverMode === true)
-        outcome = redeemInvite(store, code, claim, (this.opts.now ?? Date.now)(), onError);
+      else if (this.opts.serverMode === true) {
+        const redeemed = redeemInvite(store, code, claim, (this.opts.now ?? Date.now)(), onError);
+        if (!redeemed.ok && redeemed.reason === 'vouch') {
+          // Nothing is spent: the invite pairs only if an admin GM vouches for the author Foundry
+          // records on the player's chat message.
+          this.startVouch(redeemed.invite, claim, client, { hello, ws, send, reject, admitted });
+          return;
+        }
+        outcome = redeemed;
+        fromDatabase = true;
+      }
     }
     if (outcome && claim) {
       if (!outcome.ok) {
         if (outcome.reason === 'internal') {
           reject('INTERNAL', 'Could not redeem the invite');
-          return undefined;
+          return;
         }
         this.attempts.recordFailure(client);
-        return invalid(
+        invalid(
           'no valid invite',
           'PAIRING_INVALID',
           'no valid invite',
           `hello said world ${safeText(hello.world.id)}, user ${safeText(hello.user.id)}`,
         );
+        return;
       }
       issuedToken = outcome.token;
       agentId = outcome.pairing.id;
       recordedName = claim.userName;
+      // In-memory invites (headless runner) behave as before: no admin field.
+      if (fromDatabase) admin = outcome.pairing.admin;
     } else if (hello.auth.kind === 'pairingCode') {
       // Local mode: anyone who can reach the link port and holds the code can claim any user id;
       // local mode assumes the gateway is reachable only from the owner's machine. Server mode
       // uses operator invites instead.
       // Checked before the code store, so a valid code is neither spent nor found by guessing.
-      if (this.attempts.limited(client))
-        return invalid('too many failed pairing codes', 'RATE_LIMITED');
+      if (this.attempts.limited(client)) {
+        invalid('too many failed pairing codes', 'RATE_LIMITED');
+        return;
+      }
       if (!codes.consume(hello.auth.code)) {
         this.attempts.recordFailure(client);
-        return invalid('no valid pairing code');
+        invalid('no valid pairing code');
+        return;
       }
       issuedToken = randomBytes(32).toString('base64url');
       agentId = randomUUID();
@@ -594,19 +653,46 @@ export class LinkServer {
         row.worldId !== hello.world.id ||
         row.userId !== hello.user.id
       ) {
-        return invalid(
+        invalid(
           'pairing token is unknown, revoked, or for another world or user',
           'PAIRING_INVALID',
           'no valid pairing code',
         );
+        return;
       }
-      if (row.origin === null)
-        return invalid('pairing predates origin binding; pair again with a code');
-      if (row.origin !== origin) return invalid('pairing was made from a different origin');
+      if (row.origin === null) {
+        invalid('pairing predates origin binding; pair again with a code');
+        return;
+      }
+      if (row.origin !== origin) {
+        invalid('pairing was made from a different origin');
+        return;
+      }
       agentId = row.id;
       // The name given at pairing is the one that counts; a reconnect's hello name is only a claim.
       recordedName = row.userName;
+      // The operator-set flag as of now, never the hello's `isGM`.
+      admin = row.admin;
     }
+    const c = this.admit(
+      { hello, ws, send, reject, admitted },
+      agentId,
+      recordedName,
+      issuedToken,
+      admin,
+    );
+    if (c) admitted(c);
+  }
+
+  /** Register the connection and send its welcome; undefined (and a reject) when it cannot start. */
+  private admit(
+    h: PendingHandle,
+    agentId: string,
+    recordedName: string,
+    issuedToken: string | undefined,
+    admin: boolean | undefined,
+  ): LinkConnection | undefined {
+    const { hello, ws, send, reject } = h;
     const connectionId = randomUUID();
     const conn = new LinkConnection(
       connectionId,
@@ -635,7 +721,150 @@ export class LinkServer {
       connectionId,
       agentId,
       ...(issuedToken ? { pairingToken: issuedToken } : {}),
+      ...(admin === undefined ? {} : { admin }),
     });
     return conn;
+  }
+
+  /** Is an admin GM (an operator-set flag on its active pairing) connected in `worldId`? */
+  private adminLive(worldId: string): boolean {
+    for (const c of this.opts.registry.list()) {
+      if (c.worldId === worldId && !c.closed && this.isAdmin(c)) return true;
+    }
+    return false;
+  }
+
+  /** The stored row decides, read now: never the hello and never a cached value. */
+  private isAdmin(c: LinkConnection): boolean {
+    const row = this.opts.store.getPairing(c.agentId);
+    return (
+      !!row &&
+      row.revokedAt === null &&
+      row.admin &&
+      row.worldId === c.worldId &&
+      row.userId === c.userId
+    );
+  }
+
+  private startVouch(
+    invite: InviteRow,
+    claim: InviteClaim,
+    client: string,
+    handle: PendingHandle,
+  ): void {
+    const { ws, send, reject } = handle;
+    const refuse = (reason: OriginRejection, code: ErrorCode, message: string): void => {
+      this.opts.onOriginRejected?.(claim.origin, reason);
+      reject(code, message);
+    };
+    if (!this.adminLive(claim.worldId)) {
+      refuse(
+        'no admin GM is connected to confirm the pairing',
+        'PAIRING_UNCONFIRMED',
+        'No admin GM is connected for this world to confirm you. Ask your GM to open Foundry with the Agent Gateway module, then try again.',
+      );
+      return;
+    }
+    const r = this.vouches.reserve(invite, claim, client, ws, handle);
+    if (!r.ok) {
+      if (r.reason === 'reserved')
+        refuse(
+          'invite is already waiting for a GM to confirm it',
+          'PAIRING_INVALID',
+          'no valid invite',
+        );
+      else
+        refuse(
+          'too many pairings are waiting for a GM to confirm them',
+          'RATE_LIMITED',
+          'Too many pairings are waiting for confirmation. Try again in a minute.',
+        );
+      return;
+    }
+    send({
+      type: 'pairingChallenge',
+      nonce: r.pending.nonce,
+      expiresAt: r.pending.expiresAt,
+    });
+    clearTimeout(this.sweepTimer);
+    const next = this.vouches.nextExpiry();
+    if (next !== undefined) {
+      this.sweepTimer = setTimeout(
+        () => this.sweepPending(),
+        Math.max(0, next - (this.opts.now ?? Date.now)()) + 50,
+      );
+      this.sweepTimer.unref();
+    }
+  }
+
+  /** Time out pending vouches whose TTL has passed; the sockets get PAIRING_UNCONFIRMED. */
+  sweepPending(): void {
+    for (const p of this.vouches.sweep()) {
+      this.opts.onOriginRejected?.(p.claim.origin, 'pairing confirmation timed out');
+      p.handle.reject(
+        'PAIRING_UNCONFIRMED',
+        'Your GM did not confirm in time. Ask your GM to be online, then try again.',
+      );
+    }
+    const next = this.vouches.nextExpiry();
+    clearTimeout(this.sweepTimer);
+    if (next !== undefined) {
+      this.sweepTimer = setTimeout(
+        () => this.sweepPending(),
+        Math.max(0, next - (this.opts.now ?? Date.now)()) + 50,
+      );
+      this.sweepTimer.unref();
+    }
+  }
+
+  /** An admin GM's module vouches for the author Foundry recorded on a challenge message. */
+  private attest(
+    conn: LinkConnection,
+    msg: Extract<LinkMessage, { type: 'attest' }>,
+    send: (m: LinkMessage) => void,
+  ): void {
+    const now = this.opts.now ?? Date.now;
+    // Only an operator-set admin pairing may vouch; `hello.user.isGM` is never consulted.
+    if (!this.isAdmin(conn)) {
+      send({ type: 'error', id: '', code: 'FORBIDDEN', message: 'not an admin GM' });
+      return;
+    }
+    this.sweepPending();
+    const p = this.vouches.get(msg.nonce);
+    // Unknown, expired, or issued for another world: ignored.
+    if (!p || p.claim.worldId !== conn.worldId) return;
+    const onError = (err: unknown): void =>
+      void this.opts.onOriginRejected?.(
+        p.claim.origin,
+        'invite could not be redeemed (internal error)',
+        safeText((err as Error).message ?? String(err)),
+      );
+    if (msg.authorId !== p.invite.userId) {
+      this.vouches.take(p.nonce);
+      try {
+        settleInviteMismatch(this.opts.store, p.invite.id);
+      } catch (err) {
+        onError(err);
+      }
+      this.attempts.recordFailure(p.client);
+      this.opts.onOriginRejected?.(p.claim.origin, 'pairing was confirmed for a different user');
+      p.handle.reject('PAIRING_INVALID', 'no valid invite');
+      return;
+    }
+    if (msg.authorIsGM) {
+      this.vouches.take(p.nonce);
+      p.handle.reject('PAIRING_UNCONFIRMED', GM_USER_MESSAGE);
+      return;
+    }
+    this.vouches.take(p.nonce);
+    if (p.handle.ws.readyState !== p.handle.ws.OPEN) return;
+    const out = completeVouchedInvite(this.opts.store, p.invite.id, p.claim, now(), onError);
+    if (!out.ok) {
+      if (out.reason === 'internal') p.handle.reject('INTERNAL', 'Could not redeem the invite');
+      else p.handle.reject('PAIRING_INVALID', 'no valid invite');
+      return;
+    }
+    const c = this.admit(p.handle, out.pairing.id, p.claim.userName, out.token, out.pairing.admin);
+    if (c) p.handle.admitted(c);
   }
 }

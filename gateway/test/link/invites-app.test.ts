@@ -68,7 +68,9 @@ describe('server mode, whole app', () => {
 
   it('issues no shared code, accepts an invite, and never shows the invite anywhere', async () => {
     const t = await boot();
-    const { code } = t.withDb((s) => createInvite(s, { worldId: 'w1', userId: 'u1' }, Date.now()));
+    const { code } = t.withDb((s) =>
+      createInvite(s, { worldId: 'w1', userId: 'u1', gm: true }, Date.now()),
+    );
     const a = await t.connect();
     a.send(hello({ kind: 'pairingCode', code }));
     const welcome = await a.next();
@@ -97,7 +99,9 @@ describe('server mode, whole app', () => {
 
   it('a revocation made by another process closes the live connection within the sweep', async () => {
     const t = await boot();
-    const { code } = t.withDb((s) => createInvite(s, { worldId: 'w1', userId: 'u1' }, Date.now()));
+    const { code } = t.withDb((s) =>
+      createInvite(s, { worldId: 'w1', userId: 'u1', gm: true }, Date.now()),
+    );
     const a = await t.connect();
     a.send(hello({ kind: 'pairingCode', code }));
     const welcome = (await a.next()) as { pairingToken: string };
@@ -136,7 +140,7 @@ describe('server mode with --trust-proxy and no public URL', () => {
     apps.push(app);
     await app.start();
     const store = openStore(state.db);
-    const { code } = createInvite(store, { worldId: 'w1', userId: 'u1' }, Date.now());
+    const { code } = createInvite(store, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
     store.close();
     const attempt = async (ip: string, c: string) => {
       const ws = new WebSocket(`ws://127.0.0.1:${linkPort}`, {

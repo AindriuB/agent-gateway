@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
-import type { PairingRow, Store } from '../store/index.js';
+import type { InviteRow, PairingRow, Store } from '../store/index.js';
 import { PAIRING_ALPHABET } from './pairing-codes.js';
 
 /** Three groups of four from the pairing alphabet: about 59 bits. */
@@ -51,9 +51,22 @@ export function parseTtl(value: string): number | undefined {
 /** Store a new invite and return its code, which exists nowhere else. Call inside a transaction. */
 export function createInvite(
   store: Store,
-  target: { worldId: string; userId: string; origin?: string | undefined; ttlMs?: number },
+  target: {
+    worldId: string;
+    userId: string;
+    origin?: string | undefined;
+    ttlMs?: number;
+    /** Operator invite that pairs an admin GM with no vouch. Operator only. */
+    admin?: boolean;
+    /** Operator invite for a GM user, paired with no vouch. Operator only. */
+    gm?: boolean;
+    /** Who minted it; null/absent is the operator. A delegated invite can never be admin or gm. */
+    createdBy?: string | null;
+  },
   now: number,
 ): { code: string; id: string; expiresAt: number } {
+  if ((target.createdBy ?? null) !== null && (target.admin === true || target.gm === true))
+    throw new Error('only the operator can mint an invite that skips the vouch');
   const code = generateInviteCode();
   const id = randomUUID();
   const expiresAt = now + (target.ttlMs ?? INVITE_TTL_MS);
@@ -64,6 +77,9 @@ export function createInvite(
     userId: target.userId,
     origin: target.origin ?? null,
     expiresAt,
+    admin: target.admin === true,
+    gm: target.gm === true,
+    createdBy: target.createdBy ?? null,
   });
   return { code, id, expiresAt };
 }
@@ -79,6 +95,7 @@ export type PairingOutcome =
 function pairTarget(
   store: Store,
   claim: InviteClaim,
+  admin = false,
 ): { pairing: PairingRow; token: string; replaced: PairingRow[] } {
   const replaced = store.revokeActiveFor(claim.worldId, claim.userId);
   const token = randomBytes(32).toString('base64url');
@@ -89,6 +106,7 @@ function pairTarget(
     userId: claim.userId,
     userName: claim.userName,
     origin: claim.origin,
+    admin,
   });
   return { pairing, token, replaced };
 }
@@ -111,10 +129,24 @@ function inTransaction(
   return out;
 }
 
+/** A redeem that needs an admin GM's vouch before it can pair: nothing is spent yet. */
+export type RedeemOutcome = PairingOutcome | { ok: false; reason: 'vouch'; invite: InviteRow };
+
+function claimMatches(invite: InviteRow, claim: InviteClaim): boolean {
+  return (
+    invite.worldId === claim.worldId &&
+    invite.userId === claim.userId &&
+    (invite.origin === null || invite.origin === claim.origin)
+  );
+}
+
 /**
- * Redeem a database invite. One `BEGIN IMMEDIATE` transaction: unknown, used, cancelled and expired
- * invites are refused; a mismatch spends the invite and is refused; a match revokes the target's
- * old pairings and creates the new one. Synchronous, so two sockets cannot both win.
+ * Check a database invite. One `BEGIN IMMEDIATE` transaction: unknown, used, cancelled and expired
+ * invites are refused; a mismatch spends the invite and is refused. A matching invite flagged `gm`
+ * or `admin` revokes the target's old pairings and creates the new one (the stored row alone
+ * decides; the hello's `isGM` is never read). Any other matching invite is returned as `vouch` and
+ * left unspent: it pairs only through `completeVouchedInvite`. Synchronous, so two sockets cannot
+ * both win.
  */
 export function redeemInvite(
   store: Store,
@@ -122,9 +154,10 @@ export function redeemInvite(
   claim: InviteClaim,
   now: number,
   onError?: (err: unknown) => void,
-): PairingOutcome {
+): RedeemOutcome {
   const refused: PairingOutcome = { ok: false, reason: 'refused' };
-  return inTransaction(
+  let vouch: InviteRow | undefined;
+  const out = inTransaction(
     store,
     () => {
       const invite = store.invites.findByHash(hashInviteCode(code));
@@ -133,20 +166,65 @@ export function redeemInvite(
         store.invites.settle(invite.id, 'expired', null);
         return refused;
       }
-      if (
-        invite.worldId !== claim.worldId ||
-        invite.userId !== claim.userId ||
-        (invite.origin !== null && invite.origin !== claim.origin)
-      ) {
+      if (!claimMatches(invite, claim)) {
         store.invites.settle(invite.id, 'mismatch', null);
         return refused;
       }
-      const paired = pairTarget(store, claim);
+      if (!invite.gm && !invite.admin) {
+        vouch = invite;
+        return refused;
+      }
+      const paired = pairTarget(store, claim, invite.admin);
       store.invites.settle(invite.id, 'paired', paired.pairing.id);
       return { ok: true, ...paired };
     },
     onError,
   );
+  return vouch ? { ok: false, reason: 'vouch', invite: vouch } : out;
+}
+
+/**
+ * Settle a vouched invite as paired, in one transaction: the invite must still be unused,
+ * uncancelled and unexpired (an operator may have cancelled it while the player waited). The new
+ * pairing is never admin.
+ */
+export function completeVouchedInvite(
+  store: Store,
+  inviteId: string,
+  claim: InviteClaim,
+  now: number,
+  onError?: (err: unknown) => void,
+): PairingOutcome {
+  const refused: PairingOutcome = { ok: false, reason: 'refused' };
+  return inTransaction(
+    store,
+    () => {
+      const invite = store.invites.getById(inviteId);
+      if (
+        !invite ||
+        invite.usedAt !== null ||
+        invite.cancelledAt !== null ||
+        invite.expiresAt <= now ||
+        invite.admin ||
+        invite.gm ||
+        !claimMatches(invite, claim)
+      )
+        return refused;
+      const paired = pairTarget(store, claim, false);
+      store.invites.settle(invite.id, 'paired', paired.pairing.id);
+      return { ok: true, ...paired };
+    },
+    onError,
+  );
+}
+
+/** Spend a vouched invite as a mismatch, if it is still unused. */
+export function settleInviteMismatch(store: Store, inviteId: string): void {
+  store.transaction(() => {
+    const invite = store.invites.getById(inviteId);
+    if (invite && invite.usedAt === null && invite.cancelledAt === null)
+      store.invites.settle(invite.id, 'mismatch', null);
+  });
 }
 
 /** Pair after an in-memory invite matched: the same replacement rules, no database invite row. */
