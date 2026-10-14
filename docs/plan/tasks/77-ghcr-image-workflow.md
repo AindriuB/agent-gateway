@@ -118,3 +118,12 @@ Add one GitHub Actions workflow with a test gate on every pull request to `main`
 - [P3, cheap] scripts/test/ci-workflow.test.mjs:145 — a `concurrency` block with `cancel-in-progress: ${{ true }}` (or any expression) gets past the regex. route: implementer. Tighten it so the mutation fails.
 - [P3, cheap] .github/workflows/ci.yml:67-68 — the `type=gha` build cache was not in the spec, and it almost never hits: a tag run can restore only from its own tag ref and from main, and main never builds the image. With `mode=max` it fills cache quota that nothing reads. route: implementer. Remove the cache-from and cache-to lines, and update the test if it references them.
 - [NOTE for Andrew, no change] build-push-action@v6 adds a provenance attestation by default, so `imagetools inspect` shows `unknown/unknown` entries next to amd64 and arm64 and GHCR shows extra untagged entries. Expected; out of scope.
+
+## Review round 2 — findings
+
+- [P3] scripts/test/ci-workflow.test.mjs:82 — the version-check assertion is a substring match, so appending `|| true` to the run line (ci.yml:41) still passes, and a mismatched tag would push. route: implementer. Anchor the whole line, e.g. `/^ {8}run: node scripts\/bump-version\.mjs --check "\$\{GITHUB_REF_NAME#v\}"$/m` within the step, and confirm the `|| true` mutation fails.
+- [P3] scripts/test/ci-workflow.test.mjs:149 — a top-level `concurrency: group: ci` with no `cancel-in-progress` still lets GitHub cancel a pending tag run when newer runs queue. route: implementer. Assert there is no `concurrency:` key at all (`/^\s*concurrency:/m`), and confirm by mutation.
+
+### Residuals
+
+- A regex static test cannot catch every way to defeat the workflow's gates; the PR review of ci.yml changes remains the main guard.
