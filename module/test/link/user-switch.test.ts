@@ -290,3 +290,14 @@ it('hasStoredToken is true for the user entry under any gateway, and false for a
   expect(clientFor('A').hasStoredToken()).toBe(true);
   expect(clientFor('B').hasStoredToken()).toBe(false);
 });
+
+it('an entry only under an old gateway is not a current-gateway token, and unpair never leaves the current entry', async () => {
+  createCredentialStore(storage).set({ url: 'ws://old', worldId: 'w', userId: 'A' }, 'tokOld');
+  const a = clientFor('A');
+  expect(a.hasStoredToken()).toBe(true);
+  expect(a.hasCurrentGatewayToken()).toBe(false);
+  seed('A', 'tokNow');
+  expect(a.hasCurrentGatewayToken()).toBe(true);
+  await a.unpair();
+  expect(a.hasCurrentGatewayToken()).toBe(false);
+});

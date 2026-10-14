@@ -136,7 +136,7 @@ export function createPairingApp(): any {
           serverMode ? 'AGENT_GATEWAY.Pairing.Invite.hint' : 'AGENT_GATEWAY.Pairing.codeHint',
         ),
         // Only the current user's own pairing counts; another user's token in this browser never shows.
-        paired: getLinkClient().hasStoredToken?.() === true,
+        paired: getLinkClient().hasCurrentGatewayToken?.() === true,
         onePairingNotice: i18n.localize('AGENT_GATEWAY.Pairing.OnePerUser.notice'),
         serverLine: serverMode ? i18n.localize('AGENT_GATEWAY.Pairing.Server.line') : '',
         urlWarning: res.clientInvalid ? i18n.localize('AGENT_GATEWAY.Pairing.Address.invalid') : '',

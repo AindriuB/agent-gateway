@@ -76,7 +76,8 @@ it('the window shows the paired state and Unpair only for the current user, with
       getLinkClient: () => ({
         state: { kind: 'connecting' },
         onState: () => () => undefined,
-        hasStoredToken: () => paired,
+        hasStoredToken: () => true,
+        hasCurrentGatewayToken: () => paired,
         token: 'SECRET-TOKEN',
       }),
     }));

@@ -332,6 +332,11 @@ export class LinkClient {
     return this.deps.hasUserToken ? this.deps.hasUserToken() : this.readCredential() !== null;
   }
 
+  /** True if the current user has a stored token issued by the current gateway; what Unpair removes. */
+  hasCurrentGatewayToken(): boolean {
+    return this.tokenForUrl(this.deps.getGatewayUrl()) !== null;
+  }
+
   /**
    * Connect with the stored token, but only to the gateway that issued it. No stored token:
    * no-op. Token issued elsewhere: nothing is sent and a pairing code is requested.
