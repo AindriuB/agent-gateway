@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import {
   cpSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -56,9 +57,23 @@ const { name, version, description } = manifest;
 if (name !== 'foundry-gateway' || !version)
   fail('build-claude-plugin: plugin.json needs name foundry-gateway and a version');
 
+if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
+  fail('build-claude-plugin: plugin.json version is not a semver version');
+}
+for (const f of files) {
+  let st;
+  try {
+    st = lstatSync(path.join(root, pluginRel, f));
+  } catch {
+    st = undefined;
+  }
+  if (!st?.isFile()) fail(`build-claude-plugin: ${f} must be a regular file`);
+}
+
 const outDir = path.join(root, 'dist/release/claude');
 const zipPath = path.join(outDir, 'plugins', `${name}-${version}.zip`);
 const marketPath = path.join(outDir, 'marketplace.json');
+let zipError;
 const stage = mkdtempSync(path.join(tmpdir(), 'build-claude-plugin-'));
 try {
   for (const f of files) {
@@ -74,12 +89,12 @@ try {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
   } catch (err) {
-    const why = err.code === 'ENOENT' ? 'zip is not installed' : `zip failed (${err.status})`;
-    fail(`build-claude-plugin: ${why}`);
+    zipError = err.code === 'ENOENT' ? 'zip is not installed' : `zip failed (${err.status})`;
   }
 } finally {
   rmSync(stage, { recursive: true, force: true });
 }
+if (zipError) fail(`build-claude-plugin: ${zipError}`);
 if (statSync(zipPath).size > MAX_ZIP) {
   rmSync(zipPath, { force: true });
   fail('build-claude-plugin: zip exceeds 256 MiB');

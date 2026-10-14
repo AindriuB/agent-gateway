@@ -10,6 +10,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,11 +64,81 @@ describe('build-claude-plugin argument checks', () => {
       const root = fresh(`bad-${label.replace(/ /g, '-')}`);
       const r = build(root, ...a);
       assert.equal(r.status, 1);
-      assert.match(r.stderr, /build-claude-plugin/);
+      assert.match(
+        r.stderr,
+        label === 'missing' || label === 'no value' ? /usage:/ : /build-claude-plugin/,
+      );
       assert.equal(r.stdout, '');
       assert.ok(!existsSync(path.join(root, 'dist/release/claude')));
     });
   }
+});
+
+describe('build-claude-plugin refusals', () => {
+  const plugin = (root) => path.join(root, 'plugins/claude/foundry-gateway');
+  const refused = (root, re) => {
+    const r = build(root, '--base-url', 'https://x.test');
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stderr, re);
+    assert.ok(!existsSync(path.join(root, 'dist/release/claude/marketplace.json')));
+  };
+
+  it('refuses a symlinked source file', () => {
+    const root = fresh('symlink');
+    const outside = path.join(tmp, 'outside.txt');
+    writeFileSync(outside, 'SECRET-CONTENT');
+    const skill = path.join(plugin(root), 'skills/foundry-gateway/SKILL.md');
+    rmSync(skill);
+    symlinkSync(outside, skill);
+    refused(root, /regular file/);
+  });
+
+  it('refuses a missing source file', () => {
+    const root = fresh('missing-file');
+    rmSync(path.join(plugin(root), '.mcp.json'));
+    refused(root, /regular file/);
+  });
+
+  it('refuses a version that is not semver, before writing anything', () => {
+    const root = fresh('traversal');
+    const f = path.join(plugin(root), '.claude-plugin/plugin.json');
+    const m = JSON.parse(readFileSync(f, 'utf8'));
+    m.version = 'x/../../../escaped';
+    writeFileSync(f, JSON.stringify(m));
+    refused(root, /semver/);
+    assert.ok(!existsSync(path.join(root, 'dist')));
+    assert.ok(!existsSync(path.join(root, '../escaped')));
+  });
+
+  it('refuses a marketplace.json over 5 MiB and leaves no zip', () => {
+    const root = fresh('big');
+    const f = path.join(plugin(root), '.claude-plugin/plugin.json');
+    const m = JSON.parse(readFileSync(f, 'utf8'));
+    m.description = 'x'.repeat(5 * 1024 * 1024);
+    writeFileSync(f, JSON.stringify(m));
+    refused(root, /5 MiB/);
+    assert.deepEqual(walk(path.join(root, 'dist/release/claude')), []);
+  });
+
+  it('removes its staging directory when zip fails', () => {
+    const root = fresh('zipfail');
+    const bin = path.join(tmp, 'fakebin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(path.join(bin, 'zip'), '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+    const stagings = () =>
+      readdirSync(tmpdir()).filter((n) => n.startsWith('build-claude-plugin-'));
+    const before1 = new Set(stagings());
+    const r = spawnSync('node', [script, '--root', root, '--base-url', 'https://x.test'], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /zip failed/);
+    assert.deepEqual(
+      stagings().filter((n) => !before1.has(n)),
+      [],
+    );
+  });
 });
 
 describe('build-claude-plugin output', () => {
