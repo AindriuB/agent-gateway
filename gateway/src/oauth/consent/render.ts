@@ -1,6 +1,16 @@
 import { escapeHtml } from '../../status/page.js';
 import type { Scope } from '../repository.js';
+import { ASCEND_MARK, GITHUB_MARK } from './marks.js';
 import { CONSENT_STYLE_PATH } from './style.js';
+
+/** The CSRF cookie is `<prefix><request id>`. Named in the footer so the two cannot drift. */
+export const COOKIE_PREFIX = '__Host-agcsrf-';
+
+/** Operator-set footer links (already validated by config). Unset means no link. */
+export interface FooterLinks {
+  privacyUrl?: string;
+  sourceUrl?: string;
+}
 
 /**
  * Security headers on every consent response, JSON errors included. `same-origin`, not
@@ -40,8 +50,19 @@ export const consentJsonSecurity = (): Record<string, string> => ({
 export const CODE_SENT_TEXT =
   'If that user is online in that world, a code was sent to their Foundry window.';
 
-const shell = (title: string, body: string): string =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${CONSENT_STYLE_PATH}"></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
+const footer = (l: FooterLinks): string => {
+  const rel = 'rel="noopener noreferrer"';
+  const privacy = l.privacyUrl
+    ? `<p><a href="${escapeHtml(l.privacyUrl)}" ${rel}>Privacy</a></p>`
+    : '';
+  const source = l.sourceUrl
+    ? `<p><a href="${escapeHtml(l.sourceUrl)}" ${rel} aria-label="Source code on GitHub, by Ascend">${GITHUB_MARK}${ASCEND_MARK}<span>Source code</span></a></p>`
+    : '';
+  return `<footer>${privacy}<p>This page sets one strictly necessary cookie, <code>${COOKIE_PREFIX}</code> followed by a request id. It is for sign-in only, is not used for tracking, and expires in 15 minutes.</p>${source}</footer>`;
+};
+
+const shell = (title: string, body: string, links: FooterLinks): string =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${CONSENT_STYLE_PATH}"></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main>${footer(links)}</body></html>`;
 
 const hidden = (name: string, value: string): string =>
   `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`;
@@ -51,6 +72,7 @@ export interface FormView {
   csrf: string;
   clientName: string;
   scopes: readonly Scope[];
+  links: FooterLinks;
   /** A fixed notice (never typed text). */
   notice?: string;
 }
@@ -72,6 +94,7 @@ export function renderRequestPage(v: FormView): string {
       `<p><label>Foundry user (name or id) <input name="user" required maxlength="200"></label></p>` +
       `<fieldset><legend>Allow</legend>${boxes}</fieldset>` +
       `<p><button type="submit">Send a code to that user</button></p></form>`,
+    v.links,
   );
 }
 
@@ -84,9 +107,10 @@ export function renderCodePage(v: FormView): string {
       `<form method="post" action="/authorize/consent" autocomplete="off">${hidden('rid', v.rid)}${hidden('csrf', v.csrf)}${hidden('action', 'verify')}` +
       `<p><label>Code <input name="code" required maxlength="32" inputmode="numeric"></label></p>` +
       `<p><button type="submit">Approve</button></p></form>`,
+    v.links,
   );
 }
 
-export function renderMessagePage(title: string, message: string): string {
-  return shell(title, `<p>${escapeHtml(message)}</p>`);
+export function renderMessagePage(title: string, message: string, links: FooterLinks): string {
+  return shell(title, `<p>${escapeHtml(message)}</p>`, links);
 }

@@ -650,6 +650,8 @@ export function createApp(config: Config, deps: AppDeps): App {
         ? new OAuthServer({
             repo: openedStore().oauth,
             publicUrl,
+            ...(config.privacyUrl ? { privacyUrl: config.privacyUrl } : {}),
+            ...(config.sourceUrl ? { sourceUrl: config.sourceUrl } : {}),
             ...(deps.oauthConsent ? { consent: deps.oauthConsent } : {}),
           })
         : undefined;

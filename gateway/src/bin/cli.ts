@@ -31,6 +31,10 @@ Options:
   --public-url <url>  The external https origin behind a reverse proxy that terminates TLS
                       (AGENT_GATEWAY_PUBLIC_URL). Turns HTTP on, turns the local bearer token
                       off, and keeps pairing codes out of MCP clients
+  --privacy-url <url> Link to your privacy notice from the sign-in pages
+                      (AGENT_GATEWAY_PRIVACY_URL; https, or http on loopback)
+  --source-url <url>  Link to the source this gateway runs, from the sign-in pages
+                      (AGENT_GATEWAY_SOURCE_URL; https, or http on loopback)
   --server-mode       Always-on, many users (AGENT_GATEWAY_SERVER_MODE=1): no stdio session,
                       stays up when stdin closes, HTTP on
   --trust-proxy       Behind a reverse proxy on this host, key clients by X-Forwarded-For
@@ -345,6 +349,8 @@ function main(): void {
         'http-host': { type: 'string' },
         'link-host': { type: 'string' },
         'public-url': { type: 'string' },
+        'privacy-url': { type: 'string' },
+        'source-url': { type: 'string' },
         'server-mode': { type: 'boolean' },
         'trust-proxy': { type: 'boolean' },
         backup: { type: 'string' },
@@ -410,6 +416,8 @@ function main(): void {
         http: values.http,
         allowOrigin: values['allow-origin'],
         publicUrl: values['public-url'],
+        privacyUrl: values['privacy-url'],
+        sourceUrl: values['source-url'],
         serverMode: values['server-mode'],
         linkHost: values['link-host'],
         httpHost: values['http-host'],

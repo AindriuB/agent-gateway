@@ -2,16 +2,17 @@
 
 **Repo:** .
 **Depends on:** 67
-**Status:** Follow-up to 67, requested by Andrew on 2026-10-14. It deliberately relaxes three of 67's consent-page bans, for the footer only (see "What this reverses from 67"). It overlaps 68 on `gateway/src/bin/cli.ts` and `gateway/src/app.ts`. The regions differ (see Owns), but 75 and 68 must not be in flight at the same time; whichever lands second rebases.
+**Status:** Follow-up to 67, requested by Andrew on 2026-10-14. It deliberately relaxes three of 67's consent-page bans, for the footer only (see "What this reverses from 67"). Refreshed against main 334f8a8 (after 35, 67, 68, 74 and 42 merged); every path:line below was re-checked there.
+**Approved (Andrew, 2026-10-14):** forwarding-only edits outside `gateway/src/oauth/consent/**`, in `gateway/src/oauth/server.ts` (the `new ConsentPages({...})` call) and `gateway/src/app.ts` (the `new OAuthServer({...})` call in the `startHttp` block), so that `--privacy-url` and `--source-url` reach the consent pages. Nothing else in those two files changes.
 **Owns:**
 - gateway/src/oauth/consent/** (the footer in `render.ts`, its rules in `style.ts`, the new `marks.ts` holding the two inline SVGs, and the two optional URLs on `ConsentPagesOptions` in `index.ts`)
 - gateway/test/oauth/consent/** (relax `branding.test.ts` as described below; new `footer.test.ts`)
 - gateway/src/config/index.ts (insertions only: the `privacyUrl` and `sourceUrl` schema fields, the `AGENT_GATEWAY_PRIVACY_URL` and `AGENT_GATEWAY_SOURCE_URL` entries in `ENV_KEYS`, and one link-URL validator called from `loadConfig`. `normalizePublicUrl` keeps its behaviour and its messages)
-- gateway/src/bin/cli.ts (insertions only: two `parseArgs` options, two entries in the `loadConfig` flags, and two `USAGE` entries)
+- gateway/src/bin/cli.ts (insertions only: two `'privacy-url'`/`'source-url'` string options in the `parseArgs` options at :336-363, placed after `'public-url'` at :347; two entries in the `loadConfig` `flags` object at :407-417, after `publicUrl` at :412; and two `USAGE` entries after the `--public-url` entry at :31-33. 68's operator commands at :42-52, :188-330 and their `parseArgs` options at :351-357 are not touched)
 - gateway/test/config/consent-links.test.ts (new)
 - gateway/test/bin/consent-links.test.ts (new)
-- gateway/src/oauth/server.ts (pass-through only: two optional fields on `OAuthServerOptions`, forwarded into `new ConsentPages({...})` at :161)
-- gateway/src/app.ts (pass-through only: `config.privacyUrl` and `config.sourceUrl` forwarded into `new OAuthServer({...})` at :591)
+- gateway/src/oauth/server.ts (approved, pass-through only: two optional fields on `OAuthServerOptions` at :45-53, forwarded into `new ConsentPages({...})` at :161-166)
+- gateway/src/app.ts (approved, pass-through only: `config.privacyUrl` and `config.sourceUrl` forwarded into `new OAuthServer({...})` at :650-654, inside `startHttp` at :646. `config` is the `createApp` parameter at :129)
 
 ## Goal
 Every HTML consent page (request, code and message) ends in a static footer with three parts. First, a "Privacy" link to an operator-set `--privacy-url`, shown only when that setting is set. Second, a one-line note naming the single strictly necessary security cookie. Third, a "Source code" link carrying the GitHub mark and Andrew's Ascend mark, shown only when an operator-set `--source-url` is set, because the repo stays private until go-public. The gateway operator is the data controller, so the operator must be able to point users to the operator's own privacy notice.
@@ -21,15 +22,16 @@ Every HTML consent page (request, code and message) ends in a static footer with
 - gateway/src/oauth/consent/render.ts:23-37: `consentCsp` and the headers. **Leave them unchanged.**
 - gateway/src/oauth/consent/style.ts: the same-origin stylesheet. Footer and mark sizing go here, never in `style=""` or `<style>`.
 - gateway/src/oauth/consent/index.ts:32,133: `COOKIE_PREFIX = '__Host-agcsrf-'`. The cookie set is `__Host-agcsrf-<request id>` (Secure, HttpOnly, SameSite=Strict, Max-Age 15 min). The note must name it by that prefix, taken from the constant so the two cannot drift.
-- gateway/test/oauth/consent/branding.test.ts:18-39,86-98: the 67 bans and the step-1 byte-identical test that this task changes or extends.
-- gateway/src/config/index.ts:25-44,55-66,72-92,149: the schema, `ENV_KEYS`, `normalizePublicUrl` (the https / loopback-http rule to mirror) and where it is applied in `loadConfig`.
-- gateway/src/bin/cli.ts:28-30,188,236: how `--public-url` is declared, documented and passed. Follow the same shape.
-- gateway/test/config/exposure.test.ts and gateway/test/bin/exposure.test.ts:131-133: the test shape for a refused URL (exit 2, with the reason).
+- gateway/src/oauth/consent/index.ts:72-79: `ConsentPagesOptions`, where the two optional URLs go.
+- gateway/test/oauth/consent/branding.test.ts:15-16,19-40,70-84,86-97: the CSP helper, the 67 bans (page set at :24-30), the exact-CSP test and the step-1 byte-identical test that this task changes or extends.
+- gateway/src/config/index.ts:25-41,55-66,72-91,149: the schema, `ENV_KEYS`, `normalizePublicUrl` (the https / loopback-http rule to mirror, and its `ConfigError(..., 2)` at :74) and where it is applied in `loadConfig`.
+- gateway/src/bin/cli.ts:31-33,347,412: how `--public-url` is documented in `USAGE`, declared in `parseArgs` and passed to `loadConfig`. Follow the same shape. 68 put its operator commands (`--invite` and the rest) in the same `parseArgs` call as booleans and dispatches them through `operatorCommandOf` (:194-251) before `loadConfig` runs; config-backed settings like these two go through `loadConfig` instead, as `--public-url` does.
+- gateway/test/config/exposure.test.ts:106-123 and gateway/test/bin/exposure.test.ts:125-135: the test shape for a refused URL (exit 2, with the reason).
 - ~/workspace/branding/assets/logos/svg/ascend-black.svg: the monochrome silhouette path. **Copy** it into `marks.ts`. Never import, read or reference that path at build or run time.
 - ~/workspace/branding/brand/guidelines.md:14-27,58-60: small sizes use the monochrome silhouette; a logo inside a link that already names it is decorative; title IDs must be unique.
 - ~/workspace/branding/RIGHTS.md and README.md:59: the Ascend mark is all rights reserved, for the owner's use only.
 - https://github.com/logos: GitHub's logo usage rules for the GitHub mark (Invertocat).
-- docs/plan/tasks/67-oauth-consent-and-grants.md:129-166: 67's Branding section and the bans it set.
+- docs/plan/done/67-oauth-consent-and-grants.md:127-168: 67's Branding section and the bans it set.
 
 ## Decisions
 - **Source link uses an operator setting, not a build-time constant.** The settings are `--source-url <url>` and `AGENT_GATEWAY_SOURCE_URL`, plus `sourceUrl` in the config file. The reasons:
@@ -86,5 +88,38 @@ With both settings unset, every one of 67's original assertions must still hold 
 - A default source or privacy URL, and any build-time constant.
 - Editing docs (scribe), PLAN.md or HISTORY.md.
 - Other pages the gateway serves (the JSON OAuth endpoints, the stylesheet route, the link or MCP surfaces).
-- 68's commands in `cli.ts` and its sweep in `app.ts`.
+- 68's operator commands and `operatorCommandOf` in `cli.ts`, and 68's invite and revocation code in `app.ts` and `link/server.ts`. Whether `--privacy-url` or `--source-url` should be refused alongside an operator command (today they would be accepted and ignored, as `--public-url` is) is not this task's question.
 - Refactoring `normalizePublicUrl` or the other existing flags.
+
+## Review round 1 — findings
+
+- [P2] gateway/test/oauth/consent/footer.test.ts:88-94 — the "escapes the URLs it writes" test only checks the privacy link. Nothing guards `escapeHtml` on the source link's href (render.ts:59). WHATWG URL keeps a `"` in the host (`new URL('https://a"b.example/').href` gives `https://a"b.example/`, which passes normalizeLinkUrl), so removing that escape would break the attribute. With the source escape mutated out, all 32 consent tests still pass. The `"x"<y` path/query assertion is vacuous because `new URL` percent-encodes those characters. route: implementer. Use a host-quote input for both settings and assert that both hrefs are escaped. Confirm by mutating each escape.
+- [P3] gateway/src/config/index.ts:109 — the 2048 cap is checked on the raw input, but the stored and rendered value is `url.href`, which percent-encoding can make about 3 times longer (`https://x.example/` + 2000 `"` is accepted and stored at about 6018 characters). route: implementer. Also check `url.href.length` against MAX_LINK_URL, with a test.
+- [P3] gateway/src/oauth/consent/style.ts:1-6 — the header comment says "no font, image or logo is shipped", which is now false (marks.ts). route: implementer. Fix the comment.
+- [P3, cheap] gateway/test/oauth/consent/branding.test.ts:46-55 — with both URLs set, the external-href check covers the whole body. The decision says "inside `<footer>`". route: implementer. Also assert that the external hrefs and both `<svg>`s occur only inside `<footer>`.
+
+## Attempt 1 — failed
+
+- The CSP-exact test (gateway/test/oauth/consent/branding.test.ts:91-92) and the step-1 byte-identical test (:107-108) were switched to both-URLs only, so 67's original neither-URL runs no longer happen. This breaks "with both settings unset, every one of 67's original assertions must still hold unchanged". Fix: run both over `[{}, {privacyUrl, sourceUrl}]` with `it.each`, as :22 already does.
+- gateway/test/config/consent-links.test.ts:10: the title claims "and the config file", but no test uses a config file. Fix: write a temp config file (mode 0600, like the other config tests) with `privacyUrl`/`sourceUrl`, and assert the precedence file < env < flag.
+- Manual: the neither-URL screenshot is missing. Render it light and dark next to the existing two.
+- Cheap note: the branding.test.ts:54 `inFoot` regex uses `/g` and `m[1]`, while :46-48 uses `/gi` and `m[1]!`. Make them consistent.
+
+## Outcome
+
+Done on branch `claude/task-75` (HEAD 8bc2854, based on `origin/main` 334f8a8), 2026-10-14. Review round 1 found a P2 (the source-href escape was untested, because the WHATWG URL parser keeps `"` in the host) and three P3s (the 2048 cap applied to the raw input but not the encoded `url.href`, a false header comment in `style.ts`, and footer-only checks for hrefs and SVGs); all were fixed in 7e85a0f and the re-review was CLEAN. `/verify` attempt 1 was REQUEST CHANGES: the neither-URL runs of 67's CSP and step-1 tests had been dropped, the config-file precedence was untested, and the neither-URL screenshot was missing. Attempt 2 (8bc2854) fixed all three; review CLEAN with mutation-checked tests. Final: tester PASS (`npm run verify` exit 0, 4396 fast and 2227 slow), reviewer APPROVE.
+
+Approvals (Andrew, 2026-10-14): forwarding-only edits in `gateway/src/oauth/server.ts` and `gateway/src/app.ts`, so that the two URLs reach the consent pages.
+
+What changed against 67: its bans on external `href`s, `<svg>` and the word "ascend" on consent pages are relaxed for the footer only. The CSP is unchanged, and with neither URL set every one of 67's original assertions still runs and holds.
+
+Implementation notes:
+- `COOKIE_PREFIX` moved from `consent/index.ts` to `consent/render.ts`, so the footer's cookie note is built from the same constant as the cookie.
+- `ConsentPages` keeps a `renderMessagePage` wrapper that passes the footer links to the exported `renderMessagePage`, so every message page (403 and expired included) gets the footer.
+- The refusal message for a bad URL truncates the echoed value to 80 characters.
+
+Residuals:
+- The temp dir created in `gateway/test/config/consent-links.test.ts:30` is not removed.
+- Go-public: Andrew decides whether the all-rights-reserved Ascend mark in `marks.ts` may ship in a public repo (recorded in PLAN.md).
+
+Pending Andrew (manual): screenshots of the step-1 page, with both URLs set and with neither, in light and dark, to be attached to the PR.

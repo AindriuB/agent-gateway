@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 75 | Consent page footer: optional privacy and source links (`--privacy-url`, `--source-url`), cookie note, GitHub and Ascend marks; relaxes 67's bans for the footer only | `## 2026-10-14 — Consent page footer (task 75)` |
 | 2026-10-14 | 76 | Run the gateway behind an existing Caddy: standalone `compose.byo-caddy.yaml` with host or container network mode, site block, README section | `## 2026-10-14 — Run behind an existing Caddy (task 76)` |
 | 2026-10-14 | 68 | Server-mode operator invites: `--invite`, revoke, cancel and list commands, replacement revokes grants transactionally, 5 s revocation sweep, Copy my ids, hello caps, refusal-log cap | `## 2026-10-14 — Operator invites for server mode (task 68)` |
 | 2026-10-14 | 67 | OAuth consent page (world, user, code shown in the user's Foundry client), "Connected apps" grant list and revoke, retention sweep, same-origin consent.css | `## 2026-10-14 — OAuth consent page and self-service grant revocation (task 67)` |
