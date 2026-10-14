@@ -61,3 +61,8 @@ dl.aindriub.app {
 - `gateway/docker/**` (Caddyfiles, compose files, README).
 - Uploading to the VPS, rsync/scp helpers, or any deploy script.
 - Versioned download paths, checksums, or signing.
+
+## Review round 1 — findings
+- [STYLE] scripts/pack-module.mjs:10,36,55 and scripts/test/pack-module.test.mjs:3,108,126,142 — these lines exceed the repo's 100-character Prettier width, and pack-module.mjs:23 is wrapped differently from Prettier's output. `prettier --check` fails on both files at HEAD and passes on origin/main (docs/conventions.md:3, `.prettierrc` `printWidth: 100`; `npm run lint` does not cover `scripts/**/*.mjs`). route: implementer. Run `prettier --write` on the two owned files; behaviour does not change.
+- [P3] scripts/test/pack-module.test.mjs:146-165 — no test shows validation runs before anything in `dist/release/` is touched: each bad URL runs on a fresh root with no zip. Moving the validation block after the `rmSync` calls still passes all 11 tests. route: implementer. Pack once with a good URL, then run a bad `--base-url` on the same root, and assert that both `dist/release/agent-gateway.zip` and `dist/release/module.json` still exist.
+- [P3] scripts/pack-module.mjs:35 / scripts/test/pack-module.test.mjs:151 — the only credentials input is `u:p`, so removing either the `username` or the `password` check leaves every test passing. route: implementer. Add `https://u@dl.example.test/x` (username only) and `https://:p@dl.example.test/x` (password only) to the bad list.
