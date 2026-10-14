@@ -42,3 +42,12 @@ The ambiguity suite starts an unbound gateway and connects its MCP client before
 - e2e/vitest.e2e.config.ts. `multi/**/*.test.ts` is already in `e2e-unit`.
 - The opt-in env flags. Note for task 66: the 0.1.0 gate run will set `AGENT_GATEWAY_E2E_PF2E=1` (pf2e reads, Andrew 2026-10-14). Task 73 changes nothing for it.
 - The scripts/conformance.sh hygiene failure.
+
+## Outcome
+
+- **Cause:** the e2e ambiguity suite was stale against task 71. The stdio session is built at process start and binds in follow mode as soon as the first page connects (gateway/src/app.ts:517-518, gateway/src/mcp/session.ts:491, gateway/src/routing/binding.ts:221). The product is correct.
+- **Design change:** the planned deferred-client design was rejected in review for that reason. The final design is a relayed second gateway S (`Rig.openWithRelayedSession`), whose session is created on relay attach with both pages connected.
+- **Owns:** `e2e/takeover/**` was added, approved by Andrew 2026-10-14. The takeover live test assumed B prints its HTTP token, but tokens print only once per db, so it now rotates via `--http-rotate-token` first.
+- **Live result (Andrew, 2026-10-14 07:55, v14 at foundry.local):** 35 passed, 0 failed, 23 skipped (opt-in suites). Ambiguity was 8/8 with frames 0/0, and takeover passed. The first live run at 03958b4 had ambiguity green but takeover failing on the token.
+- **Context:** this unblocks task 66's e2e gate, which failed on 2026-10-14 06:22Z on this suite. The 0.1.0 gate run will set `AGENT_GATEWAY_E2E_PF2E=1` (Andrew).
+- **Known:** the pre-existing e2e-unit hygiene failure on scripts/conformance.sh is a separate follow-up chip.
