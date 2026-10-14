@@ -1,6 +1,6 @@
 import { escapeHtml } from '../../status/page.js';
 import type { Scope } from '../repository.js';
-import { ASCEND_MARK, GITHUB_MARK } from './marks.js';
+import { GITHUB_MARK } from './marks.js';
 import { CONSENT_STYLE_PATH } from './style.js';
 
 /** The CSRF cookie is `<prefix><request id>`. Named in the footer so the two cannot drift. */

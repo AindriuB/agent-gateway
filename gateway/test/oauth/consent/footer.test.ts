@@ -67,7 +67,7 @@ describe('consent footer', () => {
     const f = footerOf((await openConsent(r)).reply.body);
     const a = /<a href="https:\/\/example\.org\/source"[^>]*>[\s\S]*?<\/a>/.exec(f)?.[0] ?? '';
     expect(a).toContain('rel="noopener noreferrer"');
-    expect(a).toContain('aria-label="Source code on GitHub');
+    expect(a).toContain('aria-label="Source code on GitHub"');
     expect(a).not.toMatch(/ascend/i);
     expect(a).toContain('Source code</span>');
     const svgs = a.match(/<svg[\s\S]*?<\/svg>/g) ?? [];
