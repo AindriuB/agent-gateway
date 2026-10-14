@@ -214,7 +214,8 @@ export class OAuthServer implements OAuthRoutes {
           return json(res, 405, { error: 'invalid_request' });
         return json(res, 200, this.metadata(path));
       }
-      const want = path === '/register' || path === '/token' || path === CONSENT_PATH ? 'POST' : 'GET';
+      const want =
+        path === '/register' || path === '/token' || path === CONSENT_PATH ? 'POST' : 'GET';
       if (method !== want) return json(res, 405, { error: 'invalid_request' }, { allow: want });
       if (path === '/register') return await this.register(req, res, client);
       if (path === '/token') return await this.token(req, res, client);
@@ -345,7 +346,11 @@ export class OAuthServer implements OAuthRoutes {
 
   // ---- /authorize ----
 
-  private async consentPost(req: IncomingMessage, res: ServerResponse, client: string): Promise<void> {
+  private async consentPost(
+    req: IncomingMessage,
+    res: ServerResponse,
+    client: string,
+  ): Promise<void> {
     const pages = this.pages;
     if (!pages) return json(res, 404, { error: 'invalid_request' });
     if (pages.refuseHost(req, res)) return;

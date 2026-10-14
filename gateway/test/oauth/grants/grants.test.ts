@@ -100,7 +100,11 @@ describe('grants over the link', () => {
         jsonrpc: '2.0',
         id: 1,
         method: 'initialize',
-        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '0' } },
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 't', version: '0' },
+        },
       }),
     });
     expect(init.status).toBe(200);

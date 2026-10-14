@@ -59,7 +59,10 @@ interface Pending extends ConsentSeed {
 /** What the gateway wires in once it exists: who is connected, and the shared failure bucket. */
 export interface ConsentWiring {
   registry: {
-    get(worldId: string, userId: string): { send(data: string): void; closed?: boolean } | undefined;
+    get(
+      worldId: string,
+      userId: string,
+    ): { send(data: string): void; closed?: boolean } | undefined;
   };
   failures: FailureWindows;
 }
@@ -191,12 +194,7 @@ export class ConsentPages {
     forbidden();
   }
 
-  private sendCode(
-    res: ServerResponse,
-    client: string,
-    p: Pending,
-    form: URLSearchParams,
-  ): void {
+  private sendCode(res: ServerResponse, client: string, p: Pending, form: URLSearchParams): void {
     if (this.sends.limited(client)) {
       return send(res, 429, renderMessagePage('Slow down', 'Too many requests. Try again later.'), {
         'retry-after': '60',
@@ -234,9 +232,7 @@ export class ConsentPages {
     const byId = paired.find((r) => r.userId === u);
     if (byId) return { worldId: w, userId: byId.userId };
     const named = paired.filter((r) => r.userName !== '' && r.userName === u);
-    return named.length === 1 && named[0]
-      ? { worldId: w, userId: named[0].userId }
-      : undefined;
+    return named.length === 1 && named[0] ? { worldId: w, userId: named[0].userId } : undefined;
   }
 
   /** The code goes to the chosen user's own link connection and nowhere else. */
@@ -261,9 +257,14 @@ export class ConsentPages {
 
   private verify(res: ServerResponse, client: string, p: Pending, form: URLSearchParams): void {
     if (this.failures.limited(client)) {
-      return send(res, 429, renderMessagePage('Slow down', 'Too many wrong codes. Try again later.'), {
-        'retry-after': '60',
-      });
+      return send(
+        res,
+        429,
+        renderMessagePage('Slow down', 'Too many wrong codes. Try again later.'),
+        {
+          'retry-after': '60',
+        },
+      );
     }
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
     const ok =
@@ -277,12 +278,9 @@ export class ConsentPages {
       p.wrong++;
       this.failures.record(client);
       if (p.wrong >= MAX_WRONG_CODES) return this.voidRequest(res, p);
-      return send(
-        res,
-        400,
-        renderCodePage(this.view(p, 'That code is wrong or has expired.')),
-        { 'set-cookie': this.cookie(p) },
-      );
+      return send(res, 400, renderCodePage(this.view(p, 'That code is wrong or has expired.')), {
+        'set-cookie': this.cookie(p),
+      });
     }
     this.pending.delete(p.id);
     const location = this.o.finish(p, { ...p.target, scopes: p.chosen });
@@ -294,7 +292,10 @@ export class ConsentPages {
     send(
       res,
       400,
-      renderMessagePage('Request cancelled', 'Too many attempts. Start again from the application.'),
+      renderMessagePage(
+        'Request cancelled',
+        'Too many attempts. Start again from the application.',
+      ),
       { 'set-cookie': this.cookie(p, true) },
     );
   }

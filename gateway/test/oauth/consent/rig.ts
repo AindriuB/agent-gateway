@@ -56,7 +56,8 @@ export async function stopRig(r: ConsentRig | undefined): Promise<void> {
 
 export const form = (p: Record<string, string | string[]>): string => {
   const u = new URLSearchParams();
-  for (const [k, v] of Object.entries(p)) for (const x of Array.isArray(v) ? v : [v]) u.append(k, x);
+  for (const [k, v] of Object.entries(p))
+    for (const x of Array.isArray(v) ? v : [v]) u.append(k, x);
   return u.toString();
 };
 
@@ -138,7 +139,12 @@ export async function grantVia(
   scope = 'read',
 ): Promise<{ access: string; refresh: string }> {
   const page = await openConsent(r, clientName, scope);
-  await postConsent(r, page, { action: 'send', world: 'w1', user: userId, scope: scope.split(' ') });
+  await postConsent(r, page, {
+    action: 'send',
+    world: 'w1',
+    user: userId,
+    scope: scope.split(' '),
+  });
   const { code } = (await m.tc.next('consentCode')) as { code: string };
   const done = await postConsent(r, page, { action: 'verify', code });
   const authCode = new URL(done.headers.location as string).searchParams.get('code')!;

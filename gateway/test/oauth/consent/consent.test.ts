@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PUBLIC, REDIRECT, call } from '../helpers.js';
 import { pairModule, type FakeModule } from '../../routing/harness.js';
-import {
-  CONSENT_CODE_TTL_MS,
-  CODE_SENT_TEXT,
-  MAX_WRONG_CODES,
-} from '../../../src/oauth/index.js';
+import { CONSENT_CODE_TTL_MS, CODE_SENT_TEXT, MAX_WRONG_CODES } from '../../../src/oauth/index.js';
 import { consentRig, openConsent, postConsent, stopRig, type ConsentRig } from './rig.js';
 
 let r: ConsentRig | undefined;
@@ -68,7 +64,8 @@ describe('user resolution and the code', () => {
     });
     expect(res.body).toContain(CODE_SENT_TEXT);
     await new Promise((x) => setTimeout(x, 50));
-    for (const m of [a, b]) expect(m.tc.messages.filter((x) => x.type === 'consentCode')).toHaveLength(0);
+    for (const m of [a, b])
+      expect(m.tc.messages.filter((x) => x.type === 'consentCode')).toHaveLength(0);
     // The ids still work.
     const page2 = await openConsent(r);
     await postConsent(r, page2, { action: 'send', world: 'w1', user: 'ua', scope: 'read' });

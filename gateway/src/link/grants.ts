@@ -15,7 +15,8 @@ export function handleGrantMessage(
   send: (m: LinkMessage) => void,
   now: () => number = Date.now,
 ): void {
-  if (msg.type === 'revokeGrant') revokeOwnGrant(repo, conn.worldId, conn.userId, msg.grantId, now());
+  if (msg.type === 'revokeGrant')
+    revokeOwnGrant(repo, conn.worldId, conn.userId, msg.grantId, now());
   send({
     type: 'grants',
     requestId: msg.requestId,
