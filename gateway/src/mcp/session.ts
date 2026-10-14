@@ -60,6 +60,8 @@ export interface SessionServerOptions {
    * means unrestricted. `gateway_status` is always available.
    */
   allowedCategories?: readonly ToolDefinition['category'][];
+  /** Category of an announced tool in the persisted offline catalog; used only for scoped sessions. */
+  offlineCategory?: (owner: QueueOwner, name: string) => string | undefined;
   /** Clock for the re-bind grace period and notice limit; injectable for tests. */
   now?: () => number;
 }
@@ -332,17 +334,29 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     }
     if (r.kind === 'unbound') return notConnected();
     // Scopes come before the event tools, the offline queue and the module call. A pack tool's
-    // category is known only from a connected user's announcement; offline it is unknown, so a
-    // scoped session cannot call it (nothing is queued).
+    // category comes from the connected user's announcement, or, offline, from the persisted
+    // queue catalog; a tool in neither has an unknown category and fails closed.
     if (allowed) {
-      const category =
+      let category: string | undefined =
         all.find((t) => t.name === req.params.name)?.category ??
         moduleVisibleFor(r.conn).find((t) => t.definition.name === req.params.name)?.definition
           .category;
+      if (category === undefined && !r.conn && opts.queue && opts.offlineCategory) {
+        try {
+          category = opts.offlineCategory(opts.queue.owner(r.pair, queueOwner), req.params.name);
+        } catch {
+          category = undefined;
+        }
+      }
+      if (category === undefined)
+        return failure(
+          'FORBIDDEN',
+          `The category of this tool is unknown, so this token's scopes cannot allow it: ${req.params.name}`,
+        );
       if (!inScope(category))
         return failure(
           'FORBIDDEN',
-          `Tool not permitted by this token's scopes: ${req.params.name}`,
+          `This token lacks the ${category} scope needed for ${req.params.name}`,
         );
     }
     if (gatewayTool && opts.events) {

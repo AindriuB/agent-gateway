@@ -163,14 +163,17 @@ const toToken = (r: TokenRow): OAuthTokenRow => ({
 });
 
 export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
+  // A savepoint works on its own and inside a caller's open transaction (68's redeem), where a
+  // nested BEGIN would throw. An outer rollback undoes it.
   const tx = <T>(fn: () => T): T => {
-    db.exec('BEGIN IMMEDIATE');
+    db.exec('SAVEPOINT oauth_tx');
     try {
       const out = fn();
-      db.exec('COMMIT');
+      db.exec('RELEASE oauth_tx');
       return out;
     } catch (e) {
-      db.exec('ROLLBACK');
+      db.exec('ROLLBACK TO oauth_tx');
+      db.exec('RELEASE oauth_tx');
       throw e;
     }
   };

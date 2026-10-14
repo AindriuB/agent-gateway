@@ -548,6 +548,8 @@ export function createApp(config: Config, deps: AppDeps): App {
           userName: p.userName,
         })) ?? [],
       log: writeStatus,
+      offlineCategory: (o: Parameters<Store['queue']['catalog']>[0], name: string) =>
+        store?.queue.catalog(o)?.find((t) => t.name === name)?.category,
       ...(isPublic
         ? { askOperator: true }
         : {

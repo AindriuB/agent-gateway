@@ -472,7 +472,8 @@ export class OAuthServer implements OAuthRoutes {
     }
     this.repo.touchClient(c.id, t);
     const access = this.mint('access', grant.id, row.audience);
-    this.respond(res, access.secret, next.secret, scopes);
+    // The access token carries every scope of the grant, so that is what is reported.
+    this.respond(res, access.secret, next.secret, grant.scopes);
   }
 
   /** Store a fresh token's hash and return it with the secret that is shown once. */

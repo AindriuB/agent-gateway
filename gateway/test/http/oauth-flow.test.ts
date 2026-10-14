@@ -300,6 +300,23 @@ describe('codes and tokens', () => {
     expect((await r.mcp(t.refresh_token!, initBody)).status).toBe(401);
   });
 
+  it('a refresh with a narrower scope reports the scope the new token actually carries', async () => {
+    r = await rig();
+    const c = await r.client();
+    const t = await r.login(c, 'read write');
+    const res = await r.token({
+      grant_type: 'refresh_token',
+      refresh_token: t.refresh_token!,
+      client_id: c.id,
+      scope: 'read',
+    });
+    expect(res.status).toBe(200);
+    // The access token carries every grant scope, so the response says so.
+    expect(res.json().scope).toBe('read write');
+    const principal = r.oauth.authenticate(res.json().access_token as string);
+    expect(principal?.scopes).toEqual(['read', 'write']);
+  });
+
   it('a refresh token is bound to its client', async () => {
     r = await rig();
     const c = await r.client();

@@ -78,6 +78,7 @@ async function start(allowedCategories: SessionServerOptions['allowedCategories'
     queue,
     tools: [chatPost, approvalStatus, eventsPoll],
     allowedCategories,
+    offlineCategory: (o, name) => store!.queue.catalog(o)?.find((t) => t.name === name)?.category,
     selector: { world: 'w1', user: 'u1', exactId: true },
     knownIdentities: () =>
       store!
@@ -139,12 +140,48 @@ describe('read-only scope', () => {
     const res = await client.callTool({ name: 'chat_post', arguments: { content: 'hi' } });
     expect(res.isError).toBe(true);
     expect(text(res)).toContain('FORBIDDEN');
-    // A pack tool's category is unknown offline, so a scoped session cannot call it either.
-    const pk = await client.callTool({ name: 'fixture-edit', arguments: {} });
-    expect(text(pk)).toContain('FORBIDDEN');
     expect(queued()).toBe(0);
     await tick();
     expect(calls(m)).toHaveLength(0);
+  });
+
+  it('offline pack tools use the catalog category: a read-only token is refused and names write', async () => {
+    const { h, client } = await start(['read']);
+    const m = await pair(h);
+    m.tc.ws.terminate();
+    await until(() => !h.registry.get(m.worldId, m.userId));
+    const res = await client.callTool({ name: 'fixture-edit', arguments: {} });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain('FORBIDDEN');
+    expect(text(res)).toContain('write scope');
+    expect(queued()).toBe(0);
+  });
+
+  it('offline pack tools use the catalog category: read + write queues the write', async () => {
+    const { h, client } = await start(['read', 'write']);
+    const m = await pair(h);
+    m.tc.ws.terminate();
+    await until(() => !h.registry.get(m.worldId, m.userId));
+    const res = await client.callTool({ name: 'fixture-edit', arguments: {} });
+    expect(JSON.stringify(res)).toContain('pending_approval');
+    expect(queued()).toBe(1);
+    // A destructive pack tool in the same catalog stays refused.
+    const no = await client.callTool({ name: 'fixture-destroy', arguments: {} });
+    expect(text(no)).toContain('destructive scope');
+    expect(queued()).toBe(1);
+  });
+
+  it('an offline pack tool absent from the catalog fails closed and says its category is unknown', async () => {
+    const { h, client } = await start(['read', 'write']);
+    const m = await pair(h);
+    m.tc.ws.terminate();
+    await until(() => !h.registry.get(m.worldId, m.userId));
+    const res = await client.callTool({ name: 'fixture-ghost', arguments: {} });
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain('FORBIDDEN');
+    expect(text(res)).toContain('unknown');
+    expect(text(res)).not.toContain('lacks');
+    expect(queued()).toBe(0);
   });
 
   it('control: an unrestricted session queues the same offline write', async () => {
