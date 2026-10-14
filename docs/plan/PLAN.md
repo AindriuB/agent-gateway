@@ -12,15 +12,31 @@ Inventory: 63 done in `docs/plan/done/` (excluding its README.md), 23 active in 
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
-then MVP B (VPS/hosted). MVP A is complete: 0.1.0 exists as a private draft release whose publication is deferred until MVP B is done (Andrew, 2026-10-14).
+then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (includes 86 and 88) and its CI run is building the image; Andrew also tagged v0.1.0-rc.2 on the same commit. Publishing the GitHub release stays deferred until MVP B is done (Andrew, 2026-10-14).
 
 ---
 
 ## Now
 
-### Priority: invite redemption trusts client-asserted ids
-- **Invite redemption takes the world and user ids from the client's hello (`gateway/src/link/server.ts` around :488-494), so a leaked invite code lets a player pair as the target user.** The gateway should verify identity through Foundry rather than the hello. Needs an architect review before a task is written.
+### 1. Deploy 0.1.0 and retest ChatGPT
+- **Deploy v0.1.0 to ledger (gw.aindriub.app) once the tag's CI image build finishes, then retry ChatGPT/Codex sign-in.** The deploy carries 88, which fixed the 429 sign-in block (credential-free discovery requests no longer count as failed auth). The AAR for 0.1.0 is pending after the deploy.
+- **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and awaiting this deploy. Task file stays in `docs/plan/tasks/`.
 
+### 2. In flight: 87
+- **87: link resilience and diagnostics (branch `claude/task-87`, in flight).** Makes link drops visible and recoverable without re-pairing. Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`.
+
+### 3. Priority: invite redemption trusts client-asserted ids
+- **Invite redemption takes the world and user ids from the client's hello (`gateway/src/link/server.ts` around :488-494), so a leaked invite code lets a player pair as the target user.** The gateway should verify identity through Foundry rather than the hello. Needs an architect review before a task is written. The same review should settle two open questions: delegated invites (someone other than the operator minting them) and an operator web console.
+
+### 4. 85 live run (Andrew)
+- **85 is merged (PR #137); its task file stays in `docs/plan/tasks/` until Andrew's live run:** marketplace add, `/mcp` OAuth with a scope check (stop if read only), a read, an approved write, revoke, logout. Then archive the file and write the HISTORY entry.
+
+### Andrew's open actions
+- Commit the Caddyfile `dl` block in `/opt/aindriub-app` and gitignore `site/dl`.
+- Revoke the Codex OAuth grant that holds all scopes.
+- Approve the Ascend style values going public.
+
+### Existing follow-ups (MVP A and later waves)
 ### MVP A: someone else can install it locally
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
@@ -40,7 +56,7 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **A10: 80 (done and merged, PR #129; archived in `docs/plan/done/`).** `npm run verify` now also runs `npm run test:scripts`, and CI's separate script-test step is gone. `scripts/release.mjs:77-78` still runs them again after verify; left for Andrew.
 - **A11: 81 (done on branch `claude/task-81`, archived in `docs/plan/done/`; PR pending).** CI now runs only on `v*` tags and on manual "Run workflow"; PR and `main` runs are gone, and the image job also requires a push event, so a manual run never publishes. Retry a failed publish with "Re-run jobs" on the tag run.
 - **A12: 79 (done on branch `claude/task-79`, archived in `docs/plan/done/`; PR pending).** The step-down load flake was the test, not the relay: it counted the bare `holds link port`, which the standby warning also prints, and chose `primary` from a snapshot. It now counts the primary banner and waits on observable state; 20/20 under CPU load.
-- **A13: 88 (done on branch `claude/task-88`, archived in `docs/plan/done/`; PR pending).** Credential-free `/mcp` requests get the OAuth discovery 401 without counting as failed auth, behind a separate 120 per 60 s per-client discovery throttle; any offered `Authorization` header keeps the old lockout. Pending Andrew: merge, then redeploy to gw.aindriub.app and retry ChatGPT/Codex sign-in.
+- **A13: 88 (done and merged, PR #138; archived in `docs/plan/done/`).** Credential-free `/mcp` requests get the OAuth discovery 401 without counting as failed auth, behind a separate 120 per 60 s per-client discovery throttle; any offered `Authorization` header keeps the old lockout. Pending: the deploy of 0.1.0 to gw.aindriub.app and the ChatGPT/Codex sign-in retry (see item 1).
 - **Follow-up (88): `invite-cli.test.ts` env leak.** `gateway/test/invite-cli.test.ts` reads `AGENT_GATEWAY_PUBLIC_URL` from the ambient environment, so a developer shell that sets it can change results. Isolate it in the test.
 - **Follow-up (88): optional readability refactor.** The nested check at `gateway/src/http/server.ts:306-312` could be flattened into named branches (offered, locked out, discovery). Behaviour must not change.
 - **Follow-up: CI flake.** `gateway/test/events/repository.test.ts:38` "retains exactly10000 oldest-first…" took 19s on ubuntu-latest against a 15s vitest timeout and failed the v0.1.0-rc.1 tag run (run 38587528849). Since 81 it can only affect tag runs and manual runs, but a failure there still blocks a publish. A re-run of the failed job was triggered. If it recurs, raise the timeout or shrink the test.
@@ -72,18 +88,17 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
    - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
 
-### ChatGPT plugin: 84 (ready)
+### ChatGPT plugin: 84 (run by a separate Codex session; open issues under Now item 1)
 - **84 — Private ChatGPT plugin package for the existing gateway.** Adds a portable MCP package, a focused Foundry workflow skill, a standalone packer and package-specific verification notes. Andrew confirms the supporting tasks are delivered and the deployment is live at `https://foundry.aindriub.app` and `https://gw.aindriub.app` (2026-10-14); public OAuth metadata verifies `https://gw.aindriub.app/mcp`. No open task dependencies or deployment work. Package ownership is disjoint from 40 (conformance/matrix) and 43 (general guides). Live ChatGPT OAuth/read/approved-write/revocation acceptance still needs Andrew's account and participation; the metadata check is not a client compatibility claim.
 
 ### Self-hosted module manifest: 83 (done on branch `claude/task-83`, archived in `docs/plan/done/`; PR pending)
 - **83 — `pack-module --base-url`.** Lets the module be installed from a manifest URL while the repo is private; deployed at `https://dl.aindriub.app/agent-gateway/module.json`. Pending Andrew: the manual Foundry v14 install, and committing the Caddy change in `/opt/aindriub-app`. Residuals are in `docs/plan/done/83-static-module-manifest.md`.
 
-### Claude Code plugin: 85 (automated done, PR open, live run pending; task file stays in `docs/plan/tasks/`)
+### Claude Code plugin: 85 (merged, PR #137; live run pending; task file stays in `docs/plan/tasks/`)
 - **85 — Private Claude Code plugin for the hosted gateway.** Repo marketplace `agent-gateway` and a hosted one (`aindriub-dl`) built by `scripts/build-claude-plugin.mjs --base-url`, live at `https://dl.aindriub.app/claude/marketplace.json` since 2026-10-14. Reviewed in three clean rounds, tester PASS, reviewer APPROVE. Pending Andrew: marketplace add, install, `/mcp` OAuth (check which scopes are requested; stop if read only), list tools, one read, one approved write, revoke, logout. Move the task file to `done/` and write the HISTORY entry after that run. Guide: `docs/claude-plugin.md`.
 
-### Server-mode onboarding: 86 (merged, PR #139; archived in `docs/plan/done/`), then 87
+### Server-mode onboarding: 86 (merged, PR #139; archived in `docs/plan/done/`); 87 is in flight (see Now)
 - **86 — One-paste invite, world default gateway URL, server-mode wording.** Reviewed in three rounds plus Amendment 1. Pending Andrew: the manual check against a live hosted gateway.
-- **87 — Link resilience and diagnostics (next; unblocked now that 86 has merged).** Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`: make link drops visible and recoverable without re-pairing.
 - **Follow-ups from 86:**
   - The "inherited" note in the pairing window is hidden while the state is connecting or unreachable; show it there too.
   - When `AGENT_GATEWAY_PUBLIC_URL` is set to an invalid value, the error still says "Invalid --public-url" (from `normalizePublicUrl`, `gateway/src/bin/cli.ts:271`); it should name the env var when that was the source.
@@ -99,6 +114,7 @@ Not planned now: a tunnel or `share` mode, port-forwarding, and TLS in the gatew
 
 ### Deferred beyond B
 - **36** remainder: needs 18, 67, 68 and 35b. The consent page moved to 67 and pairing confirmation to 68. It must use the 10b recommendation (`docs/spikes/foundry-socket-identity.md`), with identity only from server-set args.
+  - **Check, 2026-10-14: 36 is largely superseded by 67 and 68.** 67 delivered the consent page (with the one-time code shown in the user's Foundry client), the "Connected apps" grant list and self-service revocation; 68 delivered server-mode pairing control through operator invites (the invite names the exact world and user, replacing the confirm-in-client design), plus `--server-mode` itself came with 74. Likely remaining: the rule that a pairing or different-token connection from another browser never silently replaces an existing one (held pending until the user confirms), and the 10b proof of identity at first pairing, which the invite review in Now item 3 may cover. Recommendation for Andrew: re-scope 36 to that remainder after the architect review, or retire it if the review closes it. Not retired here.
 - **35b** Metadata-only hash-chained gateway audit trail.
 - **39** Quench in-world integration tests. Not a prerequisite for A or B.
 - **41** Superseded by 64 for MVP A; remote gates return with 39.
