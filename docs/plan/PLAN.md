@@ -60,6 +60,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Task 92's stale-connection test name overclaims.
   - The docs should say to pair the Foundry user first, then sign in the AI, and that the tab must stay open until task 37.
 - **92: delegated invites (branch `claude/task-92`, done; PR pending; archived in `docs/plan/done/`).** An admin GM creates, lists and cancels player invites over its link, with limits and a 30-day prune. **93 (the GM management app) is next.** Accepted residual: an admin GM can list and cancel operator-minted invites in its own world, including gm and admin invites.
+  - Round 2 follow-ups: no test guards the outer newest-first re-sort in `listForWorld`, the `expires_at > now` term in the open-first ordering, or the MAX(limit, open count) branch.
 
 ### 3. Invite redemption identity (90 closes it for player targets)
 - **Player invites now need a GM vouch (90), so a leaked player code no longer pairs as the target.** Still open: `gm` and `admin` invites trust the code alone, and a co-GM can falsely vouch. Delegated invites (92, done on branch) and an operator web console remain undecided beyond the 91-94 plan.
