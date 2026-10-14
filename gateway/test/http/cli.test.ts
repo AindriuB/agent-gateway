@@ -12,6 +12,7 @@ describe('--http-host', () => {
       timeout: 10_000,
     });
     expect(r.status).toBe(2);
-    expect(r.stderr).toContain('127.0.0.1');
+    expect(r.stderr).toContain('--http-host');
+    expect(r.stderr).toContain('--public-url');
   });
 });
