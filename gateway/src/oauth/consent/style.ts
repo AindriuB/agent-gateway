@@ -2,7 +2,7 @@
  * The consent pages' stylesheet. It is served same-origin (the CSP's `style-src 'self'` forbids
  * inline styles) and is static, so every user gets the same bytes. Palette, themes, type stacks,
  * spacing and radii are copied in as plain values; nothing is imported at build or run time and
- * no font or image is loaded. The footer's two inline SVG marks live in marks.ts, not here.
+ * no font or image is loaded. The footer's one inline SVG mark lives in marks.ts, not here.
  */
 export const CONSENT_STYLE_PATH = '/authorize/consent.css';
 
@@ -109,7 +109,6 @@ footer a { color: var(--text-muted); text-decoration: underline; }
 footer a:hover { color: var(--text); }
 footer a[aria-label] { display: inline-flex; align-items: center; gap: 0.5rem; }
 .mark { width: 1.125rem; height: 1.125rem; flex: none; }
-.mark + .mark { margin-left: 0.25rem; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   :root { --motion: 0ms; }
