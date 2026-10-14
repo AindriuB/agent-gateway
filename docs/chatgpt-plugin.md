@@ -60,8 +60,9 @@ first and update it rather than creating duplicates. If an upload result is
 uncertain, inspect the account before retrying.
 
 Saving the package does not sign the user in to the gateway. Open the resulting
-plugin in the host, enable/install it through the host's supported flow and use
-its connection action to start OAuth. If that host does not offer a supported
+plugin in the host and enable/install it. For the documented ChatGPT plugin
+quickstart, switch from Chat to Work, start a new Work chat and select the plugin
+with `@`. Use its supported connection action to start OAuth. If that host does not offer a supported
 installation or OAuth flow, retain the ZIP and report that exact blocker rather
 than substituting a static token or claiming success. The save route above is
 available in Codex's plugin-creator integration; successful use in ChatGPT must
@@ -86,6 +87,44 @@ The existing [Claude Desktop](guides/claude-desktop.md) and
 A general ChatGPT guide and the shared compatibility matrix belong to tasks 43
 and 40; this document records package-specific steps and evidence only.
 
+## Connection diagnosis: observed, documented and unverified
+
+**Reported by Andrew:** the gateway works, and Codex registered and used a live
+OAuth grant. Installing the plugin through ChatGPT settings exposed its skill
+but no Foundry MCP tools in a Chat-mode conversation. This is evidence about
+those observed surfaces; it does not establish that the plugin is Codex-only or
+that OAuth grants are shared between hosts.
+
+**Documented:** the [plugin quickstart](https://developers.openai.com/plugins/quickstart)
+tests installed plugins in a new Work chat after switching from Chat and selecting
+the plugin with `@`. The [custom MCP guide](https://developers.openai.com/api/docs/guides/custom-mcp-server)
+also describes adding a server with explicit authentication configuration,
+installing the resulting plugin and refreshing its tools in app settings.
+
+The [packaging guide](https://developers.openai.com/plugins/build/plugins)
+describes a local-testing route that first registers the MCP connection, then
+maps its verified `plugin_asdk_app...` identifier through `.app.json`. This is a
+specific documented workflow, not proof that every portable package requires
+that mapping. The same guide documents per-server OAuth configuration in
+`mcp.json` at `extensions.com.openai.auth`, with `type: "oauth"` and optional
+`client: { "mode": "dcr" }`. Discovery can supply the endpoints; secrets do not
+belong in the package.
+
+**Source inspection:** the saved 0.1.0 release contains the endpoint in portable
+`mcp.json` and generated `.mcp.json`, but neither declares authentication: the URL-only package relies on host
+discovery rather than explicit auth configuration. Its inventory has no `.app.json` mapping. The repository's narrow validator currently
+rejects server extension fields. No verified registered-connection ID has been
+identified, so none should be invented or copied from documentation examples.
+
+**Next checks / inference:** first test the existing installation in Work and
+inspect its connection and tool discovery. If the connection is absent or cannot
+authenticate, investigate the registered-connection route and the documented
+explicit OAuth declaration. An explicit OAuth declaration is a documented configuration improvement,
+not a proven fix of the Chat-mode symptom. Adding it requires a reviewed
+package/validator/test change and a new private release. No such package or live
+plugin change has been made by this diagnosis. Work OAuth, read, approved write
+and revocation acceptance remain untested.
+
 ## Verification record
 
 As of 2026-10-14:
@@ -98,8 +137,8 @@ As of 2026-10-14:
 | Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                       |
 | Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
 | Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
-| ChatGPT host/build and OAuth | Pending live acceptance with Andrew's account.                                                                                                                                                 |
-| Tool discovery and read      | Pending; discover real tools, then call an advertised read such as `world_info`.                                                                                                               |
+| ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work OAuth and host/build capture remain pending.                                                                |
+| Tool discovery and read      | Codex OAuth use reported by Andrew; ChatGPT Work tool discovery and read remain pending.                                                                                                       |
 | Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
 | Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
 
