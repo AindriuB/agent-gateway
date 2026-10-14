@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 57 done in `docs/plan/done/` (excluding its README.md), 20 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 57 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -63,6 +63,9 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
    - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
    - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
+
+### ChatGPT plugin: 82 (ready)
+- **82 — Private ChatGPT plugin package for the existing gateway.** Adds a portable MCP package, a focused Foundry workflow skill, a standalone packer and package-specific verification notes. Andrew confirms the supporting tasks are delivered and the deployment is live at `https://foundry.aindriub.app` and `https://gw.aindriub.app` (2026-10-14); public OAuth metadata verifies `https://gw.aindriub.app/mcp`. No open task dependencies or deployment work. Package ownership is disjoint from 40 (conformance/matrix) and 43 (general guides). Live ChatGPT OAuth/read/approved-write/revocation acceptance still needs Andrew's account and participation; the metadata check is not a client compatibility claim.
 
 ### Later (after MVP B)
 
