@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 73 | e2e ambiguity suite runs through a relayed second gateway; takeover live test rotates the HTTP token first; live v14 35 passed, 0 failed, 23 skipped; unblocks 66's e2e gate | ## 2026-10-14 — e2e ambiguity and takeover suites fixed for the release gate (task 73) |
 | 2026-10-14 | 72 | stepped-down gateway stays alive as a standby; handover claim names the heir; takeover automation (offline tests plus live e2e); live check pending Andrew | ## 2026-10-14 — stepped-down gateway stays alive; handover claim; takeover automation (task 72) |
 | 2026-10-13 | 65 | README quick start, Claude Desktop and Claude Code guides (incl. local HTTP), security model sections, privacy statement; commands run against built artefacts; manual quick-start check pending | ## 2026-10-13 — local quick start, guides, security model and privacy statement (task 65) |
 | 2026-10-13 | 34 | local Streamable HTTP on 127.0.0.1:7421/mcp, bearer token hashed in SQLite (migration 009), 413/429/503 limits, per-session servers with idle close, loopback /status, `--http-rotate-token`, takeover HTTP retry, conformance over stdio and http; manual Claude Code check pending | ## 2026-10-13 — local Streamable HTTP for Claude Code (task 34) |

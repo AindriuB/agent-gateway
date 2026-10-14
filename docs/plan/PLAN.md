@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 45 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 46 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -30,6 +30,7 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **A7: 64 (done on branch `claude/task-64`, archived in `docs/plan/done/`; tester PASS, reviewer APPROVED after two rounds).** The local release script, `bump-version` and `docs/releasing.md`: version bump that also updates `module.json` `download`, gates (including `scripts/conformance.sh` and `scripts/test/*.mjs`), three artefacts, stops before anything irreversible; draft notes carry the "macOS verified; Windows untested in this release" line. Known gaps: `--check` skips non-exact internal pins, and piped `yes` counts as consent.
 - **A7b: 65 (done on branch `claude/task-65`, archived in `docs/plan/done/`; manual quick-start check pending Andrew).** README quick start, Desktop and Code guides, security model, privacy statement.
 - **A7c: 72 (done on branch `claude/task-72`, archived in `docs/plan/done/`; tester PASS, reviewer APPROVED after five rounds; PR pending).** A stepped-down gateway stays alive as a standby and takes over again, using a handover claim, so a separate `--http` gateway alongside Claude Desktop's no longer strands Desktop. Pending Andrew: the live e2e `takeover` scenario and the manual 71 world-switch and Desktop take-back checks. The guides can now describe the mixed setup.
+- **A7d: 73 (done on branch `claude/task-73`, archived in `docs/plan/done/`; live e2e on v14 passed 35/0/23 skipped, Andrew 2026-10-14).** Fixes the e2e ambiguity and takeover suites for the 0.1.0 gate (the suite was stale against 71; the product was correct). The 0.1.0 gate run sets `AGENT_GATEWAY_E2E_PF2E=1`. Follow-up chip: the pre-existing e2e-unit hygiene failure on `scripts/conformance.sh`.
 - **A8: 66** (next; 72 is done and the from-source install docs, PR #113, and the private plan, PR #114, are merged; no remaining dependencies). Cut 0.1.0 privately (Andrew, 2026-10-13) through a PR and the release script: a draft GitHub release in the private repo, with stops for Andrew before creating it and before publishing it; npm is dry-run only; the repo stays private. It also does a from-source clean-clone install check and the live unpack-and-enable check on foundry.local that 60 deferred, and is the first real run of the release script. 0.1.0 ships macOS-verified, Windows untested. The public steps (repo visibility, the real `npm publish`, the Foundry listing, the Ask Foundry answers, manifest-URL install) move to a future "go public" task, not yet created.
 
 ## Next
