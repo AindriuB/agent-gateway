@@ -176,6 +176,25 @@ describe('user resolution and the code', () => {
   });
 });
 
+describe('pairing changes between send and verify', () => {
+  it('creates no grant when the pairing was revoked after the code was sent', async () => {
+    r = await consentRig();
+    const u1 = await pairModule(r.h, 'u1');
+    modules.push(u1);
+    const page = await openConsent(r);
+    await postConsent(r, page, { action: 'send', world: 'w1', user: 'u1', scope: 'read' });
+    const { code } = await codeFrame(u1);
+    const pairing = r.h.store.listActivePairings().find((p) => p.userId === 'u1')!;
+    r.h.store.revokePairing(pairing.id);
+    const res = await postConsent(r, page, { action: 'verify', code });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    const db = new DatabaseSync(r.h.dbPath, { readOnly: true });
+    expect((db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n).toBe(0);
+    db.close();
+  });
+});
+
 describe('CSRF', () => {
   const send = { action: 'send', world: 'w1', user: 'u1', scope: 'read' };
   it('refuses a POST without the cookie', async () => {

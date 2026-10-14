@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SWEEP_BATCH, SWEEP_INTERVAL_MS } from '../../../src/oauth/index.js';
 import { call } from '../helpers.js';
 import { consentRig, stopRig, type ConsentRig } from '../consent/rig.js';
@@ -109,5 +109,22 @@ describe('retention sweep', () => {
       headers: { 'content-type': 'application/json' },
     });
     expect(counts(r).grants).toBe(0);
+  });
+
+  it('logs a failing sweep at warn level without failing the request', async () => {
+    r = await consentRig();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(r.h.store.oauth, 'sweep').mockImplementation(() => {
+      throw new Error('disk I/O error');
+    });
+    r.clock.t = 10_000_000;
+    const res = await call(r.port, 'POST', '/register', {
+      body: '{}',
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.status).toBe(400);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain('disk I/O error');
+    warn.mockRestore();
   });
 });

@@ -275,7 +275,12 @@ export class ConsentPages {
       );
     }
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
+    // The pairing may have been revoked or replaced since the code was sent.
+    const stillPaired =
+      p.target !== undefined &&
+      this.o.repo.activePairedUsers(p.target.worldId).some((u) => u.userId === p.target?.userId);
     const ok =
+      stillPaired &&
       typed.length > 0 &&
       typed.length <= 32 &&
       p.codeHash !== undefined &&

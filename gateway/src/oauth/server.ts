@@ -253,8 +253,11 @@ export class OAuthServer implements OAuthRoutes {
     this.lastSweep = t;
     try {
       this.repo.sweep(t, SWEEP_BATCH);
-    } catch {
-      /* Cleanup must never fail a request. */
+    } catch (e) {
+      // Cleanup must never fail a request; at most one line per interval, and no row contents.
+      console.warn(
+        `oauth retention sweep failed: ${e instanceof Error ? e.message.slice(0, 200) : 'unknown error'}`,
+      );
     }
   }
 
