@@ -213,3 +213,11 @@ Notes for task 35: public `/status` calls `authenticate` with no failure count o
 ### Review round 2 (external, PR #120)
 
 P2, routed to the implementer (in spec, :91-94): the link Host check refused `[::1]:<port>`, so `--link-host ::1` could not pair. Fixed in 4966628 by accepting `[::1]:<bound port>` only; HTTP already accepted it, and a test now pins that. Verify passes (4166 + 2227 tests). A code-reviewer re-review of 71d73d5..HEAD came back CLEAN with no drift, and a mutation proof showed the new link test fails without the fix.
+
+### Review round 3 (external, PR #120)
+
+P2, in spec at :92 (F7): mapped loopback Host values (`[::ffff:127.0.0.1]`, `[::ffff:7f00:1]`) were refused, although `--link-host ::ffff:127.0.0.1` passes validation. Fixed in 1374915: a shared `loopbackAuthority()` in `gateway/src/http/client-key.ts` uses the same `isLoopbackAddress` as the bind check, for both the link and HTTP. The link keeps its exact bound-port rule.
+
+The widening is deliberate and recorded here: the Host checks now accept every loopback spelling the bind check accepts, including 127/8, so the Host and bind rules can never disagree again (rounds 2 and 3 were both that class of bug). Decision (b)'s "today's set" wording is superseded on this point.
+
+Re-review CLEAN, with no drift and a mutation proof (2 tests fail without the fix). Benign notes: zone ids, out-of-range ports, an empty port refused, userinfo refused. The first verify run had 3 load-related failures in unrelated suites (the relay/stepdown A/B/C loop and module ops/registry/load); they passed alone, and a full re-run passed (4182 + 2227 tests).
