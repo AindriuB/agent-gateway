@@ -26,11 +26,11 @@ From the architect's review of task 68 on 2026-10-14. Andrew chose operator invi
 | T18 Origin binding between players | L | Accepted residual. Origin separates sites, not players on one origin; identity comes from the invite, and `--origin` can pin one. |
 | T19 Grants for unconfirmed identities | covered | Closed. A grant needs a consent code over the user's own paired link (67), and 35 (h) ties grants to the pairing. |
 | T20 Headless provisioned codes | covered | Closed. Exact world, user and origin match, single use (37 c, 68 i). Residual as T11. |
-| T21 No operator revoke | M | Closed. `--revoke-pairing`, `--list-pairings` and `--list-invites` (68 e). |
+| T21 No operator revoke | M | Closed. `--revoke-pairing` revokes the pairings, their grants and every unused invite for that target. `--cancel-invite` cancels unused invites only. `--list-pairings` and `--list-invites` show status (68 e). |
 | T22 Spoofed X-Forwarded-For | L | Closed. Right-most entry from a loopback peer only, with `::ffff:127.0.0.1` and /64 keying (74 c). |
 
 ## Other accepted residuals
 
-- Foundry cannot prove identity to the gateway, so the invite code is the trust root. An invite leaked before use can be redeemed by its holder, but only as its exact target. Mitigations are single use, a 24 h default TTL, `--list-invites` and `--revoke-pairing`.
+- Foundry cannot prove identity to the gateway, so the invite code is the trust root. An invite leaked before use can be redeemed by its holder, but only as its exact target. Mitigations are single use, a 24 h default TTL, `--list-invites` to spot it, and `--cancel-invite` or `--revoke-pairing` to cancel it before it is used. Both cancel every unused database invite for the target. Once redeemed, `--revoke-pairing` removes the resulting pairing.
 - A revoked live connection can keep acting for up to 5 s (`REVOCATION_SWEEP_MS`). OAuth tokens are cut at once.
 - In-memory headless invites are accepted in local mode too; they die with the process and the runner mints again (37 c, 68 i).

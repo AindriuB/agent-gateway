@@ -14,7 +14,7 @@
 - gateway/src/store/migrations/index.ts (insertion only: one import and one array entry)
 - gateway/src/store/store.ts (insertions only: the invite repository and `revokePairingsFor(worldId, userId)`; 35 already passes the revoked row to `onPairingRevoked` listeners)
 - gateway/test/store/invites.test.ts (new)
-- gateway/src/bin/cli.ts (the one-shot `--invite`, `--revoke-pairing`, `--list-invites` and `--list-pairings` commands only)
+- gateway/src/bin/cli.ts (the one-shot `--invite`, `--revoke-pairing`, `--cancel-invite`, `--list-invites` and `--list-pairings` commands only)
 - gateway/test/bin/invite-cli.test.ts (new)
 - gateway/src/app.ts (start and stop the revocation sweep with the primary only)
 - protocol/src/link/messages.ts (allowed edit to existing lines: length caps on `HelloMessage` `world.id`, `user.id`, `user.name` and `auth.code`; no other change)
@@ -68,7 +68,7 @@ In server mode (one gateway, many players on the internet), only the operator de
   - The code is 12 characters from the pairing alphabet, in three groups of four (`INVITE_CODE_PATTERN`, about 59 bits).
   - The TTL defaults to 24 h (`INVITE_TTL_MS`), and `--ttl` accepts `30m`, `12h` or `7d`, up to 7 days.
   - `--origin`, when given, pins the browser origin. Otherwise the first origin that redeems the invite wins, as in 70.
-  - Migration **011** (`011-invites.ts`) adds an `invites` table: id, code_hash (UNIQUE, sha256), world_id, user_id, origin or NULL, created_at, expires_at, used_at, result (`paired`, `mismatch` or `expired`), pairing_id. 68 lands before 38, so 68 takes 011 and 38 keeps 012 (74 decision h).
+  - Migration **011** (`011-invites.ts`) adds an `invites` table: id, code_hash (UNIQUE, sha256), world_id, user_id, origin or NULL, created_at, expires_at, used_at, cancelled_at, result (`paired`, `mismatch`, `expired` or `cancelled`), pairing_id. The redeem check refuses any invite with `used_at` or `cancelled_at` set. 68 lands before 38, so 68 takes 011 and 38 keeps 012 (74 decision h).
 - (c) **Redeeming in server mode.** The shared rotating code is off: `PairingCodes` issues nothing, no `Pairing code:` line is printed, and the 74 pairing hint is absent. In the handshake, a `pairingCode` hello is checked as an invite:
   1. If the socket is not OPEN, stop: nothing is read or written, and the invite is not consumed.
   2. In one `BEGIN IMMEDIATE` transaction:
@@ -83,10 +83,11 @@ In server mode (one gateway, many players on the internet), only the operator de
   Everything is synchronous (`node:sqlite`), so two sockets presenting one invite cannot both win. Every refusal counts in 74's per-client and global failed-code buckets. The refusal message to the peer is the same for unknown, used, expired and mismatched invites.
 - (d) **Re-pairing and replacement.** A lost token or a new device needs a new invite. Redeeming an invite for a (world, user) that already has an active pairing revokes the old rows in the same transaction. The old token then gets `PAIRING_INVALID`, its live connection is closed (decision e), and `onPairingRevoked` fires with each revoked row, so 35's listener revokes that (world, user)'s OAuth grants and tokens.
 - (e) **Revocation.**
-  - `foundry-agent-gateway --revoke-pairing <world id> <user id>` is a one-shot that calls `store.revokePairingsFor(world, user)`. That sets `revoked_at` on the active rows, and fires `onPairingRevoked` in the CLI process, so the grants are revoked at once in the database.
+  - `foundry-agent-gateway --revoke-pairing <world id> <user id>` is a one-shot that calls `store.revokePairingsFor(world, user)`. That sets `revoked_at` on the active rows, and fires `onPairingRevoked` in the CLI process, so the grants are revoked at once in the database. In the same transaction it **cancels every unused database invite for that target** (sets `cancelled_at`, with `result = 'cancelled'`). A leaked or forgotten invite therefore cannot re-pair the person just removed. In-memory headless invites are not touched; 37 and 38 handle those (the live agent check and `dropAgent`).
+  - `foundry-agent-gateway --cancel-invite <world id> <user id>` cancels every unused database invite for that target in one transaction and leaves pairings alone. It prints how many it cancelled, and exits 1 when there were none. Cancelling by target was chosen over cancelling by id: the operator already thinks in targets (the same arguments as `--invite` and `--revoke-pairing`), a target normally has one live invite, and nothing has to be copied from a listing. `--list-invites` still shows each invite's short row id (never the code) so the operator can tell several invites for one target apart.
   - A running gateway runs a **periodic sweep** every 5 s (`REVOCATION_SWEEP_MS`), not a per-frame check. Each sweep calls `isPairingActive` for each live connection, which is at most one indexed lookup per connection. For a revoked one it sends `reject` `PAIRING_INVALID`, closes the socket with 1008, and fires the in-process `onPairingRevoked` listeners with the row, so the events and queue state drop it.
   - A per-frame check was rejected: it would add a database read to every event frame. Five seconds of lag is acceptable because OAuth tokens are checked against the database on every request (35), so the remote side is cut off at once.
-  - `--list-invites` prints target, created, expiry and status. `--list-pairings` prints world, user, sanitized name, origin, created and revoked. Neither prints a code, a token or a hash.
+  - `--list-invites` prints the invite's row id, target, created, expiry and status (`live`, `paired`, `mismatch`, `expired` or `cancelled`). `--list-pairings` prints world, user, sanitized name, origin, created and revoked. Neither prints a code, a token or a hash.
 - (f) **Names and caps (F8).**
   - `HelloMessage` caps `world.id` and `user.id` at 64 characters, `user.name` at 100, and `auth.code` at 64. This is an allowed edit of existing schema lines; the module never sends longer values. Over-long frames fail validation and are refused as invalid.
   - The name recorded at pairing is display-only: it goes through `safeText` and is stored at most 100 characters long. Identity is always the ids.
@@ -108,6 +109,10 @@ Invites:
 Replacement and revocation:
 - [ ] Replacement: (w1,u1) is paired and connected. A new invite for (w1,u1) is redeemed from another origin. The old row is revoked, the old connection is closed, and the old token's reconnect gets `PAIRING_INVALID`. An OAuth grant and token for (w1,u1) (seeded through 35's repository) are revoked, and that access token gets 401 (test).
 - [ ] `--revoke-pairing w1 u1` against a running gateway: the live connection for (w1,u1) receives `reject` `PAIRING_INVALID` and is closed within `REVOCATION_SWEEP_MS` plus 1 s, its grants are revoked, and its token cannot reconnect (test with a short sweep interval).
+- [ ] An unused invite for (w1,u1), issued before `--revoke-pairing w1 u1`, is refused afterwards with `PAIRING_INVALID`, and its row shows `cancelled` (test).
+- [ ] An unused invite for (w1,u1) is refused after `--cancel-invite w1 u1`. The (w1,u1) pairing, if any, stays active, and an unused invite for (w1,u2) still pairs (test).
+- [ ] `--cancel-invite` with no unused invite for the target exits 1 and changes nothing (test).
+- [ ] `--list-invites` shows `cancelled` for both cases above, plus each invite's row id (test).
 - [ ] `--list-invites` and `--list-pairings` print no code, token or hash. The test greps their output for the issued code and for every `code_hash` and `token_hash`.
 
 Safety:

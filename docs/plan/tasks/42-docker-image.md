@@ -71,7 +71,7 @@ Stack:
     1. they open Agent Gateway's pairing app in Foundry and send the operator the world id and user id from its "Copy my ids" line (68);
     2. the operator runs `docker compose exec gateway <cli> --invite <world id> <user id>` and sends them the printed code privately (single use, 24 h);
     3. they set the gateway URL to `wss://<domain>/link` and enter the code;
-  - re-pairing a lost device needs a new invite; `--revoke-pairing <world> <user>` removes someone; `--list-invites` and `--list-pairings` show status without codes;
+  - re-pairing a lost device needs a new invite; `--revoke-pairing <world> <user>` removes someone and cancels their unused invites; `--cancel-invite <world> <user>` withdraws an invite that was not used; `--list-invites` and `--list-pairings` show status without codes;
   - that there is no static bearer token to rotate in this mode;
   - how to update (`docker compose pull` or rebuild, then `up -d`);
   - where the data lives (`gateway.db` and its `-wal`/`-shm` files in the `gateway-data` volume, since 74 turns on WAL);

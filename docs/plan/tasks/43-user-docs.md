@@ -32,7 +32,7 @@ Document what MVP B adds, for someone who has never seen the project: remote cli
   - 74: `--public-url`, the bind addresses, `--trust-proxy`, the static bearer is off in public mode, the pairing code only in the operator log, and the minimal `/status`;
   - 35: the scopes;
   - 67: consent and revoking a grant;
-  - 68: operator invites in server mode (`--invite`, `--revoke-pairing`, `--list-invites`, `--list-pairings`, and the pairing app's "Copy my ids" line);
+  - 68: operator invites in server mode (`--invite`, `--revoke-pairing`, `--cancel-invite`, `--list-invites`, `--list-pairings`, and the pairing app's "Copy my ids" line);
   - 37 and 38: headless agents.
 - docs/spikes/foundry-socket-identity.md (10b): what Foundry can and cannot prove about identity.
 
