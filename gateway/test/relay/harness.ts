@@ -7,6 +7,11 @@ import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  LinkClient,
+  type SocketLike,
+  type TokenCredential,
+} from '../../../module/src/link/client.js';
 import { coreAnnouncements, FIXTURE_PACK_TOOL, hello, ORIGIN } from '../conformance/fake-module.js';
 
 export const cliPath = fileURLToPath(new URL('../../dist/bin/cli.js', import.meta.url));
@@ -185,4 +190,66 @@ export async function pairedPrimary(
   const module = new FakeModule(port);
   await module.connect({ code });
   return { cli, module };
+}
+
+/**
+ * The module's real `LinkClient` driven from Node: reconnects by its own backoff, keeps its token,
+ * and answers calls like FakeModule does. Use it where the module's reconnect behaviour matters.
+ */
+export class RealModule {
+  readonly client: LinkClient;
+  readonly calls: string[] = [];
+  private credential: TokenCredential | null = null;
+
+  constructor(port: number) {
+    const { world, user } = hello({});
+    this.client = new LinkClient({
+      getGatewayUrl: () => `ws://127.0.0.1:${port}`,
+      getToken: () => this.credential,
+      setToken: (c) => void (this.credential = c),
+      getIdentity: () => ({ moduleVersion: '0.0.0', foundryVersion: '14.0', world, user }) as never,
+      createSocket: (url) => new WebSocket(url, { origin: ORIGIN }) as unknown as SocketLike,
+      notifyError: () => undefined,
+    });
+    this.client.onCall = (call) => {
+      const value = (call.args as { value?: string } | undefined)?.value ?? '';
+      this.calls.push(`${call.tool}:${value}`);
+      return { ok: true, text: `echo:${value}`, structured: { value } };
+    };
+    this.client.onState((state) => {
+      if (state.kind !== 'connected') return;
+      this.client.sendMessage({ type: 'eventPolicy', enabled: true, retentionDays: 7 });
+      this.client.sendMessage({
+        type: 'toolset',
+        eventReadAllowed: true,
+        tools: [...coreAnnouncements(), FIXTURE_PACK_TOOL],
+      } as never);
+    });
+  }
+
+  get connected(): boolean {
+    return this.client.state.kind === 'connected';
+  }
+
+  pair(code: string): void {
+    this.client.pair(code);
+  }
+
+  close(): void {
+    this.client.stop();
+  }
+}
+
+/** The pairing code a gateway printed on stderr. */
+export const pairingCode = (cli: Cli): string => /Pairing code: (\S+)/.exec(cli.stderr())![1]!;
+
+/** How many Foundry users a gateway's HTTP /status page lists, or undefined if it is not serving. */
+export async function statusCount(httpPort: number): Promise<number | undefined> {
+  try {
+    const text = await (await fetch(`http://127.0.0.1:${httpPort}/status`)).text();
+    const m = /Connected \((\d+)\)/.exec(text);
+    return m ? Number(m[1]) : undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -11,7 +11,14 @@ import {
   STEPDOWN_GRACE_MS,
   type RelayRefusal,
 } from './constants.js';
-import { describeConfigDiff, parseRelayConfig, sameConfig, type RelayConfig } from './config.js';
+import {
+  describeConfigDiff,
+  parseRelayConfig,
+  sameConfig,
+  sameSessionConfig,
+  type RelayConfig,
+} from './config.js';
+import { writeClaim } from './claim.js';
 import { LineSplitter } from './lines.js';
 import { newSecret, parseSecretFile, secretMatches, writeSecret } from './secret.js';
 import { RelaySocketTransport } from './transport.js';
@@ -35,6 +42,7 @@ export interface RelayServerOptions {
 }
 
 const REFUSAL_GRACE_MS = 500;
+const MAX_LOGGED_REFUSALS = 20;
 
 /** True when something accepts connections at `path`. */
 function isLive(path: string): Promise<boolean> {
@@ -67,6 +75,8 @@ export class RelayServer {
   private socketIno: number | undefined;
   private bindPath = '';
   private steppingDown = false;
+  /** Refusals already logged; a standby re-asks every few seconds and must not flood the log. */
+  private readonly loggedRefusals = new Set<string>();
   private endpoint: string;
 
   constructor(private readonly opts: RelayServerOptions) {
@@ -170,9 +180,15 @@ export class RelayServer {
   }
 
   /** Keep serving for the grace period so in-flight calls finish, then let the app exit. */
-  private stepDown(why: string): void {
+  private stepDown(why: string, heir: number): void {
     if (this.steppingDown) return;
     this.steppingDown = true;
+    // Name the heir before the port is released, so older instances do not win the race for it.
+    try {
+      writeClaim(this.opts.stateDir, this.opts.linkPort, heir);
+    } catch (err) {
+      this.opts.log(`could not record the handover claim: ${safeText((err as Error).message)}`);
+    }
     const net = this.net;
     if (net?.listening) net.close();
     const timer = setTimeout(() => this.opts.onStepDown?.(why), STEPDOWN_GRACE_MS);
@@ -271,17 +287,31 @@ export class RelayServer {
     }
     const theirConfig = parseRelayConfig((hello as { config?: unknown }).config);
     if (!theirConfig || !sameConfig(theirConfig, this.opts.config)) {
-      // A relayed session would run with this primary's role and origins, not the caller's, so a
-      // mismatch is never served. A strictly newer caller wins: this primary steps down for it.
+      // A relayed session runs on this primary's link, store and selector, so a difference in
+      // `allowOrigins` is never served. A difference only in the session-neutral ports and log
+      // level is served, unless the caller is strictly newer: then this primary steps down for it.
       const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
+      const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
+      if (newer || !neutralOnly) {
+        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`;
+        // Keyed on the logged text, not the peer's start time: peers with the same settings but
+        // different start times must not take turns defeating the dedup. Bounded; cleared when full.
+        const key = `${newer ? 'STEPDOWN' : 'MISMATCH'} ${text}`;
+        if (!this.loggedRefusals.has(key)) {
+          if (this.loggedRefusals.size >= MAX_LOGGED_REFUSALS) this.loggedRefusals.clear();
+          this.loggedRefusals.add(key);
+          this.opts.log(text);
+        }
+        this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
+          config: this.opts.config,
+        });
+        if (newer)
+          this.stepDown(describeConfigDiff(this.opts.config, theirConfig), theirConfig!.startedAt);
+        return;
+      }
       this.opts.log(
-        `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`,
+        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig)}`,
       );
-      this.refuse(socket, newer ? 'RELAY_CONFIG_STEPDOWN' : 'RELAY_CONFIG_MISMATCH', {
-        config: this.opts.config,
-      });
-      if (newer) this.stepDown(describeConfigDiff(this.opts.config, theirConfig));
-      return;
     }
     if (this.active >= MAX_RELAY_SESSIONS) {
       this.refuse(socket, 'RELAY_FULL');

@@ -176,7 +176,7 @@ describe('relay between built CLI instances', () => {
     expect(await echo(s3, 'late')).toContain('echo:late');
   }, 90_000);
 
-  it('(e) a newer instance with different settings replaces a stale primary', async () => {
+  it('(e) a newer instance with different settings replaces a stale primary, which survives', async () => {
     const state = tempState();
     cleanups.push(state.cleanup);
     const port = await freePort();
@@ -184,33 +184,26 @@ describe('relay between built CLI instances', () => {
     const stale = await startCli(port, state.db, [], true, { AGENT_GATEWAY_ROLE: 'player' });
     clis.push(stale);
     await until(() => /Pairing code: /.test(stale.stderr()), 10_000, 'stale primary');
-    const exited = new Promise<void>((res) => {
-      const t = setInterval(() => {
-        try {
-          process.kill(stale.pid, 0);
-        } catch {
-          clearInterval(t);
-          res();
-        }
-      }, 50);
-    });
     // The user saved new settings: a restarted instance with role gm and a new origin.
     const fresh = track(
       await startCli(port, state.db, ['--allow-origin=https://foundry.local'], true, {
         AGENT_GATEWAY_ROLE: 'gm',
       }),
     );
-    await Promise.race([
-      exited,
-      new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('stale primary did not exit')), 15_000),
-      ),
-    ]);
-    expect(stale.stderr()).toContain('stepping down');
+    await until(() => stale.stderr().includes('stepping down'), 15_000, 'step-down');
     // The fresh instance holds the port with its own config, and the browser origin is accepted.
     await until(() => /Pairing code: /.test(fresh.stderr()), 15_000, 'fresh primary');
     expect(fresh.stderr()).toContain(`pid ${fresh.pid} holds link port ${port}`);
+    expect(fresh.stderr()).not.toContain('cannot pair');
     expect(await fresh.client.listTools().then((t) => t.tools.length)).toBeGreaterThan(1);
+    // The stale instance is not gone: it stays alive as a standby (other allowed origins) and says why.
+    await until(() => stale.stderr().includes('is a standby and cannot pair'), 15_000, 'standby');
+    await sleep(2000);
+    expect(() => process.kill(stale.pid, 0)).not.toThrow();
+    expect(stale.stderr()).not.toContain('[error]');
+    expect(await toolNames(stale)).toEqual([STATUS_TOOL]);
+    const status = await stale.client.callTool({ name: STATUS_TOOL, arguments: {} });
+    expect(JSON.stringify(status.content)).toContain('different settings');
     // A later instance with the same settings relays to it, with the same config.
     const same = track(
       await startCli(port, state.db, ['--allow-origin=https://foundry.local'], true, {

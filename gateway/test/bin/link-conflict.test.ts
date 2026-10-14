@@ -235,9 +235,10 @@ describe('startup failures and origins (built cli)', () => {
     // The instance first tries to relay to whoever holds the port; a plain listener has no relay,
     // so the bounded retries run out (about 11 s) before the degraded server answers.
     await waitFor(() => r.out().includes('"id":1'), 20_000);
-    const errLines = r.err().trim().split('\n');
-    expect(errLines[0]).toBe(
-      `[error] pid ${r.child.pid}: another gateway holds link port ${port}; this instance cannot pair`,
+    // A relay or standby is an expected role, not an error; the line comes once the role is final.
+    expect(r.err()).not.toContain('[error]');
+    expect(r.err()).toContain(
+      `[warn] pid ${r.child.pid}: another gateway holds link port ${port}; this instance is degraded and cannot pair (`,
     );
     expect(r.err()).not.toContain('Pairing code');
     expect(r.err()).not.toContain('MCP stdio server started');

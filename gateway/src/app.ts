@@ -32,6 +32,7 @@ import { openStore, type Store } from './store/index.js';
 import {
   LocalUpstream,
   makeRelayConfig,
+  createStandbyServer,
   RelaySecondary,
   RelayServer,
   relayEndpoint,
@@ -93,8 +94,9 @@ export interface AppDeps {
   /** Store opener; injectable so tests can prove a relay never opens the db. */
   openStore?: typeof openStore;
   /**
-   * A newer instance with different settings asked this primary to step down. Defaults to
-   * stopping the app and exiting the process.
+   * A newer instance with different settings asked this primary to step down. By default the
+   * instance stays alive in-process: it releases the link, HTTP and the store, and keeps its stdio
+   * session as a relay secondary (or a standby) that takes over when the newer primary goes away.
    */
   onStepDown?: (why: string) => void;
   /** Clock and timers for pairing-code expiry; injectable so tests need not wait ten minutes. */
@@ -131,12 +133,17 @@ export function createApp(config: Config, deps: AppDeps): App {
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
+  // One step-down transition at a time; a request that arrives during one is ignored.
+  let steppingDown = false;
+  let httpNoticeShown = false;
   // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
   const dbPath = deps.dbPath ?? defaultDbPath();
   const startedAt = Date.now();
   const relayConfig = () =>
     makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt);
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
+  // What this instance found in its way, for the one log line written once its role is final.
+  let holds = `another gateway holds link port ${config.linkPort}`;
   const app: App = {
     async start() {
       try {
@@ -157,12 +164,11 @@ export function createApp(config: Config, deps: AppDeps): App {
         // only instance (corrupt db, permissions) must still exit 1 via reportStartFailure.
         if (!isInstanceConflict(err)) throw err;
         const reason = (err as Error).message;
-        // One clear line; no pairing code, so only the instance that holds the port shows one.
-        logger.error(
+        // No log line yet: the role is not known until the relay or takeover attempts settle.
+        holds =
           err instanceof LinkListenError
-            ? `pid ${process.pid}: another gateway holds link port ${err.port}; this instance cannot pair`
-            : `pid ${process.pid}: another gateway holds the pairing database; this instance cannot pair`,
-        );
+            ? `another gateway holds link port ${err.port}`
+            : 'another gateway holds the pairing database';
         await startSecondary(reason);
       }
     },
@@ -236,7 +242,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       onStepDown: (why) => {
         writeStatus(`stepping down: a newer gateway instance has different settings (${why})`);
         if (deps.onStepDown) deps.onStepDown(why);
-        else void app.stop().finally(() => process.exit(0));
+        else void stepDownInProcess(why);
       },
     });
     try {
@@ -307,32 +313,31 @@ export function createApp(config: Config, deps: AppDeps): App {
     store = undefined;
   }
 
-  async function startSecondary(reason: string): Promise<void> {
-    if (deps.http)
+  /** The one log line for a non-primary instance, written once its role is final. */
+  function logSettled(role: 'relay' | 'standby' | 'degraded', why: string): void {
+    const text = (what: string) => `pid ${process.pid}: ${holds}; this instance ${what} (${why})`;
+    if (role === 'relay') logger.info(text('relays to it and cannot pair'));
+    else if (role === 'standby') logger.warn(text('is a standby and cannot pair'));
+    else logger.warn(text('is degraded and cannot pair'));
+    if (deps.http && !httpNoticeShown) {
+      httpNoticeShown = true;
       writeStatus(
         'HTTP is served only by the primary gateway instance; if that was started without --http, restart it with --http',
       );
-    const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
-    if (!stateDir || !ep?.ok) {
-      const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
-      server = createDegradedServer({
-        version: deps.version,
-        reason: `${reason} (relaying is off: ${why})`,
-      });
-      const [sessionSide, stdioSide] = InMemoryTransport.createLinkedPair();
-      await server.connect(sessionSide);
-      await attachStdio(stdioSide, true);
-      return;
     }
-    secondary = new RelaySecondary({
-      endpoint: ep.path,
-      stateDir,
+  }
+
+  function makeSecondary(endpoint: string, proxy?: StdioRelayProxy): RelaySecondary {
+    return new RelaySecondary({
+      endpoint,
+      stateDir: stateDir!,
       linkPort: config.linkPort,
       selector: deps.selector ?? {},
       config: relayConfig(),
       input: deps.stdin ?? process.stdin,
       output: deps.stdout ?? process.stdout,
       log: writeStatus,
+      ...(proxy ? { proxy } : {}),
       async becomePrimary(transport) {
         // Outside the try: teardown must never run against a live primary.
         if (link) throw new Error('this process already holds the link');
@@ -349,8 +354,55 @@ export function createApp(config: Config, deps: AppDeps): App {
         // A relay with no client has no purpose; a primary still serves other instances' sessions.
         if (!link) void app.stop().finally(() => process.exit(0));
       },
+      onSettled: logSettled,
       createDegraded: (why) => createDegradedServer({ version: deps.version, reason: why }),
+      createStandby: (why) => createStandbyServer({ version: deps.version, reason: why }),
     });
+  }
+
+  /**
+   * A newer instance with different settings asked this primary to step down, and the grace
+   * period is over. Release the link, HTTP, queue, events and store, but keep the client's stdio
+   * session: it moves to the new primary through the relay, or to a standby.
+   */
+  async function stepDownInProcess(why: string): Promise<void> {
+    if (steppingDown) return;
+    const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
+    const proxy = secondary ? undefined : stdioProxy;
+    if (!ep?.ok || (!secondary && !proxy)) {
+      // Nothing to hand the client's session to: the previous behaviour.
+      void app.stop().finally(() => process.exit(0));
+      return;
+    }
+    steppingDown = true;
+    // Whatever stopped this instance at startup no longer applies: it now yields to a newer one.
+    holds = `another gateway holds link port ${config.linkPort}`;
+    try {
+      secondary ??= makeSecondary(ep.path, proxy);
+      await secondary.demote(`a newer gateway took over (${why})`, teardown);
+    } catch (err) {
+      writeStatus(`step-down failed: ${(err as Error).message}`);
+      void app.stop().finally(() => process.exit(1));
+    } finally {
+      steppingDown = false;
+    }
+  }
+
+  async function startSecondary(reason: string): Promise<void> {
+    const ep = stateDir ? relayEndpoint(stateDir, config.linkPort) : undefined;
+    if (!stateDir || !ep?.ok) {
+      const why = ep && !ep.ok ? ep.reason : 'this instance has no state directory';
+      server = createDegradedServer({
+        version: deps.version,
+        reason: `${reason} (relaying is off: ${why})`,
+      });
+      const [sessionSide, stdioSide] = InMemoryTransport.createLinkedPair();
+      await server.connect(sessionSide);
+      await attachStdio(stdioSide, true);
+      logSettled('degraded', `relaying is off: ${why}`);
+      return;
+    }
+    secondary = makeSecondary(ep.path);
     await secondary.start(reason);
   }
 

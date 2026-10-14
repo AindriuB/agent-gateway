@@ -16,3 +16,5 @@ export {
   type Upstream,
 } from './upstream.js';
 export * from './secret.js';
+export { createStandbyServer } from './standby.js';
+export * from './claim.js';

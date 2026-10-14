@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 72 | stepped-down gateway stays alive as a standby; handover claim names the heir; takeover automation (offline tests plus live e2e); live check pending Andrew | ## 2026-10-14 — stepped-down gateway stays alive; handover claim; takeover automation (task 72) |
 | 2026-10-13 | 65 | README quick start, Claude Desktop and Claude Code guides (incl. local HTTP), security model sections, privacy statement; commands run against built artefacts; manual quick-start check pending | ## 2026-10-13 — local quick start, guides, security model and privacy statement (task 65) |
 | 2026-10-13 | 34 | local Streamable HTTP on 127.0.0.1:7421/mcp, bearer token hashed in SQLite (migration 009), 413/429/503 limits, per-session servers with idle close, loopback /status, `--http-rotate-token`, takeover HTTP retry, conformance over stdio and http; manual Claude Code check pending | ## 2026-10-13 — local Streamable HTTP for Claude Code (task 34) |
 | 2026-10-13 | 64 | local release script: clean-tree and main checks, gates incl. conformance http mode, three artefacts with SHA-256, yes-gated draft release, npm dry-run unless `--publish-npm` plus second confirmation; `bump-version` incl. internal protocol pin; `docs/releasing.md`; first real run is 66 | ## 2026-10-13 — local release script and version bump (task 64) |

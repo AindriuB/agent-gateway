@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 34, 69, 70, 71
-**Status:** MVP A. Filed 2026-10-13 from Andrew's manual Claude Desktop + HTTP check, and reworked after the 21:06 re-run moved the root cause. Andrew approved going ahead, and approved decision (a) the same day. Part 1 comes first.
+**Status:** Done on branch `claude/task-72` (PR pending). MVP A. Filed 2026-10-13 from Andrew's manual Claude Desktop + HTTP check, and reworked after the 21:06 re-run moved the root cause. Andrew approved going ahead, and approved decision (a) the same day. Part 1 comes first.
 **Owns:**
 - gateway/src/relay/** (step-down, the secondary and standby roles, the takeover order, the relay config check)
 - gateway/src/app.ts (the step-down transition, the pre-role log lines, and the takeover start order only)
@@ -14,6 +14,7 @@
 - e2e/takeover/** (new)
 - e2e/vitest.e2e.config.ts (insertions only: `takeover/**/*.e2e.test.ts` in `e2e-live` and `takeover/**/*.test.ts` in `e2e-unit`)
 - e2e/lib/gateway.ts (insertions only: extra CLI args such as `--http`, `--http-port` and a differing setting, for a second instance)
+- **Owns, added and approved by Andrew 2026-10-13:** gateway/test/relay/server.test.ts (the decision (a) rewrite), gateway/test/bin/link-conflict.test.ts (Part 3 line), and the existing-line edit at e2e/lib/gateway.ts:78.
 
 **Overlap:**
 - None with 64 (scripts/release.mjs, scripts/bump-version.mjs, scripts/test/*, docs/releasing.md, root package.json `scripts`).
@@ -149,3 +150,24 @@ Overall:
 - HTTP transport, token storage or rotation behaviour (34). Only the tests here exercise them.
 - Respawn or keep-alive on the Claude Desktop side.
 - Release scripts (64) and user docs (65).
+
+## Outcome (recorded 2026-10-14)
+
+**Decisions.** (a) was approved by Andrew: a relay is refused only on an HTTP port or log level mismatch, and an allowOrigins mismatch makes a standby. (b) to (g) were implemented as written. One deviation: a demoted instance becomes a standby for every refusal, selector mismatch included, while a fresh instance keeps the degraded behaviour.
+
+**Root cause.** gateway/src/app.ts:236-240 on main: step-down called `process.exit`. In `config.ts`, `sameConfig` compared `httpPort` and `logLevel`. A degraded instance never re-ran startup.
+
+**Review rounds.**
+- R1: a demoted instance with a selector mismatch went degraded and was stranded; standby polling spammed the primary's log (about 1,800 lines an hour); the holds text was stale.
+- R2: the refusal-log key included `startedAt` (fixed with a code+text key in a capped Set); the A/B/C loop test flaked under load.
+- R3: the test had been loosened rather than fixed. The race was real: the newest instance could exhaust its attempts and end degraded while an older one stayed primary.
+- R4: a handover claim (`<stateDir>/relay-heir-<port>.json`, 0600, atomic, expires after 12 s), and STEPDOWN refusals no longer spend attempts until a 60 s deadline. Strict bounds restored: A at most 2, B at most 1, C 0. Approved apart from test port literals.
+- R5: 17555 port literals, the deadline test, and lstat hardening against a planted FIFO.
+
+**Remaining `rg` hits for 7420/7421.** Pre-existing config values or text fixtures in server.test.ts:40, app.test.ts:8 and link-conflict.test.ts:17,25 (none binds). New: e2e/takeover/helpers.test.ts:8, which tests the guard that refuses the real ports.
+
+**Known gaps.** A small lstat-then-read race on the claim file (same user only). The pre-existing e2e-unit hygiene failure in conformance.sh is a separate follow-up, not from 72.
+
+**Gates.** Tester PASS at 421497b (verify x3; stepdown 10/10, claim 5/5, takeover 3/3, multiprocess 3/3; scripts and conformance ok; real gateway untouched). ce21c72 re-run by the implementer (verify x1, claim, stepdown and app tests 3/3). Reviewer approved.
+
+**Manual, pending Andrew.** Run the live e2e `takeover` scenario (`npm run test:e2e`), and the 3-step manual checklist above for the 71 world-switch follow and the Desktop take-back.
