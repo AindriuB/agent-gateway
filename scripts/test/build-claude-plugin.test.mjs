@@ -93,6 +93,17 @@ describe('build-claude-plugin refusals', () => {
     refused(root, /regular file/);
   });
 
+  it('refuses a symlinked parent directory', () => {
+    const root = fresh('symlink-dir');
+    const outside = path.join(tmp, 'outside-dir');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, 'SKILL.md'), 'SECRET-CONTENT');
+    const dir = path.join(plugin(root), 'skills/foundry-gateway');
+    rmSync(dir, { recursive: true });
+    symlinkSync(outside, dir);
+    refused(root, /regular file/);
+  });
+
   it('refuses a missing source file', () => {
     const root = fresh('missing-file');
     rmSync(path.join(plugin(root), '.mcp.json'));

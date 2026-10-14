@@ -5,10 +5,11 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cpSync,
-  mkdirSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -52,6 +53,25 @@ const MAX_MARKETPLACE = 5 * 1024 * 1024;
 const MAX_ZIP = 256 * 1024 * 1024;
 const pluginRel = 'plugins/claude/foundry-gateway';
 const files = ['.claude-plugin/plugin.json', '.mcp.json', 'skills/foundry-gateway/SKILL.md'];
+let pluginReal;
+try {
+  pluginReal = realpathSync(path.join(root, pluginRel));
+} catch {
+  fail(`build-claude-plugin: missing ${pluginRel}`);
+}
+for (const f of files) {
+  let st;
+  let real;
+  try {
+    st = lstatSync(path.join(root, pluginRel, f));
+    real = realpathSync(path.join(root, pluginRel, f));
+  } catch {
+    st = undefined;
+  }
+  if (!st?.isFile() || !real.startsWith(pluginReal + path.sep)) {
+    fail(`build-claude-plugin: ${f} must be a regular file inside ${pluginRel}`);
+  }
+}
 const manifest = JSON.parse(readFileSync(path.join(root, pluginRel, files[0]), 'utf8'));
 const { name, version, description } = manifest;
 if (name !== 'foundry-gateway' || !version)
@@ -60,16 +80,6 @@ if (name !== 'foundry-gateway' || !version)
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
   fail('build-claude-plugin: plugin.json version is not a semver version');
 }
-for (const f of files) {
-  let st;
-  try {
-    st = lstatSync(path.join(root, pluginRel, f));
-  } catch {
-    st = undefined;
-  }
-  if (!st?.isFile()) fail(`build-claude-plugin: ${f} must be a regular file`);
-}
-
 const outDir = path.join(root, 'dist/release/claude');
 const zipPath = path.join(outDir, 'plugins', `${name}-${version}.zip`);
 const marketPath = path.join(outDir, 'marketplace.json');
