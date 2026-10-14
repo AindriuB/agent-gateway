@@ -1,4 +1,4 @@
-# 82 — Package the Foundry gateway as a private ChatGPT plugin
+# 84 — Package the Foundry gateway as a private ChatGPT plugin
 
 **Repo:** .
 **Depends on:** none (35, 42, 67, 68 and 74 are delivered foundations, not open blockers).
