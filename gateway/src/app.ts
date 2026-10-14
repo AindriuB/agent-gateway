@@ -22,6 +22,8 @@ import {
   HTTP_BIND_HOST,
   HTTP_SESSION_IDLE_MS,
   MAX_HTTP_SESSIONS,
+  MAX_HTTP_SESSIONS_PUBLIC,
+  PUBLIC_HTTP_SESSION_IDLE_MS,
   MAX_REQUEST_BYTES,
   SELF_PROTECT_RPS,
 } from './config/index.js';
@@ -707,8 +709,9 @@ export function createApp(config: Config, deps: AppDeps): App {
         },
         maxRequestBytes: lim.maxRequestBytes ?? MAX_REQUEST_BYTES,
         rps: lim.rps ?? SELF_PROTECT_RPS,
-        maxSessions: lim.maxSessions ?? MAX_HTTP_SESSIONS,
-        idleMs: lim.idleMs ?? HTTP_SESSION_IDLE_MS,
+        maxSessions: lim.maxSessions ?? (isPublic ? MAX_HTTP_SESSIONS_PUBLIC : MAX_HTTP_SESSIONS),
+        idleMs: lim.idleMs ?? (isPublic ? PUBLIC_HTTP_SESSION_IDLE_MS : HTTP_SESSION_IDLE_MS),
+        log: (line) => logger.info(line),
       });
       const httpPort = await candidate.listen();
       // The app was stopped while the listen was pending: commit and print nothing.
