@@ -13,6 +13,8 @@ export const CREDENTIAL_STORAGE_KEY = 'agent-gateway.pairingCredentials';
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  /** True for an in-memory fallback: a write there does not survive a reload. */
+  volatile?: boolean;
 }
 
 export interface CredentialOwner {
@@ -40,7 +42,8 @@ export function credentialKey(o: CredentialOwner): string {
 
 export interface CredentialStore {
   get(owner: CredentialOwner): string | null;
-  set(owner: CredentialOwner, token: string): void;
+  /** True only if the write reached persistent storage; the in-memory fallback does not count. */
+  set(owner: CredentialOwner, token: string): boolean;
   /** Refresh the entry's timestamp (an accepted token-auth welcome). */
   touch(owner: CredentialOwner): void;
   remove(owner: CredentialOwner): void;
@@ -52,7 +55,7 @@ export interface CredentialStore {
 /** In-memory fallback when no browser storage is available. */
 export function memoryStorage(): StorageLike {
   const m = new Map<string, string>();
-  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v) };
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), volatile: true };
 }
 
 export function createCredentialStore(
@@ -77,11 +80,13 @@ export function createCredentialStore(
     }
     return out;
   };
-  const write = (map: Record<string, Entry>): void => {
+  const write = (map: Record<string, Entry>): boolean => {
     try {
       storage.setItem(CREDENTIAL_STORAGE_KEY, JSON.stringify(map));
+      return !storage.volatile;
     } catch {
       // Storage full or blocked: the link still works for this session.
+      return false;
     }
   };
   return {
@@ -96,7 +101,7 @@ export function createCredentialStore(
         others.sort((a, b) => map[a]!.at - map[b]!.at);
         for (const k of others.slice(0, excess)) delete map[k];
       }
-      write(map);
+      return write(map);
     },
     touch(o) {
       const map = read();

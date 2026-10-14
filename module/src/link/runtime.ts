@@ -71,13 +71,14 @@ export function getLinkClient(): LinkClient {
       return token ? { url, token } : null;
     },
     setToken: (c, o) => {
-      const url = c?.url ?? effectiveFromSettings((key) => game.settings.get(NS, key));
-      if (c) credentials().set({ url, ...owner(o) }, c.token);
-      else credentials().remove({ url, ...owner(o) });
+      const url = c?.url ?? o?.url ?? effectiveFromSettings((key) => game.settings.get(NS, key));
+      if (c) return credentials().set({ url, ...owner(o) }, c.token);
+      credentials().remove({ url, ...owner(o) });
+      return true;
     },
     touchToken: (o) =>
       credentials().touch({
-        url: effectiveFromSettings((key) => game.settings.get(NS, key)),
+        url: o?.url ?? effectiveFromSettings((key) => game.settings.get(NS, key)),
         ...owner(o),
       }),
     hasUserToken: () => {

@@ -48,6 +48,8 @@ export interface SocketLike {
 
 /** The world and Foundry user a token belongs to. */
 export interface TokenOwner {
+  /** The gateway URL the socket connected to; absent means the current setting. */
+  url?: string;
   worldId: string;
   userId: string;
 }
@@ -60,7 +62,7 @@ export interface LinkClientDeps {
    */
   getToken(): unknown;
   /** Persist the token with the gateway URL that issued it, or clear it with `null`. */
-  setToken(credential: TokenCredential | null, owner?: TokenOwner): Promise<unknown> | void;
+  setToken(credential: TokenCredential | null, owner?: TokenOwner): Promise<unknown> | unknown;
   /** Mark the current user's stored token as just used (keeps it from being evicted). */
   touchToken?(owner?: TokenOwner): void;
   /** The old client-scoped credential, shared by every user of the browser. Read only for migration. */
@@ -459,7 +461,7 @@ export class LinkClient {
         this.authSource = found.source;
       }
       const identity = this.deps.getIdentity();
-      this.helloOwner = { worldId: identity.world.id, userId: identity.user.id };
+      this.helloOwner = { url, worldId: identity.world.id, userId: identity.user.id };
       const prior = this.eventResume;
       const resume =
         prior &&
@@ -531,11 +533,14 @@ export class LinkClient {
         if (!msg.pairingToken && this.authSource === 'legacy') {
           // The old shared credential was accepted for this user: it becomes theirs alone.
           const legacy = this.parseCredential(this.deps.getLegacyToken?.());
-          if (legacy) await this.deps.setToken(legacy, this.helloOwner ?? undefined);
-          await this.deps.clearLegacyToken?.();
+          // Clear the legacy copy only after the keyed write is confirmed persisted (`false` = not).
+          const saved = legacy
+            ? (await this.deps.setToken(legacy, this.helloOwner ?? undefined)) !== false
+            : true;
+          if (saved) await this.deps.clearLegacyToken?.();
           if (this.socket !== origin) return;
           // The credential now lives in the keyed entry, so a later revocation must clear that.
-          this.authSource = 'keyed';
+          if (saved) this.authSource = 'keyed';
         } else if (!msg.pairingToken && this.authSource === 'keyed') {
           this.deps.touchToken?.(this.helloOwner ?? undefined);
         }

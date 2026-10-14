@@ -65,3 +65,16 @@ it('eviction without touch drops the first-written key', () => {
   expect(s.size()).toBe(MAX_CREDENTIALS);
   expect(s.get(owner('u0'))).toBeNull();
 });
+
+it('set reports persistence: true on localStorage-like, false on quota failure or memory fallback', () => {
+  const ok = createCredentialStore({ getItem: () => null, setItem: () => {} });
+  expect(ok.set(owner('a'), 't')).toBe(true);
+  const full = createCredentialStore({
+    getItem: () => null,
+    setItem: () => {
+      throw new Error('QuotaExceededError');
+    },
+  });
+  expect(full.set(owner('a'), 't')).toBe(false);
+  expect(createCredentialStore(memoryStorage()).set(owner('a'), 't')).toBe(false);
+});
