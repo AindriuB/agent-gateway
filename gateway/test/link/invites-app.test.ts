@@ -4,6 +4,7 @@ import { MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT } from '../../src/link/code-attempt
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../../src/app.js';
 import { createInvite } from '../../src/link/invites.js';
+import { MAX_FAILED_AUTH_PER_CLIENT } from '../../src/http/limits.js';
 import { loadOrCreateToken } from '../../src/http/index.js';
 import { openStore } from '../../src/store/index.js';
 import { ORIGIN, TestClient, hello } from './helpers.js';
@@ -203,7 +204,8 @@ describe('server mode HTTP with --trust-proxy and no public URL', () => {
           },
           body: '{}',
         });
-      for (let i = 0; i < 10; i++) expect((await mcp('203.0.113.9', 'wrong')).status).toBe(401);
+      for (let i = 0; i < MAX_FAILED_AUTH_PER_CLIENT; i++)
+        expect((await mcp('203.0.113.9', 'wrong')).status).toBe(401);
       expect((await mcp('203.0.113.9', 'wrong')).status).toBe(429);
       const other = await mcp('203.0.113.10', bearer);
       expect([401, 429]).not.toContain(other.status);

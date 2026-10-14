@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createInvite } from '../../src/link/invites.js';
 import { RevocationSweep, REVOCATION_SWEEP_MS } from '../../src/link/revocation.js';
+import { until } from '../routing/harness.js';
 import { ORIGIN, TestClient, hello, startServer, type Harness } from './helpers.js';
 
 let h: Harness | undefined;
@@ -60,19 +61,30 @@ describe('revocation sweep', () => {
   it('has a 5 s default', () => expect(REVOCATION_SWEEP_MS).toBe(5000));
 
   it('closes a revoked live connection with PAIRING_INVALID and 1008, and its token cannot reconnect', async () => {
-    await boot(50);
-    sweep!.start();
+    await boot();
     const a = await pair();
     seedGrant('g1');
     h!.store.revokePairingsFor('w1', 'u1');
+    expect(sweep!.sweepOnce()).toBe(1);
     expect(await a.tc.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
     await a.tc.untilClosed();
-    expect(h!.registry.get('w1', 'u1')).toBeUndefined();
+    // The client sees the close before the server's own close handler has run.
+    await until(() => h!.registry.get('w1', 'u1') === undefined);
     expect(h!.store.oauth.getGrant('g1')?.revokedAt).not.toBeNull();
     const again = await TestClient.connect(h!.port, ORIGIN);
     clients.push(again);
     again.send(hello({ kind: 'pairingToken', token: a.token }));
     expect(await again.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
+  });
+
+  it('the timer closes a revoked connection without a manual sweep', async () => {
+    await boot(20);
+    sweep!.start();
+    const a = await pair();
+    h!.store.revokePairingsFor('w1', 'u1');
+    // Waits on the frame itself, not on a sleep.
+    expect(await a.tc.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
+    await a.tc.untilClosed();
   });
 
   it('leaves active pairings alone', async () => {
