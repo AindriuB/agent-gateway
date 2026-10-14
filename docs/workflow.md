@@ -1,12 +1,13 @@
 # The workflow
 
-A four-phase loop designed so that the expensive phase — implementation — runs
+A five-phase loop designed so that the expensive phase — implementation — runs
 wide and in parallel, and the main session's context stays small.
 
 ```
 /plan <goal>     planner   →  docs/plan/tasks/NN-slug.md  (one file per unit)
 /fanout          implementer × N, one git worktree each
-/verify          tester + reviewer, one pair per completed task
+/review          code-reviewer per branch; fixes loop back to the implementer
+/verify          tester + reviewer, one pair per reviewed task
 /record          scribe    →  PLAN.md, HISTORY.md, docs/
 ```
 
@@ -60,7 +61,36 @@ with the task id. Each one:
 Concurrency is bounded by the worktree scripts, not by discipline: two agents
 physically cannot be in the same checkout.
 
-## Phase 3 — verify
+## Phase 3 — review
+
+For each returned branch, spawn one `code-reviewer`. It reads the diff from git
+objects and returns findings, each with the input that triggers it:
+
+- **bugs** (P1, P2, P3): security holes, wrong results, races, unbounded growth,
+  and tests that would pass with their fix removed;
+- **style**: breaks of `docs/conventions.md`, the lint config, or the
+  surrounding code's own idiom — never taste.
+
+Each finding is routed. **In-spec** findings — the task file already says what
+the code should do — are appended to the task file under
+`## Review round N — findings`, the same task's `implementer` fixes only those
+in its existing worktree, and `code-reviewer` re-reviews just the fix commits,
+flagging any drift in them. Up to three rounds; after that the user decides.
+
+**Spec-changing** findings — the fix would change specified behaviour, add
+scope, need a file outside `Owns`, or reopen a decision — stop the loop and
+come to the orchestrator. The user decides, the `planner` records the amendment
+in the task file, and only then does anything go back to the implementer. A
+fix loop must never be where the spec changes.
+
+Only a `CLEAN` branch moves on.
+
+This is a different question from phase 4's. `reviewer` asks "did it do what
+the task said?"; `code-reviewer` asks "what is wrong with what it did?" Asking
+the second one before the PR is what keeps outside review from finding it
+after.
+
+## Phase 4 — verify
 
 For each returned branch, spawn `tester` and `reviewer` together. `tester` runs
 the build and suite in that worktree and returns `PASS`/`FAIL` plus, on failure,
@@ -68,10 +98,11 @@ the first failing test name and its assertion — never the log. `reviewer` read
 the diff against the task's acceptance criteria and returns a verdict per
 criterion.
 
-A failing task goes back to phase 2 with the failure appended to its task file.
+A failing task goes back to phase 2 with the failure appended to its task file,
+and through phase 3 again before it returns here.
 It does not get "fixed inline" — that is how the main context blows up.
 
-## Phase 4 — record
+## Phase 5 — record
 
 `scribe` merges the passing branches, removes their worktrees, moves completed task
 files from `docs/plan/tasks/` into `docs/plan/done/`, and updates `PLAN.md` and `HISTORY.md`. It is the only

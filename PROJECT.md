@@ -25,7 +25,8 @@ Load exactly one of these when the task needs it. Do not preload the set.
 Work is split by role, and each returns a conclusion, not a transcript.
 Explorer (read-only recon) · architect (read-only judgement) · planner (writes
 task files) · implementer (one task, one worktree) · tester (pass or fail, with
-the minimal detail) · reviewer (checks a diff against its task) · scribe (the
+the minimal detail) · code-reviewer (hunts bugs and style breaks in a diff before verify; routes spec
+changes to the orchestrator) · reviewer (checks a diff against its task) · scribe (the
 only role that edits `PLAN.md`, `HISTORY*.md` and `docs/`). See `docs/workflow.md`.
 
 ## Rules that hold everywhere
