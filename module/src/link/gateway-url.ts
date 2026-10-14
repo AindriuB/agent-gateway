@@ -40,7 +40,8 @@ function clientUsable(value: string): boolean {
   if (value.length > MAX_GATEWAY_URL || /[\s\u0000-\u001f\u007f]/.test(value)) return false;
   if (value.includes('#')) return false;
   // Credentials sit before an `@` in the authority; checked by shape so it needs no URL parser.
-  return !/^[a-z][a-z0-9+.-]*:\/\/[^/?]*@/i.test(value);
+  // WHATWG parsing also reads userinfo after `ws:\\`, `ws:/` and `ws:`, so the slashes are optional.
+  return !/^[a-z][a-z0-9+.-]*:[\/]*[^/\?]*@/i.test(value);
 }
 
 export interface GatewayResolution {

@@ -116,3 +116,12 @@ describe('displayAddress', () => {
     expect(displayAddress(`wss://gw/${'a'.repeat(5000)}`).length).toBeLessThanOrEqual(200);
   });
 });
+
+describe('clientUsable userinfo shapes', () => {
+  it.each(['ws:\\u:p@evil.com/link', 'ws:/u:p@evil.com/link', 'ws:u:p@evil.com/link'])(
+    'refuses %s',
+    (v) => {
+      expect(resolveGateway(v, '').clientInvalid).toBe(true);
+    },
+  );
+});

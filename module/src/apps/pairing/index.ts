@@ -81,6 +81,12 @@ function storedOverride(typed: string): string {
   return world !== '' && normalizeGatewayUrl(typed) === normalizeGatewayUrl(world) ? '' : typed;
 }
 
+/** Redeem a parsed invite: store the address (awaited, so the code is recorded against it), then pair. */
+export async function redeemInvite(invite: { url: string; code: string }): Promise<void> {
+  await game.settings.set(NS, 'gatewayUrl', storedOverride(invite.url));
+  getLinkClient().pair(invite.code);
+}
+
 /** Built lazily: the ApplicationV2 base class only exists once Foundry has initialised. */
 export function createPairingApp(): any {
   const Base = getHandlebarsApplicationMixin()(getApplicationV2());
@@ -188,9 +194,7 @@ export function createPairingApp(): any {
         return;
       }
       if (pasted?.kind === 'invite') {
-        // The address first, awaited, so the code is recorded against the right gateway.
-        await game.settings.set(NS, 'gatewayUrl', storedOverride(pasted.url));
-        getLinkClient().pair(pasted.code);
+        await redeemInvite(pasted);
         return;
       }
 

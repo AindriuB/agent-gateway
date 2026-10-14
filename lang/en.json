@@ -40,11 +40,14 @@
         "hint": "WebSocket address of the Agent Gateway this client connects to."
       },
       "gatewayUrlOverride": {
-        "hint": "WebSocket address of the Agent Gateway this client connects to. Leave empty to use the address your GM set for this world."
+        "hint": "WebSocket address of the Agent Gateway this client connects to. Leave empty to use the address your GM set for this world.",
+        "invalid": "That is not a usable gateway address, so it was cleared. Use a ws:// or wss:// address without a login, query or #."
       },
       "defaultGatewayUrl": {
         "name": "Default gateway URL",
-        "hint": "The wss:// address players in this world connect to, for example wss://gw.example.com/link. A player's own Gateway URL setting overrides it. Leave empty for a gateway on this computer."
+        "hint": "The wss:// address players in this world connect to, for example wss://gw.example.com/link. A player's own Gateway URL setting overrides it. Leave empty for a gateway on this computer.",
+        "invalid": "That is not a valid default gateway address, so it was cleared. Use a wss:// address (ws:// only for this computer) without a login, query or #.",
+        "codeDropped": "An invite code was not kept in the world default; only the address was saved. Give each player their own invite."
       },
       "pairingToken": {
         "name": "Pairing token",

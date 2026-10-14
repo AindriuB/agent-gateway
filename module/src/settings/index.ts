@@ -2,6 +2,7 @@ import { registerOfflineEventSettings } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
+import { onClientGatewayUrlChange, onWorldGatewayUrlChange } from './gateway-url-guard.js';
 import { registerGrantsMenu } from '../apps/grants/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
@@ -17,6 +18,7 @@ function registerFoundation(): void {
     config: true,
     type: String,
     default: '',
+    onChange: onClientGatewayUrlChange,
   });
   game.settings.register(NS, 'pairingToken', {
     name: 'AGENT_GATEWAY.Settings.pairingToken.name',
@@ -59,6 +61,7 @@ function registerDefaultGatewayUrl(): void {
     restricted: true,
     type: String,
     default: '',
+    onChange: onWorldGatewayUrlChange,
   });
 }
 
