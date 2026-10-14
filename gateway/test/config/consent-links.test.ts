@@ -1,3 +1,6 @@
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../../src/config/index.js';
 
@@ -20,6 +23,18 @@ describe.each(CASES)('%s', (flag, key, envKey) => {
         env: { [envKey]: 'https://env.example/p' },
         flags: { [key]: 'https://flag.example/p' },
       })[key],
+    ).toBe('https://flag.example/p');
+  });
+
+  it('takes the config file, then env over it, then the flag over both', () => {
+    const p = join(mkdtempSync(join(tmpdir(), 'agw-')), 'config.json');
+    writeFileSync(p, JSON.stringify({ [key]: 'https://file.example/p' }));
+    chmodSync(p, 0o600);
+    const env = { [envKey]: 'https://env.example/p' };
+    expect(loadConfig({ configPath: p, env: {} })[key]).toBe('https://file.example/p');
+    expect(loadConfig({ configPath: p, env })[key]).toBe('https://env.example/p');
+    expect(
+      loadConfig({ configPath: p, env, flags: { [key]: 'https://flag.example/p' } })[key],
     ).toBe('https://flag.example/p');
   });
 
