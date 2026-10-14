@@ -1,6 +1,6 @@
 {
   "name": "@agent-gateway/module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,7 @@
     "watch": "vite build --watch"
   },
   "dependencies": {
-    "@agent-gateway/protocol": "0.1.0",
+    "@agent-gateway/protocol": "0.1.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
