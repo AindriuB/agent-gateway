@@ -72,6 +72,9 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 ### Self-hosted module manifest: 83 (done on branch `claude/task-83`, archived in `docs/plan/done/`; PR pending)
 - **83 — `pack-module --base-url`.** Lets the module be installed from a manifest URL while the repo is private; deployed at `https://dl.aindriub.app/agent-gateway/module.json`. Pending Andrew: the manual Foundry v14 install, and committing the Caddy change in `/opt/aindriub-app`. Residuals are in `docs/plan/done/83-static-module-manifest.md`.
 
+### Claude Code plugin: 85 (automated done, PR open, live run pending; task file stays in `docs/plan/tasks/`)
+- **85 — Private Claude Code plugin for the hosted gateway.** Repo marketplace `agent-gateway` and a hosted one (`aindriub-dl`) built by `scripts/build-claude-plugin.mjs --base-url`, live at `https://dl.aindriub.app/claude/marketplace.json` since 2026-10-14. Reviewed in three clean rounds, tester PASS, reviewer APPROVE. Pending Andrew: marketplace add, install, `/mcp` OAuth (check which scopes are requested; stop if read only), list tools, one read, one approved write, revoke, logout. Move the task file to `done/` and write the HISTORY entry after that run. Guide: `docs/claude-plugin.md`.
+
 ### Later (after MVP B)
 
 - **Ease of installation:** native installers (Windows .exe, macOS .pkg, and a Linux script with Node bundled). No task yet.

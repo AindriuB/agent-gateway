@@ -183,3 +183,13 @@ Checkable form:
 ## Review round 3 — findings
 - [P3] scripts/build-claude-plugin.mjs:63-71 — `lstatSync` checks only the last path component, so a symlinked parent directory gets past it. Input: `skills/foundry-gateway/` replaced by a symlink to an outside dir whose SKILL.md holds `SECRET-CONTENT` → exit 0, and the zip's SKILL.md is `SECRET-CONTENT`. route: implementer. Resolve each file with `realpathSync` and refuse unless it sits under `realpathSync(<root>/plugins/claude/foundry-gateway)`, with a directory-symlink test.
 - [NOTE, cheap] scripts/build-claude-plugin.mjs:9 — `lstatSync` breaks the alphabetical import order. Fix if cheap.
+
+## Status — automated acceptance met, live run pending
+
+Recorded 2026-10-14 at 5fa4da5. Review rounds 1-3 (probe timeout and manifest asserts; symlink, version, staging and usage hardening; realpath containment) all came back clean. Amendment 1 (Andrew) is done: `bump-version` owns the Claude plugin.json (16 places), and `scripts/build-claude-plugin.mjs --base-url` builds the hosted zip and a marketplace.json named `aindriub-dl` with an archive source and sha256. /verify: tester PASS (4396 fast, 2227 slow, 98 script tests; `claude validate --strict` ran and passed); reviewer APPROVE for all automated items.
+
+Hosted on 2026-10-14 at `https://dl.aindriub.app/claude/marketplace.json` with `plugins/foundry-gateway-0.1.0.zip`, sha256 `4730657a…`, built from 5fa4da5; it replaced the hand-built `07ceb540…` version.
+
+Residual notes: a symlinked plugin root is followed; there is a check-to-copy TOCTOU; a bare `?` or `#` on the base URL is silently dropped; the zip is not reproducible (mtimes), so upload zip and marketplace together; the marketplace-level `description` and the plugin `version` were added for `--strict`; claude.ai chat plugin loading is unverified.
+
+Pending, Andrew's live run: marketplace add (repo or hosted URL); install; `/mcp` OAuth, checking which scopes Claude Code requests (if read only, stop and report); list tools, one read, one approved write, revoke, logout. Then `git mv` this file to `docs/plan/done/` and add the HISTORY entry and index row.
