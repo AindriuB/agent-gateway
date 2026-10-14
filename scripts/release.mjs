@@ -1,4 +1,4 @@
-// Local release: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--root <dir>]
+// Local release: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--push-image] [--root <dir>]
 // Bumps the version, runs every gate, builds the three artefacts into dist/release/, prints their
 // SHA-256, then asks for `yes` before creating a DRAFT GitHub release and a dry-run npm publish.
 // It never publishes the draft, never pushes and never tags. See docs/releasing.md.
@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const USAGE =
-  'release: usage: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--root <dir>]';
+  'release: usage: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--push-image] [--root <dir>]';
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 // Same text as V13_SKIP_MESSAGE in e2e/lib/args.ts (a test keeps them equal); other SKIP: lines are fine.
 const V13_SKIP_MESSAGE = 'SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)';
@@ -25,6 +25,7 @@ const args = process.argv.slice(2);
 let root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 let allowMissingV13 = false;
 let publishNpm = false;
+let pushImage = false;
 const positional = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -33,12 +34,15 @@ for (let i = 0; i < args.length; i++) {
     root = path.resolve(args[++i]);
   } else if (a === '--allow-missing-v13') allowMissingV13 = true;
   else if (a === '--publish-npm') publishNpm = true;
+  else if (a === '--push-image') pushImage = true;
   else if (a.startsWith('--')) die(USAGE.slice(9));
   else positional.push(a);
 }
 if (positional.length !== 1) die(USAGE.slice(9));
 const version = positional[0];
 if (!SEMVER.test(version)) die(`not a version: ${version}`);
+// No registry is chosen yet (GHCR or Docker Hub), so there is nowhere to push the image.
+if (pushImage) die('registry not configured; --push-image cannot push yet');
 
 function run(cmd, cmdArgs, opts = {}) {
   const r = spawnSync(cmd, cmdArgs, { cwd: root, encoding: 'utf8', ...opts });
@@ -103,12 +107,22 @@ for (const [name, cmd, a] of steps) {
 const zip = path.join(outDir, 'agent-gateway.zip');
 const tgz = path.join(outDir, `foundry-agent-gateway-${version}.tgz`);
 const mcpb = path.join(outDir, 'foundry-agent-gateway.mcpb');
+// The server-mode image is built and tagged locally only; nothing is pushed.
+const imageTag = `foundry-agent-gateway:${version}`;
+if (existsSync(path.join(root, 'gateway/Dockerfile'))) {
+  const r = run('docker', ['build', '-f', 'gateway/Dockerfile', '-t', imageTag, '.'], {
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
+  if (r.status !== 0) die('docker build failed');
+}
 console.log('\nArtefacts:');
 for (const f of [zip, tgz, mcpb]) {
   if (!existsSync(f)) die(`missing artefact ${f}`);
   const sha = createHash('sha256').update(readFileSync(f)).digest('hex');
   console.log(`  ${sha}  ${path.relative(root, f)}`);
 }
+if (existsSync(path.join(root, 'gateway/Dockerfile')))
+  console.log(`  image ${imageTag} (local only, not pushed)`);
 
 // 5. Plan and confirmation.
 function checklist() {
