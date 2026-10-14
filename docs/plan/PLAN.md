@@ -80,7 +80,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 - **87 — Link resilience and diagnostics (next; depends on 86).** Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`: make link drops visible and recoverable without re-pairing.
 - **Follow-ups from 86:**
   - The "inherited" note in the pairing window is hidden while the state is connecting or unreachable; show it there too.
-  - The env-var error for a missing public URL should name `--public-url`.
+  - When `AGENT_GATEWAY_PUBLIC_URL` is set to an invalid value, the error still says "Invalid --public-url" (from `normalizePublicUrl`, `gateway/src/bin/cli.ts:271`); it should name the env var when that was the source.
   - `Pairing.Address.connecting` uses `...` where the rest of `lang/en.json` uses `…`; make it consistent.
   - `module/src/settings/gateway-url-guard.ts:94` reads `self.isActiveGM` in a way that is hard to follow (readability nit only).
 
