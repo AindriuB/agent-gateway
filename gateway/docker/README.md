@@ -38,7 +38,9 @@ the gateway's network namespace and can be left in the old one.
 If your VPS already runs Caddy (installed on the host or in its own container), skip the bundled
 one. `compose.byo-caddy.yaml` runs the gateway alone, with the same project name and
 `gateway-data` volume, so moving from the bundled stack keeps your database. Never run both
-files at once.
+files at once. To move from the bundled stack, first run `docker compose down` while
+`COMPOSE_FILE` is still unset (the volume is kept), then switch. If you switched first, run
+`docker compose up -d --build --remove-orphans` to remove the old `caddy` container.
 
 1. Put `COMPOSE_FILE=compose.byo-caddy.yaml` in `.env` (with `DOMAIN` and `FOUNDRY_ORIGIN`;
    `ACME_EMAIL` is not needed). Every command in this README then works unchanged, with no `-f`.
@@ -49,14 +51,19 @@ files at once.
 **Host-installed Caddy.** Leave `GATEWAY_NETWORK_MODE` unset. The gateway runs with
 `network_mode: host` and publishes no ports. It keeps its default 127.0.0.1 binding on 7420 and
 7421, so nothing new is exposed, but those two host ports must be free. Host networking works on
-a Linux host only (not under Docker Desktop).
+a Linux host only (not under Docker Desktop). `AGENT_GATEWAY_PUBLIC_URL`,
+`AGENT_GATEWAY_TRUST_PROXY=1` and `AGENT_GATEWAY_ALLOW_ORIGIN` stay set; the compose file sets
+them. Ports 7420 and 7421 are on the host's loopback, so any local process on the VPS can reach
+them (and, with `TRUST_PROXY=1`, pick its own rate-limit bucket via `X-Forwarded-For`); nothing
+is exposed off the machine.
 
 **Containerised Caddy.** Set `GATEWAY_NETWORK_MODE=container:<name>` in `.env`, where `<name>` is
 your Caddy container's name from `docker ps`, and start Caddy first. The gateway then shares
 Caddy's network namespace, so 127.0.0.1 reaches both. If the Caddy container is recreated (an
 image update, or `docker compose up` on Caddy's own stack), the gateway is left in a dead
 network namespace. Recreate it: `docker compose up -d --force-recreate gateway`. A plain
-`docker compose restart gateway` reuses the old container's namespace and is not enough.
+`docker compose restart gateway` fails with "No such container" because Compose pins the
+old Caddy container's id, and it leaves the gateway stopped.
 
 **Why not a shared Docker network.** On a shared network Caddy reaches the gateway from a
 container IP, not from loopback. The gateway trusts `X-Forwarded-For` only from a loopback peer,
