@@ -4,3 +4,6 @@ dist/
 /.claude/
 /.worktrees/
 *.tsbuildinfo
+
+# local scratch output (PDFs, exports); never committed
+/output/
