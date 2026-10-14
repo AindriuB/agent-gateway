@@ -49,6 +49,9 @@ files at once. To move from the bundled stack, first run `docker compose down` w
 `COMPOSE_FILE` is still unset (the volume is kept), then switch. If you switched first, run
 `docker compose up -d --build --remove-orphans` to remove the old `caddy` container.
 
+To serve the Foundry module's manifest and zip from the same Caddy while the repo is private, see
+"Self-hosted manifest (private testing)" in `docs/releasing.md`.
+
 1. Put `COMPOSE_FILE=compose.byo-caddy.yaml` in `.env` (with `DOMAIN` and `FOUNDRY_ORIGIN`;
    `ACME_EMAIL` is not needed). Every command in this README then works unchanged, with no `-f`.
 2. Paste `byo-caddy.Caddyfile` into your own Caddyfile and change the host. It is a site block
