@@ -40,3 +40,20 @@ The test "A (oldest), B and C with different settings settle on C without a step
 - Other relay tests in gateway/test/relay/, even if they look similarly fragile. List them in the PR.
 - The fixed 1500 ms wait in gateway/test/mcp/server.test.ts:70 (an open PLAN item).
 - The CI workflow and package.json.
+
+## Outcome
+
+Done on branch `claude/task-79`, 2026-10-14, rebased onto `origin/main` c34a1f2 with the implementer commit unchanged in content. `/review` was CLEAN, with the root cause confirmed against the source. `/verify`: tester PASS (build, lint, 4396 fast, 2227 slow, 0 failed; the step-down file alone 5/5), reviewer APPROVE.
+
+Root cause, in the test; the relay is correct:
+- The test's `holds()` counted the bare `holds link port`, which also appears in the standby warning (`gateway/src/app.ts:171`, `:201`, `:414`). The primary banner is at `:459`.
+- After C was killed, A (the oldest) sometimes took the port, then by design stepped down for B (newer, different settings). That counted +3 rather than +1.
+- `primary` was chosen from a snapshot.
+- Reproduced under load: about 1 run in 4 failed, with 16 `yes` processes on 8 cores.
+
+Fix: match only the primary banner; wait for B to serve; poll A until it reports `LINK_UNAVAILABLE` / "different settings"; remove the fixed 4 s sleep. The `steps` and `asked` bounds are unchanged. Load run: 20/20 passes. In a mutation where the relay fails to hand over, the test fails.
+
+Residuals:
+- The worst-case sum of the waits (about 295 s) exceeds the 180 s test timeout, so a slow convergence shows as a timeout, not the named message.
+- `toBe(hb + 1)` at `stepdown.test.ts:212` is exact. That is safe only because B has no newer live peer; a comment saying so would help.
+- The other bare `holds link port` waits are a PLAN follow-up (from task 81 review): `stepdown.test.ts:89`, `:107`, `:121`, `:149`; `link-reconnect.test.ts:76`; `takeover.test.ts:138`, `:140`. Most are vacuous rather than wrong, because later gates catch them.
