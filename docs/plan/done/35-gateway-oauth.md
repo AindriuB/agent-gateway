@@ -120,3 +120,18 @@ End to end:
 - Token introspection and the RFC 7009 revocation endpoint.
 - Docker and Caddy (42), and client setup guides (43).
 - Audit-trail entries for OAuth events (35b).
+
+## Outcome (2026-10-14)
+
+Branch `claude/task-35`, PR pending Andrew. Commits: 55be59c (store, server, scope filter, routes), a92ec43 (metadata, registration and flow tests), 2e8cfc7 (binding, limits, scopes, SDK end-to-end tests, migration counts), aa638a8 (plan amendments), 168c6cd (review round 1 fixes). Re-review was CLEAN with no drift. `npm run verify` passed (4247 fast + 2227 slow, lint clean) and the reviewer approved every acceptance criterion, including decision (k), the refresh-scope P3 and SAVEPOINT revocation.
+
+The refresh-scope P3 was resolved by returning `grant.scopes` in the token response, so the reported scope equals what the new access token can do. The alternative, `invalid_scope`, was not used.
+
+Owns changes, approved:
+- `gateway/src/app.ts` gained the `offlineCategory` callback in `sessionOptions` (`gateway/src/app.ts:551-552`), which decision (k) requires. This widens the app.ts Owns line.
+- The formatter reflowed the `MIGRATIONS` array in `gateway/src/store/migrations/index.ts`. No entry changed.
+
+Known residuals and follow-ups:
+- P3 (optional): the listener-ordering test at `gateway/test/oauth/atomicity.test.ts:91-126` still passes with the SAVEPOINT fix reverted. Only the nested `BEGIN IMMEDIATE` test guards the fix.
+- `gateway/src/store/store.ts:116-119`: `revokePairing` runs its listeners in sequence with no per-listener isolation. If the oauth listener throws, the events and queue revocations are skipped. Task 68 uses `revokePairing` and should decide whether to isolate listeners.
+- A SAVEPOINT outside a transaction starts a deferred transaction, so a concurrent writer (68's CLI) can get SQLITE_BUSY_SNAPSHOT without the busy_timeout wait. Separately, `ROLLBACK TO` can mask the original error if SQLite has already rolled back the outer transaction. Both are rare; 68 should keep them in mind.
