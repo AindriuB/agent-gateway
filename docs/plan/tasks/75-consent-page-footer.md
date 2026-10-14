@@ -90,3 +90,10 @@ With both settings unset, every one of 67's original assertions must still hold 
 - Other pages the gateway serves (the JSON OAuth endpoints, the stylesheet route, the link or MCP surfaces).
 - 68's operator commands and `operatorCommandOf` in `cli.ts`, and 68's invite and revocation code in `app.ts` and `link/server.ts`. Whether `--privacy-url` or `--source-url` should be refused alongside an operator command (today they would be accepted and ignored, as `--public-url` is) is not this task's question.
 - Refactoring `normalizePublicUrl` or the other existing flags.
+
+## Review round 1 — findings
+
+- [P2] gateway/test/oauth/consent/footer.test.ts:88-94 — the "escapes the URLs it writes" test only checks the privacy link. Nothing guards `escapeHtml` on the source link's href (render.ts:59). WHATWG URL keeps a `"` in the host (`new URL('https://a"b.example/').href` gives `https://a"b.example/`, which passes normalizeLinkUrl), so removing that escape would break the attribute. With the source escape mutated out, all 32 consent tests still pass. The `"x"<y` path/query assertion is vacuous because `new URL` percent-encodes those characters. route: implementer. Use a host-quote input for both settings and assert that both hrefs are escaped. Confirm by mutating each escape.
+- [P3] gateway/src/config/index.ts:109 — the 2048 cap is checked on the raw input, but the stored and rendered value is `url.href`, which percent-encoding can make about 3 times longer (`https://x.example/` + 2000 `"` is accepted and stored at about 6018 characters). route: implementer. Also check `url.href.length` against MAX_LINK_URL, with a test.
+- [P3] gateway/src/oauth/consent/style.ts:1-6 — the header comment says "no font, image or logo is shipped", which is now false (marks.ts). route: implementer. Fix the comment.
+- [P3, cheap] gateway/test/oauth/consent/branding.test.ts:46-55 — with both URLs set, the external-href check covers the whole body. The decision says "inside `<footer>`". route: implementer. Also assert that the external hrefs and both `<svg>`s occur only inside `<footer>`.
