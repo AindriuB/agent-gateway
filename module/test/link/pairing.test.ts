@@ -89,7 +89,8 @@ it('submit with an empty code and a stored token reclaims via start()', async ()
 it('submit with an empty code and no token warns and does nothing else', async () => {
   const { client, warn, g } = await submitWith('', { gatewayUrl: 'ws://edited', code: '' });
   expect(g.game.settings.get('agent-gateway', 'gatewayUrl')).toBe('ws://edited');
-  expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Link.codeRequired');
+  // ws://edited is not loopback, so the window is in server mode and says "invite".
+  expect(warn).toHaveBeenCalledWith('L:AGENT_GATEWAY.Pairing.Server.codeRequired');
   expect(client.start).not.toHaveBeenCalled();
   expect(client.pair).not.toHaveBeenCalled();
 });

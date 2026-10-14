@@ -2,13 +2,7 @@ import { isLoopbackHost, MAX_GATEWAY_URL } from './gateway-url.js';
 
 /** Fixed words only; a reason never carries any of the input. */
 export type InviteProblem =
-  | 'empty'
-  | 'too-long'
-  | 'bad-characters'
-  | 'bad-address'
-  | 'bad-scheme'
-  | 'bad-path'
-  | 'bad-code';
+  'empty' | 'too-long' | 'bad-characters' | 'bad-address' | 'bad-scheme' | 'bad-path' | 'bad-code';
 
 export type PairingInput =
   | { kind: 'invite'; url: string; code: string }

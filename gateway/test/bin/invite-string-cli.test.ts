@@ -64,7 +64,11 @@ describe('--invite one-paste string', () => {
     const env = { AGENT_GATEWAY_PUBLIC_URL: 'https://env.example.com' };
     const a = await run(db, ['--invite', 'w', 'u'], env);
     expect(a.stdout).toMatch(new RegExp(`^wss://env\\.example\\.com/link#${CODE}\\n$`));
-    const b = await run(db, ['--invite', 'w', 'u2', '--public-url', 'https://flag.example.com'], env);
+    const b = await run(
+      db,
+      ['--invite', 'w', 'u2', '--public-url', 'https://flag.example.com'],
+      env,
+    );
     expect(b.stdout).toMatch(new RegExp(`^wss://flag\\.example\\.com/link#${CODE}\\n$`));
     expect(a.stderr + b.stderr).not.toContain(codeOf(a.stdout));
     expect(a.stderr + b.stderr).not.toContain(codeOf(b.stdout));

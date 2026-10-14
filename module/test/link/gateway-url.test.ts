@@ -34,7 +34,13 @@ describe('effectiveGatewayUrl', () => {
     expect(effectiveGatewayUrl('ws://127.0.0.1:7420', WORLD)).toBe('ws://127.0.0.1:7420');
   });
   it('never returns a client value with a fragment or credentials', () => {
-    for (const bad of ['wss://gw/link#ABCD-EFGH-JKMN', 'wss://u:p@gw/link', 'not a url']) {
+    for (const bad of [
+      'wss://gw/link#ABCD-EFGH-JKMN',
+      'wss://u:p@gw/link',
+      'not a url',
+      'ws://gw/link#x',
+      'wss://u@gw',
+    ]) {
       expect(effectiveGatewayUrl(bad, WORLD)).toBe(WORLD);
       expect(effectiveGatewayUrl(bad, '')).toBe(LEGACY);
       expect(resolveGateway(bad, WORLD).clientInvalid).toBe(true);

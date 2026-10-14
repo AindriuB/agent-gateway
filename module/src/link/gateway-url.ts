@@ -38,8 +38,9 @@ export function isStrictGatewayUrl(value: string): boolean {
 /** The player's typed override keeps today's leniency: only what can never work is refused. */
 function clientUsable(value: string): boolean {
   if (value.length > MAX_GATEWAY_URL || /[\s\u0000-\u001f\u007f]/.test(value)) return false;
-  const u = parse(value);
-  return u !== undefined && !u.username && !u.password && !u.hash && !value.includes('#');
+  if (value.includes('#')) return false;
+  // Credentials sit before an `@` in the authority; checked by shape so it needs no URL parser.
+  return !/^[a-z][a-z0-9+.-]*:\/\/[^/?]*@/i.test(value);
 }
 
 export interface GatewayResolution {
@@ -100,4 +101,14 @@ export function displayAddress(value: string): string {
   if (!u || !u.host) return '';
   const path = u.pathname === '/' ? '' : u.pathname;
   return `${u.protocol}//${u.host}${path}`.slice(0, 200);
+}
+
+/** The world default if it passes the strict check, whatever the player's own setting says. */
+export function validWorldDefault(get: (key: string) => unknown): string {
+  try {
+    const v = get('defaultGatewayUrl');
+    return typeof v === 'string' && isStrictGatewayUrl(v.trim()) ? v.trim() : '';
+  } catch {
+    return '';
+  }
 }
