@@ -9,9 +9,12 @@ async function setup(o: { world?: string; isGM?: boolean } = {}) {
   vi.resetModules();
   const g = globalThis as any;
   const store: Record<string, string> = { gatewayUrl: '', defaultGatewayUrl: o.world ?? '' };
-  const onChange: Record<string, (v: unknown) => Promise<void>> = {};
+  const onChange: Record<string, (v: unknown, o?: unknown, u?: string) => Promise<void>> = {};
   const log: string[] = [];
   const setSpy = vi.fn();
+  const writes: string[] = []; // every value handed to the database write, as Foundry encodes it
+  const pre: Record<string, Array<(d: any, c: any, o: any, u: string) => void>> = {};
+  g.Hooks = { on: (n: string, f: any) => (pre[n] ??= []).push(f) };
   g.game = {
     user: { id: 'u1', isGM: o.isGM ?? true },
     i18n: { localize: (k: string) => `L:${k}`, format: (k: string) => k },
@@ -25,8 +28,16 @@ async function setup(o: { world?: string; isGM?: boolean } = {}) {
         setSpy(key, v);
         log.push(`set:${key}=${v}`);
         await Promise.resolve();
-        store[key] = v;
-        await onChange[key]?.(v); // Foundry runs onChange after the write
+        let out = v;
+        if (key === 'defaultGatewayUrl') {
+          const data = { key: `${NS}.${key}`, value: JSON.stringify(v) };
+          const hook = store[key] === '' ? 'preCreateSetting' : 'preUpdateSetting';
+          pre[hook]?.forEach((f) => f({ key: data.key }, data, {}, 'u1'));
+          writes.push(data.value);
+          out = JSON.parse(data.value);
+        }
+        store[key] = out;
+        await onChange[key]?.(out, {}, 'u1'); // Foundry runs onChange after the write
       },
     },
   };
@@ -38,13 +49,13 @@ async function setup(o: { world?: string; isGM?: boolean } = {}) {
   const { registerSettings } = await import('../../src/settings/index.js');
   registerSettings();
   err.mockRestore();
-  const paste = async (key: string, v: string) => {
+  const paste = async (key: string, v: string, userId?: string) => {
     store[key] = v;
     log.length = 0;
     setSpy.mockClear();
-    await onChange[key]!(v);
+    await onChange[key]!(v, {}, userId);
   };
-  return { store, log, warn, client, setSpy, paste };
+  return { store, log, warn, client, setSpy, paste, writes, pre };
 }
 
 afterEach(() => {
@@ -140,11 +151,56 @@ describe('world defaultGatewayUrl guard', () => {
     expect(t.warn).not.toHaveBeenCalled();
   });
 
-  it('does not loop on its own corrective write', async () => {
+  it.each([
+    [`${ADDR}#${CODE}`, ADDR],
+    [CODE, ''],
+    ['http://gw.example.com', ''],
+    [`${ADDR}#${CODE}`.replace('wss', 'ws'), ''],
+  ])('the data passed to the write never carries the code: %s', async (v, want) => {
+    for (const world of ['', ADDR]) {
+      const t = await setup({ world }); // '' takes preCreateSetting, a value takes preUpdateSetting
+      await (globalThis as any).game.settings.set(NS, 'defaultGatewayUrl', v);
+      expect(t.writes).toEqual([JSON.stringify(want)]);
+      expect(t.writes[0]).not.toContain(CODE);
+      expect(t.writes[0]).not.toContain('#');
+      expect(t.setSpy).toHaveBeenCalledTimes(1); // no corrective write is needed
+      expect(t.warn).toHaveBeenCalledTimes(1);
+      expect(t.warn.mock.calls[0]![0]).not.toContain(CODE);
+    }
+  });
+
+  it('rewrites the pending value in place on both hooks', async () => {
+    const t = await setup();
+    for (const hook of ['preCreateSetting', 'preUpdateSetting']) {
+      const data = { key: `${NS}.defaultGatewayUrl`, value: JSON.stringify(`${ADDR}#${CODE}`) };
+      t.pre[hook]!.forEach((f) => f({}, data, {}, 'u1'));
+      expect(data.value).toBe(JSON.stringify(ADDR));
+    }
+  });
+
+  it('leaves other settings and other writers alone', async () => {
+    const t = await setup();
+    const other = { key: `${NS}.gatewayUrl`, value: JSON.stringify(`${ADDR}#${CODE}`) };
+    const mine = { key: `${NS}.defaultGatewayUrl`, value: JSON.stringify(`${ADDR}#${CODE}`) };
+    t.pre.preUpdateSetting!.forEach((f) => f({}, other, {}, 'u1'));
+    t.pre.preUpdateSetting!.forEach((f) => f({}, mine, {}, 'u2'));
+    expect(other.value).toContain(CODE);
+    expect(mine.value).toContain(CODE);
+    expect(t.warn).not.toHaveBeenCalled();
+  });
+
+  it('onChange does nothing for a value another user wrote', async () => {
+    const t = await setup();
+    await t.paste('defaultGatewayUrl', `${ADDR}#${CODE}`, 'u2');
+    expect(t.setSpy).not.toHaveBeenCalled();
+    expect(t.warn).not.toHaveBeenCalled();
+  });
+
+  it('needs no corrective write once the hook has cleaned the value', async () => {
     const t = await setup();
     t.setSpy.mockClear();
     await (globalThis as any).game.settings.set(NS, 'defaultGatewayUrl', `${ADDR}#${CODE}`);
-    expect(t.setSpy).toHaveBeenCalledTimes(2);
+    expect(t.setSpy).toHaveBeenCalledTimes(1);
     expect(t.warn).toHaveBeenCalledTimes(1);
   });
 });

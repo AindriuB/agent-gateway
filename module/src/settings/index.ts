@@ -2,7 +2,11 @@ import { registerOfflineEventSettings } from '../events/offline-setting.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { registerPolicyMenu } from '../apps/policy/index.js';
 import { registerPairingMenu } from '../apps/pairing/index.js';
-import { onClientGatewayUrlChange, onWorldGatewayUrlChange } from './gateway-url-guard.js';
+import {
+  onClientGatewayUrlChange,
+  onWorldGatewayUrlChange,
+  registerWorldGatewayUrlHooks,
+} from './gateway-url-guard.js';
 import { registerGrantsMenu } from '../apps/grants/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
@@ -63,6 +67,7 @@ function registerDefaultGatewayUrl(): void {
     default: '',
     onChange: onWorldGatewayUrlChange,
   });
+  registerWorldGatewayUrlHooks();
 }
 
 /** Per-feature register functions. Later tasks append here (insertion-only). */
