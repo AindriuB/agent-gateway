@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BoundedMap, FailureWindows, RateWindows } from '../../src/http/limits.js';
+import { BoundedMap, CountWindows, FailureWindows, RateWindows } from '../../src/http/limits.js';
 
 describe('per-client limit maps stay bounded', () => {
   it('BoundedMap never exceeds its cap', () => {
@@ -20,6 +20,14 @@ describe('per-client limit maps stay bounded', () => {
       r.exceeded(`k${i}`);
       expect(f.size).toBeLessThanOrEqual(50);
       expect(r.size).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it('CountWindows never exceeds its cap', () => {
+    const c = new CountWindows(5, 60_000, () => 0, 50);
+    for (let i = 0; i < 150; i++) {
+      c.hit(`k${i}`);
+      expect(c.size).toBeLessThanOrEqual(50);
     }
   });
 

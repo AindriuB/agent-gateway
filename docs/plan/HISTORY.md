@@ -17,6 +17,10 @@ in the same commit.
 **Cost:** <what was hard, what was tried and abandoned, what not to retry.>
 -->
 
+## 2026-10-14 — Discovery 401 is not a failed auth (task 88)
+A `/mcp` request with no `Authorization` header now gets the OAuth discovery 401 without being recorded as a failed auth. Those requests go through a separate bounded discovery throttle of 120 per 60 s per client, answering 429 `too many requests` beyond that. Any offered `Authorization` header keeps the old lockout and failure counting, and a locked-out client that sends no credentials still gets the 401 without being authenticated.
+**Cost:** Found live: codex-mcp-client discovery bursts got 429 on gw.aindriub.app on 2026-10-14, which blocked ChatGPT and Codex sign-in. Two `public.test.ts` tests pinned the old behaviour by sending no credential and expecting a failure to count: 'keys by the TCP peer without --trust-proxy' and 'a client key at the failed-auth limit gets 429 even with a valid credential'. Each now sends its credential in an `Authorization` header. The discovery counter is a fixed window per key, not `FailureWindows`, to avoid storing one timestamp per event.
+
 ## 2026-10-14 — Server-mode onboarding in one paste (task 86)
 With a public URL set, `--invite` now prints a single `wss://host/link#CODE` string alongside the code, and a player pastes that one string into the pairing window. A new parser (`module/src/link/invite-string.ts`) accepts that string or a bare code. The world gets a `defaultGatewayUrl` setting, and the link resolves the address as client override, then world default, then `ws://localhost:7420`; a client still holding the legacy localhost value inherits the world default. In server mode the pairing window words its status for a hosted gateway and shows the address it is trying, with a hint when that is wrong, and the gateway's three status literals (`gateway/src/mcp/status-tool.ts:18` and `:36`, `gateway/src/mcp/session.ts:283`) use the same server-mode wording.
 
