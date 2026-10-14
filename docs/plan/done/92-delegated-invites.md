@@ -110,3 +110,13 @@ Reviewed HEAD: d1120d8. In-spec, routed to the implementer. Fix: every open invi
 
 [P2] Keep open invitations discoverable when limiting history — gateway/src/store/store.ts:271
 The query limits active and historical invitations together to the newest 100. After creating a long-lived invite and then creating and cancelling 100 newer invites, the original remains redeemable and counts toward the 20-open limit but disappears from every listInvites response. There is no pagination or filter, and cancellation requires the invite ID. An administrator reconnecting without the original response therefore cannot discover or cancel it through the link. Include all open invites before limiting history, or provide pagination.
+
+## Amendment 2 (Andrew, 2026-10-15) and review round 3 — findings (external review on PR #147)
+
+Reviewed HEAD: 7386723.
+
+[P2] Keep open-invite listings within the protocol response limit — gateway/src/store/store.ts:277
+With 201 unused, unexpired operator invitations, the query returns all 201 despite the requested limit of 100. Operator creation has no open-invite cap. listReply sends the entire result, but InvitesMessage permits only 200 entries, causing parseLinkMessage to reject the response. Listing and cancellation replies become unusable for that world.
+
+Decision: cap open invites per world for every source. The operator path (the CLI `--invite`, including `--gm` and `--admin`, and anything else that calls `createInvite` without `createdBy`) refuses a new invite when the world already has 100 open invites (unused, uncancelled, unexpired). The delegated cap stays at 20. With every open invite listed and at most 100 history rows, a reply then holds at most 100 + 100 = 200 entries, within InvitesMessage's limit. Also clamp the `listForWorld` LIMIT so a reply can never exceed the protocol maximum (defence in depth for rows that predate the cap). Reason: this keeps every open invite discoverable without changing the protocol.
+Owns widens to: the operator-invite cap in gateway/src/link/invites.ts `createInvite` (or the store's create) and its error path in gateway/src/bin/cli.ts, which must exit non-zero with a clear message, plus their tests (gateway/test/bin/invite-cli.test.ts and the store and invites tests).
