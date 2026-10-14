@@ -32,7 +32,7 @@ async function boot(): Promise<LinkEvent[]> {
   return events;
 }
 async function pair(userId = 'u1', name = 'U') {
-  const { code } = createInvite(h!.store, { worldId: 'w1', userId }, clock.t);
+  const { code } = createInvite(h!.store, { worldId: 'w1', userId, gm: true }, clock.t);
   const tc = await TestClient.connect(h!.port, ORIGIN);
   clients.push(tc);
   const frame = hello({ kind: 'pairingCode', code }, { userId });
@@ -146,7 +146,7 @@ describe('the gateway log lines', () => {
     const t = await bootApp();
     const { openStore } = await import('../../src/store/index.js');
     const s = openStore(t.dbPath);
-    const { code } = createInvite(s, { worldId: 'w1', userId: 'u1' }, Date.now());
+    const { code } = createInvite(s, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
     s.close();
     const tc = await TestClient.connect(t.linkPort, ORIGIN, { host: 'gw.example.com' });
     ws.push(tc);

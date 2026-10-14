@@ -45,6 +45,8 @@ let tokenUrl: string;
 let gwUrl: string;
 let raw: unknown;
 let errors: string[];
+let posted: string[];
+let warns: string[];
 let gate: Promise<void> | null;
 let client: LinkClient;
 
@@ -56,6 +58,8 @@ beforeEach(() => {
   gwUrl = 'ws://gw';
   raw = undefined;
   errors = [];
+  posted = [];
+  warns = [];
   gate = null;
   client = new LinkClient({
     getGatewayUrl: () => gwUrl,
@@ -82,6 +86,11 @@ beforeEach(() => {
       return s;
     },
     notifyError: (m) => errors.push(m),
+    notifyWarn: (m) => warns.push(m),
+    postVouch: (nonce) => {
+      posted.push(nonce);
+      return true;
+    },
     random: () => 0,
   });
 });
@@ -235,6 +244,8 @@ it.each([
   '4.99.7',
   '5.0.0',
   '5.99.7',
+  '6.0.0',
+  '6.99.7',
 ])(
   'stops after an older gateway %s rejects the v5 hello, without welcome or retrying',
   async (legacy) => {
@@ -245,7 +256,7 @@ it.each([
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '6.0.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '7.0.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
     if (compatibility.ok) throw new Error('Legacy gateway must reject v5');
@@ -764,4 +775,122 @@ it('bounds purge requests and rejects pending requests on disconnect or timeout'
   const timeout = expect(client.purgeEvents()).rejects.toThrow('timed out');
   await vi.advanceTimersByTimeAsync(10000);
   await timeout;
+});
+
+it('a v7 gateway refusing a v6 module reaches the upgrade message, naming the module as the side to upgrade', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  const refusal = checkCompat(PROTOCOL_VERSION, '6.0.0');
+  if (refusal.ok) throw new Error('a v7 gateway must refuse v6');
+  expect(refusal.message).toMatch(/upgrade the remote side/i);
+  sockets[0]!.recv({ type: 'reject', code: refusal.code, message: refusal.message });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(errors).toEqual([refusal.message]);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PROTOCOL_MAJOR_MISMATCH' });
+  expect(token).toBe('tok');
+});
+
+const NONCE = 'NONCE-SECRET-1234567890';
+
+it('a pairingChallenge after an invite hello enters awaiting-gm and posts the vouch once', async () => {
+  client.pair('CODE-SECRET');
+  open();
+  sockets[0]!.recv({ type: 'pairingChallenge', nonce: NONCE, expiresAt: 5 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.state).toEqual({ kind: 'awaiting-gm' });
+  expect(posted).toEqual([NONCE]);
+  expect(sockets[0]!.closed).toBe(false);
+  // The gateway then welcomes: connected, token stored.
+  sockets[0]!.recv(welcome({ pairingToken: 'tok-new', admin: false }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.state).toMatchObject({ kind: 'connected' });
+  expect(token).toBe('tok-new');
+  expect(client.isAdmin).toBe(false);
+});
+
+it('ignores a pairingChallenge on a token hello', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  sockets[0]!.recv({ type: 'pairingChallenge', nonce: NONCE, expiresAt: 5 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(posted).toEqual([]);
+  expect(client.state).not.toEqual({ kind: 'awaiting-gm' });
+});
+
+it('warns, without the nonce, when the vouch could not be posted', async () => {
+  client.pair('CODE-SECRET');
+  (client as any).deps.postVouch = () => Promise.reject(new Error(`boom ${NONCE}`));
+  open();
+  sockets[0]!.recv({ type: 'pairingChallenge', nonce: NONCE, expiresAt: 5 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(warns).toEqual(['AGENT_GATEWAY.Pairing.Vouch.failed']);
+});
+
+it('welcome.admin sets isAdmin; attest is sent only while an admin link is connected', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  expect(client.attest('n', 'u2', false)).toBe(false);
+  sockets[0]!.recv(welcome({ admin: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.isAdmin).toBe(true);
+  expect(client.attest('n', 'u2', false)).toBe(true);
+  expect(sockets[0]!.sent.at(-1)).toEqual({
+    type: 'attest',
+    nonce: 'n',
+    authorId: 'u2',
+    authorIsGM: false,
+  });
+  // The next welcome reflects the row at that moment.
+  client.start();
+  open();
+  sockets.at(-1)!.recv(welcome({ admin: false }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.isAdmin).toBe(false);
+  const before = sockets.at(-1)!.sent.length;
+  expect(client.attest('n', 'u2', false)).toBe(false);
+  expect(sockets.at(-1)!.sent).toHaveLength(before);
+});
+
+it('a welcome with no admin field is not admin, and a disconnect clears it', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.isAdmin).toBe(false);
+  client.start();
+  open();
+  sockets.at(-1)!.recv(welcome({ admin: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.isAdmin).toBe(true);
+  client.stop();
+  expect(client.isAdmin).toBe(false);
+});
+
+it('PAIRING_UNCONFIRMED ends the attempt, keeps the stored token, and shows no toast or log', async () => {
+  const spies = [
+    vi.spyOn(console, 'log'),
+    vi.spyOn(console, 'warn'),
+    vi.spyOn(console, 'error'),
+    vi.spyOn(console, 'info'),
+  ];
+  token = 'tok-old';
+  client.pair('CODE-SECRET');
+  open();
+  sockets[0]!.recv({ type: 'pairingChallenge', nonce: NONCE, expiresAt: 5 });
+  sockets[0]!.recv({ type: 'reject', code: 'PAIRING_UNCONFIRMED', message: 'no admin' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_UNCONFIRMED' });
+  expect(token).toBe('tok-old');
+  expect(errors).toEqual([]);
+  expect(warns).toEqual([]);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(sockets).toHaveLength(1);
+  const seen = JSON.stringify([errors, warns, ...spies.map((x) => x.mock.calls), client.state]);
+  for (const secret of [NONCE, 'CODE-SECRET', 'tok-old'])
+    expect(seen, `leaked ${secret}`).not.toContain(secret);
+  spies.forEach((x) => x.mockRestore());
 });

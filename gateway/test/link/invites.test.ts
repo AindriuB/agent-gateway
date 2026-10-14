@@ -30,7 +30,13 @@ async function boot(over: Parameters<typeof startServer>[0] = {}): Promise<Harne
   return h;
 }
 const invite = (
-  over: { userId?: string; worldId?: string; origin?: string; ttlMs?: number } = {},
+  over: {
+    userId?: string;
+    worldId?: string;
+    origin?: string;
+    ttlMs?: number;
+    gm?: boolean;
+  } = {},
 ) =>
   createInvite(
     h!.store,
@@ -39,6 +45,8 @@ const invite = (
       userId: over.userId ?? 'u1',
       origin: over.origin,
       ttlMs: over.ttlMs,
+      // These tests are about the invite store; a gm invite pairs directly, without a vouch.
+      gm: over.gm ?? true,
     },
     clock,
   );

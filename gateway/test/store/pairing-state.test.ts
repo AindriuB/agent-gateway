@@ -36,7 +36,7 @@ describe('pairingStateFor', () => {
     const s = open();
     add(s, 'a');
     s.revokePairing('a');
-    const { code } = createInvite(s, { worldId: 'w1', userId: 'u1' }, Date.now());
+    const { code } = createInvite(s, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
     const out = redeemInvite(
       s,
       code,

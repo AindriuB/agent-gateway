@@ -12,6 +12,7 @@ import {
   stopLink,
 } from './link/runtime.js';
 import { installStatusIndicator } from './link/status-indicator.js';
+import { installVouchHook } from './link/vouch.js';
 import { onPolicyChange } from './policy/store.js';
 import { registerSettings } from './settings/index.js';
 
@@ -39,6 +40,7 @@ Hooks.once('ready', () => {
     if (user?.id === game?.user?.id) refreshToolset();
   });
   onPolicyChange(refreshToolset);
+  installVouchHook(getLinkClient());
   startLink();
   installStatusIndicator(getLinkClient());
   const g = globalThis as {

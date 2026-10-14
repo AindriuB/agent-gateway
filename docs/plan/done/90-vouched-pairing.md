@@ -107,3 +107,64 @@ actionable message.
 - Threat map (docs/plan/mvp-b-threats.md): T1/T3 and the "Foundry cannot prove identity" residual. A leaked player code now fails without the target's own Foundry session. The remaining residuals are the per-world admin bootstrap code, and a compromised admin GM or co-GM, either of which can falsely vouch within its own world.
 - docs/architecture.md "Pairing" and "Operator invites": the vouch flow, `PAIRING_UNCONFIRMED`, the admin and gm invite flags, and protocol 7.0.0. Module and gateway must be upgraded together, and existing GMs need an admin invite (task 91) before players can pair. Additional GM users (for example a "ChatGPT" GM) are paired with `--invite … --gm`, without a vouch.
 - Threat map: a leaked `gm` or `admin` code still pairs without the target's session; these are the operator-trust-root residuals. A leaked plain player code does not.
+
+## Amendment 3 (Andrew, 2026-10-14)
+
+Owns gains the existing tests that pin the old "plain invites pair directly" rule, which the design Andrew approved replaces:
+- `gateway/test/store/pairing-state.test.ts`: one line, `gm: true` on the revoke-then-redeem invite;
+- `gateway/test/store/store.test.ts`: the `admin: false` field on the PairingRow deep-equal, and the related assertion updates;
+- `gateway/test/store/retire-legacy-pairings.test.ts`: the matching updates.
+
+Spike result (implementer, recorded by the orchestrator): passed on v14.369 and v13.351. A forged `author` sent through both `ChatMessage.create` and a raw `modifyDocument` socket emit was stored with the real sender as author, and the GM's `createChatMessage` hook saw the whispered nonce flag.
+
+Recorded residual: a hello that holds a reserved code but makes a mismatched claim still burns the invite, as it does today. A code thief can therefore spend an invite while its owner waits for a vouch. This is not a regression.
+
+## Amendment 4 (Andrew, 2026-10-14)
+
+1. Vouch spam: attests are rate-limited per (admin connection, attested authorId) rather than only per connection. A player who spams flagged whispers then uses up only their own budget, and real players' vouches still go through. Keep a per-connection ceiling as the outer bound, set high enough that one spamming author cannot exhaust it (choose and justify the numbers). Tests: author A spams past their budget, and author B's valid vouch still succeeds; the outer ceiling still holds.
+2. Migration number: keep `012-admin-pairings.ts`. Whichever of 90 and 38 lands second renumbers it.
+3. Owns gains the behaviour-preserving edits: the `gateway/test/link/helpers.ts:101` default, and the existing link tests moved to `gm: true` invites. The PR description lists them.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 4d32de4. Routed to the implementer: the P2 (the close-release test does not guard `vouches.release(ws)`) and Amendment 4 item 1. The other items are settled by Amendment 4 or are NOTEs.
+
+VERDICT: FIX
+
+I found no security defect. I tried every adversarial angle in the brief:
+- **Admin flag:** `admin` comes only from the stored row. `isAdmin` re-reads the pairing row on each attest. `welcome.admin` on a token reconnect comes from the row. `isGM` appears in `gateway/src` only at `server.ts:706`, which is the existing tool-role info.
+- **Vouch skip:** the vouch is skipped only by the invite's `gm` or `admin` flag. A delegated `createdBy` invite is refused in the store.
+- **Attest checks:** cross-world, non-admin, demoted, revoked and stale attesters are all refused. Expired and replayed nonces fail.
+- **Pending vouches:** the caps hold, the attest limiter counts unknown nonces, and close, expiry and sweep release the reservation.
+- **Leaks:** the nonce reaches no log, toast, window context or chat content.
+- **Protocol:** 7.0.0 refuses 6.x before the invite is touched, and the migration defaults to 0 and NULL.
+
+Prettier, eslint and `tsc` (gateway and module) are clean on the changed files. I ran 33 mutation checks in a scratch copy, not the full suite. Every key guard is pinned by a test except the two listed below.
+
+FINDINGS
+- [P2] gateway/test/link/attestation.test.ts:291 — The test "closing the pending socket releases the reservation; the invite stays unused" still passes when the release on close is removed (`gateway/src/link/server.ts:372`, `this.vouches.release(ws);`).
+  route: implementer
+  input: Remove line 372. The test still passes, because its `attest(gm, nonce, 'p1')` after the close reaches `vouches.take()` (server.ts, attest path), and that frees the reservation before the second `player(inv.code)` hello. Without the fix, a closed pending socket keeps the invite reserved for up to 120 s, and every retry with the same code gets `PAIRING_INVALID`. To make the test guard the release, send the second hello straight after the close, before any attest.
+  proof: Removing `this.vouches.release(ws);` gives 43/43 passing in attestation, invite-flags and admin-flag. For comparison, each of the other key guards fails at least one test when removed: `row.admin` in `isAdmin`, the world check, `authorIsGM`, the invite-flag vouch skip, the stale check, the limiter, `revokedAt`, `adminLive`, the author check, `welcome.admin` from the row, the reserved check, the client charge, the mismatch settle, both caps, the TTL in `get`, the sweep before an attest, the cancelled recheck, and the store's `createdBy` guard. On the module side the same holds for the hook's `isAdmin`, the client's `isAdmin`, the GM-only whisper, the `authSource` guard, the `attest` guard, author-not-flag and author `isGM`.
+- [P3] module/src/link/vouch.ts:63 + gateway/src/link/server.ts:510 — Any player in the world can use up the admin's attest budget and make legitimate vouches fail.
+  route: orchestrator — The task's Bounds criterion makes unknown-nonce attests count toward the per-connection limit. Fixing this means choosing a design the task did not choose: filter on the admin side, budget per author, or keep the message when the gateway rate-limits.
+  input: player2 runs a macro that posts 20 or more chat messages per minute, each flagged `agent-gateway.vouch = {nonce: <random>}`. The admin's hook attests each one, so the 20/60 s window fills. player1's real vouch then gets `error RATE_LIMITED`. The module has already deleted the message, because `attest()` returned true on send, so player1 times out with `PAIRING_UNCONFIRMED` after 120 s. This is a nuisance-level denial of service by a world member, not an identity bypass.
+- [NOTE] gateway/src/link/invites.ts:69 — `createInvite`'s own `createdBy` + `admin`/`gm` check duplicates the store's check in `InviteRepository.create`. Removing it still leaves 43/43 passing, because the store throws first. This is defence in depth: the invariant still holds and is tested, through the store and through `createInvite`.
+- [NOTE] Some double guards survive mutation alone, because the other guard covers them:
+  - removing the nonce `take` on success (the database's `usedAt` recheck refuses the second redeem);
+  - removing the nonce `take` on the `authorIsGM` path;
+  - removing `row.worldId === c.worldId` in `isAdmin` (the token handshake already binds the world);
+  - removing the module's `isAdmin` state check, or its reset in `setState`, one at a time.
+
+  None of these is a defect.
+- [NOTE] gateway/test/link/helpers.ts:101 — This edits an existing line (`isGM: over.isGM ?? true`), where Owns says "insertions only". Separately, the link tests (`invites.test.ts`, `revocation.test.ts`, `connection-log.test.ts`, `invites-replacement.test.ts`, `invites-app.test.ts`) were moved to `gm: true` invites. Owns allows edits there only "to redeem through an admin invite or an attestation". Both changes keep behaviour, and `gm` is the closest match to the old direct-pair rule. They are worth a line in the PR.
+- [NOTE] A legitimate user whose earlier pending socket the gateway has not yet seen close is refused `PAIRING_INVALID` on retry ("invite was not accepted, may have expired or been used"), though the invite is still valid. The same refusal lets a holder of a leaked code with a matching claim re-reserve it every 120 s and block the owner. Neither is a regression: either party could already burn the invite with a mismatch, which Amendment 3 records.
+
+SCOPE: gateway/src/store/migrations/012-admin-pairings.ts — Owns names `013-admin-pairings.ts`, because task 38 (`docs/plan/tasks/38-headless-config.md:9`) holds 012. Its header comment acknowledges the clash. Whether to rename it now or at merge is the planner's call. Route: orchestrator.
+
+## Review round 2 — findings (external review on PR #145)
+
+Reviewed HEAD: 1a5bfa6. In-spec, routed to the implementer.
+
+[P2] Reject expired sockets before discarding pending entries — gateway/src/link/attestation.ts:74
+If another player starts pairing after an existing challenge expires but before the scheduled sweep, reserve() calls this.sweep() and discards the expired entries. The scheduled sweep runs at expiry plus 50 ms, leaving a concrete race window. Those sockets disappear from subsequent cleanup sweeps without receiving PAIRING_UNCONFIRMED or closing. Their hello timers have already been cleared and heartbeats have not started, leaving players in awaiting-gm indefinitely and retaining sockets outside the pending-map caps. Process expired entries through the server's rejection path before reserving, or return them to the caller for cleanup.

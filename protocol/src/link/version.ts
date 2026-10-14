@@ -1,7 +1,7 @@
 import type { ErrorCode } from './errors.js';
 
-/** v6 adds owner-bound offline intent replay and correlated receipts. */
-export const PROTOCOL_VERSION = '6.0.0';
+/** v7 adds the GM-vouched pairing flow (pairingChallenge, attest) and the welcome admin flag. */
+export const PROTOCOL_VERSION = '7.0.0';
 
 export type CompatResult = { ok: true } | { ok: false; code: ErrorCode; message: string };
 

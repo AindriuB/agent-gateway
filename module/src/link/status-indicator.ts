@@ -1,7 +1,8 @@
 import type { LinkState } from './client.js';
 
 /** What the Players list shows about this browser's gateway link. */
-export type IndicatorState = 'connected' | 'reconnecting' | 'needsPairing' | 'elsewhere' | 'hidden';
+export type IndicatorState =
+  'connected' | 'reconnecting' | 'awaitingGm' | 'needsPairing' | 'elsewhere' | 'hidden';
 
 /**
  * Map a link state to what the current user sees. `inUse` is false for a non-GM whose link is not
@@ -14,6 +15,8 @@ export function indicatorState(state: LinkState, inUse: boolean): IndicatorState
       return 'connected';
     case 'connecting':
       return 'reconnecting';
+    case 'awaiting-gm':
+      return 'awaitingGm';
     default:
       switch (state.reason) {
         case 'ERROR':

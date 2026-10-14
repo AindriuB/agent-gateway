@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 65 done in `docs/plan/done/` (excluding its README.md), 27 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 66 done in `docs/plan/done/` (excluding its README.md), 26 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -29,8 +29,8 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - There is no index on `pairings(world_id, user_id)`, which `pairingStateFor` queries on every status call.
   - The Players-list indicator (hook `renderPlayers`) and the toast still need a live Foundry check.
 
-### 2a. Done on branch, PR pending: 89; next: 90
-- **89: per-user pairing credentials (branch `claude/task-89`, done; PR pending; archived in `docs/plan/done/`).** Credentials are keyed by (gateway URL, world, user) in browser-local storage, so a second user in the same browser no longer wipes the first user's pairing. **90 is next, after PR #142 (the plan for 90-94) merges.** Follow-ups:
+### 2a. Done on branch, PR pending: 89 and 90; next: 91 and 92 (parallel)
+- **89: per-user pairing credentials (branch `claude/task-89`, done; PR pending; archived in `docs/plan/done/`).** Credentials are keyed by (gateway URL, world, user) in browser-local storage, so a second user in the same browser no longer wipes the first user's pairing. Follow-ups:
   - An entry for an old gateway cannot be removed from the UI; "Unpair this browser" only acts on the current gateway.
   - Rename `hasOtherTokens` in `module/src/link/client.ts`; the name no longer says what it checks.
   - `gateway/test/invite-cli.test.ts` timed out under full-suite load; treat it as a flake and raise the timeout or lighten the test if it recurs.
@@ -39,9 +39,19 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Capture `helloOwner` before the `setToken` await in the code-welcome path (P3, unreachable in the real runtime).
   - No test guards the session-token `helloOwner` binding.
   - Accepted residual: a legacy credential owned by A is cleared if B logs in first and is rejected, so A re-pairs once.
+- **90: GM-vouched pairing (branch `claude/task-90`, done; PR pending; archived in `docs/plan/done/`).** Protocol 7.0.0; player invites are completed by an admin GM's attestation, and `--gm`/`--admin` invites pair directly. **91 (operator admin flag) and 92 (delegated invites) are next and can run in parallel.** Module and gateway must be upgraded together, and existing GMs need an admin invite (91) before players can pair. Follow-ups:
+  - The `eventResume` 'unstored' guard is untested.
+  - The `PAIRING_UNCONFIRMED` `clearCode` path is untested.
+  - The close-release test's ordering (hello straight after the close) could flake under load.
+  - Sweep-timer scheduling is duplicated at `gateway/src/link/server.ts:767-789` and `:808-818`.
+  - Migration `012-admin-pairings.ts` collides with task 38's 012; whichever lands second renumbers it (Andrew, Amendment 4).
+  - Accepted residuals: a mismatched hello burns a reserved invite; a co-GM can falsely vouch.
+  - No test pins the caps interaction of the startVouch sweep (8 expired challenges, then a 9th hello must get a challenge). A tests-only round was blocked because the app's worktree-guard hook wrongly attributed this session to another project's worktree (`pf2e-module-setup-c82fb2`).
+  - Optional: move `sweepPending()` above the `adminLive` early return in startVouch.
+  - The app's worktree-guard hook misattributes sessions across concurrent projects; report it to the app.
 
-### 3. Priority: invite redemption trusts client-asserted ids
-- **Invite redemption takes the world and user ids from the client's hello (`gateway/src/link/server.ts` around :488-494), so a leaked invite code lets a player pair as the target user.** The gateway should verify identity through Foundry rather than the hello. Needs an architect review before a task is written. The same review should settle two open questions: delegated invites (someone other than the operator minting them) and an operator web console.
+### 3. Invite redemption identity (90 closes it for player targets)
+- **Player invites now need a GM vouch (90), so a leaked player code no longer pairs as the target.** Still open: `gm` and `admin` invites trust the code alone, and a co-GM can falsely vouch. Delegated invites (92) and an operator web console remain undecided beyond the 91-94 plan.
 
 ### 4. 85 live run (Andrew)
 - **85 is merged (PR #137); its task file stays in `docs/plan/tasks/` until Andrew's live run:** marketplace add, `/mcp` OAuth with a scope check (stop if read only), a read, an approved write, revoke, logout. Then archive the file and write the HISTORY entry.

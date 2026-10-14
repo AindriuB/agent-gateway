@@ -60,7 +60,7 @@ const sha = (v: string | Buffer) => createHash('sha256').update(v).digest('hex')
   locale = readFileSync(resolve(root, 'lang/en.json'));
 if (
   sha(bundle) !== TASK31_NATIVE_PINS.bundle ||
-  PROTOCOL_VERSION !== '6.0.0' ||
+  PROTOCOL_VERSION !== '7.0.0' ||
   execFileSync(
     'git',
     [

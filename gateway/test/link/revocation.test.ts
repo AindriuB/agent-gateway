@@ -28,7 +28,7 @@ async function boot(intervalMs = 3_600_000): Promise<Harness> {
   return h;
 }
 async function pair(userId = 'u1'): Promise<{ tc: TestClient; token: string }> {
-  const { code } = createInvite(h!.store, { worldId: 'w1', userId }, Date.now());
+  const { code } = createInvite(h!.store, { worldId: 'w1', userId, gm: true }, Date.now());
   const tc = await TestClient.connect(h!.port, ORIGIN);
   clients.push(tc);
   tc.send(hello({ kind: 'pairingCode', code }, { userId }));
@@ -135,7 +135,7 @@ describe('invites after revoke and cancel', () => {
 
   it('an unused invite issued before a revoke is refused afterwards and shows cancelled', async () => {
     await boot();
-    const { code } = createInvite(h!.store, { worldId: 'w1', userId: 'u1' }, Date.now());
+    const { code } = createInvite(h!.store, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
     h!.store.revokePairingsFor('w1', 'u1');
     expect(await tryRedeem(code)).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
     expect(h!.store.invites.list()[0]).toMatchObject({ result: 'cancelled' });
@@ -145,8 +145,8 @@ describe('invites after revoke and cancel', () => {
   it('a cancelled invite is refused, the pairing stays, and another target still pairs', async () => {
     await boot();
     await pair('u1');
-    const target = createInvite(h!.store, { worldId: 'w1', userId: 'u1' }, Date.now());
-    const other = createInvite(h!.store, { worldId: 'w1', userId: 'u2' }, Date.now());
+    const target = createInvite(h!.store, { worldId: 'w1', userId: 'u1', gm: true }, Date.now());
+    const other = createInvite(h!.store, { worldId: 'w1', userId: 'u2', gm: true }, Date.now());
     expect(h!.store.transaction(() => h!.store.invites.cancelFor('w1', 'u1'))).toBe(1);
     expect(await tryRedeem(target.code)).toMatchObject({ code: 'PAIRING_INVALID' });
     expect(h!.store.listActivePairings().map((p) => p.userId)).toEqual(['u1']);

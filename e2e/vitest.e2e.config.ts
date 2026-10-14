@@ -34,6 +34,7 @@ export default defineConfig({
             'read/**/*.e2e.test.ts',
             'multi/**/*.e2e.test.ts',
             'takeover/**/*.e2e.test.ts',
+            'vouch/**/*.e2e.test.ts',
             'packs/**/*.e2e.test.ts',
             'dnd5e/**/*.e2e.test.ts',
             'pf2e/**/*.e2e.test.ts',

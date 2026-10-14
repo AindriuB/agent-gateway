@@ -111,6 +111,7 @@ describe('error codes', () => {
       'RATE_LIMITED',
       'DENIED',
       'INTERNAL',
+      'PAIRING_UNCONFIRMED',
     ]) {
       expect(ErrorCode.options).toContain(c);
     }
@@ -119,9 +120,9 @@ describe('error codes', () => {
 
 describe('checkCompat', () => {
   it('accepts identical and minor/patch differences', () => {
-    expect(PROTOCOL_VERSION).toBe('6.0.0');
-    expect(checkCompat(PROTOCOL_VERSION, '6.0.0')).toEqual({ ok: true });
-    expect(checkCompat(PROTOCOL_VERSION, '6.5.3')).toEqual({ ok: true });
+    expect(PROTOCOL_VERSION).toBe('7.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '7.0.0')).toEqual({ ok: true });
+    expect(checkCompat(PROTOCOL_VERSION, '7.5.3')).toEqual({ ok: true });
   });
 
   it('refuses a major mismatch naming both versions and the side to upgrade', () => {
@@ -237,8 +238,8 @@ describe('protocol6 queued replay boundaries', () => {
       { type: 'queuedStatus', id: call.id, status: 'pending', text: 'waiting' },
     ])
       expect(parseLinkMessage(JSON.stringify(frame)).ok).toBe(true);
-    expect(PROTOCOL_VERSION).toBe('6.0.0');
-    expect(checkCompat(PROTOCOL_VERSION, '5.0.0').ok).toBe(false);
+    expect(PROTOCOL_VERSION).toBe('7.0.0');
+    expect(checkCompat(PROTOCOL_VERSION, '6.0.0').ok).toBe(false);
   });
   it.each([
     { ...call, id: 'wrong' },

@@ -91,13 +91,13 @@ export class TestClient {
 
 export const hello = (
   auth: { kind: 'pairingCode'; code: string } | { kind: 'pairingToken'; token: string },
-  over: { protocolVersion?: string; worldId?: string; userId?: string } = {},
+  over: { protocolVersion?: string; worldId?: string; userId?: string; isGM?: boolean } = {},
 ) => ({
   type: 'hello',
   protocolVersion: over.protocolVersion ?? PROTOCOL_VERSION,
   moduleVersion: '0.0.0',
   foundryVersion: '13.0',
   world: { id: over.worldId ?? 'w1', title: 'W', system: 'dnd5e', systemVersion: '5' },
-  user: { id: over.userId ?? 'u1', name: 'U', role: 4, isGM: true },
+  user: { id: over.userId ?? 'u1', name: 'U', role: 4, isGM: over.isGM ?? true },
   auth,
 });

@@ -44,10 +44,14 @@ export function describeState(s: LinkState, serverMode = false): string {
       return i18n.localize('AGENT_GATEWAY.Link.state.connecting');
     case 'connected':
       return i18n.format('AGENT_GATEWAY.Link.state.connected', { user: s.user, world: s.world });
+    case 'awaiting-gm':
+      return i18n.localize('AGENT_GATEWAY.Pairing.Vouch.waiting');
     default:
       if (s.reason === 'REPLACED') return i18n.localize('AGENT_GATEWAY.Link.replaced');
       if (s.reason === 'TOKEN_REJECTED') return i18n.localize('AGENT_GATEWAY.Link.tokenRejected');
       if (s.reason === 'PAIRING_REQUIRED') return i18n.localize(required);
+      if (s.reason === 'PAIRING_UNCONFIRMED')
+        return i18n.localize('AGENT_GATEWAY.Pairing.Vouch.unconfirmed');
       return s.reason === 'PAIRING_INVALID'
         ? i18n.localize(invalid)
         : i18n.localize('AGENT_GATEWAY.Link.state.disconnected');
