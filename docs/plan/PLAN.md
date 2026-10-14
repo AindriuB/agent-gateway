@@ -81,9 +81,9 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 ### Claude Code plugin: 85 (automated done, PR open, live run pending; task file stays in `docs/plan/tasks/`)
 - **85 — Private Claude Code plugin for the hosted gateway.** Repo marketplace `agent-gateway` and a hosted one (`aindriub-dl`) built by `scripts/build-claude-plugin.mjs --base-url`, live at `https://dl.aindriub.app/claude/marketplace.json` since 2026-10-14. Reviewed in three clean rounds, tester PASS, reviewer APPROVE. Pending Andrew: marketplace add, install, `/mcp` OAuth (check which scopes are requested; stop if read only), list tools, one read, one approved write, revoke, logout. Move the task file to `done/` and write the HISTORY entry after that run. Guide: `docs/claude-plugin.md`.
 
-### Server-mode onboarding: 86 (done on branch `claude/task-86`, archived in `docs/plan/done/`; PR pending), then 87
+### Server-mode onboarding: 86 (merged, PR #139; archived in `docs/plan/done/`), then 87
 - **86 — One-paste invite, world default gateway URL, server-mode wording.** Reviewed in three rounds plus Amendment 1. Pending Andrew: the manual check against a live hosted gateway.
-- **87 — Link resilience and diagnostics (next; depends on 86).** Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`: make link drops visible and recoverable without re-pairing.
+- **87 — Link resilience and diagnostics (next; unblocked now that 86 has merged).** Task file `docs/plan/tasks/87-link-resilience-diagnostics.md`: make link drops visible and recoverable without re-pairing.
 - **Follow-ups from 86:**
   - The "inherited" note in the pairing window is hidden while the state is connecting or unreachable; show it there too.
   - When `AGENT_GATEWAY_PUBLIC_URL` is set to an invalid value, the error still says "Invalid --public-url" (from `normalizePublicUrl`, `gateway/src/bin/cli.ts:271`); it should name the env var when that was the source.
