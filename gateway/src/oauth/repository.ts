@@ -57,6 +57,8 @@ export interface OwnGrant extends OAuthGrant {
 
 /** An unrevoked pairing, as far as consent needs it: who a typed user could mean. */
 export interface PairedUser {
+  /** The pairing row's id. */
+  pairingId: string;
   userId: string;
   userName: string;
 }
@@ -88,6 +90,8 @@ export interface OAuthRepository {
   listLiveGrants(worldId: string, userId: string): OwnGrant[];
   /** Unrevoked pairings in one world (one row per pairing, so a user may appear twice). */
   activePairedUsers(worldId: string): PairedUser[];
+  /** True while this exact pairing exists and is not revoked. */
+  pairingActive(pairingId: string): boolean;
   /** Revoke every live grant of a (world, user) and their tokens. Returns the grants revoked. */
   revokeGrantsFor(worldId: string, userId: string, now: number): number;
 
@@ -226,7 +230,10 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
      WHERE g.world_id = ? AND g.user_id = ? AND g.revoked_at IS NULL ORDER BY g.created_at DESC LIMIT 200`,
   );
   const pairedIn = db.prepare(
-    'SELECT user_id, user_name FROM pairings WHERE world_id = ? AND revoked_at IS NULL',
+    'SELECT id, user_id, user_name FROM pairings WHERE world_id = ? AND revoked_at IS NULL ORDER BY created_at, rowid',
+  );
+  const pairingLive = db.prepare(
+    'SELECT 1 AS ok FROM pairings WHERE id = ? AND revoked_at IS NULL',
   );
   const sweepCodes = db.prepare(
     'DELETE FROM oauth_codes WHERE code_hash IN (SELECT code_hash FROM oauth_codes WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)',
@@ -291,7 +298,10 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
         (r) => ({ ...toGrant(r), clientName: r.client_name }),
       ),
     activePairedUsers: (worldId) =>
-      (pairedIn.all(worldId) as unknown as { user_id: string; user_name: string }[]).map((r) => ({
+      (
+        pairedIn.all(worldId) as unknown as { id: string; user_id: string; user_name: string }[]
+      ).map((r) => ({
+        pairingId: r.id,
         userId: r.user_id,
         userName: r.user_name,
       })),
@@ -302,6 +312,7 @@ export function createOAuthRepository(db: DatabaseSync): OAuthRepository {
           Number(sweepTokens.run(now, limit).changes) +
           Number(sweepGrants.run(limit).changes),
       ),
+    pairingActive: (id) => pairingLive.get(id) !== undefined,
     revokeGrant: (id, now) => tx(() => revokeGrant(id, now)),
     revokeGrantsFor: (worldId, userId, now) =>
       tx(() => {

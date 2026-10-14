@@ -50,7 +50,8 @@ interface Pending extends ConsentSeed {
   sends: number;
   wrong: number;
   /** The resolved (world, user) of the last send; undefined when it resolved to nobody. */
-  target?: { worldId: string; userId: string };
+  /** The exact pairing the code was sent over; it must still be active when the code is entered. */
+  target?: { worldId: string; userId: string; pairingId: string };
   chosen: Scope[];
   codeHash?: Buffer;
   codeExpiresAt: number;
@@ -237,10 +238,13 @@ export class ConsentPages {
     const u = typed.trim();
     if (!w || !u || w.length > MAX_TYPED_LENGTH || u.length > MAX_TYPED_LENGTH) return undefined;
     const paired = this.o.repo.activePairedUsers(w);
-    const byId = paired.find((r) => r.userId === u);
-    if (byId) return { worldId: w, userId: byId.userId };
+    // Newest pairing of that user wins when a user holds more than one.
+    const byId = paired.filter((r) => r.userId === u).at(-1);
+    if (byId) return { worldId: w, userId: byId.userId, pairingId: byId.pairingId };
     const named = paired.filter((r) => r.userName !== '' && r.userName === u);
-    return named.length === 1 && named[0] ? { worldId: w, userId: named[0].userId } : undefined;
+    return named.length === 1 && named[0]
+      ? { worldId: w, userId: named[0].userId, pairingId: named[0].pairingId }
+      : undefined;
   }
 
   /** The code goes to the chosen user's own link connection and nowhere else. */
@@ -275,10 +279,8 @@ export class ConsentPages {
       );
     }
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
-    // The pairing may have been revoked or replaced since the code was sent.
-    const stillPaired =
-      p.target !== undefined &&
-      this.o.repo.activePairedUsers(p.target.worldId).some((u) => u.userId === p.target?.userId);
+    // The exact pairing the code was sent over may have been revoked or replaced since.
+    const stillPaired = p.target !== undefined && this.o.repo.pairingActive(p.target.pairingId);
     const ok =
       stillPaired &&
       typed.length > 0 &&
@@ -300,7 +302,11 @@ export class ConsentPages {
       );
     }
     this.pending.delete(p.id);
-    const location = this.o.finish(p, { ...p.target, scopes: p.chosen });
+    const location = this.o.finish(p, {
+      worldId: p.target.worldId,
+      userId: p.target.userId,
+      scopes: p.chosen,
+    });
     send(res, 302, '', { location, 'set-cookie': this.cookie(p, true) });
   }
 

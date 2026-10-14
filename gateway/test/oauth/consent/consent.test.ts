@@ -193,6 +193,31 @@ describe('pairing changes between send and verify', () => {
     expect((db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n).toBe(0);
     db.close();
   });
+
+  it('creates no grant when the pairing was replaced (new one, old revoked) after the send', async () => {
+    r = await consentRig();
+    const u1 = await pairModule(r.h, 'u1');
+    modules.push(u1);
+    const page = await openConsent(r);
+    await postConsent(r, page, { action: 'send', world: 'w1', user: 'u1', scope: 'read' });
+    const { code } = await codeFrame(u1);
+    const old = r.h.store.listActivePairings().find((p) => p.userId === 'u1')!;
+    r.h.store.createPairing({
+      id: 'replacement',
+      tokenHash: 'h-replacement',
+      worldId: 'w1',
+      userId: 'u1',
+      userName: 'u1',
+      origin: 'http://localhost:30000',
+    });
+    r.h.store.revokePairing(old.id);
+    const res = await postConsent(r, page, { action: 'verify', code });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    const db = new DatabaseSync(r.h.dbPath, { readOnly: true });
+    expect((db.prepare('SELECT count(*) AS n FROM oauth_grants').get() as { n: number }).n).toBe(0);
+    db.close();
+  });
 });
 
 describe('CSRF', () => {
