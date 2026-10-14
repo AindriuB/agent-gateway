@@ -29,6 +29,12 @@ The module now keeps pairing credentials in browser-local storage keyed by (gate
 
 **Round 5 (Andrew approved):** fixed the `start()` gate ignoring the session token (stuck "connecting"), bound the session token to helloOwner, added invariant tests, and fixed the notifyWarn doc.
 
+**Round 6:** a second external review on PR #143 found two P2s. A newly issued session token now takes precedence over a stale persisted one, and a rejection clears only the presented source. Unpair visibility now toggles on every state change, without a re-render.
+
+**Round 7 (tests only, Andrew approved):** an adversarial audit found no behaviour bug but four unguarded mutants. Four tests were fixed or added, each of them mutation-checked.
+
+**Cost:** seven review rounds in total, three of them prompted by external review. The in-memory session-token fallback (Amendment 2) caused rounds 4-7.
+
 **Lesson:** the external review caught a "current setting instead of presented credential" bug class that internal review missed.
 
 ## 2026-10-14 — Link resilience and diagnostics (task 87)

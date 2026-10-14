@@ -242,3 +242,6 @@ Task 19's original PR #41 evidence remains offline verification and v14 backend 
 - Lint e2e with `npx eslint e2e`; `scripts/` holds only .sh files, so `npx eslint e2e scripts` no longer applies.
 - v13 core/read/multi-user acceptance passed; optional v13 Hello Pack lifecycle remains unproven.
 
+
+### Follow-ups from task 89
+- The `input.value` assertion at `pairing-one-per-user.test.ts:132` and `:148` can never fail; make it assert something that can.
