@@ -274,3 +274,12 @@ FIXED
 DRIFT: none. f63cfac..HEAD changes only what the two round-4 items need: the optional `notifyWarn` dep, `sessionToken` and `storageWarned`, one lang key added, and two tests. No Acceptance item or decision is weakened. Prettier is clean on the changed files.
 
 SCOPE: clean. client.ts (whole file, Amendment 1), runtime.ts, lang/en.json (one line added) and runtime-credentials.test.ts (Amendment 2) are all within Owns.
+
+## Review round 6 — findings (second external review on PR #143; round approved by Andrew pasting the findings, 2026-10-14)
+
+Reviewed HEAD: 077e8dc. Both findings are in-spec and routed to the implementer.
+
+1. [P2] Prefer the newly issued session token over the stale stored token — client.ts:299
+If a user pairs again while localStorage writes fail, the new credential stays in `sessionToken`, but the old persisted token takes precedence. Reconnecting sends the superseded credential; its rejection also clears the valid session fallback. Prefer the matching session token. This violates the reconnect guarantee (Amendment 2); the new quota tests only cover initially empty storage.
+2. [P2] Refresh Unpair visibility when pairing succeeds — pairing/index.ts:139
+Opening the window without a credential omits Unpair. Successful pairing leaves the window open, but state notifications update only status and address text, so Unpair remains unavailable until reopening. Update its visibility on state changes while preserving form inputs, and hide it when the credential is rejected.
