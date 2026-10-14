@@ -8,11 +8,11 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 46 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 47 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
-then MVP B (VPS/hosted).
+then MVP B (VPS/hosted). MVP A is complete: 0.1.0 exists as a private draft release whose publication is deferred until MVP B is done (Andrew, 2026-10-14).
 
 ---
 
@@ -31,12 +31,12 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **A7b: 65 (done on branch `claude/task-65`, archived in `docs/plan/done/`; manual quick-start check pending Andrew).** README quick start, Desktop and Code guides, security model, privacy statement.
 - **A7c: 72 (done on branch `claude/task-72`, archived in `docs/plan/done/`; tester PASS, reviewer APPROVED after five rounds; PR pending).** A stepped-down gateway stays alive as a standby and takes over again, using a handover claim, so a separate `--http` gateway alongside Claude Desktop's no longer strands Desktop. Pending Andrew: the live e2e `takeover` scenario and the manual 71 world-switch and Desktop take-back checks. The guides can now describe the mixed setup.
 - **A7d: 73 (done on branch `claude/task-73`, archived in `docs/plan/done/`; live e2e on v14 passed 35/0/23 skipped, Andrew 2026-10-14).** Fixes the e2e ambiguity and takeover suites for the 0.1.0 gate (the suite was stale against 71; the product was correct). The 0.1.0 gate run sets `AGENT_GATEWAY_E2E_PF2E=1`. Follow-up chip: the pre-existing e2e-unit hygiene failure on `scripts/conformance.sh`.
-- **A8: 66** (next; 72 is done and the from-source install docs, PR #113, and the private plan, PR #114, are merged; no remaining dependencies). Cut 0.1.0 privately (Andrew, 2026-10-13) through a PR and the release script: a draft GitHub release in the private repo, with stops for Andrew before creating it and before publishing it; npm is dry-run only; the repo stays private. It also does a from-source clean-clone install check and the live unpack-and-enable check on foundry.local that 60 deferred, and is the first real run of the release script. 0.1.0 ships macOS-verified, Windows untested. The public steps (repo visibility, the real `npm publish`, the Foundry listing, the Ask Foundry answers, manifest-URL install) move to a future "go public" task, not yet created.
+- **A8: 66 (done, archived in `docs/plan/done/`; 0.1.0 is a PRIVATE DRAFT, deliberately unpublished until MVP B is done, Andrew 2026-10-14).** First real run of the release script on `main` at 975670b: all gates passed (v13 e2e skipped, `--allow-missing-v13`), three artefacts built, draft created, npm dry run only, repo private; the clean-clone from-source check passed. Pending Andrew: the manual Foundry and Claude Desktop install checks, then a follow-up PR ticking the Desktop and Claude Code rows of `docs/compatibility.md`. Follow-up chips raised: bound the `e2e/pf2e` `beforeAll` approval wait, and a `--confirm-draft` flag for the release script.
 
 ## Next
 
-### MVP B: VPS / hosted (starts after 0.1.0)
-- **Order within MVP A:** A1 (60, 61, 63), A2 (62), A3 (69) and A4 (70) are done, then 71 and 34 (done), then 64 and 65 (done), then 72 (done), then 66. 69 and 34 left MVP B on 2026-10-13, so B starts directly at 37.
+### MVP B: VPS / hosted (next phase; MVP A is complete)
+- **Order within MVP A:** A1 (60, 61, 63), A2 (62), A3 (69) and A4 (70) are done, then 71 and 34 (done), then 64 and 65 (done), then 72 and 66 (done). 69 and 34 left MVP B on 2026-10-13, so B starts directly at 37.
 - **37** Headless runner (`playwright-core`, logs in as an agent user, follows world lifecycle). Owns are disjoint from 34.
 - **38** Headless agent configuration and enforcement (after 37, 34).
 - **35** OAuth 2.1 authorization server for remote clients (after 34, which lands in MVP A).
@@ -45,6 +45,9 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **40** MCP conformance for OAuth and the remote client rows (after 63, 34, 35, 67). The stdio and local HTTP modes are done by 63 and 34 in MVP A.
 - **42** Server-mode Docker image (after 38, 35, 64, 68).
 - **43** Full user documentation, headless and server-mode guides (last; after 65, 35, 38, 42, 67, 68).
+
+### Go public (after MVP B; task not yet created)
+Publish the 0.1.0 draft (rebuild if `main` has moved), make the repo public, real `npm publish`, Foundry package listing, Ask Foundry answers in `docs/releasing.md`, and the manifest-URL install check. The 0.1.0 after-action report (`/aar 0.1.0`, presented in chat, never committed) is due once the release is actually published.
 
 ### Deferred beyond B
 - **36** remainder: needs 18, 67, 68 and 35b. The consent page moved to 67 and pairing confirmation to 68. It must use the 10b recommendation (`docs/spikes/foundry-socket-identity.md`), with identity only from server-set args.

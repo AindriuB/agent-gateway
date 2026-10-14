@@ -41,3 +41,28 @@ clean clone. npm stays a dry run. Every irreversible step waits for Andrew.
 - Rewriting the install docs (that is the `claude/docs-private-install` change)
 - Docker image (42) and anything MVP B
 - Follow-up, not created here: a future "go public" task covering repo visibility, the real npm publish, the Foundry listing, the Ask Foundry answers and the manifest-URL install check
+
+## Outcome (2026-10-14)
+`npm run release -- 0.1.0 --allow-missing-v13` ran unattended on `main` at 975670b; Andrew gave the `yes` for the draft up front and it was piped in. The draft release "Agent Gateway 0.1.0" (tag v0.1.0, `isDraft` true) exists in the PRIVATE repo with `agent-gateway.zip`, `module.json` and `foundry-agent-gateway.mcpb`. It stays unpublished by Andrew's decision (2026-10-14): "I want the MVP B done before we push a public release".
+
+Gates: verify passed (188 files / 4076 tests; slow suite 5 files / 2227 tests); test:scripts passed (31); conformance ok (inspector 2.10.1, stdio and http); e2e v14 passed (14 files passed, 1 skipped; 35 tests passed, opt-in suites skipped); e2e v13 skipped (no v13 instance, `--allow-missing-v13`).
+
+SHA-256:
+- agent-gateway.zip `9940513a24ebe349318a64d56783be6012932384d2f8008ec19ec43937737110`
+- foundry-agent-gateway-0.1.0.tgz `ac8505e879bb3884f418b5c63b4b7af9d9c8424d2681370d1149ff620c63a6f3`
+- foundry-agent-gateway.mcpb `6b0fec0a6fb81cff9d7ee100b4dfc98aa058a697284019f5bbe444bb8c8a8098`
+
+Clean-clone check at 975670b (README from-source steps): `npm install`, build, `pack:module` and `pack:mcpb` succeeded; the zip holds `module.json` and `dist/module/main.js`; `cli.js --version` prints 0.1.0; the gateway starts and prints a pairing code (temp HOME, test ports). No undocumented step.
+
+Acceptance status:
+- Met: version 0.1.0; release run passes every gate and builds the three artefacts with SHA-256s reported (v13 skipped by flag); draft created with `isDraft` true; npm a dry run only, `npm view foundry-agent-gateway` still 404; repo still PRIVATE; clean-clone from-source install check.
+- Pending Andrew: the manual Foundry part (module enables on foundry.local v14, GM tab connects) and the Claude Desktop part of the install check; the follow-up PR ticking the Claude Desktop (`.mcpb` and from-source) and Claude Code rows of `docs/compatibility.md` from his results.
+- Deferred by decision (2026-10-14): publishing the draft, and the after-action report (`/aar 0.1.0`, never committed), which is due when the release is actually published.
+
+Release-day problems:
+1. The first gate run failed on the live e2e ambiguity suite, stale against task 71. Task 73 (PR #117) fixed it and the takeover e2e token assumption.
+2. The first terminal tab closed on gate failure.
+3. A run with `AGENT_GATEWAY_E2E_PF2E=1` hung for 50 minutes: `e2e/pf2e`'s `beforeAll` waits unbounded for a GM approval of a temporary actor. It had been described as read-only, which was wrong. Follow-up chip raised.
+4. An untracked `output/` blocked the clean-tree check; fixed by PR #116.
+5. The e2e pairings had to be redone after tasks 70 and 71, because legacy NULL-origin pairings were retired.
+6. Andrew does not want to wait at an interactive prompt; follow-up chip raised for a `--confirm-draft` flag.
