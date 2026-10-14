@@ -96,12 +96,17 @@ As of 2026-10-14:
 | Portable schemas             | Both manifests passed the published Agent Plugins 1.0.0 JSON schemas with Python `jsonschema` 4.26.0 (`Draft202012Validator`). Schemas were fetched from their `$schema` URLs on 2026-10-14.   |
 | Package contract             | Local validator v1, Node.js 24.19.0: 10 package tests passed; the built archive contains exactly the three listed files with matching source bytes.                                            |
 | Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                       |
-| Full repository gate         | Pending the review/verification phase; run `npm run verify` on the reviewed commit.                                                                                                            |
-| Private account save         | Pending; an archive is not an installed plugin.                                                                                                                                                |
+| Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
+| Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
 | ChatGPT host/build and OAuth | Pending live acceptance with Andrew's account.                                                                                                                                                 |
 | Tool discovery and read      | Pending; discover real tools, then call an advertised read such as `world_info`.                                                                                                               |
 | Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
 | Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
+
+Private package: [Foundry Agent Gateway](https://chatgpt.com/plugins/plugins_6acfb1accddc8191939dfe027ef9ef5c).
+Plugin ID: `plugins_6acfb1accddc8191939dfe027ef9ef5c`; release ID:
+`pluginrel_6acfb1ae6e7881919154c7aa5f52b95f`. These identify the saved release for
+updates; saving it does not prove installation, OAuth or tool access.
 
 Record redacted outcomes and the host/build used when completing the pending
 checks. Do not store tool payloads, tokens or codes as evidence. The task remains
