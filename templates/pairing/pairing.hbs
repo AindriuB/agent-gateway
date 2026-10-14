@@ -19,6 +19,12 @@
     <p class="hint">{{localize "AGENT_GATEWAY.Pairing.CopyIds.hint"}}</p>
   </div>
   <p class="hint" data-role="one-pairing">{{onePairingNotice}}</p>
+  {{#if paired}}
+  <div class="form-group agent-gateway-unpair">
+    <button type="button" data-action="unpair"><i class="fa-solid fa-link-slash"></i> {{localize "AGENT_GATEWAY.Pairing.Unpair.button"}}</button>
+    <p class="hint">{{localize "AGENT_GATEWAY.Pairing.Unpair.hint"}}</p>
+  </div>
+  {{/if}}
   <footer class="form-footer">
     <button type="submit"><i class="fa-solid fa-link"></i> {{localize "AGENT_GATEWAY.Pairing.connect"}}</button>
   </footer>

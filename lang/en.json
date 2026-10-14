@@ -140,6 +140,10 @@
       "OnePerUser": {
         "notice": "Pairing here disconnects any other browser paired as you, and ends AI access granted to that pairing."
       },
+      "Unpair": {
+        "button": "Unpair this browser",
+        "hint": "Forgets this browser's pairing for your user only. Other users of this browser keep theirs."
+      },
       "Invite": {
         "label": "Invite",
         "hint": "Paste the invite your GM or the gateway operator sent you. It sets the address and connects in one step. A bare code also works.",

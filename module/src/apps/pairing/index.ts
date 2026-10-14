@@ -99,7 +99,7 @@ export function createPairingApp(): any {
       window: { title: 'AGENT_GATEWAY.Pairing.title', icon: 'fa-solid fa-link' },
       position: { width: 420 },
       form: { handler: PairingApp.onSubmit, closeOnSubmit: false },
-      actions: { copyIds: PairingApp.onCopyIds },
+      actions: { copyIds: PairingApp.onCopyIds, unpair: PairingApp.onUnpair },
     };
     static PARTS = { form: { template: `modules/${NS}/templates/pairing/pairing.hbs` } };
 
@@ -135,6 +135,8 @@ export function createPairingApp(): any {
         codeHint: i18n.localize(
           serverMode ? 'AGENT_GATEWAY.Pairing.Invite.hint' : 'AGENT_GATEWAY.Pairing.codeHint',
         ),
+        // Only the current user's own pairing counts; another user's token in this browser never shows.
+        paired: getLinkClient().hasStoredToken?.() === true,
         onePairingNotice: i18n.localize('AGENT_GATEWAY.Pairing.OnePerUser.notice'),
         serverLine: serverMode ? i18n.localize('AGENT_GATEWAY.Pairing.Server.line') : '',
         urlWarning: res.clientInvalid ? i18n.localize('AGENT_GATEWAY.Pairing.Address.invalid') : '',
@@ -168,6 +170,11 @@ export function createPairingApp(): any {
       this.unsubscribe?.();
       this.unsubscribe = null;
       await super._onClose?.(options);
+    }
+
+    static async onUnpair(): Promise<void> {
+      await getLinkClient().unpair();
+      PairingApp.current?.render?.();
     }
 
     static async onCopyIds(): Promise<void> {

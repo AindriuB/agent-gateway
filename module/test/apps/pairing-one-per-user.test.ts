@@ -63,3 +63,49 @@ it('describeState names TOKEN_REJECTED and leaves other reasons alone', async ()
     /^This browser needs pairing: its saved pairing was not accepted\./,
   );
 });
+
+it('the window shows the paired state and Unpair only for the current user, with no token in the context', async () => {
+  const mod = await setup('wss://gw.example.com/link');
+  const g = globalThis as any;
+  g.game.i18n.format = (k: string) => k;
+  for (const [paired, expected] of [
+    [true, true],
+    [false, false],
+  ] as const) {
+    vi.doMock('../../src/link/runtime.js', () => ({
+      getLinkClient: () => ({
+        state: { kind: 'connecting' },
+        onState: () => () => undefined,
+        hasStoredToken: () => paired,
+        token: 'SECRET-TOKEN',
+      }),
+    }));
+    vi.resetModules();
+    const m = await import('../../src/apps/pairing/index.js');
+    const App = m.createPairingApp();
+    const ctx = (await new App()._prepareContext()) as { paired: boolean };
+    expect(ctx.paired).toBe(expected);
+    expect(JSON.stringify(ctx)).not.toContain('SECRET-TOKEN');
+  }
+  void mod;
+  expect(template).toContain('data-action="unpair"');
+  expect(template).toContain('{{#if paired}}');
+  expect(lang.AGENT_GATEWAY.Pairing.Unpair.button).toBe('Unpair this browser');
+});
+
+it('the Unpair action calls the client unpair', async () => {
+  const unpair = vi.fn(async () => undefined);
+  await setup('wss://gw.example.com/link');
+  vi.doMock('../../src/link/runtime.js', () => ({
+    getLinkClient: () => ({
+      unpair,
+      state: { kind: 'connecting' },
+      onState: () => () => undefined,
+    }),
+  }));
+  vi.resetModules();
+  const m = await import('../../src/apps/pairing/index.js');
+  const App = m.createPairingApp();
+  await App.onUnpair();
+  expect(unpair).toHaveBeenCalledTimes(1);
+});

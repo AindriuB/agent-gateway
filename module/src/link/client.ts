@@ -46,6 +46,12 @@ export interface SocketLike {
   close(): void;
 }
 
+/** The world and Foundry user a token belongs to. */
+export interface TokenOwner {
+  worldId: string;
+  userId: string;
+}
+
 export interface LinkClientDeps {
   getGatewayUrl(): string;
   /**
@@ -54,7 +60,14 @@ export interface LinkClientDeps {
    */
   getToken(): unknown;
   /** Persist the token with the gateway URL that issued it, or clear it with `null`. */
-  setToken(credential: TokenCredential | null): Promise<unknown> | void;
+  setToken(credential: TokenCredential | null, owner?: TokenOwner): Promise<unknown> | void;
+  /** Mark the current user's stored token as just used (keeps it from being evicted). */
+  touchToken?(owner?: TokenOwner): void;
+  /** The old client-scoped credential, shared by every user of the browser. Read only for migration. */
+  getLegacyToken?(): unknown;
+  clearLegacyToken?(): Promise<unknown> | void;
+  /** True if this browser holds a token for some other user: a user with none then needs pairing. */
+  hasOtherTokens?(): boolean;
   /** Everything in `hello` except `type`, `protocolVersion` and `auth`. */
   getIdentity(): Omit<HelloMessage, 'type' | 'protocolVersion' | 'auth'>;
   createSocket(url: string): SocketLike;
@@ -221,6 +234,9 @@ export class LinkClient {
   /** What was live when stop() ran, for resume(). */
   private resumeMode: 'code' | 'token' | null = null;
   private codeRejected = false;
+  /** Which credential the last hello carried, and the user it was sent as. */
+  private authSource: 'code' | 'keyed' | 'legacy' | null = null;
+  private helloOwner: TokenOwner | null = null;
   private listeners = new Set<(s: LinkState) => void>();
   /** The agent id the gateway assigned in `welcome`; null until connected. */
   agentId: string | null = null;
@@ -274,8 +290,25 @@ export class LinkClient {
     return normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url) ? cred.token : null;
   }
 
+  /**
+   * The token to present: this user's own, else the old shared credential (migration) if it was
+   * issued by this gateway.
+   */
+  private tokenFor(url: string): { token: string; source: 'keyed' | 'legacy' } | null {
+    const own = this.tokenForUrl(url);
+    if (own !== null) return { token: own, source: 'keyed' };
+    const legacy = this.parseCredential(this.deps.getLegacyToken?.());
+    if (legacy && normalizeGatewayUrl(legacy.url) === normalizeGatewayUrl(url)) {
+      return { token: legacy.token, source: 'legacy' };
+    }
+    return null;
+  }
+
   private readCredential(): TokenCredential | null {
-    let raw = this.deps.getToken();
+    return this.parseCredential(this.deps.getToken());
+  }
+
+  private parseCredential(raw: unknown): TokenCredential | null {
     if (typeof raw === 'string') {
       try {
         raw = JSON.parse(raw);
@@ -292,7 +325,7 @@ export class LinkClient {
     return null;
   }
 
-  /** True if a token is stored (for any gateway). */
+  /** True if the current user has a token stored (for any gateway). */
   hasStoredToken(): boolean {
     return this.readCredential() !== null;
   }
@@ -302,8 +335,12 @@ export class LinkClient {
    * no-op. Token issued elsewhere: nothing is sent and a pairing code is requested.
    */
   start(): void {
-    if (!this.hasStoredToken()) return;
-    if (this.tokenForUrl(this.deps.getGatewayUrl()) === null) {
+    if (!this.hasStoredToken() && this.parseCredential(this.deps.getLegacyToken?.()) === null) {
+      // Someone else's pairing in this browser is not this user's: say so, and send nothing.
+      if (this.deps.hasOtherTokens?.()) this.requirePairing();
+      return;
+    }
+    if (this.tokenFor(this.deps.getGatewayUrl()) === null) {
       this.requirePairing();
       return;
     }
@@ -352,6 +389,13 @@ export class LinkClient {
     }
   }
 
+  /** Forget this browser's pairing for the current user only, and stop the link. */
+  async unpair(): Promise<void> {
+    const id = this.deps.getIdentity();
+    this.requirePairing();
+    await this.deps.setToken(null, { worldId: id.world.id, userId: id.user.id });
+  }
+
   stop(): void {
     if (this.active) this.resumeMode = this.code !== null ? 'code' : 'token';
     this.active = false;
@@ -377,7 +421,7 @@ export class LinkClient {
       this.requirePairing();
       return;
     }
-    if (this.code === null && this.tokenForUrl(url) === null) {
+    if (this.code === null && this.tokenFor(url) === null) {
       // Gateway URL changed since the token was issued (e.g. during backoff).
       this.requirePairing();
       return;
@@ -397,15 +441,18 @@ export class LinkClient {
       let auth: HelloMessage['auth'];
       if (this.code !== null) {
         auth = { kind: 'pairingCode', code: this.code };
+        this.authSource = 'code';
       } else {
-        const token = this.tokenForUrl(url);
-        if (token === null) {
+        const found = this.tokenFor(url);
+        if (found === null) {
           this.requirePairing();
           return;
         }
-        auth = { kind: 'pairingToken', token };
+        auth = { kind: 'pairingToken', token: found.token };
+        this.authSource = found.source;
       }
       const identity = this.deps.getIdentity();
+      this.helloOwner = { worldId: identity.world.id, userId: identity.user.id };
       const prior = this.eventResume;
       const resume =
         prior &&
@@ -459,7 +506,7 @@ export class LinkClient {
     switch (msg.type) {
       case 'welcome': {
         if (msg.pairingToken) {
-          await this.deps.setToken({ url, token: msg.pairingToken });
+          await this.deps.setToken({ url, token: msg.pairingToken }, this.helloOwner ?? undefined);
           if (this.socket !== origin) {
             // stop() or a restart ran during the write. The token is legitimately issued and now stored,
             // but this socket is gone: do not report connected.
@@ -474,13 +521,21 @@ export class LinkClient {
             return;
           }
         }
+        if (!msg.pairingToken && this.authSource === 'legacy') {
+          // The old shared credential was accepted for this user: it becomes theirs alone.
+          const legacy = this.parseCredential(this.deps.getLegacyToken?.());
+          if (legacy) await this.deps.setToken(legacy, this.helloOwner ?? undefined);
+          await this.deps.clearLegacyToken?.();
+        } else if (!msg.pairingToken && this.authSource === 'keyed') {
+          this.deps.touchToken?.(this.helloOwner ?? undefined);
+        }
         this.clearCode();
         this.codeRejected = false;
         this.attempt = 0;
         this.agentId = msg.agentId;
         this.gatewayVersion = msg.gatewayVersion;
         const id = this.deps.getIdentity();
-        const token = this.tokenForUrl(url);
+        const token = this.tokenFor(url)?.token;
         this.eventResume = token
           ? {
               url,
@@ -629,11 +684,13 @@ export class LinkClient {
     const usedToken = this.code === null;
     this.clearCode();
     if (usedToken) {
-      await this.deps.setToken(null);
+      // Only the credential that was sent is stale: the old shared one, or this user's own.
+      if (this.authSource === 'legacy') await this.deps.clearLegacyToken?.();
+      else await this.deps.setToken(null, this.helloOwner ?? undefined);
       this.setState({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
       return;
     }
-    if (this.tokenForUrl(this.deps.getGatewayUrl()) !== null) {
+    if (this.tokenFor(this.deps.getGatewayUrl()) !== null) {
       // Rejected code: fall back to the token, which is only held for this same gateway.
       this.codeRejected = true;
       this.start();

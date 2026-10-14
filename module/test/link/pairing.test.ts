@@ -169,10 +169,17 @@ it('a state change updates only the status element, never re-rendering the form'
   vi.doUnmock('../../src/link/runtime.js');
 });
 
-it('a credential written by the link survives a reload (string-only storage)', async () => {
+it('a credential written by the link survives a reload, in browser storage and never in settings', async () => {
   vi.resetModules();
   stub = installFoundry(14, { stringStorage: true });
   const g = globalThis as any;
+  const local = new Map<string, string>();
+  g.localStorage = {
+    getItem: (k: string) => local.get(k) ?? null,
+    setItem: (k: string, v: string) => void local.set(k, v),
+  };
+  g.game.world = { id: 'w1', title: 'W' };
+  g.game.user = { id: 'u1', name: 'U', role: 1, isGM: false };
   g.ui = { notifications: { error: vi.fn() } };
   g.game.settings.register('agent-gateway', 'gatewayUrl', {
     scope: 'client',
@@ -205,9 +212,15 @@ it('a credential written by the link survives a reload (string-only storage)', a
     }),
   });
   await new Promise((r) => setTimeout(r, 0));
-  expect(typeof g.game.settings.get('agent-gateway', 'pairingCredential')).toBe('string');
-  // Reload: fresh modules, same stored values.
+  expect([...local.values()].join()).toContain('tok');
+  expect(
+    stub.registeredSettings.has('agent-gateway.pairingCredential')
+      ? g.game.settings.get('agent-gateway', 'pairingCredential')
+      : '',
+  ).toBe('');
+  // Reload: fresh modules, same browser storage.
   vi.resetModules();
   const second = await import('../../src/link/runtime.js');
   expect(second.getLinkClient().hasStoredToken()).toBe(true);
+  delete g.localStorage;
 });
