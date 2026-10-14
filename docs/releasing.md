@@ -14,7 +14,7 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
 1. Refuses to start on a dirty tree or on any branch except `main`.
 2. Runs `scripts/bump-version.mjs <version>`: root, `protocol`, `module` and `gateway`
    `package.json`, `package-lock.json`, `module.json` (`version` and the `download` tag) and
-   `gateway/mcpb/manifest.json`, and `GATEWAY_VERSION` in `gateway/docker/.env.example`. `npm run bump-version -- --check` reports any that disagree.
+   `gateway/mcpb/manifest.json`, the Claude plugin's `plugins/claude/foundry-gateway/.claude-plugin/plugin.json`, and `GATEWAY_VERSION` in `gateway/docker/.env.example`. `npm run bump-version -- --check` reports any that disagree.
 3. Runs the gates in order, aborting on the first failure: `npm run verify`
    (which already runs the script tests), `npm run test:scripts` (run again as its own gate), `npm run test:conformance` (must print
    `conformance: ok (inspector <v>, stdio, http)`), `npm run test:e2e -- --foundry v14`,

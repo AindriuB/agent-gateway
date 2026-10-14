@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agent-gateway": {
+      "type": "http",
+      "url": "${AGENT_GATEWAY_URL:-https://gw.aindriub.app}/mcp"
+    }
+  }
+}
