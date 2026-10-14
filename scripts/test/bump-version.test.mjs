@@ -22,6 +22,7 @@ const files = [
   'module.json',
   'gateway/mcpb/manifest.json',
   'gateway/docker/.env.example',
+  'plugins/claude/foundry-gateway/.claude-plugin/plugin.json',
 ];
 const tmp = mkdtempSync(path.join(tmpdir(), 'bump-version-'));
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -67,6 +68,13 @@ describe('bump-version', () => {
       assert.equal(json(f).version, '9.8.7', f);
     }
     assert.equal(json('gateway/mcpb/manifest.json').version, '9.8.7');
+    const pluginFile = 'plugins/claude/foundry-gateway/.claude-plugin/plugin.json';
+    assert.equal(json(pluginFile).version, '9.8.7');
+    const pluginOrig = readFileSync(path.join(fixtures, pluginFile), 'utf8').replace(
+      /"version": "[^"]*"/,
+      '"version": "9.8.7"',
+    );
+    assert.equal(readFileSync(path.join(root, pluginFile), 'utf8'), pluginOrig);
     const mod = json('module.json');
     assert.equal(mod.version, '9.8.7');
     assert.match(mod.download, /\/releases\/download\/v9\.8\.7\/agent-gateway\.zip$/);
@@ -80,7 +88,7 @@ describe('bump-version', () => {
     const orig = readFileSync(path.join(fixtures, 'gateway/docker/.env.example'), 'utf8');
     const lines = (t) => t.split('\n').filter((l) => !l.startsWith('GATEWAY_VERSION='));
     assert.deepEqual(lines(env), lines(orig));
-    assert.equal(run('--check').status, 0);
+    assert.match(run('--check').stdout, /all 16 places agree/);
     assert.equal(run('--check', '9.8.7').status, 0);
     assert.notEqual(run('--check', '1.0.0').status, 0);
   });
@@ -127,6 +135,17 @@ describe('bump-version', () => {
     const r = run('--check');
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /\.env\.example.* is 0\.0\.1-stale/);
+  });
+
+  it('--check fails when only the claude plugin.json disagrees', () => {
+    const f = path.join(root, 'plugins/claude/foundry-gateway/.claude-plugin/plugin.json');
+    writeFileSync(
+      f,
+      readFileSync(f, 'utf8').replace(/"version": "[^"]*"/, `"version": "${STALE}"`),
+    );
+    const r = run('--check');
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /claude plugin\.json/);
   });
 
   it('--check fails when only the download tag disagrees', () => {
