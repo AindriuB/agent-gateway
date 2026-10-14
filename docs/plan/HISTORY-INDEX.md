@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 83 | `pack-module --base-url` writes self-hosted manifest and download URLs into the zip and a standalone `module.json`; deployed at dl.aindriub.app; releasing.md section added | `## 2026-10-14 — Self-hosted module manifest (task 83)` |
 | 2026-10-14 | 79 | Step-down test flake was the test: it counted the standby warning as a primary banner; now counts the banner and waits on state; relay untouched | `## 2026-10-14 — Step-down test stabilised under load (task 79)` |
 | 2026-10-14 | 81 | CI runs only on `v*` tags and manual dispatch; image job also needs a push event, so manual runs never publish; releasing.md updated | `## 2026-10-14 — CI only on release tags and on demand (task 81)` |
 | 2026-10-14 | 78 | Compose uses the GHCR image: both files pull `ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` and keep `build:`; `bump-version` owns the pin (15 places) | `## 2026-10-14 — Compose uses the GHCR image (task 78)` |

@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 59 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 60 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -68,6 +68,9 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 
 ### ChatGPT plugin: 84 (ready)
 - **84 — Private ChatGPT plugin package for the existing gateway.** Adds a portable MCP package, a focused Foundry workflow skill, a standalone packer and package-specific verification notes. Andrew confirms the supporting tasks are delivered and the deployment is live at `https://foundry.aindriub.app` and `https://gw.aindriub.app` (2026-10-14); public OAuth metadata verifies `https://gw.aindriub.app/mcp`. No open task dependencies or deployment work. Package ownership is disjoint from 40 (conformance/matrix) and 43 (general guides). Live ChatGPT OAuth/read/approved-write/revocation acceptance still needs Andrew's account and participation; the metadata check is not a client compatibility claim.
+
+### Self-hosted module manifest: 83 (done on branch `claude/task-83`, archived in `docs/plan/done/`; PR pending)
+- **83 — `pack-module --base-url`.** Lets the module be installed from a manifest URL while the repo is private; deployed at `https://dl.aindriub.app/agent-gateway/module.json`. Pending Andrew: the manual Foundry v14 install, and committing the Caddy change in `/opt/aindriub-app`. Residuals are in `docs/plan/done/83-static-module-manifest.md`.
 
 ### Later (after MVP B)
 

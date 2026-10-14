@@ -80,6 +80,42 @@ use `docker compose up -d --build` until then.
 resolves once a release is published; a draft does not count. Until then the Foundry install
 by manifest URL fails with a 404.
 
+## Self-hosted manifest (private testing)
+
+While the repo is private, the `releases/latest/download/module.json` URL returns 404, so Foundry
+cannot install the module from it. To test an install from a manifest URL, serve the files
+yourself:
+
+1. Build and pack with your own base URL:
+   `npm run build && node scripts/pack-module.mjs --base-url https://dl.example.org/agent-gateway`.
+   The base must be https with no credentials, query or fragment. The script prints two paths.
+   `dist/release/agent-gateway.zip` holds a `module.json` whose `manifest` and `download` point
+   under the base, and `dist/release/module.json` is the same file on its own. The committed
+   `module.json` is not touched, and `scripts/release.mjs` does not pass the flag.
+2. Copy both files to a folder your web server publishes at that base, so that
+   `/agent-gateway/module.json` and `/agent-gateway/agent-gateway.zip` resolve. Re-packing for a
+   new test overwrites both in place; Foundry's "Check for updates" compares the served `version`.
+3. Add a site block on a host of its own, with a DNS record pointing at the server. Caddy
+   obtains the certificate itself:
+
+   ```
+   dl.example.org {
+   	root * /srv/dl
+   	file_server
+   }
+   ```
+
+   There is no `browse`, so there is no directory listing. If Caddy runs in a container, `/srv/dl`
+   must be a folder mounted into it, for example read-only through an uncommitted
+   `compose.override.yaml`. Andrew's Caddy already mounts a site folder, so he serves `/srv/site/dl`
+   and returns the landing page's 404 for `/dl` itself.
+4. Check `curl -sI https://dl.example.org/agent-gateway/module.json` returns 200. In Foundry
+   Setup, go to Add-on Modules, Install Module, and paste the manifest URL.
+
+No CORS header is needed: the Foundry server fetches the manifest and the zip, not the browser.
+The zip is not secret but anyone with the URL can download it, so remove the files after testing
+if that matters.
+
 ## Before Foundry submission
 
 The first listing waits until all six questions are answered. Record each answer, the date and

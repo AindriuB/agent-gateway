@@ -66,3 +66,20 @@ dl.aindriub.app {
 - [STYLE] scripts/pack-module.mjs:10,36,55 and scripts/test/pack-module.test.mjs:3,108,126,142 — these lines exceed the repo's 100-character Prettier width, and pack-module.mjs:23 is wrapped differently from Prettier's output. `prettier --check` fails on both files at HEAD and passes on origin/main (docs/conventions.md:3, `.prettierrc` `printWidth: 100`; `npm run lint` does not cover `scripts/**/*.mjs`). route: implementer. Run `prettier --write` on the two owned files; behaviour does not change.
 - [P3] scripts/test/pack-module.test.mjs:146-165 — no test shows validation runs before anything in `dist/release/` is touched: each bad URL runs on a fresh root with no zip. Moving the validation block after the `rmSync` calls still passes all 11 tests. route: implementer. Pack once with a good URL, then run a bad `--base-url` on the same root, and assert that both `dist/release/agent-gateway.zip` and `dist/release/module.json` still exist.
 - [P3] scripts/pack-module.mjs:35 / scripts/test/pack-module.test.mjs:151 — the only credentials input is `u:p`, so removing either the `username` or the `password` check leaves every test passing. route: implementer. Add `https://u@dl.example.test/x` (username only) and `https://:p@dl.example.test/x` (password only) to the bad list.
+
+## Outcome
+
+Done on branch `claude/task-83` (rebased onto `origin/main` 072c159), 2026-10-14. `/review` round 1 found a STYLE issue (Prettier width on both owned files) and two P3s (no test that validation runs before `dist/release/` is touched; the username and password checks were not guarded separately). All were fixed in the last commit; the re-review was CLEAN and mutation-checked. `/verify`: tester PASS (verify exit 0: 4396 fast, 2227 slow and 69 script tests), reviewer APPROVE.
+
+What landed: `pack-module --base-url <https-url>` writes `manifest` and `download` under that base into the `module.json` in the zip and into a standalone `dist/release/module.json`. The committed `module.json` is never modified, and `release.mjs` is unchanged.
+
+Deployed 2026-10-14 on Andrew's say-so:
+- A real pack made with `--base-url https://dl.aindriub.app/agent-gateway` was copied to his VPS.
+- His Caddy (the aindriub-app compose project in `/opt/aindriub-app`) got a `dl.{$DOMAIN}` site block serving `/srv/site/dl`, plus a landing-page 404 for `/dl`. That change is uncommitted in that repo; Andrew commits it.
+- `https://dl.aindriub.app/agent-gateway/module.json` serves 200 with the same checksum as the pack.
+- Pending Andrew: the manual Foundry v14 install from that manifest URL.
+
+Notes for later:
+- Reviewer suggestion: the `--base-url` test does not re-run the allowed-entries and exclusion checks on the rewritten zip.
+- The usage comment at `scripts/pack-module.mjs:2` is over 100 characters (cosmetic).
+- The scribe docs were written as `docs/releasing.md` "Self-hosted manifest (private testing)" and a cross-reference in `gateway/docker/README.md`. The Caddy example uses a mounted site folder rather than the `/srv/dl` in the brief above, because Andrew's Caddy runs in a container.
