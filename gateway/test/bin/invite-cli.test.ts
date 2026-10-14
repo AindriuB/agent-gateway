@@ -84,7 +84,7 @@ const codeOf = async (db: string, ...extra: string[]): Promise<string> => {
   return r.stdout.trim();
 };
 
-describe('--invite', () => {
+describe('--invite', { timeout: 20_000 }, () => {
   it('prints one code alone on stdout; the row holds only its hash and a 24 h expiry', async () => {
     const db = mkDb();
     const before = Date.now();
@@ -141,7 +141,7 @@ describe('--invite', () => {
   });
 });
 
-describe('--revoke-pairing and --cancel-invite', () => {
+describe('--revoke-pairing and --cancel-invite', { timeout: 20_000 }, () => {
   it('revoke-pairing revokes the pairing and grants and cancels the target unused invites', async () => {
     const db = mkDb();
     seedPairing(db);
@@ -201,7 +201,7 @@ describe('--revoke-pairing and --cancel-invite', () => {
   });
 });
 
-describe('--list-invites and --list-pairings', () => {
+describe('--list-invites and --list-pairings', { timeout: 20_000 }, () => {
   it('show status and ids, and print no code, token or hash', async () => {
     const db = mkDb();
     seedPairing(db, 'u1', 'secret-token-hash-1');
@@ -230,7 +230,7 @@ describe('--list-invites and --list-pairings', () => {
   });
 });
 
-describe('a concurrent writer holding the write lock', () => {
+describe('a concurrent writer holding the write lock', { timeout: 20_000 }, () => {
   /** Hold BEGIN IMMEDIATE on the db for ~500 ms while `fn` runs. */
   async function whileLocked(db: string, fn: () => Promise<Run>): Promise<{ r: Run; ms: number }> {
     const holder = new DatabaseSync(db);

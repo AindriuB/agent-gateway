@@ -43,19 +43,31 @@ Options:
                       stops working at once, also in a gateway that is already running
   --backup <path>     Write a consistent copy of the database to a new file (mode 0600) and
                       exit; safe while the gateway runs
-  --invite <world id> <user id> [--ttl <30m|12h|7d>] [--origin <origin>]
+  --invite <world id> <user id> [--ttl <30m|12h|7d>] [--origin <origin>] [--admin | --gm]
                       Server mode: print a single-use invite for exactly that Foundry world
                       and user, valid 24 h by default (at most 7 d), and exit. With --public-url
                       or AGENT_GATEWAY_PUBLIC_URL it is one paste-ready string,
                       wss://<host>/link#<CODE>; otherwise the bare code. Give it to that
-                      person; redeeming it replaces any existing pairing for them
+                      person; redeeming it replaces any existing pairing for them.
+                      A plain invite is for players: it needs a live admin GM to confirm it
+                      --admin  Admin GM invite: pairs directly and sets the admin flag. Only
+                               the operator can make one. Needs --origin; valid 1 h by default
+                               (at most 24 h)
+                      --gm     Invite for an additional GM user account (for example a
+                               "ChatGPT" GM). It skips the GM vouch, so use it only for GM user
+                               accounts, never for players. Same rules as --admin, but the
+                               pairing is not admin
+  --demote <world id> <user id>
+                      Clear the admin flag on that user's active pairing and exit (exit 1 if
+                      it was not an admin). The pairing, its grants and invites stay; a running
+                      gateway stops accepting that GM's vouches at once
   --revoke-pairing <world id> <user id>
                       Revoke that user's pairing and OAuth grants and cancel their unused
                       invites, then exit; a running gateway disconnects them within seconds
   --cancel-invite <world id> <user id>
                       Cancel that user's unused invites and exit (exit 1 if there were none)
-  --list-invites      List invites (id, target, created, expiry, status; never the code), exit
-  --list-pairings     List pairings (world, user, name, origin, created, revoked), exit
+  --list-invites      List invites (id, target, kind, created, expiry, status; never the code), exit
+  --list-pairings     List pairings (world, user, admin, name, origin, created, revoked), exit
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -65,6 +77,10 @@ Options:
   --version           Print version
   --help              Print this help
 `;
+
+/** Admin and GM invites: a leaked code pairs with no vouch, so the window is short. */
+const ADMIN_INVITE_TTL_MS = 60 * 60 * 1000;
+const MAX_ADMIN_INVITE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Reduce each --allow-origin to a bare origin (no path, no trailing slash); http(s) only. */
 function normalizeOrigins(values: readonly string[]): string[] {
@@ -192,8 +208,16 @@ function rotate(dbOption: string | undefined): void {
 }
 
 type OperatorCommand =
-  | { kind: 'invite'; worldId: string; userId: string; ttlMs: number; origin?: string }
-  | { kind: 'revoke-pairing' | 'cancel-invite'; worldId: string; userId: string }
+  | {
+      kind: 'invite';
+      worldId: string;
+      userId: string;
+      ttlMs: number;
+      origin?: string;
+      admin: boolean;
+      gm: boolean;
+    }
+  | { kind: 'revoke-pairing' | 'cancel-invite' | 'demote'; worldId: string; userId: string }
   | { kind: 'list-invites' | 'list-pairings' };
 
 /** Validate the one-shot operator commands' arguments; exits 2 on a bad combination. */
@@ -202,6 +226,9 @@ function operatorCommandOf(
     invite?: boolean | undefined;
     'revoke-pairing'?: boolean | undefined;
     'cancel-invite'?: boolean | undefined;
+    demote?: boolean | undefined;
+    admin?: boolean | undefined;
+    gm?: boolean | undefined;
     'list-invites'?: boolean | undefined;
     'list-pairings'?: boolean | undefined;
     ttl?: string | undefined;
@@ -214,17 +241,28 @@ function operatorCommandOf(
     return process.exit(2);
   };
   const kinds = (
-    ['invite', 'revoke-pairing', 'cancel-invite', 'list-invites', 'list-pairings'] as const
+    [
+      'invite',
+      'revoke-pairing',
+      'cancel-invite',
+      'demote',
+      'list-invites',
+      'list-pairings',
+    ] as const
   ).filter((k) => values[k]);
   if (kinds.length === 0) {
     if (values.ttl !== undefined || values.origin !== undefined)
       usage('--ttl and --origin go with --invite');
+    if (values.admin) usage('--admin goes with --invite');
+    if (values.gm) usage('--gm goes with --invite');
     return undefined;
   }
   if (kinds.length > 1) usage(`Use one of --${kinds.join(', --')} at a time`);
   const kind = kinds[0] as (typeof kinds)[number];
   if (kind !== 'invite' && (values.ttl !== undefined || values.origin !== undefined))
     usage('--ttl and --origin go with --invite');
+  if (kind !== 'invite' && values.admin) usage('--admin goes with --invite');
+  if (kind !== 'invite' && values.gm) usage('--gm goes with --invite');
   if (kind === 'list-invites' || kind === 'list-pairings') {
     if (positionals.length > 0) usage(`--${kind} takes no arguments`);
     return { kind };
@@ -233,10 +271,19 @@ function operatorCommandOf(
   if (positionals.length !== 2 || !worldId || !userId || worldId.length > 64 || userId.length > 64)
     usage(`--${kind} needs <world id> <user id> (each 1 to 64 characters)`);
   if (kind !== 'invite') return { kind, worldId: worldId!, userId: userId! };
-  let ttlMs = INVITE_TTL_MS;
+  const admin = values.admin === true;
+  const gm = values.gm === true;
+  const privileged = admin || gm;
+  const flagName = admin ? '--admin' : '--gm';
+  if (privileged && values.origin === undefined)
+    usage(`${flagName} needs --origin (the exact browser origin of that Foundry)`);
+  let ttlMs = privileged ? ADMIN_INVITE_TTL_MS : INVITE_TTL_MS;
   if (values.ttl !== undefined) {
     const parsed = parseTtl(values.ttl);
-    if (parsed === undefined) return usage('--ttl must be like 30m, 12h or 7d, at most 7d');
+    if (privileged) {
+      if (parsed === undefined || parsed > MAX_ADMIN_INVITE_TTL_MS)
+        return usage(`--ttl with ${flagName} must be like 30m or 12h, at most 24h`);
+    } else if (parsed === undefined) return usage('--ttl must be like 30m, 12h or 7d, at most 7d');
     ttlMs = parsed;
   }
   let origin: string | undefined;
@@ -250,6 +297,8 @@ function operatorCommandOf(
     worldId: worldId!,
     userId: userId!,
     ttlMs,
+    admin,
+    gm: privileged,
     ...(origin !== undefined ? { origin } : {}),
   };
 }
@@ -326,6 +375,25 @@ function runOperatorCommand(cmd: OperatorCommand, dbOption: string | undefined):
         );
         break;
       }
+      case 'demote': {
+        const n = s.transaction(() => {
+          let changed = 0;
+          for (const p of s.listActivePairings())
+            if (p.worldId === cmd.worldId && p.userId === cmd.userId && p.admin)
+              if (s.demotePairing(p.id)) changed++;
+          return changed;
+        });
+        if (n === 0) {
+          process.stderr.write(
+            `No active admin pairing for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}; nothing changed\n`,
+          );
+          process.exitCode = 1;
+        } else
+          process.stdout.write(
+            `Demoted ${n} pairing(s) for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}; the pairing and its grants are kept.\n`,
+          );
+        break;
+      }
       case 'cancel-invite': {
         const n = s.transaction(() => s.invites.cancelFor(cmd.worldId, cmd.userId));
         if (n === 0) {
@@ -341,7 +409,7 @@ function runOperatorCommand(cmd: OperatorCommand, dbOption: string | undefined):
         for (const i of s.invites.list()) {
           const status = i.result ?? (i.expiresAt <= at ? 'expired' : 'live');
           process.stdout.write(
-            `${i.id.slice(0, 8)}  ${safeText(i.worldId)}  ${safeText(i.userId)}  created ${when(i.createdAt)}  expires ${when(i.expiresAt)}  ${status}${i.origin ? `  origin ${safeText(i.origin)}` : ''}\n`,
+            `${i.id.slice(0, 8)}  ${safeText(i.worldId)}  ${safeText(i.userId)}  kind ${i.admin ? 'admin' : i.gm ? 'gm' : '-'}  created ${when(i.createdAt)}  expires ${when(i.expiresAt)}  ${status}${i.origin ? `  origin ${safeText(i.origin)}` : ''}\n`,
           );
         }
         break;
@@ -349,7 +417,7 @@ function runOperatorCommand(cmd: OperatorCommand, dbOption: string | undefined):
       case 'list-pairings':
         for (const p of s.listPairings()) {
           process.stdout.write(
-            `${safeText(p.worldId)}  ${safeText(p.userId)}  ${safeText(p.userName)}  ${p.origin ? safeText(p.origin) : '-'}  created ${when(p.createdAt)}  revoked ${when(p.revokedAt)}\n`,
+            `${safeText(p.worldId)}  ${safeText(p.userId)}  ${p.admin ? 'admin' : '-'}  ${safeText(p.userName)}  ${p.origin ? safeText(p.origin) : '-'}  created ${when(p.createdAt)}  revoked ${when(p.revokedAt)}\n`,
           );
         }
         break;
@@ -390,6 +458,9 @@ function main(): void {
         invite: { type: 'boolean' },
         'revoke-pairing': { type: 'boolean' },
         'cancel-invite': { type: 'boolean' },
+        demote: { type: 'boolean' },
+        admin: { type: 'boolean' },
+        gm: { type: 'boolean' },
         'list-invites': { type: 'boolean' },
         'list-pairings': { type: 'boolean' },
         ttl: { type: 'string' },
