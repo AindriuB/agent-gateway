@@ -157,3 +157,71 @@ Reviewed HEAD: cf0cb45. Both findings are in-spec and routed to the implementer.
 If the gateway setting changes from X to Y, the existing X socket remains open. A subsequent `PAIRING_INVALID` from X resolves the current gateway setting and deletes Y's credential, leaving X's rejected credential intact. Capture the gateway URL with the hello owner and use it when clearing rejected credentials.
 2. [P2] Preserve the legacy credential when migration storage fails — client.ts:535
 When localStorage is readable but full, `credentials().set()` silently swallows the failed write. Migration then clears the legacy setting, destroying the only persisted copy of the accepted token and requiring pairing again on reconnect. Clear the legacy value only after confirming successful persistence; an in-memory fallback would still lose it after reload. The migration contract (this file, around :54) requires writing the keyed entry before clearing the legacy setting.
+
+## Amendment 2 (Andrew, 2026-10-14)
+
+- A fourth review round is approved, beyond the three-round cap.
+- Owns gains `module/test/link/runtime-credentials.test.ts` (new in round 3).
+- When a new code-pairing token cannot be persisted (the `setToken` result is `false`, e.g. localStorage quota), the client keeps the token in memory for this session, so reconnects and backoff still use it. It warns once, through a localized `ui.notifications.warn`, that the pairing will not survive a reload because browser storage is full. The warning never includes the token. Reason: on main this case never reached connected; under 89 it shows connected and then needs a new code on the first drop.
+
+## Review round 4 — findings (re-review of round 3)
+
+Reviewed HEAD: ae5ccbe. Routed to the implementer: the P3 test for the `authSource` guard, and the storage-full code-pairing P3, as specified by Amendment 2. The scope item is settled by Amendment 2.
+
+VERDICT: FIX
+
+The only reason for FIX is scope: a new test file is outside `Owns`. It is a one-line amendment for the orchestrator. Both external P2s are fixed, tests guard each fix, and the round-3 commit introduces no drift. The code at HEAD has no P1, P2 or STYLE finding.
+
+FINDINGS
+- [P3] module/src/link/client.ts:518 — In the code-pairing `welcome` path, the result of `setToken` is ignored. If the keyed write fails (localStorage full), the window still shows "connected", but the issued token was never stored, and the code has already been cleared. The first network drop then turns into PAIRING_REQUIRED.
+  route: orchestrator — the spec does not say what should happen when the issued token cannot be stored. There are two possible fixes: keep the token in memory for this session, or tell the user that pairing will not survive a reload. Each is new behaviour, and the choice belongs to the planner. This is not a regression in kind: on main, a failed client-setting write made the promise reject inside `handle`, and the link never reached connected.
+  input: localStorage throws QuotaExceededError on `setItem`. `pair('CODE-1')`, then `welcome` with `pairingToken: 'newTok'`, then close 1006, then advance through the backoff.  →  state goes `connected`, then `{kind:'disconnected', reason:'PAIRING_REQUIRED'}`. Only 1 socket is ever created, so no reconnect is attempted.
+  proof: I ran this as a scratch probe in runtime-credentials.test.ts against a copy of HEAD and got exactly that sequence.
+
+- [P3] module/src/link/client.ts:543 — No test guards `if (saved) this.authSource = 'keyed'`. If a write fails while the link is connected through the legacy credential and the gateway then revokes it, the client should clear the legacy setting. With the guard removed it would instead remove a keyed entry that does not exist, and the dead legacy token would be sent once more on the next load before being cleared.
+  route: implementer — add a test: fail the write, accept the legacy welcome, send `reject` PAIRING_INVALID, and assert that `pairingCredential` is `''`.
+  input: same setup as the test at runtime-credentials.test.ts:116, followed by `reject` PAIRING_INVALID  →  with the guard removed, the legacy credential survives the revocation.
+  proof: with the guard removed, all 43 tests in the 4 related files still pass.
+
+- [NOTE] module/src/link/client.ts:535-539 — The migration branch reads the legacy setting again at `welcome` instead of using the credential it presented. Suppose another tab clears the legacy setting between this tab's `hello` and its `welcome`: B's rejection in a second tab of the same browser does this. Then `saved` is vacuously true, `authSource` becomes `'keyed'` and nothing is written. The outcome, A re-pairing once, is the residual already accepted in Amendment 1, so this is not a defect. Storing the presented credential on `connect` would close the gap if anyone wants it.
+
+- [NOTE] client.ts:455 (`onopen`) and :553 (`eventResume`) call `tokenFor(url)` with the socket's URL, but runtime `getToken` (runtime.ts:66-70) only returns the entry for the *current* setting. If the setting changes between `connect` and `onopen`, nothing is sent and the client goes to PAIRING_REQUIRED. If it changes between `hello` and `welcome`, `eventResume` is undefined. Both outcomes are safe: no wrong token is sent and nothing is cleared, and the next connect targets the new URL anyway.
+
+- [NOTE] With the in-memory fallback (`volatile`), a failed migration leaves an in-memory keyed entry while `authSource` stays `'legacy'`. In practice this cannot happen: when localStorage is unavailable, Foundry's client setting `pairingCredential` cannot exist either.
+
+FIXED (round 3, external)
+- [P2] Clear the credential for the rejecting socket's gateway — FIXED — client.ts:464 (`helloOwner` now carries `url`), runtime.ts:74 (`c?.url ?? o?.url ?? current`). The same fix covers touch, at runtime.ts:79. Tests: runtime-credentials.test.ts:90 and :104. Proof:
+  - Removing `o?.url` from `setToken` fails the reject test.
+  - Removing it from `touchToken` fails the touch test.
+  - Removing `url` from `helloOwner` fails both.
+  - The close-1008 path shares `pairingInvalid`, so it is covered by the same code.
+- [P2] Preserve the legacy credential when the migration write fails — FIXED — client.ts:536-540, credential-store.ts:83-91 (`set` returns false on a throw or on volatile storage), runtime.ts:75. Tests: runtime-credentials.test.ts:116 and :130, credential-store.test.ts:69. Proof:
+  - Making the legacy clear unconditional fails :116.
+  - Having runtime `setToken` return true regardless fails :116.
+  - Making `write` return true for volatile storage fails the store test.
+
+DRIFT: none. 8e9b425..HEAD changes only these two findings plus their tests: optional `TokenOwner.url`, `StorageLike.volatile`, `CredentialStore.set` returning a boolean, and the widened `setToken` return type. No Acceptance assertion was edited, and pairing.test.ts:108 is untouched. The migration now clears the legacy credential only after the keyed write is confirmed, as the external finding asked. That is the persist-then-clear order the Acceptance item already specifies, so it is not a weakening.
+
+SWEEP (origin/main...HEAD) for "current setting or assumed write instead of what was presented or persisted":
+- Token touch and clear on reject or 1008: they now use the presented URL, world and user. Clean.
+- The code-pairing write uses the socket URL and the identity from the `hello`. Clean, apart from the ignored result (the first P3).
+- Unpair, at client.ts:402-406, uses the current setting with no URL. That matches the window's `paired` flag, `hasCurrentGatewayToken` (client.ts:338, apps/pairing/index.ts:139), and the Acceptance item "removes only the current (gateway, world, user) entry". Clean.
+- The indicator and the submit path use `hasStoredToken`, which checks the current user's entry for any gateway, as settled in round 1. Clean.
+- The code-reject fallback (client.ts:708) uses the current setting, which is correct: `start()` connects to the current gateway.
+- Ignored `setToken` results:
+  - client.ts:518: see the first P3.
+  - client.ts:405 and :704: removes, where the runtime always returns true.
+  - touch: the result is ignored, which is harmless.
+- Callers that return void (the test deps) count as persisted (`!== false`), which is intended.
+
+Checks at HEAD, run in a scratch copy: these 6 test files pass (68 tests):
+- runtime-credentials
+- credential-store
+- user-switch
+- pairing
+- pairing-one-per-user
+- status-indicator
+
+eslint, prettier and `tsc -p module --noEmit` are clean on the round-3 files.
+
+SCOPE: module/test/link/runtime-credentials.test.ts (new in ae5ccbe) is not in `Owns`, and Amendment 1 widened only client.ts. Route: orchestrator. Either amend `Owns` to include the file, or have the tests moved into pairing.test.ts, which is owned. Every other path in origin/main...HEAD is within `Owns` or is a scribe file under docs/plan.
