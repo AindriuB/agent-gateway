@@ -107,3 +107,14 @@ actionable message.
 - Threat map (docs/plan/mvp-b-threats.md): T1/T3 and the "Foundry cannot prove identity" residual. A leaked player code now fails without the target's own Foundry session. The remaining residuals are the per-world admin bootstrap code, and a compromised admin GM or co-GM, either of which can falsely vouch within its own world.
 - docs/architecture.md "Pairing" and "Operator invites": the vouch flow, `PAIRING_UNCONFIRMED`, the admin and gm invite flags, and protocol 7.0.0. Module and gateway must be upgraded together, and existing GMs need an admin invite (task 91) before players can pair. Additional GM users (for example a "ChatGPT" GM) are paired with `--invite … --gm`, without a vouch.
 - Threat map: a leaked `gm` or `admin` code still pairs without the target's session; these are the operator-trust-root residuals. A leaked plain player code does not.
+
+## Amendment 3 (Andrew, 2026-10-14)
+
+Owns gains the existing tests that pin the old "plain invites pair directly" rule, which the design Andrew approved replaces:
+- `gateway/test/store/pairing-state.test.ts`: one line, `gm: true` on the revoke-then-redeem invite;
+- `gateway/test/store/store.test.ts`: the `admin: false` field on the PairingRow deep-equal, and the related assertion updates;
+- `gateway/test/store/retire-legacy-pairings.test.ts`: the matching updates.
+
+Spike result (implementer, recorded by the orchestrator): passed on v14.369 and v13.351. A forged `author` sent through both `ChatMessage.create` and a raw `modifyDocument` socket emit was stored with the real sender as author, and the GM's `createChatMessage` hook saw the whispered nonce flag.
+
+Recorded residual: a hello that holds a reserved code but makes a mismatched claim still burns the invite, as it does today. A code thief can therefore spend an invite while its owner waits for a vouch. This is not a regression.
