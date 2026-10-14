@@ -179,3 +179,7 @@ Checkable form:
 - [P3] scripts/build-claude-plugin.mjs:75-78 — `fail()` exits inside `try`, so `finally` never removes the staging dir, and a failed `zip` leaves a `build-claude-plugin-*` dir in the OS tmpdir. route: implementer. Record the failure in `catch` and call `fail` after `finally`.
 - [P3] scripts/test/build-claude-plugin.test.mjs:63 — the "missing" and "no value" cases only match `/build-claude-plugin/`, which the URL error also matches, though Acceptance requires a usage message. route: implementer. Assert `/usage:/` for those two cases.
 - [NOTE, cheap] The 5 MiB marketplace limit is enforced but untested (disabling it passes all tests). Add a test if cheap.
+
+## Review round 3 — findings
+- [P3] scripts/build-claude-plugin.mjs:63-71 — `lstatSync` checks only the last path component, so a symlinked parent directory gets past it. Input: `skills/foundry-gateway/` replaced by a symlink to an outside dir whose SKILL.md holds `SECRET-CONTENT` → exit 0, and the zip's SKILL.md is `SECRET-CONTENT`. route: implementer. Resolve each file with `realpathSync` and refuse unless it sits under `realpathSync(<root>/plugins/claude/foundry-gateway)`, with a directory-symlink test.
+- [NOTE, cheap] scripts/build-claude-plugin.mjs:9 — `lstatSync` breaks the alphabetical import order. Fix if cheap.
