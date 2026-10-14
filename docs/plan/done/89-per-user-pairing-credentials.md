@@ -361,3 +361,28 @@ STATE MACHINE AUDIT AT HEAD (no behaviour defect found)
 - eslint, prettier and `tsc -p module --noEmit` are clean on the changed files.
 
 SCOPE: clean. client.ts (Amendment 1), apps/pairing/index.ts, templates/pairing/pairing.hbs, styles/agent-gateway.css (insertion only), runtime-credentials.test.ts (Amendment 2) and pairing-one-per-user.test.ts are all within Owns.
+
+## Amendment 3 (Andrew, 2026-10-14): replaces Amendment 2's storage-full behaviour
+
+The in-memory `sessionToken` fallback is removed. Reason: it caused review rounds 4–8, and the third external review found a fifth defect in it (below). Storage being full is rare.
+
+New behaviour when a code-issued token cannot be persisted (`setToken` returns `false`):
+- The current socket stays connected.
+- One localized warning, with no token in it, says the pairing will not survive a dropped connection or a reload because browser storage is full.
+- On the next drop, the client has no token, so it goes to PAIRING_REQUIRED and the user pairs again.
+- The token is never kept in client memory beyond the live socket's own state.
+
+Everything else stays:
+- the persisted/legacy precedence;
+- the migration persist-then-clear rule from round 3;
+- the presented-owner rule for clears;
+- the Unpair visibility toggle from round 6, now driven by the persisted entry only.
+
+`authSource` must reflect the source of the live connection after every welcome. After a successful code-pairing store it is `'keyed'`. A later revocation on that same socket then clears exactly the presented credential. After a code pairing whose store failed, a revocation clears nothing persisted.
+
+## Review round 8 — findings (third external review on PR #143, revision 0b3d892)
+
+[P2] Update the credential source after a session-only code pairing — client.ts:753
+When code pairing succeeds but storage fails, welcome retains the issued token in sessionToken while authSource remains 'code'. If that live connection is later revoked—for example, by pairing from another browser—rejection handling deletes the keyed entry instead of clearing the session token. The revoked token still makes hasCurrentGatewayToken() return true and is sent again on the next start(). An existing persisted entry can also be incorrectly removed. Set the post-welcome source to 'session' when persistence fails, and test revocation on the original code-paired socket without reconnecting first.
+
+Resolution: superseded by Amendment 3. The session token is removed. The authSource-after-code-welcome part still applies to the persisted path and to the failed-store path.
