@@ -106,3 +106,55 @@ When an established link drops, the browser should get back on its own with the 
 - A gateway-side "last seen" for browsers, or a metrics endpoint.
 - Docs (docs/server-mode.md, docs/architecture.md, recording decision (a)). These are for the scribe.
 - gateway/test/bin/invite-cli.test.ts's environment leak (86's residual).
+
+## Review round 1 — findings
+
+Reviewed HEAD: 60e514b.
+
+Orchestrator ruling on the P1: **rejected, the spec stands.** In Foundry v13 (13.351 bundle, line 115236) and v14 (14.369, line 146207) the Players list class is `Players` (ApplicationV2), registered as `ui.players: Players`. The render hook is therefore `renderPlayers`. `PlayerList`/`renderPlayerList` is the v12 name, and module.json minimum is 13. v14 itself finds rows with `li.player[data-user-id=…]` (line 146375), so the indicator's `[data-user-id]` selector matches. The reviewer was right that nothing tests `installStatusIndicator`, so this round adds that test.
+
+Routed to the implementer:
+- the STYLE item;
+- both P3s;
+- a new test that `installStatusIndicator` registers exactly one `renderPlayers` hook and renders into the matching row when the hook fires.
+
+The lifecycle.test.ts wiring for online/visibilitychange becomes a follow-up, not this round.
+
+VERDICT: FIX
+
+FINDINGS
+- [P1] module/src/link/status-indicator.ts:131 — The indicator listens on `Hooks.on('renderPlayers', …)`, but Foundry never fires a hook by that name. The Players list app is the `PlayerList` class (an Application in v12, ApplicationV2 in v13), and Foundry names render hooks after the class, so the hook is `renderPlayerList`. As written, `render()` never runs in a real Foundry and the Players-list element never appears. Only the toast works.
+  route: orchestrator — Decision (c) in the task file names "the `renderPlayers` hook", so the spec itself is wrong. The fix (listen on `renderPlayerList`, and check that v13's row selector `[data-user-id]` still matches) changes a spec line. The planner should amend (c) rather than leave it to a fix round. No test catches this: status-indicator.test.ts calls `createStatusIndicator().render()` directly, and nothing covers `installStatusIndicator`.
+  input: GM loads a world with a stored token, link connects, Players list renders  →  `renderPlayerList` fires, `renderPlayers` never does; no indicator on the GM's row.
+
+- [STYLE] gateway/src/mcp/session.ts:50-58 — The new `pairingState` field and its doc comment were put between `pairingHint`'s existing JSDoc and the `pairingHint` field. `pairingHint`'s doc now sits orphaned above `pairingState`'s doc, and `pairingHint` has no doc of its own.
+  route: implementer — move `pairingState` (and its comment) below `pairingHint?: …`.
+  rule: every other option in `SessionServerOptions` (session.ts:42-49, 59-72) has its JSDoc directly above the field it describes.
+
+- [P3] module/test/link/status-indicator.test.ts:116-122 — "never renders the token, the code or the gateway URL" is vacuous. The rig's fake client never holds `secret-token`, `ABCD-EFGH` or the URL, so no mutation of the indicator could put them in the element. The acceptance item asks for "a test with a stored credential".
+  route: implementer — drive the indicator from a real `LinkClient` whose `getToken`/`getGatewayUrl` return those strings (or a fake client that exposes them), then assert none of them appear in the text or attributes.
+  input: mutate `apply` to set `el.textContent = JSON.stringify(deps.client)`  →  the test still passes, because the fake client contains none of the strings.
+
+- [P3] gateway/test/mcp/status-pairing-state.test.ts:29 — `pairingState: () => state` ignores its arguments. Nothing pins that the lookup uses the session's own bound (world, user), which was a focus area. The code is correct today: session.ts:278 and :324 use `binding.identity` / `r.pair`.
+  route: implementer — make the stub answer only for `('w1','u1')` and return `'none'` for any other pair.
+  input: mutate session.ts:278 to `opts.pairingState?.(who.userId, who.worldId)`  →  every case still passes.
+
+- [NOTE] lifecycle.test.ts accommodations (module/src/main.ts:47-53, status-indicator.ts:113-140). They work, and they hide no defect. `online` is registered on `g.window` rather than `g.addEventListener`, `visibilitychange` on `g.document`, and `ui` is guarded with `typeof ui !== 'undefined'`. In a browser `window === globalThis`, so behaviour is identical. The cost: these registrations are invisible to lifecycle.test.ts, which only fakes `globalThis.addEventListener` and asserts that exactly pagehide/pageshow are registered. So nothing executes the `online`/`visibilitychange` → `retryNow()` wiring; it is pinned only by the acceptance item's `rg`. lifecycle.test.ts is untouched in the diff.
+
+- [NOTE] gateway/src/store/store.ts:216 — `pairingStateFor` is one query, but `pairings(world_id, user_id)` has no index (migration 001 only has `token_hash UNIQUE`), so it scans. The existing `activeFor` does the same, the table is small, and adding an index needs a migration outside Owns.
+
+- [NOTE] gateway/src/app.ts:621 — `store?.pairingStateFor(...) ?? 'none'` reports `pairing: 'none'` in the structured status when there is no store, rather than leaving the field absent. The text is unchanged in that case.
+
+- [NOTE] gateway/src/link/server.ts:325-339 — The logged `reason` is what the peer sends back in its close frame. The tests use the `ws` client, which echoes the reason. A browser that echoes only the code would log "code 1008" with no `PAIRING_INVALID`. The code is still right.
+
+Checked and found sound:
+- Logged user names and reasons pass through `safeText` (control characters replaced, capped at 80 characters), and the reason is cut to 64 characters first.
+- No token, hash or code appears on any log path.
+- Pairing state is read only for the session's own `binding.identity`.
+- The `active` state suppresses `pairingHint`, so no code is issued or shown.
+- `retryNow` acts only while the retry timer is pending and `active`. It cancels before connecting and keeps `attempt`, so `online`/`visibilitychange` cannot loop tightly, and it does nothing after `TOKEN_REJECTED`, `REPLACED` or `stop`.
+- The 1008 `PAIRING_INVALID` close stops retries.
+- The indicator sets text only through `textContent` and registers one hook at `ready`. It appends one span per Players-list render; the old span goes away with the replaced DOM.
+- Mutation-sensitive tests in reconnect.test.ts (1008 path, `retryNow` in the connecting state) and the 64-character truncation test would fail with their fix removed. Checked by reading, not by running them.
+
+SCOPE: clean (every changed path is in Owns; app.ts also changes its `safeText` import line, which the `onLinkEvent` wiring needs)
