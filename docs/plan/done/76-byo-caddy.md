@@ -70,3 +70,17 @@ An operator whose VPS already runs Caddy, either installed on the host or in its
 - [P3, content point 1] gateway/docker/README.md:49-52 — the "Host-installed Caddy" paragraph doesn't mention that `AGENT_GATEWAY_PUBLIC_URL`, `AGENT_GATEWAY_TRUST_PROXY=1` and `AGENT_GATEWAY_ALLOW_ORIGIN` stay set; the compose file sets them. route: implementer. Add one sentence.
 - [P3] gateway/docker/README.md:38-41 — moving from the bundled stack: setting COMPOSE_FILE and running `up -d` without first running `docker compose down` leaves the old caddy container orphaned in the same project. route: implementer. Add the stop step (`docker compose down` with the bundled file before switching, which keeps the volume) and mention `--remove-orphans`.
 - [NOTE for the README, cheap] In host mode, 7420/7421 are on the host's loopback, so any local process on the VPS can reach them and, with TRUST_PROXY=1, choose its own rate-limit bucket via XFF. Nothing is exposed off the machine. route: implementer. Add one sentence so operators know.
+
+## Outcome
+
+Done on branch `claude/task-76` (HEAD c8babdf, based on `origin/main` 334f8a8), 2026-10-14. Review round 1 found four README P3s (the reason `restart` fails after Caddy is recreated, the sentence that the three `AGENT_GATEWAY_*` variables stay set, the `down` / `--remove-orphans` step when migrating from the bundled stack, and the loopback note); all were fixed and the re-review was CLEAN. `/verify`: tester PASS (`npm run verify` exit 0, 4365 fast and 2227 slow; `npm run test:scripts` 41/41), reviewer APPROVE on every criterion. The reviewer checked the container-mode restart behaviour and both migration paths with real Docker 29.8.2 and Compose v5.5.0.
+
+Shape decision: one standalone `gateway/docker/compose.byo-caddy.yaml` (not an override of `compose.yaml`) with `network_mode: ${GATEWAY_NETWORK_MODE:-host}`. A host-installed Caddy uses the default `host`; a containerised Caddy sets `container:<caddy>`. The operator selects the file with `COMPOSE_FILE` in `.env`, so the plain `docker compose ...` commands in the other README sections keep working. `byo-caddy.Caddyfile` is the site block to paste, and the README has a "Bring your own Caddy" section. A shared Docker network is documented as unsupported, because the gateway reads `X-Forwarded-For` only from a loopback peer.
+
+Residuals and notes:
+- Host networking is Linux-only (Docker Desktop and OrbStack do not give the container the host's loopback).
+- Ports 7420 and 7421 must be free on the host; the image HEALTHCHECK hard-codes 7421, so they cannot be moved.
+- In host mode any local process on the VPS can reach the loopback ports and, with `TRUST_PROXY=1`, choose its own rate-limit bucket through `X-Forwarded-For`. Nothing is exposed off the machine. The README says so.
+- `npm run verify` does not run `npm run test:scripts`, so `scripts/test/docker-byo-caddy.test.mjs` is not in the verify gate. A separate follow-up has been suggested (64 already plans to wire `scripts/test/*.mjs` into the release gates).
+
+Pending Andrew (manual): deploy on his VPS behind his existing Caddy for the friend test.
