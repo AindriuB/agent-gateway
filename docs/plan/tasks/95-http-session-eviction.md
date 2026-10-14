@@ -139,3 +139,52 @@ started, which ends the MaxListenersExceededWarning on `LinkRegistry`, `ToolsetS
 - `docs/architecture.md` and `PLAN.md`. The scribe records the new limits.
 - Making the limits configurable by flag or env var.
 - The ChatGPT plugin (84) and the redeploy to gw.aindriub.app.
+
+## Amendment 1 (Andrew, 2026-10-14)
+
+Local mode skips the per-principal cap (step 1), because every local client shares the principal key `local`. Local mode keeps only the global 16-session cap. At that cap it evicts the least-recently-active idle local session, with the same in-flight protection, instead of refusing. Public mode is unchanged: 4 per principal, 16 per client, 64 global, 10 min idle.
+Reason: a fifth local MCP client (for example Claude Desktop plus four Claude Code windows) would otherwise silently evict another live local client.
+
+## Review round 1 — findings
+
+Reviewed HEAD: b3c263a. The first P2 (local mode) is settled by Amendment 1. Routed to the implementer:
+- P2: a test for the client-cap eviction path;
+- P3: check that every step can be satisfied before evicting anything;
+- P3: count a request as in flight before `parseBody`;
+- P3: tests for LRU ordering and for the pending-per-principal count.
+The NOTEs are not adopted, except the session-server leak when `connect`/`handleRequest` throws: close the server and unsubscribe its hub handlers on that path.
+
+VERDICT: FIX
+
+FINDINGS (most severe first)
+- [P2] gateway/src/http/server.ts:424-426 (admit, step 1) — In local mode every client has the principal key `local` (server.ts:159). The per-principal cap of 4 therefore applies to all local clients together, and the local `maxSessions` of 16 can never be reached. When a fifth local MCP client initializes, it silently closes the session of the least-recently-active other local client, even if that client is still live.
+  route: orchestrator — the code follows the Decisions as written: step 1 has no mode guard, Principal = `local`, and "Local mode still uses 30 min and 16". The spec contradicts itself. Its stated reason for the cap of 4 ("two Claude Code windows" per grant) assumes one grant per client, but in local mode all clients share one key. Fixing it means choosing a design: skip step 1 in local mode, use a different local principal key, or accept the cap of 4. That is the planner's call.
+  input: local mode, default limits. Five clients (for example Claude Desktop and four Claude Code windows) each initialize with the static bearer. → The fifth gets 200. The first client's next POST gets 404 "Session not found", and the log shows `principal=local reason=principal-cap`. On main, all five coexist (cap 16).
+- [P2] gateway/test/http/session-eviction.test.ts and gateway/test/http/public.test.ts:228 — No test ever reaches the client-cap eviction path (step 2 succeeding). Disabling it, or removing its client-key filter, leaves the whole suite green. The updated public.test.ts per-client case claims "same principal → 200 with eviction", but that 200 comes from the principal-cap step.
+  route: implementer — add a case: 3 other principals × 4 sessions plus principal Q × 1 on IP X, and principal P × 3 on IP X. P initializes from X and expects 200, `reason=client-cap`, and P's oldest X session now 404. Add a second case where P's only idle session is on another IP and expect 503.
+  proof: mutation `if (!evictOne(..client-cap)) return false` → `return false`: 40/40 tests still pass. Mutation deleting `if (client !== undefined && e.clientKey !== client) continue;` (server.ts:442): 40/40 pass. With that filter gone, step 2 evicts a session under a different client key, so the client count does not drop and the client key ends up above 16.
+- [P3] gateway/src/http/server.ts:425-428 — Step 1 evicts before step 2 can refuse, so the requester loses a session and still gets 503.
+  route: implementer — check that every step can be satisfied before evicting anything. The spec's step order and per-step limits stay the same.
+  input: principal A holds 4 idle sessions from IP X. IP Y holds 16 sessions of 4 other principals. A initializes from Y. → A's oldest X session is closed (one `principal-cap` log line), then the request gets 503 'too many sessions'.
+- [P3] gateway/src/http/server.ts:351-360 — `inFlight` is incremented only after `await this.parseBody`. A POST whose body is still arriving can therefore be evicted, which goes against "a session with a request in flight is never evicted".
+  route: implementer — increment before `parseBody` (try/finally around both).
+  input: principal a has 4 sessions. 3 have held tools/calls in flight. On the 4th, a POST sends its headers and the first 5 body bytes, then the rest 300 ms later. Meanwhile a new initialize arrives. → initialize 200 with `reason=principal-cap`. The slow POST gets 404 `-32001 Session not found` (proved in a scratch copy). It does not hang.
+- [P3] gateway/test/http/session-eviction.test.ts — Two guards are untested: least-recently-active ordering, and counting pending initializes per principal.
+  route: implementer — add one case where the principal touches its oldest session, then opens a fifth session, and assert that the second-oldest session is the one that now 404s.
+  proof: flipping `e.lastActive < pick[1].lastActive` to `>` (evict the most recently active session): 40/40 pass. Deleting the `pendingByPrincipal.set(...)` increment: 40/40 pass.
+- [NOTE] server.ts:356 — Not counting GET as in flight (a scope you asked about). The mutation shows this is required: if GET counts, http.test.ts "replaces the requester own idle session at the cap" fails, because SDK clients (`connect()`) keep a standalone GET SSE stream open, so no SDK session could ever be evicted. The cost is that a client like Claude Code whose only open request is its GET stream can be evicted. That happens only by the same principal (in public mode, the same grant) opening a session beyond 4, and the victim is that principal's least-recently-active session. When evicted, the SSE stream is closed. SDK 1.32.1 `StreamableHTTPClientTransport` does not re-initialize on 404 (no 404 handling in client/streamableHttp.js). Whether Claude Code itself reconnects is unverified. In public mode this is acceptable. In local mode it compounds the first P2.
+- [NOTE] server.ts:446-450 — Keys other than `oauth:*` and `local` log as `principal=other` rather than "the part before the first colon". Production only produces oauth or local. This is safer than echoing an arbitrary prefix.
+- [NOTE] server.ts:389-399 — These are pre-existing patterns, now extended to the per-principal count. Between `onsessioninitialized` and the `finally`, a new session is counted both in `sessions` and in `pendingByPrincipal`, so concurrent initializes from one principal can cause one extra eviction. If `server.connect` or `transport.handleRequest` throws, the session server is never closed and its hub handlers leak.
+
+Checks that came out clean (the scopes you asked about):
+- Cross-principal: `evictOne` filters on exact `principalKey`. The client key only narrows the candidate set and never widens it. `oauth:<grantId>` comes from the server-issued grant, and shared egress IPs cannot reach another grant's sessions. The mutation that drops the principal filter fails 5 tests.
+- Hub teardown: one listener per (emitter, event). Unsubscribe is idempotent (`handlers.delete` returns false on the second call). The shared listener is removed when the last handler leaves. DELETE, evict, sweep and transport close all go through `server.onclose`. Throw propagation matches the old per-listener behaviour. Mutations that drop `emitter.off` or the `inFlight` decrement are caught.
+- Caps: 4, 16 and 64 interact as the spec orders. Public mode uses 64 and 10 min, and local mode uses 16 and 30 min (app.ts:712-713). `rg "setMaxListeners\((0|Infinity)" gateway/src` finds nothing.
+- Log line: built only from fixed literals, an enum reason and a number. It cannot contain a grant, session id, IP or client key.
+- The in-flight guard mutation (`|| e.inFlight > 0` removed) fails 1 test.
+- ESLint and Prettier are clean on all changed files.
+- Flake: gateway/test/bin/invite-cli.test.ts is a pre-existing load flake. Machine load average was 40-70, from other agents' suites. I ran it alone 3 times each, interleaved, on an origin/main build and on this branch. main failed 2 of 3 (`Test timed out in 5000ms`) and the branch failed 0 of 3. In earlier branch-only runs it failed 1 and then 7 as load rose. The diff touches no CLI, store or link code. The full fast suite (`npm test`, which you asked for) ran once on a scratch copy of the branch: 247 files and 4713 tests passed.
+
+SCOPE: clean (every changed path is in Owns. app.ts also gains two import names, which the options-block change needs)
+
+All runs used throwaway copies in the scratchpad, now deleted. The worktree at /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-95 was not modified.
