@@ -28,6 +28,7 @@ const copied = [
   'module.json',
   'gateway/mcpb/manifest.json',
   'gateway/docker/.env.example',
+  'plugins/claude/foundry-gateway/.claude-plugin/plugin.json',
   'docs/releasing.md',
   'scripts/bump-version.mjs',
 ];

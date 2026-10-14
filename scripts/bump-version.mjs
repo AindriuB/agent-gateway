@@ -57,6 +57,7 @@ const targets = [
   ],
   ['gateway/mcpb/manifest.json', pkgVersion, 'gateway/mcpb/manifest.json'],
   ['gateway/docker/.env.example', /^(GATEWAY_VERSION=)([^\n]*)()$/m, 'gateway/docker/.env.example'],
+  ['plugins/claude/foundry-gateway/.claude-plugin/plugin.json', pkgVersion, 'claude plugin.json'],
 ];
 
 const texts = new Map();

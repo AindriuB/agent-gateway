@@ -19,11 +19,20 @@ const walk = (dir) =>
     return statSync(p).isDirectory() ? walk(p) : [p];
   });
 
-const hasClaude = spawnSync('claude', ['--version'], { encoding: 'utf8' }).status === 0;
+const hasClaude =
+  spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 15_000 }).status === 0;
 
 describe('claude plugin files', () => {
   it('parse as JSON', () => {
-    for (const p of [manifestPath, mcpPath, marketplacePath]) assert.doesNotThrow(() => readJson(p), p);
+    for (const p of [manifestPath, mcpPath, marketplacePath])
+      assert.doesNotThrow(() => readJson(p), p);
+  });
+
+  it('plugin.json has a version equal to the root package version and no inline server', () => {
+    const m = readJson(manifestPath);
+    assert.equal(m.version, readJson(path.join(repo, 'package.json')).version);
+    assert.ok(!('mcpServers' in m));
+    assert.ok(!('userConfig' in m));
   });
 
   it('plugin name is kebab-case and not reserved', () => {
@@ -38,11 +47,14 @@ describe('claude plugin files', () => {
     const market = readJson(marketplacePath);
     assert.equal(market.name, 'agent-gateway');
     assert.ok(market.owner.name);
+    assert.ok(!('version' in market.plugins[0]));
     assert.equal(market.plugins.length, 1);
     const [entry] = market.plugins;
     assert.equal(entry.name, readJson(manifestPath).name);
     assert.equal(path.resolve(repo, entry.source), pluginDir);
-    assert.ok(existsSync(path.join(path.resolve(repo, entry.source), '.claude-plugin/plugin.json')));
+    assert.ok(
+      existsSync(path.join(path.resolve(repo, entry.source), '.claude-plugin/plugin.json')),
+    );
   });
 
   it('.mcp.json is one OAuth-discovered http server', () => {
