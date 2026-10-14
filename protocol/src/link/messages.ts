@@ -44,6 +44,8 @@ export const WelcomeMessage = z.strictObject({
   connectionId: z.string(),
   agentId: z.string(),
   pairingToken: z.string().optional(),
+  /** Operator-set admin flag of the pairing at this moment; never derived from `hello.user.isGM`. */
+  admin: z.boolean().optional(),
 });
 
 export const RejectMessage = z.strictObject({
@@ -209,6 +211,20 @@ export const ConsentCodeMessage = z.strictObject({
   expiresAt: z.number().int().min(0),
 });
 
+/** Sent to a pending server-mode redeemer: post a whispered, flagged chat message carrying this nonce. */
+export const PairingChallengeMessage = z.strictObject({
+  type: z.literal('pairingChallenge'),
+  nonce: z.string().min(1).max(200),
+  expiresAt: z.number().int().min(0),
+});
+/** An admin GM's module vouches for the author Foundry recorded on a challenge message. */
+export const AttestMessage = z.strictObject({
+  type: z.literal('attest'),
+  nonce: z.string().min(1).max(200),
+  authorId: z.string().min(1).max(64),
+  authorIsGM: z.boolean(),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -230,6 +246,8 @@ export const LinkMessage = z.discriminatedUnion('type', [
   RevokeGrantMessage,
   GrantsMessage,
   ConsentCodeMessage,
+  PairingChallengeMessage,
+  AttestMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

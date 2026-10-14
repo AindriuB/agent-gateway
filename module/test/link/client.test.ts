@@ -245,7 +245,7 @@ it.each([
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '6.0.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '7.0.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
     if (compatibility.ok) throw new Error('Legacy gateway must reject v5');

@@ -10,5 +10,6 @@ export const ErrorCode = z.enum([
   'RATE_LIMITED',
   'DENIED',
   'INTERNAL',
+  'PAIRING_UNCONFIRMED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

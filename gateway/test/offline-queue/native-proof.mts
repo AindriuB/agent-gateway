@@ -51,7 +51,7 @@ const sha = (bytes: string | Buffer) => createHash('sha256').update(bytes).diges
   locale = readFileSync(resolve(root, 'lang/en.json'));
 if (
   sha(bundle) !== TASK30_PINS.bundle ||
-  PROTOCOL_VERSION !== '6.0.0' ||
+  PROTOCOL_VERSION !== '7.0.0' ||
   execFileSync('git', ['rev-parse', `${TASK30_PINS.source}^{commit}`], {
     cwd: root,
     encoding: 'utf8',
