@@ -58,7 +58,8 @@ async function boot() {
   g.game.world = { id: 'w1', title: 'W' };
   g.game.settings.get = (_ns: string, k: string) => settings[k] ?? '';
   g.game.settings.set = async (_ns: string, k: string, v: string) => void (settings[k] = v);
-  g.ui = { notifications: { error: vi.fn() } };
+  g.ui = { notifications: { error: vi.fn(), warn: vi.fn() } };
+  g.game.i18n = { localize: (k: string) => `L:${k}` };
   vi.doMock('../../src/link/toolset.js', () => ({
     installToolsetAnnouncer: () => ({}),
     policyDenies: () => () => false,
@@ -139,4 +140,49 @@ it('clears the legacy credential once the keyed write persisted', async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(settings.pairingCredential).toBe('');
   expect(stored()[key(X)].token).toBe('legTok');
+});
+
+it('revoking a legacy credential whose migration write failed clears the legacy setting', async () => {
+  settings = { gatewayUrl: X, pairingCredential: JSON.stringify({ url: X, token: 'legTok' }) };
+  failWrites = true;
+  const c = await boot();
+  c.start();
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  ws.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settings.pairingCredential).toBe('');
+});
+
+it('keeps a code-issued token in memory when storage is full, and warns once without it', async () => {
+  settings = { gatewayUrl: X };
+  failWrites = true;
+  const c = await boot();
+  c.pair('CODE-1');
+  const ws = FakeWs.all[0]!;
+  ws.onopen();
+  ws.recv({ ...welcome(), pairingToken: 'newTok' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(c.state.kind).toBe('connected');
+  ws.onclose({ code: 1006 });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(c.state).not.toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  const ws2 = FakeWs.all[1]!;
+  expect(ws2).toBeDefined();
+  ws2.onopen();
+  expect(ws2.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
+  ws2.recv(welcome());
+  await vi.advanceTimersByTimeAsync(0);
+  const warn = (globalThis as any).ui.notifications.warn;
+  expect(warn).toHaveBeenCalledTimes(1);
+  c.pair('CODE-2');
+  const ws3 = FakeWs.all[FakeWs.all.length - 1]!;
+  ws3.onopen();
+  ws3.recv({ ...welcome(), pairingToken: 'newTok2' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(warn.mock.calls)).not.toContain('newTok');
+  expect(warn.mock.calls[0][0]).toBe('L:AGENT_GATEWAY.Link.storageFull');
 });

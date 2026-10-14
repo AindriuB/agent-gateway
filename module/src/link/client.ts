@@ -76,6 +76,8 @@ export interface LinkClientDeps {
   getIdentity(): Omit<HelloMessage, 'type' | 'protocolVersion' | 'auth'>;
   createSocket(url: string): SocketLike;
   notifyError(message: string): void;
+  /** A non-fatal notice, already localized. Never carries a token. */
+  notifyWarn?(message: string): void;
   random?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
@@ -241,6 +243,10 @@ export class LinkClient {
   /** Which credential the last hello carried, and the user it was sent as. */
   private authSource: 'code' | 'keyed' | 'legacy' | null = null;
   private helloOwner: TokenOwner | null = null;
+  /** A code-issued token that could not be persisted: kept for this session only. */
+  private sessionToken: { url: string; worldId: string; userId: string; token: string } | null =
+    null;
+  private storageWarned = false;
   private listeners = new Set<(s: LinkState) => void>();
   /** The agent id the gateway assigned in `welcome`; null until connected. */
   agentId: string | null = null;
@@ -290,8 +296,15 @@ export class LinkClient {
    */
   private tokenForUrl(url: string): string | null {
     const cred = this.readCredential();
-    if (!cred) return null;
-    return normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url) ? cred.token : null;
+    if (cred) {
+      return normalizeGatewayUrl(cred.url) === normalizeGatewayUrl(url) ? cred.token : null;
+    }
+    const s = this.sessionToken;
+    if (s && normalizeGatewayUrl(s.url) === normalizeGatewayUrl(url)) {
+      const id = this.deps.getIdentity();
+      if (s.worldId === id.world.id && s.userId === id.user.id) return s.token;
+    }
+    return null;
   }
 
   /**
@@ -402,6 +415,7 @@ export class LinkClient {
   async unpair(): Promise<void> {
     const id = this.deps.getIdentity();
     this.requirePairing();
+    this.sessionToken = null;
     await this.deps.setToken(null, { worldId: id.world.id, userId: id.user.id });
   }
 
@@ -515,7 +529,26 @@ export class LinkClient {
     switch (msg.type) {
       case 'welcome': {
         if (msg.pairingToken) {
-          await this.deps.setToken({ url, token: msg.pairingToken }, this.helloOwner ?? undefined);
+          const stored = await this.deps.setToken(
+            { url, token: msg.pairingToken },
+            this.helloOwner ?? undefined,
+          );
+          if (stored === false) {
+            // Storage is full: keep the token for this session so reconnects still authenticate.
+            const id = this.deps.getIdentity();
+            this.sessionToken = {
+              url,
+              worldId: id.world.id,
+              userId: id.user.id,
+              token: msg.pairingToken,
+            };
+            if (!this.storageWarned) {
+              this.storageWarned = true;
+              this.deps.notifyWarn?.('AGENT_GATEWAY.Link.storageFull');
+            }
+          } else {
+            this.sessionToken = null;
+          }
           if (this.socket !== origin) {
             // stop() or a restart ran during the write. The token is legitimately issued and now stored,
             // but this socket is gone: do not report connected.
@@ -701,7 +734,10 @@ export class LinkClient {
     if (usedToken) {
       // Only the credential that was sent is stale: the old shared one, or this user's own.
       if (this.authSource === 'legacy') await this.deps.clearLegacyToken?.();
-      else await this.deps.setToken(null, this.helloOwner ?? undefined);
+      else {
+        this.sessionToken = null;
+        await this.deps.setToken(null, this.helloOwner ?? undefined);
+      }
       this.setState({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
       return;
     }
