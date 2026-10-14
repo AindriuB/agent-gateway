@@ -392,6 +392,32 @@ describe('listInvites and cancelInvite', () => {
     );
   });
 
+  it('keeps an old open invite listed after more than 100 newer ones were cancelled', async () => {
+    await boot();
+    const gm = await admin();
+    create(gm, 'old', { ttlMs: MAX_INVITE_TTL_MS }, 'o');
+    const old = await created(gm);
+    for (let i = 0; i < 105; i++) {
+      clock += 1;
+      const row = h!.store.invites.create({
+        id: `n${i}`,
+        codeHash: `hash-${i}`,
+        worldId: 'w1',
+        userId: 'p',
+        origin: null,
+        expiresAt: clock + 10_000,
+      });
+      h!.store.invites.cancelInWorld('w1', row.id);
+    }
+    list(gm, 'l');
+    const reply = invitesOf(await gm.next('invites'));
+    expect(reply.length).toBeLessThanOrEqual(100);
+    expect(reply.find((i) => i.id === old.inviteId)?.status).toBe('unused');
+    cancel(gm, old.inviteId, 'c');
+    expect(await gm.next('invites')).toMatchObject({ requestId: 'c' });
+    expect(h!.store.invites.getById(old.inviteId)?.cancelledAt).not.toBeNull();
+  });
+
   it('cancels one unused invite and replies with the updated list', async () => {
     await boot();
     const gm = await admin();

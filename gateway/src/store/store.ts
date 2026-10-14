@@ -78,8 +78,11 @@ export interface InviteRepository {
   /** Cancel every unused invite for the target; returns how many. */
   cancelFor(worldId: string, userId: string): number;
   list(): InviteRow[];
-  /** Newest first, at most `limit`, for one world only. */
-  listForWorld(worldId: string, limit: number): InviteRow[];
+  /**
+   * One world only, newest first. Every open invite (unused, uncancelled, unexpired at `now`) is
+   * always included; history fills the remaining slots up to `limit`.
+   */
+  listForWorld(worldId: string, limit: number, now: number): InviteRow[];
   /** Invites in the world that are unused, uncancelled and unexpired at `now`. */
   countUnusedForWorld(worldId: string, now: number): number;
   /** Cancel one unused invite of the world by id; false when there is no such open invite there. */
@@ -268,7 +271,11 @@ export function openStore(
   );
   const inviteList = db.prepare('SELECT * FROM invites ORDER BY created_at, id');
   const inviteListForWorld = db.prepare(
-    'SELECT * FROM invites WHERE world_id = ? ORDER BY created_at DESC, id LIMIT ?',
+    `SELECT * FROM (
+       SELECT * FROM invites WHERE world_id = ?1
+       ORDER BY (used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2) DESC, created_at DESC, id
+       LIMIT MAX(?3, (SELECT COUNT(*) FROM invites WHERE world_id = ?1 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2))
+     ) ORDER BY created_at DESC, id`,
   );
   const inviteCountUnused = db.prepare(
     'SELECT COUNT(*) AS n FROM invites WHERE world_id = ? AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?',
@@ -356,8 +363,8 @@ export function openStore(
     list() {
       return (inviteList.all() as unknown as InviteDbRow[]).map(toInvite);
     },
-    listForWorld(worldId, limit) {
-      return (inviteListForWorld.all(worldId, limit) as unknown as InviteDbRow[]).map(toInvite);
+    listForWorld(worldId, limit, at) {
+      return (inviteListForWorld.all(worldId, at, limit) as unknown as InviteDbRow[]).map(toInvite);
     },
     pruneBefore(olderThan, at) {
       return Number(invitePrune.run(olderThan, at).changes);

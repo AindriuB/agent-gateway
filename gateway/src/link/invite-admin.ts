@@ -95,7 +95,7 @@ function listReply(
   return {
     type: 'invites',
     requestId,
-    invites: store.invites.listForWorld(conn.worldId, MAX_LISTED_INVITES).map((r) => ({
+    invites: store.invites.listForWorld(conn.worldId, MAX_LISTED_INVITES, now).map((r) => ({
       id: r.id,
       userId: r.userId,
       createdAt: r.createdAt,

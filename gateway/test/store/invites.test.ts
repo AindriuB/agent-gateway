@@ -84,9 +84,9 @@ describe('world-scoped invite queries', () => {
     mkIn(store, 'b1', 'wB');
     mkIn(store, 'a2', 'wA');
     mkIn(store, 'a3', 'wA');
-    expect(store.invites.listForWorld('wA', 10).map((i) => i.id)).toEqual(['a3', 'a2', 'a1']);
-    expect(store.invites.listForWorld('wA', 2)).toHaveLength(2);
-    expect(store.invites.listForWorld('wB', 10).map((i) => i.id)).toEqual(['b1']);
+    expect(store.invites.listForWorld('wA', 10, 0).map((i) => i.id)).toEqual(['a3', 'a2', 'a1']);
+    expect(store.invites.listForWorld('wA', 2, 10_000)).toHaveLength(2);
+    expect(store.invites.listForWorld('wB', 10, 0).map((i) => i.id)).toEqual(['b1']);
   });
 
   it('countUnusedForWorld skips used, cancelled, expired and other-world rows', () => {
