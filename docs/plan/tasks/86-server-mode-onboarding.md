@@ -174,3 +174,70 @@ Joining a hosted gateway currently takes four manual steps, and a wrong gateway 
 - Editing existing lang/en.json values, and styles/agent-gateway.css.
 - Docs: docs/server-mode.md (operator flow), gateway/docker/README.md:95-121 (the invite step: "set the gateway URL to `wss://<domain>/link` and enter the code" becomes "paste the invite string"; the GM sets the world default) and closing docs/plan/PLAN.md:147. These are for the scribe.
 - GM-attested self-onboarding, and a gateway-served discovery endpoint.
+
+## Review round 1 — findings
+
+Reviewed HEAD: a6e74b3 (branch claude/task-86).
+
+VERDICT: FIX
+
+FINDINGS
+- [P2] module/src/settings/index.ts:13-20 (client `gatewayUrl`, `config: true`) and :53-63 (`defaultGatewayUrl`, `config: true`). Foundry's Configure Settings form is a second way to enter the address, and it skips `parsePairingInput`. So an invite string, code included, can be stored as the gateway address. Decision (a) says "Every input path goes through the parser". The pairing window covers its own paste; the settings form does not.
+  route: orchestrator. Fixing this needs an `onChange` or validation on the `gatewayUrl` registration. Owns allows only the `default:` and `hint:` lines to change there. Or it needs a new decision, for example that the pairing window takes over a stored invite string and redeems it. Either way it is outside what the task allows.
+  input: a player opens Configure Settings → Agent Gateway → Gateway URL and pastes `wss://gw.example.com/link#ABCD-EFGH-JKMN` (the natural move for anyone told to "set the gateway URL").  →  The client setting stores the whole string, code included. The resolver marks it `clientInvalid` and silently falls back to the world default or localhost, so the invite is never redeemed. `_prepareContext` (module/src/apps/pairing/index.ts, `gatewayUrl: ... raw`) then puts the code into the URL input's value. The same thing happens if a GM pastes an invite into `defaultGatewayUrl`. That value is a world setting, so it reaches every client in the world, and the pairing window only shows the GM a generic "not a valid wss:// address" warning.
+- [STYLE] module/test/settings/main.test.ts:13 is outside Owns. The edit changes the registered-setting count from 12 to 13.
+  route: orchestrator. Owns must be amended. My view: accept it. The change is required, because adding `defaultGatewayUrl` breaks this assertion. It is one number and pins nothing new.
+  rule: the task file's Owns list; PROJECT.md rule 2.
+- [P3] module/src/link/gateway-url.ts:39-43 (`clientUsable`). The lenient credentials check only matches the `scheme://` shape. WHATWG URL parsing (and so `new WebSocket`) also reads userinfo out of `ws:\\u:p@host`, `ws:/u:p@host` and `ws:u:p@host`. Those values pass, and are returned as a connectable `source: 'client'` URL.
+  route: implementer. The acceptance item "A client value with ... credentials is never returned as a connectable URL" already covers this. Loosening the regex to `^[a-z][a-z0-9+.-]*:[\\/]*[^/\\?]*@` would do it, and still needs no `URL` global.
+  input: the client setting is `ws:\\u:p@evil.com/link`  →  `resolveGateway(c,'')` returns `{source:'client', clientInvalid:false}`, and `new URL` gives username `u`, password `p` (probed on a scratch copy). Only the player can set this value, so the impact is low. `displayAddress` strips the userinfo, so nothing is shown.
+- [NOTE] gateway/test/bin/invite-cli.test.ts:33 (not owned, unchanged). Its spawn helper inherits `process.env` and does not blank `AGENT_GATEWAY_PUBLIC_URL`. On a machine or CI shell where that variable is set, the "bare code" test now fails, because stdout is the one-paste string. The new invite-string-cli.test.ts blanks it correctly. This is a candidate for a follow-up, not this task.
+- [NOTE] module/src/link/gateway-url.ts:63-66. When the client value is invalid (fragment or credentials), the resolver falls back to the world default and the link connects there. Nothing goes to the bad address, but the acceptance wording "nothing is sent" could be read more strictly. The pairing window shows the invalid-address warning in either case.
+
+Checked and found sound:
+- **Parser:** it rejects every malicious form in the acceptance list, plus lookalike loopback hosts, an empty `?`, `..`-style path tricks, and backslash authority tricks. `reason` is a fixed enum, and warnings use a fixed localized key, so the input is never echoed. The returned url is rebuilt from the parsed parts, so it never carries a fragment.
+- **Template:** it adds no `{{{`, and the lines are updated only through `textContent`. `displayAddress` drops userinfo, query and fragment.
+- **Resolution:** the order is right, including the legacy `ws://localhost:7420` handling. `defaultGatewayUrl` is world-scoped and `restricted: true`.
+- **CLI (gateway/src/bin/cli.ts, `invitePublicLink`):** it runs before `createInvite`, so a bad URL exits 2 with the table empty (and the test checks the table). The flag wins over the environment variable. The code goes only to stdout. Exiting inside the `try` matches the existing pattern at :302.
+- **Wording:** the gateway changes are the three literals only, and no gateway test asserts the old text.
+- **Protocol:** unchanged.
+
+Mutation proofs (scratch copy, module/test/link/invite-string.test.ts only; baseline 38 passed):
+- Removing the empty-`?` check failed 1 test.
+- Removing the username/password check failed 2.
+- Removing the pre-parse BAD_CHARS check failed 3 (newline and tab cases).
+- Removing the ws-loopback restriction failed 2.
+
+SCOPE: module/test/settings/main.test.ts
+
+## Amendment 1 (Andrew, 2026-10-14)
+
+Decisions on the review round 1 findings. Where this section conflicts with Owns, Acceptance or Out of scope above, this section wins.
+
+1. **Foundry's Configure Settings form must not bypass the parser (P2).** Decision (a) says every input path goes through the parser, and the settings form is an input path. Telling someone to "set the gateway URL" makes pasting there the natural move, so leaving it open means invites silently fail and a code can be stored, rendered and, for the world setting, broadcast.
+   - **Owns widens.** In module/src/settings/index.ts, the `gatewayUrl` registration (in `registerFoundation`) may gain an `onChange` (or equivalent) property, and `registerDefaultGatewayUrl` may gain one too. The handlers may live in module/src/settings/index.ts or in a new module/src/settings/gateway-url-guard.ts; module/src/settings/gateway-url-guard.ts (new) is added to Owns. No other existing line in module/src/settings/index.ts changes.
+   - **Owns adds** module/test/settings/gateway-url-guard.test.ts (new). It sits beside the existing module/test/settings/settings.test.ts and main.test.ts, which is where the module tests its setting registrations.
+   - **Client `gatewayUrl`.** If the stored value is an invite string, the handler stores only the address and redeems the code, the same way the pairing window does: the same address-or-`''` rule (equal to the effective world default after `normalizeGatewayUrl` means `''`), the write awaited, then `getLinkClient().pair(code)`. Reason: the player's intent is unambiguous, and doing what the pairing window does keeps one behaviour for one paste. Share the pairing window's redeem helper rather than duplicating it.
+   - **World `defaultGatewayUrl`.** If the value is an invite string, the handler stores only the address, drops the code and shows the GM a localized warning that the code was not kept and must be given to each player. Reason: a world setting reaches every client in the world, so a code stored there would be handed to everyone, and redeeming it on the GM's client would pair the wrong user. If a pre-save hook (`preCreateSetting` / `preUpdateSetting` for key `agent-gateway.defaultGatewayUrl`, run on the writing client) is available on Foundry 13, prefer it, so the code is stripped before the write leaves the GM's browser. Otherwise use `onChange`, which acts only on a GM's client (`game.user.isGM`), so non-GM clients never write.
+   - **Either setting: invalid value.** A value that fails its check (client: the lenient check of decision (d); world: the strict check) is reset (client to `''`; world to `''`). A localized notification is shown that never echoes the input. Reason: a stored invalid value currently falls back silently and is re-rendered into the pairing window's URL field.
+   - The handler's own corrective write must not loop. A reset or address-only write re-enters the handler with a valid value and does nothing.
+   - Insertions to lang/en.json for these notifications go under `AGENT_GATEWAY.Settings.gatewayUrlOverride.*` and `AGENT_GATEWAY.Settings.defaultGatewayUrl.*`, which are already in Owns.
+
+   Added acceptance (each a test in module/test/settings/gateway-url-guard.test.ts, driving the handler through the registered `onChange` or hook, in the way module/test/events/offline-setting.test.ts:64 calls `onChange`):
+   - [ ] Client `gatewayUrl` set to `wss://gw.example.com/link#ABCD-EFGH-JKMN` with no world default: the setting ends as `wss://gw.example.com/link`, and `pair('ABCD-EFGH-JKMN')` is called once, after the write resolved. The test asserts the order.
+   - [ ] The same paste when the world default is `wss://gw.example.com/link`: the client setting ends as `''`, and `pair` is called once.
+   - [ ] Client `gatewayUrl` set to an invalid invite string, or to a value with credentials or a fragment that does not parse as an invite: the setting ends as `''`; `pair` and `start` are not called; one notification is shown, and its text does not contain the input.
+   - [ ] Client `gatewayUrl` set to a plain valid address (for example `ws://gw`): the handler does not write and does not notify.
+   - [ ] World `defaultGatewayUrl` set by a GM to `wss://gw.example.com/link#ABCD-EFGH-JKMN`: the stored value ends as `wss://gw.example.com/link`; `pair` is not called; one warning is shown, and it does not contain the code. If a pre-save hook is used, the test asserts the data passed on to the write has no `#`.
+   - [ ] World `defaultGatewayUrl` set to an invalid value (for example `http://gw.example.com` or `ws://gw.example.com`): the stored value ends as `''`, with one notification that does not contain the input.
+   - [ ] World `defaultGatewayUrl` handler on a non-GM client: no setting write and no notification.
+   - [ ] Neither handler writes again when called with the value it just wrote (no loop): the test counts `game.settings.set` calls.
+   - [ ] After every case above, no stored setting value contains `#`. Each test asserts this.
+
+2. **module/test/settings/main.test.ts (STYLE).** Accepted: adding `defaultGatewayUrl` makes 13 registered settings, so the assertion at :13 must change from 12 to 13. Owns adds module/test/settings/main.test.ts, limited to that count (and to any further count change this amendment's registrations cause, if a hook registration is counted there).
+
+3. **`clientUsable` credentials regex (P3).** In spec: the acceptance item "A client value with a fragment or credentials is never returned as a connectable URL" already covers `ws:\\u:p@host`, `ws:/u:p@host` and `ws:u:p@host`. The implementer fixes module/src/link/gateway-url.ts in round 1 without a `URL` global, and adds those three inputs to module/test/link/gateway-url.test.ts as cases that are not returned with `source: 'client'`.
+
+4. **gateway/test/bin/invite-cli.test.ts environment (NOTE).** Not this task. Residual for a follow-up: its spawn helper (:33) inherits `process.env` and does not blank `AGENT_GATEWAY_PUBLIC_URL`, so the "bare code" test fails in a shell where that variable is set. The file stays outside Owns.
+
+The second NOTE (an invalid client value falls back to the world default) needs no change: with item 1, an invalid client value is reset to `''` as soon as it is written, so the fallback applies only to values stored before this task.
