@@ -1,5 +1,6 @@
 import { createEventRepository, type EventRepository } from '../events/repository.js';
 import { createQueueRepository, type QueueRepository } from '../offline-queue/repository.js';
+import { createOAuthRepository, type OAuthRepository } from '../oauth/repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
 import { MIGRATIONS } from './migrations/index.js';
@@ -30,8 +31,10 @@ export interface NewPairing {
 export interface Store {
   readonly events: EventRepository;
   readonly queue: QueueRepository;
+  readonly oauth: OAuthRepository;
   isPairingActive(id: string, worldId: string, userId: string): boolean;
-  onPairingRevoked(listener: () => void): () => void;
+  /** Called after a pairing is revoked, with the revoked row; in the process that revoked it. */
+  onPairingRevoked(listener: (pairing: PairingRow) => void): () => void;
   createPairing(p: NewPairing): PairingRow;
   findPairingByHash(tokenHash: string): PairingRow | undefined;
   /** Pairings that are not revoked. */
@@ -93,7 +96,7 @@ export function openStore(
     db.close();
     throw err;
   }
-  const revokedListeners = new Set<() => void>();
+  const revokedListeners = new Set<(pairing: PairingRow) => void>();
   const insert = db.prepare(
     'INSERT INTO pairings (id, token_hash, world_id, user_id, user_name, created_at, origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
@@ -110,9 +113,15 @@ export function openStore(
   const putSettingIfAbsent = db.prepare(
     'INSERT OR IGNORE INTO gateway_settings (key, value) VALUES (?, ?)',
   );
+  const oauth = createOAuthRepository(db);
+  // Grants die with their pairing, in whichever process revokes it (the gateway or a CLI).
+  revokedListeners.add((p) => {
+    oauth.revokeGrantsFor(p.worldId, p.userId, now());
+  });
   return {
     events: createEventRepository(db),
     queue: createQueueRepository(db),
+    oauth,
     onPairingRevoked(listener) {
       revokedListeners.add(listener);
       return () => {
@@ -136,7 +145,10 @@ export function openStore(
     },
     revokePairing(id) {
       const changed = Number(revoke.run(now(), id).changes) > 0;
-      if (changed) for (const listener of revokedListeners) listener();
+      if (changed) {
+        const row = toRow(byId.get(id) as unknown as Row);
+        for (const listener of revokedListeners) listener(row);
+      }
       return changed;
     },
     getHttpTokenHash() {

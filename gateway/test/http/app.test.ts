@@ -321,9 +321,9 @@ describe('--http in the app', () => {
     const state = tempState();
     cleanups.push(state.cleanup);
     if (version < 0) {
-      // A real version-8 db: everything but the last migration applied.
+      // A real version-8 db: everything before 009 (gateway_settings) applied.
       const db = new DatabaseSync(state.db);
-      applyMigrations(db, MIGRATIONS.slice(0, -1));
+      applyMigrations(db, MIGRATIONS.slice(0, 8));
       db.close();
     } else {
       const db = new DatabaseSync(state.db);
@@ -340,7 +340,7 @@ describe('--http in the app', () => {
     expect(r.stderr).toContain('old token is unchanged');
     const after = new DatabaseSync(state.db);
     expect(after.prepare('PRAGMA user_version').get()).toEqual({
-      user_version: version < 0 ? MIGRATIONS.length - 1 : version,
+      user_version: version < 0 ? 8 : version,
     });
     expect(
       after.prepare("SELECT name FROM sqlite_master WHERE name = 'gateway_settings'").all(),

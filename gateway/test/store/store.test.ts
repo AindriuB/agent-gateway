@@ -142,8 +142,8 @@ describe('store', () => {
     }
   });
 
-  it('has nine migrations', () => {
-    expect(MIGRATIONS).toHaveLength(9);
+  it('has ten migrations', () => {
+    expect(MIGRATIONS).toHaveLength(10);
   });
 
   it('migrates a version 6 database with one pairing: origin reads back null, and 008 revokes it', () => {
@@ -167,7 +167,7 @@ describe('store', () => {
     expect(s.listActivePairings()).toEqual([]);
     s.close();
     const check = new DatabaseSync(path);
-    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 });
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 10 });
     check.close();
   });
 

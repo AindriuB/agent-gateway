@@ -1,6 +1,6 @@
 # Completed task contracts
 
-These 40 contracts have merged implementations and recorded evidence. Task 19's
+These 41 contracts have merged implementations and recorded evidence. Task 19's
 successful native Undo UI evidence and its bounded scope are explicit in PLAN. Active,
 queued and blocked work stays in `../tasks/`; task 18 is explicitly blocked.
 Earlier tasks 01–12 were retired before this archive convention and remain in

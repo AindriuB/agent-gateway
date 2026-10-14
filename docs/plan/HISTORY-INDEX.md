@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 35 | OAuth 2.1 authorization server: metadata, registration, PKCE flow, audience-bound tokens, scopes filtered before the module call, grants die with their pairing; consent auto-deny until 67 | `## 2026-10-14 — Gateway OAuth 2.1 authorization server (task 35)` |
 | 2026-10-14 | 42 | server-mode Docker image, Compose stack with Caddy (80/443 only), local image build in release script, `--push-image` refused | ## 2026-10-14 — Server-mode Docker image and Compose stack with Caddy (task 42) |
 | 2026-10-14 | 74 | Public URL, server mode, host allowlists, per-client limits, selector seam, WAL and `--backup` | `## 2026-10-14 — Remote-exposure foundation: public URL, server mode, per-client limits, WAL and backup (task 74)` |
 | 2026-10-14 | 66 | 0.1.0 private draft release cut by the release script (gates passed, v13 e2e skipped, npm dry run, repo private); clean-clone install check passed; publication deferred until MVP B; manual Foundry/Desktop checks pending | ## 2026-10-14 — 0.1.0 private draft release cut; publication deferred until MVP B (task 66) |

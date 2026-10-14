@@ -55,6 +55,13 @@ export interface SessionServerOptions {
    * not connected is told to ask the gateway operator for one instead.
    */
   askOperator?: boolean;
+  /**
+   * Tool categories this session may list and call (OAuth scopes, permission layer 1). Absent
+   * means unrestricted. `gateway_status` is always available.
+   */
+  allowedCategories?: readonly ToolDefinition['category'][];
+  /** Category of an announced tool in the persisted offline catalog; used only for scoped sessions. */
+  offlineCategory?: (owner: QueueOwner, name: string) => string | undefined;
   /** Clock for the re-bind grace period and notice limit; injectable for tests. */
   now?: () => number;
 }
@@ -202,7 +209,12 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     eventOwner ??= owner;
     return eventOwner;
   };
-  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
+  const allowed = opts.allowedCategories ? new Set<string>(opts.allowedCategories) : undefined;
+  const inScope = (category: string | undefined): boolean =>
+    !allowed || (category !== undefined && allowed.has(category));
+  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] =>
+    unscopedVisibleFor(conn).filter((t) => inScope(t.definition.category));
+  const unscopedVisibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
     const modules = moduleVisibleFor(conn);
     if (!opts.events || !binding.pair) return modules;
     try {
@@ -321,6 +333,32 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       );
     }
     if (r.kind === 'unbound') return notConnected();
+    // Scopes come before the event tools, the offline queue and the module call. A pack tool's
+    // category comes from the connected user's announcement, or, offline, from the persisted
+    // queue catalog; a tool in neither has an unknown category and fails closed.
+    if (allowed) {
+      let category: string | undefined =
+        all.find((t) => t.name === req.params.name)?.category ??
+        moduleVisibleFor(r.conn).find((t) => t.definition.name === req.params.name)?.definition
+          .category;
+      if (category === undefined && !r.conn && opts.queue && opts.offlineCategory) {
+        try {
+          category = opts.offlineCategory(opts.queue.owner(r.pair, queueOwner), req.params.name);
+        } catch {
+          category = undefined;
+        }
+      }
+      if (category === undefined)
+        return failure(
+          'FORBIDDEN',
+          `The category of this tool is unknown, so this token's scopes cannot allow it: ${req.params.name}`,
+        );
+      if (!inScope(category))
+        return failure(
+          'FORBIDDEN',
+          `This token lacks the ${category} scope needed for ${req.params.name}`,
+        );
+    }
     if (gatewayTool && opts.events) {
       const parsed = gatewayTool.input.safeParse(req.params.arguments ?? {});
       if (!parsed.success) return failure('INVALID_ARGS', parsed.error.message);

@@ -15,6 +15,7 @@
 - gateway/test/http/oauth-*.test.ts (new)
 - gateway/test/mcp/scopes.test.ts (new)
 - gateway/package.json and package-lock.json (dependency insertions only, if any; prefer none)
+- gateway/test/http/app.test.ts, gateway/test/store/retire-legacy-pairings.test.ts and gateway/test/store/store.test.ts (migration-count and slice-index assertions forced by migration 010 only; post-review amendment 1)
 
 ## Goal
 Let cloud-hosted MCP clients (claude.ai, ChatGPT, the Gemini app) reach a gateway behind a public URL. Implement OAuth 2.1: authorization code with S256 PKCE, dynamic client registration, short-lived access tokens stored hashed, rotating refresh tokens, and audience binding to the public URL. Each token is bound to one (world, user) grant and a set of scopes. Scopes are permission layer 1. The consent step stays an auto-deny placeholder until 67.
@@ -56,6 +57,29 @@ Defaults: follow them unless the PR shows a reason not to.
 - (h) **Grants die with their pairing.** `onPairingRevoked` listeners (store.ts:34, :105-110, :126-130) receive the revoked `PairingRow`; the existing listeners (events/buffer.ts:60, offline-queue/service.ts:46) ignore it. `openStore` subscribes the oauth repository, so revoking a pairing revokes every grant for that row's (world, user) and their access and refresh tokens. This happens in whichever process revokes: the gateway, or a one-shot CLI such as 68's `--revoke-pairing`. 68's invite replacement and 67's flows rely on it.
 - (g) **Consent step interface.** `ConsentStep.decide(request) → Promise<{ approve: { worldId, userId, scopes } } | { deny: string }>`. This PR ships `AutoDenyConsent`, which redirects with `error=access_denied`. Tests inject an approving step. 67 replaces the default.
 
+## Amendments (code review, Andrew 2026-10-14)
+**Post-review amendments.** These were recorded after review round 1 and before any further code change. They add to the Decisions and Acceptance above and withdraw nothing there.
+
+1. **Owns.** Adds gateway/test/http/app.test.ts, gateway/test/store/retire-legacy-pairings.test.ts and gateway/test/store/store.test.ts, limited to the migration-count and slice-index assertions that migration 010 forces. **Standing rule (Andrew):** any task that adds a migration may update those migration-count assertions. Tasks 68 and 38 carry the same line in their Owns.
+
+2. **Decision (k): offline pack tools under scoped tokens (Andrew).** When the world is offline, a scoped session takes a pack tool's category from the persisted queue catalog (`store.queue.catalog(owner)`, gateway/src/offline-queue/service.ts:92, :133). An unrestricted session uses the same source.
+   - If the token's scopes allow that category, the call goes to the offline queue exactly as it would for an unrestricted session.
+   - If they do not, the call returns `FORBIDDEN` with a message naming the missing category, and nothing is queued.
+   - A tool unknown to the catalog still fails closed with `FORBIDDEN`. Its message says the tool's category is unknown and does not claim a scope is missing.
+
+3. **Review round 1 findings to fix.** All are within the spec and routed to the implementer.
+   - **P3, refresh scope.** A refresh with a narrower `scope` reports the narrower scope, while the new access token keeps every grant scope (gateway/src/oauth/server.ts:465-475; `authenticate` reads `grant.scopes`). Fix it in one of two ways and say in the PR which: return `grant.scopes` in the token response, or refuse a `scope` that differs from the grant's with `invalid_scope`.
+   - **Revocation atomicity.** `revokeGrantsFor` opens its own `BEGIN IMMEDIATE`. Inside an open transaction, which 68's will be, it throws "cannot start a transaction within a transaction". When the oauth listener throws, the events and queue listeners do not run. Switch the oauth repository's `tx` to `SAVEPOINT`/`RELEASE`, with `ROLLBACK TO` on error, so that it works inside and outside a transaction.
+
+Acceptance added by these amendments:
+- [ ] (k) A `read write` token, world offline, an announced `write` pack tool in the catalog: the call is queued and returns `pending_approval`.
+- [ ] (k) A `read`-only token, the same tool and world state: `FORBIDDEN`, the message names the `write` category, and the queue table gains no row.
+- [ ] (k) A pack tool absent from the catalog, world offline: `FORBIDDEN`, the message says the category is unknown, and nothing is queued.
+- [ ] (P3) A refresh request with a `scope` narrower than the grant either gets `invalid_scope` or gets a response whose `scope` equals the grant's scopes. Either way, the reported scope matches what the new access token can do (test).
+- [ ] (Atomicity) `revokeGrantsFor` succeeds when called outside a transaction and when called inside an open `BEGIN IMMEDIATE`. In the nested case, rolling back the outer transaction also undoes the revocation (tests).
+- [ ] (Atomicity) Listener ordering: `revokePairing` (or 68-style revocation inside an open transaction) runs the oauth listener and still runs the events and queue revocations. A test asserts all three effects.
+- [ ] Changes to the three test files in amendment 1 are only migration-count and slice-index assertions (`git diff main` on them shows nothing else).
+
 ## Acceptance
 Metadata and registration:
 - [ ] With `--public-url https://gw.example.com`, `GET /.well-known/oauth-authorization-server` returns RFC 8414 metadata with `issuer` `https://gw.example.com` and `authorization_endpoint`, `token_endpoint` and `registration_endpoint` under it, `code_challenge_methods_supported: ["S256"]` and `scopes_supported` listing the four scopes. `GET /.well-known/oauth-protected-resource` returns `resource: "https://gw.example.com/mcp"` and `authorization_servers: ["https://gw.example.com"]`. Without `--public-url`, both return 404.
@@ -96,3 +120,18 @@ End to end:
 - Token introspection and the RFC 7009 revocation endpoint.
 - Docker and Caddy (42), and client setup guides (43).
 - Audit-trail entries for OAuth events (35b).
+
+## Outcome (2026-10-14)
+
+Branch `claude/task-35`, PR pending Andrew. Commits: 55be59c (store, server, scope filter, routes), a92ec43 (metadata, registration and flow tests), 2e8cfc7 (binding, limits, scopes, SDK end-to-end tests, migration counts), aa638a8 (plan amendments), 168c6cd (review round 1 fixes). Re-review was CLEAN with no drift. `npm run verify` passed (4247 fast + 2227 slow, lint clean) and the reviewer approved every acceptance criterion, including decision (k), the refresh-scope P3 and SAVEPOINT revocation.
+
+The refresh-scope P3 was resolved by returning `grant.scopes` in the token response, so the reported scope equals what the new access token can do. The alternative, `invalid_scope`, was not used.
+
+Owns changes, approved:
+- `gateway/src/app.ts` gained the `offlineCategory` callback in `sessionOptions` (`gateway/src/app.ts:551-552`), which decision (k) requires. This widens the app.ts Owns line.
+- The formatter reflowed the `MIGRATIONS` array in `gateway/src/store/migrations/index.ts`. No entry changed.
+
+Known residuals and follow-ups:
+- P3 (optional): the listener-ordering test at `gateway/test/oauth/atomicity.test.ts:91-126` still passes with the SAVEPOINT fix reverted. Only the nested `BEGIN IMMEDIATE` test guards the fix.
+- `gateway/src/store/store.ts:116-119`: `revokePairing` runs its listeners in sequence with no per-listener isolation. If the oauth listener throws, the events and queue revocations are skipped. Task 68 uses `revokePairing` and should decide whether to isolate listeners.
+- A SAVEPOINT outside a transaction starts a deferred transaction, so a concurrent writer (68's CLI) can get SQLITE_BUSY_SNAPSHOT without the busy_timeout wait. Separately, `ROLLBACK TO` can mask the original error if SQLite has already rolled back the outer transaction. Both are rare; 68 should keep them in mind.

@@ -8,7 +8,7 @@
 - gateway/test/oauth/consent/**
 - gateway/src/oauth/grants/**
 - gateway/test/oauth/grants/**
-- gateway/src/oauth/** (replace 35's `AutoDenyConsent` default with the real consent step, and add the revoke path; no other change)
+- gateway/src/oauth/** (replace 35's `AutoDenyConsent` default with the real consent step, add the revoke path, and add the token retention sweep from the Amendments, which runs from inside the OAuth server; no other change)
 - gateway/src/http/** (mount the consent routes only)
 - gateway/src/link/grants.ts (new: handles the grant and consent-code link messages)
 - gateway/src/link/server.ts (insertions only: route the grant and consent messages to `grants.ts`)
@@ -52,6 +52,13 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
   There are no external assets and no inline script.
 - **No pairing code.** The consent page, its errors and the redirect never contain a pairing code. The consent code is separate from pairing codes (its own generator and store) and reaches only the chosen user's Foundry client over that user's link.
 - **No user enumeration. Approved by Andrew, 2026-10-14.** The original contract listed every connected (world, user) pair on the page. Anyone on the internet can reach the page after an open DCR, so that would publish who is online. Instead the page asks for the world and the Foundry user name. Whether or not that user is connected, it answers with the same text: "If that user is online in that world, a code was sent to their Foundry window". It then shows the code field. Scopes are checkboxes as before.
+- **Approval is never a bare GET (from 35's code review, Andrew 2026-10-14).** 35's `GET /authorize` mints a grant whenever the consent step approves. So the real consent step must never approve during a GET. Approval is a state change and happens only on the POST covered by the CSRF amendment, or an equivalent protection.
+- **Token retention (from 35's code review, Andrew 2026-10-14).** 35 never deletes rows from `oauth_codes`, `oauth_tokens` or revoked `oauth_grants`. This task adds a bounded retention sweep, using no migration, that deletes:
+  - expired codes;
+  - access and refresh tokens that expired or were revoked, once they are past their TTL;
+  - revoked grants that have no live tokens.
+
+  Each sweep run deletes at most a named-constant number of rows, so storage cannot grow without limit and a single run cannot do unbounded work.
 
 ## Acceptance
 - [ ] The user is resolved by Foundry user id, or by recorded name only when exactly one active pairing in that world has that name. A name shared by several pairings, which is possible because the name comes from the module's `hello` and is self-reported (threat T14), resolves to nobody: no code is sent, and the answer is the same text as for an unknown user (test with two pairings named `Gamemaster`).
@@ -66,6 +73,8 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 - [ ] Grants also die with their pairing: revoking or replacing a (world, user)'s pairing (68's `--revoke-pairing` or invite replacement) revokes that pair's grants through 35's `onPairingRevoked` subscription (35 decision h). This task adds no second path. A test revokes the pairing and asserts that the grants app then lists nothing for that user, and that the old token gets 401.
 - [ ] The page is plain server-rendered HTML with no external assets. Untrusted text (the client name from DCR, and the typed world and user) is escaped, tested with a `<script>` client name.
 - [ ] A grants app in module settings shows the current user's grants with a Revoke button. `module/test/apps/grants/**` covers list and revoke, strings are localized, and the module sends no grant message to a gateway older than this task's version (test).
+- [ ] A `GET /authorize`, with any query (including a valid pending consent request id), never creates an `oauth_grants` row or issues a code. Only the CSRF-checked POST approves (test counts grant rows before and after the GET).
+- [ ] Retention sweep: with an injectable clock, a run deletes expired codes, expired or revoked tokens past their TTL, and revoked grants with no live tokens. It keeps live tokens, their grants, and revoked rows still within TTL. A run deletes at most the named per-run cap, and the rest goes on the next run (tests).
 - [ ] No new file under gateway/src/store/migrations/.
 - [ ] Manual check: the MCP Inspector OAuth flow through the consent page against foundry.local v14, with the gateway's `--public-url` set (through 42's Compose stack if it has landed). Screenshots in the PR.
 - [ ] `npm run verify` passes.

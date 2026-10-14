@@ -25,6 +25,7 @@ import {
   SELF_PROTECT_RPS,
 } from './config/index.js';
 import { HttpServer, loadOrCreateToken } from './http/index.js';
+import { OAuthServer, type ConsentStep } from './oauth/index.js';
 import { createDegradedServer } from './mcp/degraded.js';
 import { createSessionServer } from './mcp/session.js';
 import type { UserSelector } from './routing/index.js';
@@ -108,6 +109,8 @@ export interface AppDeps {
     setTimer: (fn: () => void, ms: number) => unknown;
     clearTimer: (handle: unknown) => void;
   };
+  /** The OAuth consent step (public mode). Defaults to auto-deny until the consent page (67). */
+  oauthConsent?: ConsentStep;
   /** Overrides for the HTTP limits; tests shorten them. */
   httpLimits?: Partial<{
     maxRequestBytes: number;
@@ -545,6 +548,8 @@ export function createApp(config: Config, deps: AppDeps): App {
           userName: p.userName,
         })) ?? [],
       log: writeStatus,
+      offlineCategory: (o: Parameters<Store['queue']['catalog']>[0], name: string) =>
+        store?.queue.catalog(o)?.find((t) => t.name === name)?.category,
       ...(isPublic
         ? { askOperator: true }
         : {
@@ -582,11 +587,18 @@ export function createApp(config: Config, deps: AppDeps): App {
     const startHttp = async (): Promise<void> => {
       // A public gateway has no static bearer: remote clients sign in with OAuth (task 35).
       const token = isPublic ? undefined : loadOrCreateToken(openedStore());
+      const oauth = isPublic
+        ? new OAuthServer({
+            repo: openedStore().oauth,
+            publicUrl,
+            ...(deps.oauthConsent ? { consent: deps.oauthConsent } : {}),
+          })
+        : undefined;
       const lim = deps.httpLimits ?? {};
       const candidate = new HttpServer({
         host: httpHost,
         port: config.httpPort,
-        ...(token ? { token } : { authenticate: () => undefined }),
+        ...(token ? { token } : oauth ? { oauth } : { authenticate: () => undefined }),
         ...(isPublic ? { publicUrl, trustProxy } : {}),
         registry,
         version: deps.version,
@@ -606,6 +618,13 @@ export function createApp(config: Config, deps: AppDeps): App {
                       user: principal.selector.userId,
                       exactId: true,
                     },
+                  }
+                : {}),
+              ...(principal.scopes
+                ? {
+                    allowedCategories: principal.scopes as readonly (
+                      'read' | 'write' | 'destructive' | 'code'
+                    )[],
                   }
                 : {}),
             }),
