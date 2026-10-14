@@ -170,3 +170,14 @@
   letter-spacing: 0.2em;
   text-align: center;
 }
+
+/* Link state on the current user's Players-list row (task 87). */
+.agent-gateway-indicator {
+  display: block;
+  font-size: 0.75em;
+  line-height: 1.3;
+  opacity: 0.85;
+}
+.agent-gateway-indicator[data-state='needsPairing'] {
+  font-weight: bold;
+}

@@ -11,6 +11,7 @@ import {
   startLink,
   stopLink,
 } from './link/runtime.js';
+import { installStatusIndicator } from './link/status-indicator.js';
 import { onPolicyChange } from './policy/store.js';
 import { registerSettings } from './settings/index.js';
 
@@ -39,9 +40,17 @@ Hooks.once('ready', () => {
   });
   onPolicyChange(refreshToolset);
   startLink();
+  installStatusIndicator(getLinkClient());
   const g = globalThis as {
     addEventListener?: (t: string, f: (e: { persisted?: boolean }) => void) => void;
+    window?: { addEventListener?: (t: string, f: () => void) => void };
+    document?: { addEventListener?: (t: string, f: () => void) => void; visibilityState?: string };
   };
+  // The network or the tab came back: do not wait out a throttled backoff timer.
+  g.window?.addEventListener?.('online', () => getLinkClient().retryNow());
+  g.document?.addEventListener?.('visibilitychange', () => {
+    if (g.document?.visibilityState === 'visible') getLinkClient().retryNow();
+  });
   let wasActive = false;
   g.addEventListener?.('pagehide', () => {
     wasActive = isLinkActive();
