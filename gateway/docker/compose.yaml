@@ -1,0 +1,44 @@
+# Agent Gateway in server mode behind Caddy (TLS). Copy .env.example to .env first.
+# Caddy shares the gateway's network namespace, so the gateway stays bound to 127.0.0.1
+# and the only published ports are Caddy's 80 and 443 (published on the gateway service).
+name: agent-gateway
+
+services:
+  gateway:
+    image: foundry-agent-gateway:${GATEWAY_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      AGENT_GATEWAY_SERVER_MODE: "1"
+      AGENT_GATEWAY_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
+      AGENT_GATEWAY_TRUST_PROXY: "1"
+      AGENT_GATEWAY_ALLOW_ORIGIN: ${FOUNDRY_ORIGIN:?set FOUNDRY_ORIGIN in .env}
+      AGENT_GATEWAY_DB: /data/gateway.db
+      AGENT_GATEWAY_LOG_LEVEL: ${AGENT_GATEWAY_LOG_LEVEL:-info}
+    volumes:
+      - gateway-data:/data
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    network_mode: "service:gateway"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  gateway-data:
+  caddy-data:
+  caddy-config:

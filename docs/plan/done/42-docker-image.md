@@ -96,3 +96,32 @@ Release:
 ## History
 - 2026-10-13 MVP split: depends was `38, 41, 36`. 41's MVP A scope moved to 64; the server-mode flag came from 68.
 - 2026-10-14 re-plan: depends is `64, 74`. Flags and env keys come from 74. Compose with Caddy terminates TLS, and the gateway stays on 127.0.0.1. Headless moved to 37, and pairing confirmation (68) is no longer a prerequisite, so the image ships first for the friend test.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 77f4c2d (code-reviewer, 2026-10-14). All routed to implementer.
+
+- [P1] gateway/Dockerfile:21-23 — the build stage's `npm ci --workspace protocol --workspace gateway` omits the root devDependencies (typescript, @types/node), so both builds fail with `tsc` not found and `docker build -f gateway/Dockerfile .` cannot succeed. Fix: add `--include-workspace-root` to that `npm ci` (verified in scratch).
+- [P2] gateway/Dockerfile:34 with gateway/docker/README.md "Backup while running" — the documented backup writes to `/data/backups/<date>.db`, but nothing creates `/data/backups` and `--backup` does not mkdir (gateway/src/bin/cli.ts:113). A fresh stack's first backup fails with ENOENT. Fix: create `/data/backups` owned by `node` in the image next to `mkdir /data`, or a `mkdir -p` README step. No gateway source change.
+- [P3, optional] gateway/docker/README.md HTTP_PORT/HTTPS_PORT with compose.yaml:23-24 — moving the HTTPS port makes browsers send `Host: <domain>:<port>`, which does not match `AGENT_GATEWAY_PUBLIC_URL=https://${DOMAIN}` (exact host:port, gateway/src/http/public-url.ts:13), so the link and /mcp refuse. Fix: remove the knob, or document that it cannot be used with a public URL.
+- [NOTE] compose.yaml:28 network_mode "service:gateway" with restart: Caddy can be left in a dead namespace after a gateway auto-restart; one README line or a Caddy healthcheck.
+- [NOTE] docs/server-mode.md "Pairing" reads backwards for an operator deploying before task 68.
+- [NOTE] scripts/release.mjs:111-116 — releases now need a running Docker daemon when gateway/Dockerfile exists.
+
+## Outcome
+
+Done on branch `claude/task-42` (HEAD fb4435a, based on `origin/main` 0fa6581), 2026-10-14. Review round 1 found P1 (the build stage lacked the root devDependencies, so the image could not build), P2 (`/data/backups` did not exist, so the first backup failed) and P3 (the `HTTPS_PORT` knob breaks the public-URL Host check). All three were fixed in fb4435a and the re-review was clean with no drift.
+
+Real Docker smoke test (Docker 29.4.0 on OrbStack, started with Andrew's approval):
+- The build succeeded at 375 MB; `--version` printed 0.1.0; server mode was healthy with no stdin; `/data` is 0700 and owned by `node`.
+- The compose stack on host ports 18480 and 18443 got a Caddy local certificate; `/status` was minimal; a fake bearer got 401; `--backup` worked through `compose exec`.
+- A raw ws client paired over `wss://.../link` through Caddy and received a welcome.
+- Cleanup was complete: no `ag-smoke` containers, images, volumes or networks remain.
+
+`/verify`: tester PASS (`npm run verify` twice, 4,182 fast and 2,227 slow tests; `test:scripts` 34 including 3 docker-release; mcpb 6/6; `compose config -q` ok; the real gateway was untouched). Acceptance reviewer APPROVE.
+
+Suggestions not fixed: the README's revoke, cancel and list bullets should each carry "(after task 68)"; `GATEWAY_VERSION` (the compose image tag) is undocumented; a Caddy healthcheck could reveal a stranded network namespace.
+
+Notes: releases now need a running Docker daemon when `gateway/Dockerfile` exists. A `gateway-data` volume created before the P2 fix will not have `/data/backups`.
+
+Pending (Andrew): the manual check on a real VPS.

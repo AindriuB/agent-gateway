@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!protocol/
+!module/package.json
+!gateway/
+protocol/dist
+gateway/dist
+**/node_modules
+**/*.tsbuildinfo
+gateway/docker
+gateway/Dockerfile*
