@@ -156,40 +156,7 @@ it('revoking a legacy credential whose migration write failed clears the legacy 
   expect(settings.pairingCredential).toBe('');
 });
 
-it('keeps a code-issued token in memory when storage is full, and warns once without it', async () => {
-  settings = { gatewayUrl: X };
-  failWrites = true;
-  const c = await boot();
-  c.pair('CODE-1');
-  const ws = FakeWs.all[0]!;
-  ws.onopen();
-  ws.recv({ ...welcome(), pairingToken: 'newTok' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(c.state.kind).toBe('connected');
-  ws.onclose({ code: 1006 });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(c.state).not.toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
-  const ws2 = FakeWs.all[1]!;
-  expect(ws2).toBeDefined();
-  ws2.onopen();
-  expect(ws2.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
-  ws2.recv(welcome());
-  await vi.advanceTimersByTimeAsync(0);
-  const warn = (globalThis as any).ui.notifications.warn;
-  expect(warn).toHaveBeenCalledTimes(1);
-  c.pair('CODE-2');
-  const ws3 = FakeWs.all[FakeWs.all.length - 1]!;
-  ws3.onopen();
-  ws3.recv({ ...welcome(), pairingToken: 'newTok2' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(warn).toHaveBeenCalledTimes(1);
-  expect(JSON.stringify(warn.mock.calls)).not.toContain('newTok');
-  expect(warn.mock.calls[0][0]).toBe('L:AGENT_GATEWAY.Link.storageFull');
-});
-
-async function pairWithFullStorage(token = 'newTok') {
-  settings = { gatewayUrl: X };
-  failWrites = true;
+async function codePair(token: string) {
   const c = await boot();
   c.pair('CODE-1');
   const ws = FakeWs.all[0]!;
@@ -197,184 +164,60 @@ async function pairWithFullStorage(token = 'newTok') {
   ws.recv({ ...welcome(), pairingToken: token });
   await vi.advanceTimersByTimeAsync(0);
   expect(c.state.kind).toBe('connected');
-  return c;
-}
-
-it('a rejected code falls back to the in-memory session token', async () => {
-  const c = await pairWithFullStorage();
-  c.pair('BAD');
-  const bad = FakeWs.all[FakeWs.all.length - 1]!;
-  bad.onopen();
-  bad.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(c.state.kind).not.toBe('disconnected');
-  const last = FakeWs.all[FakeWs.all.length - 1]!;
-  expect(last).not.toBe(bad);
-  last.onopen();
-  expect(last.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
-});
-
-it('stop() then resume() reconnects with the session token', async () => {
-  const c = await pairWithFullStorage();
-  c.stop();
-  const n = FakeWs.all.length;
-  c.resume();
-  expect(FakeWs.all.length).toBe(n + 1);
-  const ws = FakeWs.all[n]!;
-  ws.onopen();
-  expect(ws.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'newTok' });
-});
-
-it('sends nothing to a different gateway URL than the session token was issued for', async () => {
-  const c = await pairWithFullStorage();
-  c.stop();
-  settings.gatewayUrl = Y;
-  const n = FakeWs.all.length;
-  c.resume();
-  expect(FakeWs.all.length).toBe(n);
-  expect(c.hasCurrentGatewayToken()).toBe(false);
-  expect(JSON.stringify(FakeWs.all.slice(n).map((w) => w.sent))).not.toContain('newTok');
-});
-
-it.each([
-  ['user', () => ((globalThis as any).game.user = { id: 'u2', name: 'V', role: 1, isGM: false })],
-  ['world', () => ((globalThis as any).game.world = { id: 'w2', title: 'W2' })],
-])('sends nothing when the %s differs from the session token owner', async (_n, change) => {
-  const c = await pairWithFullStorage();
-  c.stop();
-  change();
-  const n = FakeWs.all.length;
-  c.resume();
-  expect(FakeWs.all.length).toBe(n);
-  expect(c.hasCurrentGatewayToken()).toBe(false);
-});
-
-it('unpair clears the session token', async () => {
-  const c = await pairWithFullStorage();
-  expect(c.hasCurrentGatewayToken()).toBe(true);
-  await c.unpair();
-  expect(c.hasCurrentGatewayToken()).toBe(false);
-});
-
-it('a rejected session token is cleared', async () => {
-  const c = await pairWithFullStorage();
-  c.stop();
-  c.resume();
-  const ws = FakeWs.all[FakeWs.all.length - 1]!;
-  ws.onopen();
-  ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(c.hasCurrentGatewayToken()).toBe(false);
-  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
-});
-
-it('a successful later store clears the session token', async () => {
-  const c = await pairWithFullStorage();
-  expect(c.hasCurrentGatewayToken()).toBe(true);
-  failWrites = false;
-  c.pair('CODE-2');
-  const ws = FakeWs.all[FakeWs.all.length - 1]!;
-  ws.onopen();
-  ws.recv({ ...welcome(), pairingToken: 'stored' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(stored()[key(X)].token).toBe('stored');
-  // The stored credential now wins; wipe it so only a stale session token could remain.
-  ls.clear();
-  expect(c.hasCurrentGatewayToken()).toBe(false);
-});
-
-async function repairWithStaleStored() {
-  settings = { gatewayUrl: X };
-  seedMap([X]); // an old, superseded token for the same key
-  failWrites = true;
-  const c = await boot();
-  c.pair('CODE-1');
-  const ws = FakeWs.all[0]!;
-  ws.onopen();
-  ws.recv({ ...welcome(), pairingToken: 'freshTok' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(c.state.kind).toBe('connected');
   return { c, ws };
 }
 
-it('re-pair with failing writes, drop and reconnect sends the new session token, not the stale one', async () => {
-  const { c, ws } = await repairWithStaleStored();
-  ws.onclose({ code: 1006 });
-  await vi.advanceTimersByTimeAsync(60_000);
-  const ws2 = FakeWs.all[FakeWs.all.length - 1]!;
-  expect(ws2).not.toBe(ws);
-  ws2.onopen();
-  expect(ws2.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'freshTok' });
-  void c;
+it('revoking the original code-paired socket after a successful store removes exactly that entry', async () => {
+  settings = { gatewayUrl: X };
+  seedMap([Y]);
+  const { c, ws } = await codePair('newTok');
+  expect(stored()[key(X)].token).toBe('newTok');
+  ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(Object.keys(stored())).toEqual([key(Y)]);
+  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
 });
 
-it('rejecting the session token clears only it, leaving the persisted entry', async () => {
-  const { c } = await repairWithStaleStored();
-  c.stop();
-  c.resume();
-  const ws = FakeWs.all[FakeWs.all.length - 1]!;
-  ws.onopen();
-  expect(ws.sent[0].auth.token).toBe('freshTok');
+it('revoking a socket whose code-pairing store failed touches no persisted entry', async () => {
+  settings = { gatewayUrl: X };
+  seedMap([X, Y]);
+  failWrites = true;
+  const { c, ws } = await codePair('newTok');
   failWrites = false; // so a wrongly attempted removal would really delete the entry
   ws.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
   await vi.advanceTimersByTimeAsync(0);
-  expect(stored()[key(X)]).toBeDefined();
+  expect(Object.keys(stored()).sort()).toEqual([key(X), key(Y)].sort());
   expect(stored()[key(X)].token).toBe(`tok-${X}`);
-  // Only the persisted entry remains, so it is what a later connect presents.
-  c.resume();
-  c.start();
-  const w2 = FakeWs.all[FakeWs.all.length - 1]!;
-  w2.onopen();
-  expect(w2.sent[0].auth.token).toBe(`tok-${X}`);
-  // Its rejection clears the persisted entry.
-  w2.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(stored()[key(X)]).toBeUndefined();
   expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
 });
 
-async function pairOnXThenRejectOnY() {
-  const c = await boot();
-  c.pair('CODE-1');
-  const ws = FakeWs.all[0]!;
-  ws.onopen();
-  ws.recv({ ...welcome(), pairingToken: 'freshTok' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(c.state.kind).toBe('connected');
-  c.stop();
-  settings.gatewayUrl = Y;
-  c.start();
-  const wy = FakeWs.all[FakeWs.all.length - 1]!;
-  wy.onopen();
-  wy.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(c.state).toEqual({ kind: 'disconnected', reason: 'TOKEN_REJECTED' });
-  return { c, wy };
-}
-
-function reconnectOnX(c: Awaited<ReturnType<typeof boot>>) {
-  settings.gatewayUrl = X;
-  c.start();
-  const wx = FakeWs.all[FakeWs.all.length - 1]!;
-  wx.onopen();
-  expect(wx.sent[0].auth).toEqual({ kind: 'pairingToken', token: 'freshTok' });
-}
-
-it('a rejected keyed token for Y leaves the session token for X', async () => {
+it('a failed store then a drop requires pairing again and sends no token hello', async () => {
   settings = { gatewayUrl: X };
-  seedMap([Y]);
   failWrites = true;
-  const { c, wy } = await pairOnXThenRejectOnY();
-  expect(wy.sent[0].auth.token).toBe(`tok-${Y}`);
-  reconnectOnX(c);
+  const { c, ws } = await codePair('newTok');
+  ws.onclose({ code: 1006 });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(c.state).toEqual({ kind: 'disconnected', reason: 'PAIRING_REQUIRED' });
+  expect(c.hasCurrentGatewayToken()).toBe(false);
+  const hellos = FakeWs.all.flatMap((w) => w.sent);
+  expect(JSON.stringify(hellos)).not.toContain('newTok');
+  expect(hellos.filter((h) => h.auth?.kind === 'pairingToken')).toEqual([]);
 });
 
-it('a rejected legacy token for Y leaves the session token for X', async () => {
-  settings = { gatewayUrl: X, pairingCredential: JSON.stringify({ url: Y, token: 'legTok' }) };
+it('a failed store warns once, without the token', async () => {
+  settings = { gatewayUrl: X };
   failWrites = true;
-  const { c, wy } = await pairOnXThenRejectOnY();
-  expect(wy.sent[0].auth.token).toBe('legTok');
-  reconnectOnX(c);
+  const { c } = await codePair('newTok');
+  const warn = (globalThis as any).ui.notifications.warn;
+  expect(warn).toHaveBeenCalledTimes(1);
+  c.pair('CODE-2');
+  const ws2 = FakeWs.all[FakeWs.all.length - 1]!;
+  ws2.onopen();
+  ws2.recv({ ...welcome(), pairingToken: 'newTok2' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(warn.mock.calls)).not.toContain('newTok');
+  expect(warn.mock.calls[0][0]).toBe('L:AGENT_GATEWAY.Link.storageFull');
 });
 
 it("the user's own keyed token wins over the legacy credential, which is left alone", async () => {

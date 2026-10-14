@@ -114,7 +114,7 @@
         "connecting": "Connecting...",
         "connected": "Connected as {user} to {world}"
       },
-      "storageFull": "Agent Gateway is paired for this session only: browser storage is full, so the pairing will not survive a reload.",
+      "storageFull": "Agent Gateway is connected, but browser storage is full, so this pairing will not survive a dropped connection or a reload. You will need to pair again.",
       "pairingInvalid": "The pairing code was not accepted. Check the code printed by the gateway and try again.",
       "pairingRequired": "This gateway has not issued a pairing token to this client. Enter the pairing code printed by the gateway.",
       "tokenRejected": "This browser needs pairing: its saved pairing was not accepted. Ask for a new invite or pairing code and pair again.",
