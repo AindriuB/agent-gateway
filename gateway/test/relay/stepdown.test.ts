@@ -160,7 +160,11 @@ describe('a stepped-down gateway stays alive', () => {
     clis.push(a);
     module.keepAlive();
     modules.push(module);
-    const holds = (c: Cli) => count(c.stderr(), 'holds link port');
+    // Count only the primary's own "Link URL: ... (pid N holds link port P)" banner. A bare
+    // 'holds link port' also matches the standby warning "another gateway holds link port", so a
+    // handover that includes a step-down was counted several times.
+    const holds = (c: Cli) =>
+      (c.stderr().match(/Link URL: .*\(pid \d+ holds link port/g) ?? []).length;
 
     const b = await startCli(port, state.db, [`--allow-origin=${ORIGIN}`]);
     clis.push(b);
@@ -196,16 +200,30 @@ describe('a stepped-down gateway stays alive', () => {
     const status = await a.client.callTool({ name: STATUS_TOOL, arguments: {} });
     expect(JSON.stringify(status.content)).toContain('different settings');
 
-    // Killing C leaves exactly one new primary among the survivors, and both stay alive.
+    // Killing C leaves exactly one primary among the survivors, and both stay alive. A (oldest) may
+    // take the port first and then step down for B (newer, different settings): that handover is
+    // by design, so A may hold once more; B, the newest survivor, always ends as the primary.
     const [ha, hb] = [holds(a), holds(b)];
     process.kill(c.pid, 'SIGKILL');
     await until(() => holds(a) + holds(b) > ha + hb, 40_000, 'a survivor takes over');
-    await sleep(4_000);
-    expect(holds(a) + holds(b)).toBe(ha + hb + 1);
-    const primary = holds(a) > ha ? a : b;
     await until(() => module.ready, 30_000, 'module reconnect');
+    // B's origins are the module's, A's are open: B, the newest survivor, serves the module.
+    expect(await worldInfoEventually(b, 60_000)).toContain('echo:');
+    expect(holds(b)).toBe(hb + 1);
+    expect(holds(a)).toBeLessThanOrEqual(ha + 1);
     for (const x of [a, b]) expect(alive(x.pid)).toBe(true);
-    // B's origins are the module's, A's are open: either way the new primary serves the module.
-    expect(await worldInfoEventually(primary)).toContain('echo:');
+    // A is the standby: it does not serve, and says why. Its stdio proxy may still be reconnecting.
+    const end = Date.now() + 30_000;
+    let standby = '';
+    while (!standby.includes('LINK_UNAVAILABLE')) {
+      standby = await worldInfo(a).then(
+        () => 'served',
+        (err: Error) => err.message,
+      );
+      if (standby === 'served' || Date.now() > end) break;
+      await sleep(250);
+    }
+    expect(standby).toContain('LINK_UNAVAILABLE');
+    expect(standby).toContain('different settings');
   }, 180_000);
 });
