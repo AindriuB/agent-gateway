@@ -274,3 +274,115 @@ FIXED
 DRIFT: none. f63cfac..HEAD changes only what the two round-4 items need: the optional `notifyWarn` dep, `sessionToken` and `storageWarned`, one lang key added, and two tests. No Acceptance item or decision is weakened. Prettier is clean on the changed files.
 
 SCOPE: clean. client.ts (whole file, Amendment 1), runtime.ts, lang/en.json (one line added) and runtime-credentials.test.ts (Amendment 2) are all within Owns.
+
+## Review round 6 — findings (second external review on PR #143; round approved by Andrew pasting the findings, 2026-10-14)
+
+Reviewed HEAD: 077e8dc. Both findings are in-spec and routed to the implementer.
+
+1. [P2] Prefer the newly issued session token over the stale stored token — client.ts:299
+If a user pairs again while localStorage writes fail, the new credential stays in `sessionToken`, but the old persisted token takes precedence. Reconnecting sends the superseded credential; its rejection also clears the valid session fallback. Prefer the matching session token. This violates the reconnect guarantee (Amendment 2); the new quota tests only cover initially empty storage.
+2. [P2] Refresh Unpair visibility when pairing succeeds — pairing/index.ts:139
+Opening the window without a credential omits Unpair. Successful pairing leaves the window open, but state notifications update only status and address text, so Unpair remains unavailable until reopening. Update its visibility on state changes while preserving form inputs, and hide it when the credential is rejected.
+
+## Review round 7 — findings (tests only; Andrew approved, 2026-10-14)
+
+Reviewed HEAD: 2fec6b9. No behaviour defect. Routed to the implementer, as tests only with no change to src behaviour: the P2 test defect and the three P3 missing tests. The NOTEs are not adopted.
+
+VERDICT: FIX
+
+The code at HEAD behaves correctly in every combination I checked, and I found no behaviour bug. Both external round 6 P2s are fixed, and the fix commit has no drift. The verdict is FIX because of one P2 test defect: the test written for round 6 finding 1 claims to guard a property that it cannot detect. Three related precedence mutants also survive, and one of them is the mutant the implementer called equivalent. It is not equivalent.
+
+FINDINGS
+- [P2] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-89/module/test/link/runtime-credentials.test.ts:311-332 — The test 'rejecting the session token clears only it, leaving the persisted entry' does not guard what its name says. `failWrites` is still `true` when the `reject` arrives, so `credentials().remove()` would fail without error even if the client tried to remove the stale entry. The assertion at :320 passes either way. The tail is the same: the comment at :327 says "Its rejection clears the persisted entry", but nothing checks `stored()`, and `failWrites = false` at :330 comes after the reject.
+  route: implementer — set `failWrites = false` before each `reject`. At :320, assert that the entry is still present. After the second reject, assert `stored()[key(X)]` is undefined.
+  input: mutate client.ts:753 to `else if (this.authSource === 'session') { this.sessionToken = null; await this.deps.setToken(null, this.helloOwner ?? undefined); }`. A rejected session token then also deletes the persisted entry, which breaks "only the credential that was sent is stale".
+  proof: with that mutant, all 9 link and app files pass (176/176). A scratch probe that is the same test with `failWrites = false` before the reject fails on the mutant and passes at HEAD.
+
+- [P3] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-89/module/src/link/client.ts:752-754 — The implementer called "a rejected keyed token also clears the session token" equivalent. It is not. Precedence makes the session token and the keyed token mutually exclusive only for the same URL. After a gateway change, a keyed entry for Y is presented while a session token for X is still held. The same applies to the legacy branch: the mutant "a rejected legacy token also clears the session token" also survives 176/176.
+  route: implementer — add a test for each rejection that asserts the session token for the other gateway survives.
+  input: localStorage holds only Y's entry, and writes fail. On X, `pair('CODE-1')` then `welcome{pairingToken:'freshTok'}` creates a session token for X. Set the gateway to Y and call `start()`; the hello carries `tok-Y`; Y sends `reject PAIRING_INVALID`. Set the gateway back to X and call `start()`.  →  HEAD sends `freshTok` to X. The mutant has cleared the session token, so X needs a new pairing code and the window loses Unpair.
+  proof: that sequence as a scratch probe passes at HEAD and fails on the mutant. With the mutant, the 9 files pass 176/176.
+
+- [P3] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-89/module/src/link/client.ts:324-332 — No test checks that the user's own token (keyed or session) wins over the legacy credential. Swapping the order in `tokenFor` so legacy is checked first passes all 176 tests in the 9 files. That swap brings back the bug that started this task: user B is sent A's shared token while B holds its own entry, the gateway rejects it, the legacy setting is cleared, and A loses its pairing.
+  route: implementer — add a test with B's keyed entry and A's legacy credential, both for the current gateway. Assert that the hello carries B's token and that `pairingCredential` is unchanged.
+  input: `seedMap([X])` plus `pairingCredential = {url: X, token: 'legTok'}`, then `start()` and `onopen`.  →  The mutant sends `legTok`. HEAD sends `tok-X`.
+  proof: legacy-first mutant, 176/176 pass.
+
+- [NOTE] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/task-89/module/test/apps/pairing-one-per-user.test.ts:132,148 — `input` is not reachable from `app.element`, so `expect(input.value).toBe('typed')` can never fail. The real guard is `render` not being called, and that one works: a mutant that re-renders fails 4 tests.
+- [NOTE] If the session token is rejected while an older persisted entry for the same key remains, the state is TOKEN_REJECTED but the window still shows Unpair, because `hasCurrentGatewayToken` finds the persisted entry. The next `start()` presents that entry. In practice it is dead: the gateway allows one pairing per (world, user), so re-pairing superseded it. Its rejection then removes it. This follows the spec ("only the credential that was sent is stale") and is pinned by the test at :311. It costs one extra rejected hello. Removing the superseded entry as soon as a new token fails to persist would be a design change, so it would go to the orchestrator if wanted.
+- [NOTE] runtime.ts:76-77 — `setToken(null)` returns `true` even when `remove` hits a throwing `setItem`. If a browser blocks every write rather than only being over quota, a rejected keyed token is never removed and is presented again on every reload. This predates round 6.
+
+FIXED (round 6, external)
+- [P2] Prefer the newly issued session token over the stale stored token — FIXED — client.ts:305-318 (the session token is checked before the persisted entry) and :752-754 (a rejected session token clears only the session token, and a rejected keyed token no longer clears the session token). Test: runtime-credentials.test.ts:300. Proof: restoring keyed-before-session precedence fails :300 and :311.
+- [P2] Refresh Unpair visibility when pairing succeeds — FIXED — apps/pairing/index.ts:167-169, templates/pairing/pairing.hbs:22, styles/agent-gateway.css:185-187. Every state change toggles `hidden` without re-rendering. Every path that changes the token updates storage before it calls `setState`: a successful pair, a rejection of each source, and a rejected code falling back to the token. A full render follows Unpair. Proof: removing the toggle fails the new test, and adding `this.render()` fails 4 tests.
+
+DRIFT: none. 03770d2..HEAD changes only the two findings, their tests, one template line and one CSS insertion. The template assertion in pairing-one-per-user.test.ts:93 was rewritten to match the new markup. The "not paired: Unpair hidden" contract still holds, so it is not weakened. pairing.test.ts:108 is untouched.
+
+STATE MACHINE AUDIT AT HEAD (no behaviour defect found)
+- Order of presentation: a session token matching URL + world + user, then the persisted entry for the current URL, then a legacy credential for the same URL, then nothing.
+- With nothing to present, `start()` either does nothing or sets PAIRING_REQUIRED (when another entry exists). `connect()` sets PAIRING_REQUIRED.
+- Rejection clears only the credential that was presented:
+  - legacy: the legacy setting;
+  - session: the session token only;
+  - keyed: the entry for `helloOwner`'s URL and identity.
+- A rejected code falls back to `start()`, and the gate at :373 sees the session token.
+- Writes:
+  - A code-pair whose write fails sets a session token bound to `helloOwner`.
+  - A successful store clears the session token.
+  - A migration whose write fails keeps the legacy setting and `authSource` stays 'legacy'.
+  - A successful migration switches `authSource` to 'keyed'.
+- Unpair clears the session token and the current-URL entry, then re-renders.
+- User switch: the session token is bound to its identity (tests guard this). The keyed lookup is per user.
+- Gateway change: the session token and the entry are both URL-bound. A rejection clears by `helloOwner.url`. Unpair visibility follows `hasCurrentGatewayToken`, which counts the session token and the persisted entry but not the legacy credential.
+- `eventResume` uses whichever token was presented.
+- Window after each case:
+  - keyed rejected: Unpair hidden;
+  - legacy rejected: hidden;
+  - session rejected with an older entry: shown (see the NOTE);
+  - successful pair, whether persisted or session-only: shown.
+- Mutation results across the 9 files (runtime-credentials, credential-store, user-switch, pairing, client, reconnect, pairing-one-per-user, pairing-onboarding, status-indicator), 176 tests at HEAD, all passing:
+  - Killed:
+    - keyed-before-session;
+    - no session clear on reject;
+    - session reported as keyed;
+    - start gate ignores the session token;
+    - no clear on a successful store;
+    - no identity check;
+    - no URL check;
+    - window ignores the session token;
+    - unpair keeps the session token;
+    - no Unpair toggle;
+    - re-render on state change.
+  - Survived:
+    - session rejection also clears keyed (P2 above);
+    - keyed rejection also clears the session token (P3);
+    - legacy rejection also clears the session token (P3);
+    - legacy before own (P3).
+- eslint, prettier and `tsc -p module --noEmit` are clean on the changed files.
+
+SCOPE: clean. client.ts (Amendment 1), apps/pairing/index.ts, templates/pairing/pairing.hbs, styles/agent-gateway.css (insertion only), runtime-credentials.test.ts (Amendment 2) and pairing-one-per-user.test.ts are all within Owns.
+
+## Amendment 3 (Andrew, 2026-10-14): replaces Amendment 2's storage-full behaviour
+
+The in-memory `sessionToken` fallback is removed. Reason: it caused review rounds 4–8, and the third external review found a fifth defect in it (below). Storage being full is rare.
+
+New behaviour when a code-issued token cannot be persisted (`setToken` returns `false`):
+- The current socket stays connected.
+- One localized warning, with no token in it, says the pairing will not survive a dropped connection or a reload because browser storage is full.
+- On the next drop, the client has no token, so it goes to PAIRING_REQUIRED and the user pairs again.
+- The token is never kept in client memory beyond the live socket's own state.
+
+Everything else stays:
+- the persisted/legacy precedence;
+- the migration persist-then-clear rule from round 3;
+- the presented-owner rule for clears;
+- the Unpair visibility toggle from round 6, now driven by the persisted entry only.
+
+`authSource` must reflect the source of the live connection after every welcome. After a successful code-pairing store it is `'keyed'`. A later revocation on that same socket then clears exactly the presented credential. After a code pairing whose store failed, a revocation clears nothing persisted.
+
+## Review round 8 — findings (third external review on PR #143, revision 0b3d892)
+
+[P2] Update the credential source after a session-only code pairing — client.ts:753
+When code pairing succeeds but storage fails, welcome retains the issued token in sessionToken while authSource remains 'code'. If that live connection is later revoked—for example, by pairing from another browser—rejection handling deletes the keyed entry instead of clearing the session token. The revoked token still makes hasCurrentGatewayToken() return true and is sent again on the next start(). An existing persisted entry can also be incorrectly removed. Set the post-welcome source to 'session' when persistence fails, and test revocation on the original code-paired socket without reconnecting first.
+
+Resolution: superseded by Amendment 3. The session token is removed. The authSource-after-code-welcome part still applies to the persisted path and to the failed-store path.

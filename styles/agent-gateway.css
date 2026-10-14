@@ -181,3 +181,7 @@
 .agent-gateway-indicator[data-state='needsPairing'] {
   font-weight: bold;
 }
+
+.agent-gateway-unpair[hidden] {
+  display: none;
+}

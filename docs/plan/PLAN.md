@@ -242,3 +242,10 @@ Task 19's original PR #41 evidence remains offline verification and v14 backend 
 - Lint e2e with `npx eslint e2e`; `scripts/` holds only .sh files, so `npx eslint e2e scripts` no longer applies.
 - v13 core/read/multi-user acceptance passed; optional v13 Hello Pack lifecycle remains unproven.
 
+
+### Follow-ups from task 89
+- The `input.value` assertion at `pairing-one-per-user.test.ts:132` and `:148` can never fail; make it assert something that can.
+- Clean up the dead third clause in the `start()` gate (`client.ts:357-361`), the `ownTokenForUrl` wrapper, and the `authSource` field comment at `:243`.
+- No test checks that the code-welcome `setToken` uses `helloOwner`.
+- `authSource` is set before the socket-origin check at `client.ts:546`. This is harmless while `setToken` is synchronous.
+- A failed re-pair store with an older persisted entry ends in TOKEN_REJECTED, not PAIRING_REQUIRED.
