@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 75 | Consent page footer: optional privacy and source links (`--privacy-url`, `--source-url`), cookie note, GitHub and Ascend marks; relaxes 67's bans for the footer only | `## 2026-10-14 — Consent page footer (task 75)` |
 | 2026-10-14 | 68 | Server-mode operator invites: `--invite`, revoke, cancel and list commands, replacement revokes grants transactionally, 5 s revocation sweep, Copy my ids, hello caps, refusal-log cap | `## 2026-10-14 — Operator invites for server mode (task 68)` |
 | 2026-10-14 | 67 | OAuth consent page (world, user, code shown in the user's Foundry client), "Connected apps" grant list and revoke, retention sweep, same-origin consent.css | `## 2026-10-14 — OAuth consent page and self-service grant revocation (task 67)` |
 | 2026-10-14 | 35 | OAuth 2.1 authorization server: metadata, registration, PKCE flow, audience-bound tokens, scopes filtered before the module call, grants die with their pairing; consent auto-deny until 67 | `## 2026-10-14 — Gateway OAuth 2.1 authorization server (task 35)` |

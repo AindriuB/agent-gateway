@@ -27,6 +27,12 @@ uptime. `AGENT_GATEWAY_TRUST_PROXY=1` makes the gateway key clients by the addre
 forwards, so each client has its own rate limit. The flag applies whenever it is set, with or
 without a public URL, and the gateway reads `X-Forwarded-For` only from a loopback peer. The module connects to `wss://<domain>/link`.
 
+Two optional settings add links to the footer of the consent pages: `--privacy-url`
+(`AGENT_GATEWAY_PRIVACY_URL`) shows a "Privacy" link, and `--source-url`
+(`AGENT_GATEWAY_SOURCE_URL`) shows a "Source code" link. Each must be `https`, or `http` on a
+loopback host, with no credentials and at most 2048 characters. With neither set, the footer shows
+only the cookie note. Both can also be set in the config file as `privacyUrl` and `sourceUrl`.
+
 ## Connecting a remote client
 
 When a remote client (claude.ai, ChatGPT) starts OAuth, the gateway shows a consent page at
@@ -36,6 +42,18 @@ and open). Players can list and revoke what they have approved under "Connected 
 module. The gateway deletes expired OAuth codes and tokens on its own. The page loads its
 stylesheet from `/authorize/consent.css`; if you restrict paths at the proxy, allow
 `/authorize/*`.
+
+## Privacy and cookies
+
+The operator of a public gateway is the data controller. Set `--privacy-url` to your own privacy
+notice so the consent pages link to it. The gateway stores Foundry user names and ids, OAuth client
+registrations, grants and tokens (tokens are stored hashed), and client IP addresses, in memory
+only, for rate limits; the IP addresses are lost on restart. Retention for OAuth rows is a sweep
+every 10 minutes that deletes expired codes (60 seconds), expired or revoked tokens past their
+lifetime (access 1 hour, refresh 30 days) and revoked grants with no live tokens, at most 500 rows
+per table per run. The consent pages set one strictly necessary cookie, `__Host-agcsrf-` followed
+by a request id, for sign-in only and not for tracking; it expires after 15 minutes. See
+[privacy.md](privacy.md) for the rest of what the gateway keeps.
 
 ## Pairing
 

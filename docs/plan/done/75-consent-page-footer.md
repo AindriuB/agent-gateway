@@ -104,3 +104,22 @@ With both settings unset, every one of 67's original assertions must still hold 
 - gateway/test/config/consent-links.test.ts:10: the title claims "and the config file", but no test uses a config file. Fix: write a temp config file (mode 0600, like the other config tests) with `privacyUrl`/`sourceUrl`, and assert the precedence file < env < flag.
 - Manual: the neither-URL screenshot is missing. Render it light and dark next to the existing two.
 - Cheap note: the branding.test.ts:54 `inFoot` regex uses `/g` and `m[1]`, while :46-48 uses `/gi` and `m[1]!`. Make them consistent.
+
+## Outcome
+
+Done on branch `claude/task-75` (HEAD 8bc2854, based on `origin/main` 334f8a8), 2026-10-14. Review round 1 found a P2 (the source-href escape was untested, because the WHATWG URL parser keeps `"` in the host) and three P3s (the 2048 cap applied to the raw input but not the encoded `url.href`, a false header comment in `style.ts`, and footer-only checks for hrefs and SVGs); all were fixed in 7e85a0f and the re-review was CLEAN. `/verify` attempt 1 was REQUEST CHANGES: the neither-URL runs of 67's CSP and step-1 tests had been dropped, the config-file precedence was untested, and the neither-URL screenshot was missing. Attempt 2 (8bc2854) fixed all three; review CLEAN with mutation-checked tests. Final: tester PASS (`npm run verify` exit 0, 4396 fast and 2227 slow), reviewer APPROVE.
+
+Approvals (Andrew, 2026-10-14): forwarding-only edits in `gateway/src/oauth/server.ts` and `gateway/src/app.ts`, so that the two URLs reach the consent pages.
+
+What changed against 67: its bans on external `href`s, `<svg>` and the word "ascend" on consent pages are relaxed for the footer only. The CSP is unchanged, and with neither URL set every one of 67's original assertions still runs and holds.
+
+Implementation notes:
+- `COOKIE_PREFIX` moved from `consent/index.ts` to `consent/render.ts`, so the footer's cookie note is built from the same constant as the cookie.
+- `ConsentPages` keeps a `renderMessagePage` wrapper that passes the footer links to the exported `renderMessagePage`, so every message page (403 and expired included) gets the footer.
+- The refusal message for a bad URL truncates the echoed value to 80 characters.
+
+Residuals:
+- The temp dir created in `gateway/test/config/consent-links.test.ts:30` is not removed.
+- Go-public: Andrew decides whether the all-rights-reserved Ascend mark in `marks.ts` may ship in a public repo (recorded in PLAN.md).
+
+Pending Andrew (manual): screenshots of the step-1 page, with both URLs set and with neither, in light and dark, to be attached to the PR.
