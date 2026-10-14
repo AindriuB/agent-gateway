@@ -18,6 +18,9 @@ then MVP B (VPS/hosted). MVP A is complete: 0.1.0 exists as a private draft rele
 
 ## Now
 
+### Priority: invite redemption trusts client-asserted ids
+- **Invite redemption takes the world and user ids from the client's hello (`gateway/src/link/server.ts` around :488-494), so a leaked invite code lets a player pair as the target user.** The gateway should verify identity through Foundry rather than the hello. Needs an architect review before a task is written.
+
 ### MVP A: someone else can install it locally
 Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, stdio, GM tab open.
 
@@ -37,6 +40,9 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 - **A10: 80 (done and merged, PR #129; archived in `docs/plan/done/`).** `npm run verify` now also runs `npm run test:scripts`, and CI's separate script-test step is gone. `scripts/release.mjs:77-78` still runs them again after verify; left for Andrew.
 - **A11: 81 (done on branch `claude/task-81`, archived in `docs/plan/done/`; PR pending).** CI now runs only on `v*` tags and on manual "Run workflow"; PR and `main` runs are gone, and the image job also requires a push event, so a manual run never publishes. Retry a failed publish with "Re-run jobs" on the tag run.
 - **A12: 79 (done on branch `claude/task-79`, archived in `docs/plan/done/`; PR pending).** The step-down load flake was the test, not the relay: it counted the bare `holds link port`, which the standby warning also prints, and chose `primary` from a snapshot. It now counts the primary banner and waits on observable state; 20/20 under CPU load.
+- **A13: 88 (done on branch `claude/task-88`, archived in `docs/plan/done/`; PR pending).** Credential-free `/mcp` requests get the OAuth discovery 401 without counting as failed auth, behind a separate 120 per 60 s per-client discovery throttle; any offered `Authorization` header keeps the old lockout. Pending Andrew: merge, then redeploy to gw.aindriub.app and retry ChatGPT/Codex sign-in.
+- **Follow-up (88): `invite-cli.test.ts` env leak.** `gateway/test/invite-cli.test.ts` reads `AGENT_GATEWAY_PUBLIC_URL` from the ambient environment, so a developer shell that sets it can change results. Isolate it in the test.
+- **Follow-up (88): optional readability refactor.** The nested check at `gateway/src/http/server.ts:306-312` could be flattened into named branches (offered, locked out, discovery). Behaviour must not change.
 - **Follow-up: CI flake.** `gateway/test/events/repository.test.ts:38` "retains exactly10000 oldest-first…" took 19s on ubuntu-latest against a 15s vitest timeout and failed the v0.1.0-rc.1 tag run (run 38587528849). Since 81 it can only affect tag runs and manual runs, but a failure there still blocks a publish. A re-run of the failed job was triggered. If it recurs, raise the timeout or shrink the test.
 
 ## Next

@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 88 | `/mcp` requests with no credential get the discovery 401 without counting as failed auth, behind a 120 per 60 s per-client throttle; offered credentials keep the lockout; fixes Codex/ChatGPT sign-in 429s | `## 2026-10-14 — Discovery 401 is not a failed auth (task 88)` |
 | 2026-10-14 | 83 | `pack-module --base-url` writes self-hosted manifest and download URLs into the zip and a standalone `module.json`; deployed at dl.aindriub.app; releasing.md section added | `## 2026-10-14 — Self-hosted module manifest (task 83)` |
 | 2026-10-14 | 82 | Ascend mark removed from the consent footer: GitHub mark only, "ascend" banned everywhere again, dead `.mark + .mark` rule dropped; mark remains in 75's history by Andrew's choice | `## 2026-10-14 — Ascend mark removed from the consent footer (task 82)` |
 | 2026-10-14 | 79 | Step-down test flake was the test: it counted the standby warning as a primary banner; now counts the banner and waits on state; relay untouched | `## 2026-10-14 — Step-down test stabilised under load (task 79)` |
