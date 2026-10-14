@@ -122,7 +122,14 @@
       "gatewayUrl": "Gateway URL",
       "code": "Pairing code",
       "codeHint": "The code the gateway printed when it started.",
-      "connect": "Connect"
+      "connect": "Connect",
+      "CopyIds": {
+        "label": "Your ids: world {world}, user {user}",
+        "button": "Copy my ids",
+        "hint": "On a shared gateway, send these two ids to the operator. They create a one-time invite for exactly this world and user; enter that invite above as the pairing code.",
+        "copied": "Copied. Send it to the gateway operator.",
+        "failed": "Could not copy. Select the ids above and copy them by hand."
+      }
     },
     "Audit": {
       "journalName": "Agent Gateway Audit",

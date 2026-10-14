@@ -202,13 +202,14 @@ describe('terminal-safe operator output', () => {
 
   it('caps a very long name in the log line', async () => {
     h = await startServer();
-    const a = await pairModule(h, 'uA', { userName: 'n'.repeat(500) });
+    const a = await pairModule(h, 'uA', { userName: 'n'.repeat(100) });
     modules.push(a);
     const lines: string[] = [];
     const s = await openSession(h, {}, undefined, 5000, { log: (l) => lines.push(l) });
     sessions.push(s);
     await s.client.listTools();
-    expect(lines[0]!.length).toBeLessThan(200);
+    // An uncapped 100-character name makes this line about 157 characters; capped, about 137.
+    expect(lines[0]!.length).toBeLessThan(150);
   });
 });
 

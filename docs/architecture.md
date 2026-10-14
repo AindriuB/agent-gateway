@@ -50,6 +50,8 @@ SQLite, opened and migrated by `gateway/src/store/` (`store.ts`, `migrate.ts`). 
 | 007 | `pairings.origin` |
 | 008 | retires pairings with no origin |
 | 009 | `gateway_settings` (the HTTP token hash) |
+| 010 | OAuth clients, codes, grants and tokens (task 35, 67) |
+| 011 | `invites` (task 68) |
 
 ## Pairing
 
@@ -105,7 +107,11 @@ The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each
 
 ## Public exposure and server mode (task 74)
 
-`--public-url <https-url>` (or `AGENT_GATEWAY_PUBLIC_URL`) puts the gateway behind a reverse proxy that terminates TLS (`gateway/src/http/public-url.ts`). Host and Origin allowlists are derived from that URL, the static bearer is off, pairing codes go only to the operator log, and `/status` shows only the version and uptime. `--trust-proxy` makes the HTTP and link servers read the right-most `X-Forwarded-For`, from a loopback peer only. `--server-mode` keeps the process alive without stdio, turns HTTP on, and exits rather than degrade on EADDRINUSE or a database lock. Rate and failure buckets are per client (`gateway/src/http/client-key.ts`, `limits.ts`; IPv6 keyed by /64) with a global backstop. Public-mode MCP sessions bind through an exact-id selector from the authenticated principal and fail closed without one. The store runs in WAL mode, and `--backup <path>` writes an online copy while the gateway runs.
+`--public-url <https-url>` (or `AGENT_GATEWAY_PUBLIC_URL`) puts the gateway behind a reverse proxy that terminates TLS (`gateway/src/http/public-url.ts`). Host and Origin allowlists are derived from that URL, the static bearer is off, server mode pairs by operator invite only (below), and `/status` shows only the version and uptime. `--trust-proxy` makes the HTTP and link servers read the right-most `X-Forwarded-For`, from a loopback peer only. `--server-mode` keeps the process alive without stdio, turns HTTP on, and exits rather than degrade on EADDRINUSE or a database lock. Rate and failure buckets are per client (`gateway/src/http/client-key.ts`, `limits.ts`; IPv6 keyed by /64) with a global backstop. Public-mode MCP sessions bind through an exact-id selector from the authenticated principal and fail closed without one. The store runs in WAL mode, and `--backup <path>` writes an online copy while the gateway runs.
+
+### Operator invites (task 68)
+
+In server mode there is no shared pairing code. The operator runs `--invite <world> <user> [--ttl 30m|12h|7d] [--origin <origin>]`, which stores a hashed, single-use, 12-character code (default 24 h, at most 7 days) and prints it once (`gateway/src/link/invites.ts`, migration 011). The hello's code is redeemed in one `BEGIN IMMEDIATE` transaction: an unknown, used, expired or mismatched invite is refused with the same message and counts in the per-client and global failed-code buckets, and a match creates the pairing for exactly that world and user. Redeeming for a target that is already paired revokes the old pairing and that user's OAuth grants and tokens in the same transaction, so a new device or a lost token needs a new invite. `--revoke-pairing`, `--cancel-invite`, `--list-invites` and `--list-pairings` are one-shot commands; revoking also cancels the target's unused invites, and the list commands print no code, token or hash. In-memory `onPairingRevoked` listeners (events, queue) run after commit and are isolated from each other. A running gateway sweeps live connections every 5 s (`gateway/src/link/revocation.ts`) and closes any whose pairing was revoked from the CLI; the sweep never touches grants. Server-mode refusal log lines are capped at 20 per minute, with one summary line when the minute ends. `hello` ids are capped at 64 characters, the name at 100, and the code at 64. Local mode keeps the shared code.
 
 ## OAuth for remote clients (task 35)
 
@@ -121,7 +127,7 @@ With `--public-url`, OAuth 2.1 is the only way to authenticate to `/mcp` (`gatew
 
 ## Planned (MVP B)
 
-Not built yet; `docs/plan/PLAN.md` has the order. Operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
+Not built yet; `docs/plan/PLAN.md` has the order. A headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Migration 012 is reserved for headless agents.
 
 ## Decisions worth knowing
 

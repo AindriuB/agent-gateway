@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 
 // No 0/O, 1/I/L, or other look-alikes.
-const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const PAIRING_CODE_TTL_MS = 10 * 60 * 1000;
 export const PAIRING_CODE_PATTERN = /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/;
 
@@ -19,6 +19,11 @@ export interface PairingCodesOptions {
   clearTimer?: (handle: unknown) => void;
   /** Called whenever a new code is created, never when `issue` returns the live one. */
   onIssued?: (issued: LiveCode & { reason: CodeReason }) => void;
+  /**
+   * Server mode (task 68): the shared code is off. Nothing is ever issued, announced or accepted;
+   * `issue` returns an empty placeholder that is not stored. Operators use invites instead.
+   */
+  disabled?: boolean;
 }
 
 const defaultSetTimer = (fn: () => void, ms: number): unknown => {
@@ -39,6 +44,7 @@ export class PairingCodes {
   private readonly setTimer: NonNullable<PairingCodesOptions['setTimer']>;
   private readonly clearTimer: NonNullable<PairingCodesOptions['clearTimer']>;
   private readonly onIssued: PairingCodesOptions['onIssued'];
+  private readonly disabled: boolean;
 
   constructor(opts: PairingCodesOptions | (() => number) = {}) {
     const o = typeof opts === 'function' ? { now: opts } : opts;
@@ -46,6 +52,7 @@ export class PairingCodes {
     this.setTimer = o.setTimer ?? defaultSetTimer;
     this.clearTimer = o.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
     this.onIssued = o.onIssued;
+    this.disabled = o.disabled === true;
   }
 
   /** The code, only while it is unexpired and unconsumed. */
@@ -55,10 +62,14 @@ export class PairingCodes {
 
   /** The live code, or a new one (announced through `onIssued`) when there is none. */
   issue(reason: CodeReason): LiveCode {
+    if (this.disabled) return { code: '', expiresAt: 0 };
     const existing = this.current();
     if (existing) return existing;
     this.disarm();
-    const chars = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]);
+    const chars = Array.from(
+      { length: 8 },
+      () => PAIRING_ALPHABET[randomInt(PAIRING_ALPHABET.length)],
+    );
     const code = `${chars.slice(0, 4).join('')}-${chars.slice(4).join('')}`;
     const live = { code, expiresAt: this.now() + PAIRING_CODE_TTL_MS };
     this.live = live;

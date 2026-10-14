@@ -24,7 +24,8 @@ namespace). Volumes: `gateway-data` at `/data` (the database `gateway.db` with i
 The stack sets `AGENT_GATEWAY_PUBLIC_URL=https://<domain>`. That derives the allowed Host and
 Origin values, turns the static bearer token off, and makes `/status` show only the version and
 uptime. `AGENT_GATEWAY_TRUST_PROXY=1` makes the gateway key clients by the address Caddy
-forwards, so each client has its own rate limit. The module connects to `wss://<domain>/link`.
+forwards, so each client has its own rate limit. The flag applies whenever it is set, with or
+without a public URL, and the gateway reads `X-Forwarded-For` only from a loopback peer. The module connects to `wss://<domain>/link`.
 
 ## Connecting a remote client
 
@@ -38,10 +39,21 @@ stylesheet from `/authorize/consent.css`; if you restrict paths at the proxy, al
 
 ## Pairing
 
-Pairing is meant to be by operator invite (task 68): the operator issues a single-use code
-for one world and user and sends it privately, so nobody can pair without one. Task 68 is not
-in this build yet. Until it lands, the gateway prints one shared pairing code in the operator
-log (`docker compose logs gateway`), and anyone who gets that code can pair; share it only with
-the people you mean to pair.
+In server mode nobody pairs without an operator invite, and the gateway prints no shared pairing
+code. Ask the person for their world id and user id: the pairing app in the module has a "Copy my
+ids" line for this. Then run, inside the gateway container (for example
+`docker compose exec gateway ...`):
+
+- `foundry-agent-gateway --invite <world> <user> [--ttl 30m|12h|7d] [--origin <origin>]` prints a
+  single-use code once. It expires in 24 hours unless `--ttl` says otherwise (7 days at most).
+  Send it privately; the gateway never logs or shows it again. A wrong world or user id spends it.
+- `--list-invites` and `--list-pairings` show what exists and print no code or token.
+- `--cancel-invite <world> <user>` cancels the unused invites for that target.
+- `--revoke-pairing <world> <user>` revokes the pairing, that user's OAuth grants and tokens, and
+  their unused invites. A live connection is closed within about 5 seconds.
+
+A new invite for someone who is already paired replaces the old pairing and revokes its grants and
+tokens, so use one for a new device or a lost token. Failed invites are rate limited. Refusals are
+logged at most 20 per minute, followed by a count of the suppressed ones.
 
 Steps, backup and restore: [gateway/docker/README.md](../gateway/docker/README.md).

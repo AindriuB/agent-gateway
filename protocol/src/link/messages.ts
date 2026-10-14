@@ -14,14 +14,14 @@ export const HelloMessage = z.strictObject({
   moduleVersion: z.string(),
   foundryVersion: z.string(),
   world: z.strictObject({
-    id: z.string(),
+    id: z.string().max(64),
     title: z.string(),
     system: z.string(),
     systemVersion: z.string(),
   }),
   user: z.strictObject({
-    id: z.string(),
-    name: z.string(),
+    id: z.string().max(64),
+    name: z.string().max(100),
     role: z.number().int(),
     isGM: z.boolean(),
   }),
@@ -32,7 +32,7 @@ export const HelloMessage = z.strictObject({
     })
     .optional(),
   auth: z.discriminatedUnion('kind', [
-    z.strictObject({ kind: z.literal('pairingCode'), code: z.string() }),
+    z.strictObject({ kind: z.literal('pairingCode'), code: z.string().max(64) }),
     z.strictObject({ kind: z.literal('pairingToken'), token: z.string() }),
   ]),
 });

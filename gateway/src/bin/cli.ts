@@ -7,7 +7,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { createApp, defaultDbPath } from '../app.js';
 import { ConfigError, loadConfig } from '../config/index.js';
 import { rotateToken } from '../http/token.js';
-import { openStore } from '../store/index.js';
+import { canonicalOrigin } from '../link/origin.js';
+import { INVITE_TTL_MS, createInvite, parseTtl } from '../link/invites.js';
+import { safeText } from '../routing/sanitize.js';
+import { openStore, type Store } from '../store/index.js';
 import { MIGRATIONS } from '../store/migrations/index.js';
 import { reportStartFailure } from './start-failure.js';
 
@@ -36,6 +39,17 @@ Options:
                       stops working at once, also in a gateway that is already running
   --backup <path>     Write a consistent copy of the database to a new file (mode 0600) and
                       exit; safe while the gateway runs
+  --invite <world id> <user id> [--ttl <30m|12h|7d>] [--origin <origin>]
+                      Server mode: print a single-use invite code for exactly that Foundry world
+                      and user, valid 24 h by default (at most 7 d), and exit. Give it to that
+                      person; redeeming it replaces any existing pairing for them
+  --revoke-pairing <world id> <user id>
+                      Revoke that user's pairing and OAuth grants and cancel their unused
+                      invites, then exit; a running gateway disconnects them within seconds
+  --cancel-invite <world id> <user id>
+                      Cancel that user's unused invites and exit (exit 1 if there were none)
+  --list-invites      List invites (id, target, created, expiry, status; never the code), exit
+  --list-pairings     List pairings (world, user, name, origin, created, revoked), exit
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -171,10 +185,155 @@ function rotate(dbOption: string | undefined): void {
   }
 }
 
+type OperatorCommand =
+  | { kind: 'invite'; worldId: string; userId: string; ttlMs: number; origin?: string }
+  | { kind: 'revoke-pairing' | 'cancel-invite'; worldId: string; userId: string }
+  | { kind: 'list-invites' | 'list-pairings' };
+
+/** Validate the one-shot operator commands' arguments; exits 2 on a bad combination. */
+function operatorCommandOf(
+  values: {
+    invite?: boolean | undefined;
+    'revoke-pairing'?: boolean | undefined;
+    'cancel-invite'?: boolean | undefined;
+    'list-invites'?: boolean | undefined;
+    'list-pairings'?: boolean | undefined;
+    ttl?: string | undefined;
+    origin?: string | undefined;
+  },
+  positionals: readonly string[],
+): OperatorCommand | undefined {
+  const usage = (why: string): never => {
+    process.stderr.write(`${why}\n${USAGE}`);
+    return process.exit(2);
+  };
+  const kinds = (
+    ['invite', 'revoke-pairing', 'cancel-invite', 'list-invites', 'list-pairings'] as const
+  ).filter((k) => values[k]);
+  if (kinds.length === 0) {
+    if (values.ttl !== undefined || values.origin !== undefined)
+      usage('--ttl and --origin go with --invite');
+    return undefined;
+  }
+  if (kinds.length > 1) usage(`Use one of --${kinds.join(', --')} at a time`);
+  const kind = kinds[0] as (typeof kinds)[number];
+  if (kind !== 'invite' && (values.ttl !== undefined || values.origin !== undefined))
+    usage('--ttl and --origin go with --invite');
+  if (kind === 'list-invites' || kind === 'list-pairings') {
+    if (positionals.length > 0) usage(`--${kind} takes no arguments`);
+    return { kind };
+  }
+  const [worldId, userId] = positionals;
+  if (positionals.length !== 2 || !worldId || !userId || worldId.length > 64 || userId.length > 64)
+    usage(`--${kind} needs <world id> <user id> (each 1 to 64 characters)`);
+  if (kind !== 'invite') return { kind, worldId: worldId!, userId: userId! };
+  let ttlMs = INVITE_TTL_MS;
+  if (values.ttl !== undefined) {
+    const parsed = parseTtl(values.ttl);
+    if (parsed === undefined) return usage('--ttl must be like 30m, 12h or 7d, at most 7d');
+    ttlMs = parsed;
+  }
+  let origin: string | undefined;
+  if (values.origin !== undefined) {
+    origin = canonicalOrigin(values.origin);
+    if (origin === undefined)
+      usage('--origin must be an exact http(s) origin such as https://foundry.example.com');
+  }
+  return {
+    kind,
+    worldId: worldId!,
+    userId: userId!,
+    ttlMs,
+    ...(origin !== undefined ? { origin } : {}),
+  };
+}
+
+const when = (ms: number | null): string => (ms === null ? '-' : new Date(ms).toISOString());
+
+/**
+ * The one-shot operator commands. Like `rotate`, each checks the schema read-only first and never
+ * migrates a database a running gateway owns. Every write runs in `BEGIN IMMEDIATE ... COMMIT`,
+ * so the write lock is taken first and busy_timeout covers the wait; on any error nothing changed.
+ */
+function runOperatorCommand(cmd: OperatorCommand, dbOption: string | undefined): void {
+  const dbPath = dbOption ?? defaultDbPath();
+  const flag = `--${cmd.kind}`;
+  if (dbPath === ':memory:') {
+    process.stderr.write(`${flag} needs a database file, not :memory:\n`);
+    process.exit(2);
+  }
+  const writes = cmd.kind !== 'list-invites' && cmd.kind !== 'list-pairings';
+  let store: Store | undefined;
+  try {
+    const problem = schemaProblem(dbPath);
+    if (problem) {
+      process.stderr.write(`${flag} failed: ${problem}${writes ? '; nothing changed' : ''}\n`);
+      process.exit(1);
+    }
+    store = openStore(dbPath);
+    const s = store;
+    switch (cmd.kind) {
+      case 'invite': {
+        const made = s.transaction(() => createInvite(s, cmd, Date.now()));
+        // The code goes to stdout alone; it is never logged or stored.
+        process.stdout.write(`${made.code}\n`);
+        process.stderr.write(
+          `Invite for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}${cmd.origin ? `, origin ${safeText(cmd.origin)}` : ''}, expires ${when(made.expiresAt)}. It is shown once and works once.\n`,
+        );
+        break;
+      }
+      case 'revoke-pairing': {
+        const out = s.revokePairingsFor(cmd.worldId, cmd.userId);
+        process.stdout.write(
+          `Revoked ${out.pairings.length} pairing(s) and cancelled ${out.cancelledInvites} unused invite(s) for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}.\n`,
+        );
+        break;
+      }
+      case 'cancel-invite': {
+        const n = s.transaction(() => s.invites.cancelFor(cmd.worldId, cmd.userId));
+        if (n === 0) {
+          process.stderr.write(
+            `No unused invite for world ${safeText(cmd.worldId)}, user ${safeText(cmd.userId)}; nothing changed\n`,
+          );
+          process.exitCode = 1;
+        } else process.stdout.write(`Cancelled ${n} unused invite(s).\n`);
+        break;
+      }
+      case 'list-invites': {
+        const at = Date.now();
+        for (const i of s.invites.list()) {
+          const status = i.result ?? (i.expiresAt <= at ? 'expired' : 'live');
+          process.stdout.write(
+            `${i.id.slice(0, 8)}  ${safeText(i.worldId)}  ${safeText(i.userId)}  created ${when(i.createdAt)}  expires ${when(i.expiresAt)}  ${status}${i.origin ? `  origin ${safeText(i.origin)}` : ''}\n`,
+          );
+        }
+        break;
+      }
+      case 'list-pairings':
+        for (const p of s.listPairings()) {
+          process.stdout.write(
+            `${safeText(p.worldId)}  ${safeText(p.userId)}  ${safeText(p.userName)}  ${p.origin ? safeText(p.origin) : '-'}  created ${when(p.createdAt)}  revoked ${when(p.revokedAt)}\n`,
+          );
+        }
+        break;
+    }
+  } catch (err) {
+    const msg = (err as Error).message;
+    const busy = /locked|busy/i.test(msg);
+    process.stderr.write(
+      `${flag} failed (${busy ? 'the database is busy' : safeText(msg)})${writes ? '; nothing changed' : ''}\n`,
+    );
+    process.exitCode = 1;
+  } finally {
+    store?.close();
+  }
+}
+
 function main(): void {
   let values;
+  let positionals: string[];
   try {
-    ({ values } = parseArgs({
+    ({ values, positionals } = parseArgs({
       args: process.argv.slice(2),
       options: {
         version: { type: 'boolean' },
@@ -189,6 +348,13 @@ function main(): void {
         'server-mode': { type: 'boolean' },
         'trust-proxy': { type: 'boolean' },
         backup: { type: 'string' },
+        invite: { type: 'boolean' },
+        'revoke-pairing': { type: 'boolean' },
+        'cancel-invite': { type: 'boolean' },
+        'list-invites': { type: 'boolean' },
+        'list-pairings': { type: 'boolean' },
+        ttl: { type: 'string' },
+        origin: { type: 'string' },
         'http-rotate-token': { type: 'boolean' },
         world: { type: 'string' },
         user: { type: 'string' },
@@ -196,6 +362,7 @@ function main(): void {
         db: { type: 'string' },
       },
       strict: true,
+      allowPositionals: true,
     }));
   } catch (err) {
     process.stderr.write(`${(err as Error).message}\n${USAGE}`);
@@ -208,6 +375,15 @@ function main(): void {
   if (values.help) {
     process.stdout.write(USAGE);
     return;
+  }
+  const operatorCommand = operatorCommandOf(values, positionals);
+  if (operatorCommand) {
+    runOperatorCommand(operatorCommand, values.db ?? process.env.AGENT_GATEWAY_DB);
+    return;
+  }
+  if (positionals.length > 0) {
+    process.stderr.write(`Unexpected argument: ${positionals[0]}\n${USAGE}`);
+    process.exit(2);
   }
   if (values['http-rotate-token']) {
     // Remote clients sign in with OAuth; there is no static token to rotate on a public gateway.

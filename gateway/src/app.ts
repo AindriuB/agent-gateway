@@ -9,6 +9,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkListenError } from './link/server.js';
+import { RevocationSweep } from './link/revocation.js';
 import {
   LinkRegistry,
   LinkServer,
@@ -52,6 +53,9 @@ const HTTP_RETRY_MIN_MS = 5_000;
 const HTTP_RETRY_MAX_MS = 60_000;
 const MAX_WARNED_ORIGINS = 20;
 const MAX_ORIGIN_CHARS = 100;
+/** Server mode: refusal log lines per window; the rest are counted and summed up in one line. */
+const MAX_REFUSAL_LINES = 20;
+const REFUSAL_WINDOW_MS = 60_000;
 
 /** Refusals of a stored token: the browser should be offered a code to pair again. */
 const TOKEN_REFUSALS: ReadonlySet<string> = new Set([
@@ -109,6 +113,8 @@ export interface AppDeps {
     setTimer: (fn: () => void, ms: number) => unknown;
     clearTimer: (handle: unknown) => void;
   };
+  /** How often the primary closes connections whose pairing was revoked; tests shorten it. */
+  revocationSweepMs?: number;
   /** The OAuth consent step (public mode). Defaults to auto-deny until the consent page (67). */
   oauthConsent?: ConsentStep;
   /** Overrides for the HTTP limits; tests shorten them. */
@@ -136,6 +142,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
+  let sweep: RevocationSweep | undefined;
   // One step-down transition at a time; a request that arrives during one is ignored.
   let steppingDown = false;
   let httpNoticeShown = false;
@@ -203,6 +210,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       stdioProxy = undefined;
       codes?.stop();
       codes = undefined;
+      sweep?.stop();
+      sweep = undefined;
       await httpServer?.close();
       httpServer = undefined;
       await secondary?.stop();
@@ -321,6 +330,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     cancelHttpRetry();
     codes?.stop();
     codes = undefined;
+    sweep?.stop();
+    sweep = undefined;
     await httpServer?.close();
     httpServer = undefined;
     await relay?.close();
@@ -462,6 +473,8 @@ export function createApp(config: Config, deps: AppDeps): App {
             .catch(() => undefined);
     const thisCodes = new PairingCodes({
       ...deps.codeClock,
+      // Server mode pairs with operator invites; the shared code is off.
+      disabled: serverMode,
       onIssued: (c) => {
         // Each code gets one refusal line per origin: a repeat refusal after a refresh must show
         // the new code. Clearing (not growing) keeps the set bounded.
@@ -485,11 +498,44 @@ export function createApp(config: Config, deps: AppDeps): App {
       return s;
     };
     const warned = new Set<string>();
+    // Server mode: a counter and a window start, so memory stays bounded whatever the attackers do.
+    const refusals = { start: 0, lines: 0, suppressed: 0 };
+    let windowGen = 0;
+    const flushRefusals = (): void => {
+      if (refusals.suppressed > 0 && link)
+        writeStatus(`${refusals.suppressed} more refusals suppressed`);
+      refusals.suppressed = 0;
+      refusals.lines = 0;
+      refusals.start = 0;
+      windowGen++;
+    };
+    /** True when this refusal may be logged. */
+    const refusalAllowed = (): boolean => {
+      const t = now();
+      if (refusals.lines > 0 && t - refusals.start >= REFUSAL_WINDOW_MS) flushRefusals();
+      if (refusals.lines === 0) refusals.start = t;
+      if (refusals.lines < MAX_REFUSAL_LINES) {
+        refusals.lines++;
+        return true;
+      }
+      if (refusals.suppressed++ === 0) {
+        const wait = Math.max(0, REFUSAL_WINDOW_MS - (t - refusals.start));
+        const arm = deps.codeClock?.setTimer ?? ((fn, ms) => setTimeout(fn, ms).unref());
+        const gen = windowGen;
+        arm(() => {
+          if (gen === windowGen) flushRefusals();
+        }, wait);
+      }
+      return false;
+    };
     link = new LinkServer({
       port: config.linkPort,
       host: linkHost,
       allowNonLoopback: linkHost !== HTTP_BIND_HOST,
-      ...(isPublic ? { publicUrl, trustProxy } : {}),
+      ...(isPublic ? { publicUrl } : {}),
+      // Per-client limits in server mode need real client keys with or without a public URL.
+      ...(trustProxy ? { trustProxy } : {}),
+      serverMode,
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
         if (isPublic) thisCodes.issue('consumed');
@@ -498,11 +544,16 @@ export function createApp(config: Config, deps: AppDeps): App {
         const shown = sanitizeOrigin(origin);
         if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
         const key = `${shown} ${reason} ${detail ?? ''}`;
-        if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
-        warned.add(key);
+        if (serverMode) {
+          if (!refusalAllowed()) return;
+        } else {
+          if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
+          warned.add(key);
+        }
         const live = thisCodes.current();
-        const where =
-          reason === 'no valid pairing code'
+        const where = serverMode
+          ? ''
+          : reason === 'no valid pairing code'
             ? isPublic
               ? ' The code is in this log.'
               : " The code is in this log or the client's MCP log."
@@ -535,6 +586,14 @@ export function createApp(config: Config, deps: AppDeps): App {
     queue = new OfflineQueue(store, registry);
     events.startRetention();
     thisCodes.issue('startup');
+    sweep = new RevocationSweep({
+      registry,
+      store: () => store,
+      drop: (c) => link?.dropConnection(c),
+      ...(deps.revocationSweepMs !== undefined ? { intervalMs: deps.revocationSweepMs } : {}),
+      warn: writeStatus,
+    });
+    sweep.start();
     const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
       version: deps.version,
       registry,
@@ -550,7 +609,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       log: writeStatus,
       offlineCategory: (o: Parameters<Store['queue']['catalog']>[0], name: string) =>
         store?.queue.catalog(o)?.find((t) => t.name === name)?.category,
-      ...(isPublic
+      ...(isPublic || serverMode
         ? { askOperator: true }
         : {
             pairingHint: () => {
@@ -578,7 +637,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         writeStatus(
           'warning: --public-url uses http: on a loopback host; this is for local testing only, use https: in production',
         );
-      if (isPublic && !trustProxy)
+      if ((isPublic || serverMode) && !trustProxy)
         writeStatus(
           '--trust-proxy is off: if a reverse proxy is in front, every client shares one rate-limit bucket',
         );
@@ -599,7 +658,8 @@ export function createApp(config: Config, deps: AppDeps): App {
         host: httpHost,
         port: config.httpPort,
         ...(token ? { token } : oauth ? { oauth } : { authenticate: () => undefined }),
-        ...(isPublic ? { publicUrl, trustProxy } : {}),
+        ...(isPublic ? { publicUrl } : {}),
+        ...(trustProxy ? { trustProxy } : {}),
         registry,
         version: deps.version,
         startedAt,

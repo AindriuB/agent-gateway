@@ -44,7 +44,7 @@ describe('migration 008: retire legacy pairings', () => {
     s.close();
 
     const check = new DatabaseSync(path);
-    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 10 });
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 11 });
     expect(check.prepare('SELECT count(*) AS n FROM pairings').get()).toEqual({ n: 3 });
     check.close();
   });

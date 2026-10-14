@@ -4,6 +4,7 @@ import { createOAuthRepository, type OAuthRepository } from '../oauth/repository
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
 import { MIGRATIONS } from './migrations/index.js';
+import { safeText } from '../routing/sanitize.js';
 
 export interface PairingRow {
   id: string;
@@ -27,19 +28,83 @@ export interface NewPairing {
   origin: string;
 }
 
+export type InviteResult = 'paired' | 'mismatch' | 'expired' | 'cancelled';
+
+export interface InviteRow {
+  id: string;
+  codeHash: string;
+  worldId: string;
+  userId: string;
+  /** Browser origin the invite is pinned to; null means the first origin to redeem it wins. */
+  origin: string | null;
+  createdAt: number;
+  expiresAt: number;
+  usedAt: number | null;
+  cancelledAt: number | null;
+  result: InviteResult | null;
+  pairingId: string | null;
+}
+
+export interface NewInvite {
+  id: string;
+  codeHash: string;
+  worldId: string;
+  userId: string;
+  origin: string | null;
+  expiresAt: number;
+}
+
+/** Invite rows. None of these opens a transaction; callers wrap them in `Store.transaction`. */
+export interface InviteRepository {
+  create(i: NewInvite): InviteRow;
+  findByHash(codeHash: string): InviteRow | undefined;
+  /** Spend an invite: sets `used_at` and the outcome. */
+  settle(id: string, result: 'paired' | 'mismatch' | 'expired', pairingId: string | null): void;
+  /** Cancel every unused invite for the target; returns how many. */
+  cancelFor(worldId: string, userId: string): number;
+  list(): InviteRow[];
+}
+
 /** Gateway persistence. Holds hashed credentials and bounded, observer-visible event summaries. */
 export interface Store {
   readonly events: EventRepository;
   readonly queue: QueueRepository;
   readonly oauth: OAuthRepository;
+  readonly invites: InviteRepository;
+  /**
+   * Run `fn` inside `BEGIN IMMEDIATE ... COMMIT`, so the write lock is taken first and
+   * `busy_timeout` covers the wait. Rolls back and rethrows the original error on failure. Inside
+   * a transaction it just runs `fn`.
+   */
+  transaction<T>(fn: () => T): T;
   isPairingActive(id: string, worldId: string, userId: string): boolean;
-  /** Called after a pairing is revoked, with the revoked row; in the process that revoked it. */
+  /**
+   * In-memory effects that run after a pairing revoke has committed, with the revoked row, in the
+   * process that revoked it. Grants are not a listener: they are revoked inside the revoke's
+   * transaction. A throwing listener is logged and never stops the others or undoes the commit.
+   */
   onPairingRevoked(listener: (pairing: PairingRow) => void): () => void;
   createPairing(p: NewPairing): PairingRow;
   findPairingByHash(tokenHash: string): PairingRow | undefined;
+  getPairing(id: string): PairingRow | undefined;
   /** Pairings that are not revoked. */
   listActivePairings(): PairingRow[];
+  /** Every pairing row, revoked or not, oldest first. */
+  listPairings(): PairingRow[];
+  /** Revokes the row and its (world, user)'s OAuth grants in one transaction. */
   revokePairing(id: string): boolean;
+  /**
+   * Inside a transaction already open: revoke every active pairing for the target and its OAuth
+   * grants. Returns the revoked rows; the caller fires `notifyPairingRevoked` after COMMIT.
+   */
+  revokeActiveFor(worldId: string, userId: string): PairingRow[];
+  /** One transaction: revoke the target's pairings and grants, and cancel its unused invites. */
+  revokePairingsFor(
+    worldId: string,
+    userId: string,
+  ): { pairings: PairingRow[]; cancelledInvites: number };
+  /** Fire the in-memory `onPairingRevoked` listeners for an already-revoked row. */
+  notifyPairingRevoked(pairing: PairingRow): void;
   /** Hex sha256 of the local HTTP bearer token; the token itself is never stored. */
   getHttpTokenHash(): string | undefined;
   /**
@@ -59,6 +124,36 @@ interface Row {
   created_at: number;
   revoked_at: number | null;
   origin: string | null;
+}
+
+interface InviteDbRow {
+  id: string;
+  code_hash: string;
+  world_id: string;
+  user_id: string;
+  origin: string | null;
+  created_at: number;
+  expires_at: number;
+  used_at: number | null;
+  cancelled_at: number | null;
+  result: InviteResult | null;
+  pairing_id: string | null;
+}
+
+function toInvite(r: InviteDbRow): InviteRow {
+  return {
+    id: r.id,
+    codeHash: r.code_hash,
+    worldId: r.world_id,
+    userId: r.user_id,
+    origin: r.origin,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    usedAt: r.used_at,
+    cancelledAt: r.cancelled_at,
+    result: r.result,
+    pairingId: r.pairing_id,
+  };
 }
 
 function toRow(r: Row): PairingRow {
@@ -113,15 +208,89 @@ export function openStore(
   const putSettingIfAbsent = db.prepare(
     'INSERT OR IGNORE INTO gateway_settings (key, value) VALUES (?, ?)',
   );
+  const activeFor = db.prepare(
+    'SELECT * FROM pairings WHERE world_id = ? AND user_id = ? AND revoked_at IS NULL',
+  );
+  const allPairings = db.prepare('SELECT * FROM pairings ORDER BY created_at, id');
   const oauth = createOAuthRepository(db);
-  // Grants die with their pairing, in whichever process revokes it (the gateway or a CLI).
-  revokedListeners.add((p) => {
-    oauth.revokeGrantsFor(p.worldId, p.userId, now());
-  });
+  const inviteByHash = db.prepare('SELECT * FROM invites WHERE code_hash = ?');
+  const inviteById = db.prepare('SELECT * FROM invites WHERE id = ?');
+  const inviteInsert = db.prepare(
+    'INSERT INTO invites (id, code_hash, world_id, user_id, origin, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  );
+  const inviteSettle = db.prepare(
+    'UPDATE invites SET used_at = ?, result = ?, pairing_id = ? WHERE id = ?',
+  );
+  const inviteCancel = db.prepare(
+    "UPDATE invites SET cancelled_at = ?, result = 'cancelled' WHERE world_id = ? AND user_id = ? AND used_at IS NULL AND cancelled_at IS NULL",
+  );
+  const inviteList = db.prepare('SELECT * FROM invites ORDER BY created_at, id');
+  let inTx = false;
+  const transaction = <T>(fn: () => T): T => {
+    if (inTx) return fn();
+    db.exec('BEGIN IMMEDIATE');
+    inTx = true;
+    try {
+      const out = fn();
+      db.exec('COMMIT');
+      return out;
+    } catch (err) {
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // Report the original error, never one raised by the rollback.
+      }
+      throw err;
+    } finally {
+      inTx = false;
+    }
+  };
+  const notify = (row: PairingRow): void => {
+    for (const listener of [...revokedListeners]) {
+      try {
+        listener(row);
+      } catch (err) {
+        warn(
+          `pairing revoked listener failed for ${safeText(row.worldId)}/${safeText(row.userId)}: ${safeText((err as Error).message ?? String(err))}`,
+        );
+      }
+    }
+  };
+  const revokeActiveFor = (worldId: string, userId: string): PairingRow[] => {
+    const rows = (activeFor.all(worldId, userId) as unknown as Row[]).map(toRow);
+    const at = now();
+    const revoked: PairingRow[] = [];
+    for (const r of rows) {
+      if (Number(revoke.run(at, r.id).changes) > 0) revoked.push({ ...r, revokedAt: at });
+    }
+    oauth.revokeGrantsFor(worldId, userId, at);
+    return revoked;
+  };
+  const invites: InviteRepository = {
+    create(i) {
+      inviteInsert.run(i.id, i.codeHash, i.worldId, i.userId, i.origin, now(), i.expiresAt);
+      return toInvite(inviteById.get(i.id) as unknown as InviteDbRow);
+    },
+    findByHash(codeHash) {
+      const r = inviteByHash.get(codeHash) as InviteDbRow | undefined;
+      return r ? toInvite(r) : undefined;
+    },
+    settle(id, result, pairingId) {
+      inviteSettle.run(now(), result, pairingId, id);
+    },
+    cancelFor(worldId, userId) {
+      return Number(inviteCancel.run(now(), worldId, userId).changes);
+    },
+    list() {
+      return (inviteList.all() as unknown as InviteDbRow[]).map(toInvite);
+    },
+  };
   return {
     events: createEventRepository(db),
     queue: createQueueRepository(db),
     oauth,
+    invites,
+    transaction,
     onPairingRevoked(listener) {
       revokedListeners.add(listener);
       return () => {
@@ -140,17 +309,37 @@ export function openStore(
       const r = byHash.get(tokenHash) as Row | undefined;
       return r ? toRow(r) : undefined;
     },
+    getPairing(id) {
+      const r = byId.get(id) as Row | undefined;
+      return r ? toRow(r) : undefined;
+    },
     listActivePairings() {
       return (active.all() as unknown as Row[]).map(toRow);
     },
-    revokePairing(id) {
-      const changed = Number(revoke.run(now(), id).changes) > 0;
-      if (changed) {
-        const row = toRow(byId.get(id) as unknown as Row);
-        for (const listener of revokedListeners) listener(row);
-      }
-      return changed;
+    listPairings() {
+      return (allPairings.all() as unknown as Row[]).map(toRow);
     },
+    revokePairing(id) {
+      const row = transaction(() => {
+        if (Number(revoke.run(now(), id).changes) === 0) return undefined;
+        const r = toRow(byId.get(id) as unknown as Row);
+        oauth.revokeGrantsFor(r.worldId, r.userId, now());
+        return r;
+      });
+      if (!row) return false;
+      notify(row);
+      return true;
+    },
+    revokeActiveFor,
+    revokePairingsFor(worldId, userId) {
+      const out = transaction(() => ({
+        pairings: revokeActiveFor(worldId, userId),
+        cancelledInvites: invites.cancelFor(worldId, userId),
+      }));
+      for (const p of out.pairings) notify(p);
+      return out;
+    },
+    notifyPairingRevoked: notify,
     getHttpTokenHash() {
       return (getSetting.get('http_token_hash') as { value: string } | undefined)?.value;
     },

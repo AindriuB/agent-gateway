@@ -9,6 +9,11 @@
     <input type="text" name="code" autocomplete="off" />
     <p class="hint">{{localize "AGENT_GATEWAY.Pairing.codeHint"}}</p>
   </div>
+  <div class="form-group agent-gateway-copy-ids">
+    <p data-role="ids">{{idsText}}</p>
+    <button type="button" data-action="copyIds"><i class="fa-solid fa-copy"></i> {{localize "AGENT_GATEWAY.Pairing.CopyIds.button"}}</button>
+    <p class="hint">{{localize "AGENT_GATEWAY.Pairing.CopyIds.hint"}}</p>
+  </div>
   <footer class="form-footer">
     <button type="submit"><i class="fa-solid fa-link"></i> {{localize "AGENT_GATEWAY.Pairing.connect"}}</button>
   </footer>

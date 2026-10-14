@@ -55,7 +55,8 @@ export function getLinkClient(): LinkClient {
       },
       user: {
         id: String(game.user?.id ?? ''),
-        name: String(game.user?.name ?? ''),
+        // The gateway refuses a hello whose name is over 100 characters.
+        name: String(game.user?.name ?? '').slice(0, 100),
         role: Number(game.user?.role ?? 0),
         isGM: Boolean(game.user?.isGM),
       },
