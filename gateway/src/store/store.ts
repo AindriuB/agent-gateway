@@ -210,6 +210,9 @@ function toRow(r: Row): PairingRow {
   };
 }
 
+/** `listForWorld` never returns more rows than the protocol's InvitesMessage allows. */
+const MAX_LISTED_ROWS = 200;
+
 export function openStore(
   path: string,
   now: () => number = Date.now,
@@ -274,7 +277,7 @@ export function openStore(
     `SELECT * FROM (
        SELECT * FROM invites WHERE world_id = ?1
        ORDER BY (used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2) DESC, created_at DESC, id
-       LIMIT MAX(?3, (SELECT COUNT(*) FROM invites WHERE world_id = ?1 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2))
+       LIMIT MIN(${MAX_LISTED_ROWS}, MAX(?3, (SELECT COUNT(*) FROM invites WHERE world_id = ?1 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?2)))
      ) ORDER BY created_at DESC, id`,
   );
   const inviteCountUnused = db.prepare(

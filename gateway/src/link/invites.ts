@@ -55,6 +55,9 @@ export function holdsAdminPairing(store: Store, worldId: string, userId: string)
     .some((p) => p.worldId === worldId && p.userId === userId && p.admin);
 }
 
+/** Open invites (unused, uncancelled, unexpired) an operator may leave in one world. */
+export const MAX_OPERATOR_OPEN_INVITES_PER_WORLD = 100;
+
 /** Store a new invite and return its code, which exists nowhere else. Call inside a transaction. */
 export function createInvite(
   store: Store,
@@ -74,6 +77,13 @@ export function createInvite(
 ): { code: string; id: string; expiresAt: number } {
   if ((target.createdBy ?? null) !== null && (target.admin === true || target.gm === true))
     throw new Error('only the operator can mint an invite that skips the vouch');
+  if (
+    (target.createdBy ?? null) === null &&
+    store.invites.countUnusedForWorld(target.worldId, now) >= MAX_OPERATOR_OPEN_INVITES_PER_WORLD
+  )
+    throw new Error(
+      `world ${target.worldId} already has ${MAX_OPERATOR_OPEN_INVITES_PER_WORLD} open invites; cancel some first`,
+    );
   const code = generateInviteCode();
   const id = randomUUID();
   const expiresAt = now + (target.ttlMs ?? INVITE_TTL_MS);

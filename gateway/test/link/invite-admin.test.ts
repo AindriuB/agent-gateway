@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { LinkMessage } from '@agent-gateway/protocol';
+import { parseLinkMessage, type LinkMessage } from '@agent-gateway/protocol';
 import {
   CREATE_WINDOW_MS,
   INVITE_MESSAGE_WINDOW_MS,
@@ -432,5 +432,54 @@ describe('listInvites and cancelInvite', () => {
     expect(byId).toMatchObject({ [r1.inviteId]: 'cancelled', [r2.inviteId]: 'unused' });
     cancel(gm, r1.inviteId, 'd');
     expect(await gm.next('error')).toMatchObject({ code: 'INVALID_ARGS', requestId: 'd' });
+  });
+});
+
+describe('open-invite cap and reply bound', () => {
+  const seedRows = (n: number, prefix: string, cancelled: boolean) =>
+    h!.store.transaction(() => {
+      for (let i = 0; i < n; i++) {
+        h!.store.invites.create({
+          id: `${prefix}${i}`,
+          codeHash: `h-${prefix}${i}`,
+          worldId: 'w1',
+          userId: `${prefix}u${i}`,
+          origin: null,
+          expiresAt: clock + INVITE_TTL_MS,
+        });
+        if (cancelled) h!.store.invites.cancelFor('w1', `${prefix}u${i}`);
+      }
+    });
+  const reparsed = (m: LinkMessage) => {
+    expect(parseLinkMessage(JSON.stringify(m)).ok).toBe(true);
+    return invitesOf(m);
+  };
+
+  it('refuses the 101st open operator invite in a world, but not in another', async () => {
+    await boot();
+    const mint = (worldId: string) => () => createInvite(h!.store, { worldId, userId: 'x' }, clock);
+    for (let i = 0; i < 100; i++) mint('w1')();
+    expect(mint('w1')).toThrow(/100 open invites/);
+    expect(h!.store.invites.countUnusedForWorld('w1', clock)).toBe(100);
+    expect(mint('w2')).not.toThrow();
+  });
+
+  it('lists all 100 open and at most 200 entries beside 150 cancelled; the reply parses', async () => {
+    await boot();
+    const gm = await admin();
+    seedRows(100, 'o', false);
+    seedRows(150, 'c', true);
+    list(gm);
+    const got = reparsed(await gm.next('invites'));
+    expect(got.length).toBeLessThanOrEqual(200);
+    expect(got.filter((i) => i.status === 'unused')).toHaveLength(100);
+  });
+
+  it('clamps a reply to 200 for pre-cap data with more open invites', async () => {
+    await boot();
+    const gm = await admin();
+    seedRows(250, 'o', false);
+    list(gm);
+    expect(reparsed(await gm.next('invites')).length).toBeLessThanOrEqual(200);
   });
 });
