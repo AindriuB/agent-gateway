@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 45 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 46 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
