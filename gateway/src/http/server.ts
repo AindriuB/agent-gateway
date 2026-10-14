@@ -347,17 +347,18 @@ export class HttpServer {
       // A session id never works with another credential.
       if (!e || e.principalKey !== principal.key) return rpcError(res, 404, 'unknown session');
       e.lastActive = this.now();
-      let body: unknown;
-      if (req.method === 'POST') {
-        const parsed = await this.parseBody(req, res);
-        if (parsed === undefined) return;
-        body = parsed.value;
-      }
       // A GET is the long-lived server-to-client stream, open for as long as the client is: it
-      // is not work in progress, so it must not pin the session against eviction.
+      // is not work in progress, so it must not pin the session against eviction. A POST counts
+      // from its first byte, so a slow body cannot be evicted mid-upload.
       const work = req.method === 'GET' ? 0 : 1;
       e.inFlight += work;
       try {
+        let body: unknown;
+        if (req.method === 'POST') {
+          const parsed = await this.parseBody(req, res);
+          if (parsed === undefined) return;
+          body = parsed.value;
+        }
         await e.transport.handleRequest(req, res, body);
       } finally {
         e.inFlight -= work;
@@ -383,14 +384,16 @@ export class HttpServer {
       (this.pendingByPrincipal.get(principal.key) ?? 0) + 1,
     );
     this.pendingByClient.set(client, (this.pendingByClient.get(client) ?? 0) + 1);
+    let server: ReturnType<HttpServerOptions['createSession']> | undefined;
     try {
-      const server = this.o.createSession({ principal });
+      server = this.o.createSession({ principal });
+      const session = server;
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           this.sessions.set(id, {
             transport,
-            server,
+            server: session,
             lastActive: this.now(),
             principalKey: principal.key,
             clientKey: client,
@@ -401,10 +404,19 @@ export class HttpServer {
       transport.onclose = () => {
         if (transport.sessionId) this.sessions.delete(transport.sessionId);
       };
-      await server.connect(transport);
+      await session.connect(transport);
       await transport.handleRequest(req, res, parsed.value);
       // A rejected handshake never registered; do not leak its session server.
-      if (!transport.sessionId) await server.close().catch(() => undefined);
+      if (!transport.sessionId) await session.close().catch(() => undefined);
+    } catch (err) {
+      // Release the session server's hub handlers, which close() alone does not when the
+      // transport never attached.
+      if (server) {
+        const attached = server.transport !== undefined;
+        await server.close().catch(() => undefined);
+        if (!attached) server.onclose?.();
+      }
+      throw err;
     } finally {
       this.pending--;
       const np = (this.pendingByPrincipal.get(principal.key) ?? 1) - 1;
@@ -421,36 +433,71 @@ export class HttpServer {
    * least-recently-active idle session is closed; another principal's never is. False means 503.
    */
   private admit(principalKey: string, client: string): boolean {
-    if (this.principalSessions(principalKey) >= MAX_HTTP_SESSIONS_PER_PRINCIPAL) {
-      if (!this.evictOne(principalKey, undefined, 'principal-cap')) return false;
-    }
-    if (this.isPublic && this.clientSessions(client) >= MAX_HTTP_SESSIONS_PER_CLIENT) {
-      if (!this.evictOne(principalKey, client, 'client-cap')) return false;
-    }
-    if (this.sessions.size + this.pending >= this.o.maxSessions) {
-      if (!this.evictOne(principalKey, undefined, 'global-cap')) return false;
-    }
+    // Plan first, evict after: a refusal must not cost the requester a session.
+    const victims = new Map<string, EvictReason>();
+    const count = (match: (e: Entry) => boolean, pending: number): number => {
+      let n = pending;
+      for (const [id, e] of this.sessions) if (match(e) && !victims.has(id)) n++;
+      return n;
+    };
+    const plan = (c: string | undefined, reason: EvictReason): boolean => {
+      const id = this.pickVictim(principalKey, c, victims);
+      if (id === undefined) return false;
+      victims.set(id, reason);
+      return true;
+    };
+    // Local clients all share one principal key, so only the global cap applies to them.
+    if (
+      this.isPublic &&
+      count(
+        (e) => e.principalKey === principalKey,
+        this.pendingByPrincipal.get(principalKey) ?? 0,
+      ) >= MAX_HTTP_SESSIONS_PER_PRINCIPAL &&
+      !plan(undefined, 'principal-cap')
+    )
+      return false;
+    if (
+      this.isPublic &&
+      count((e) => e.clientKey === client, this.pendingByClient.get(client) ?? 0) >=
+        MAX_HTTP_SESSIONS_PER_CLIENT &&
+      !plan(client, 'client-cap')
+    )
+      return false;
+    if (
+      this.sessions.size - victims.size + this.pending >= this.o.maxSessions &&
+      !plan(undefined, 'global-cap')
+    )
+      return false;
+    for (const [id, reason] of victims) this.evict(id, principalKey, reason);
     return true;
   }
 
-  private evictOne(principalKey: string, client: string | undefined, reason: EvictReason): boolean {
+  private pickVictim(
+    principalKey: string,
+    client: string | undefined,
+    skip: ReadonlyMap<string, unknown>,
+  ): string | undefined {
     let pick: [string, Entry] | undefined;
     for (const [id, e] of this.sessions) {
-      if (e.principalKey !== principalKey || e.inFlight > 0) continue;
+      if (e.principalKey !== principalKey || e.inFlight > 0 || skip.has(id)) continue;
       if (client !== undefined && e.clientKey !== client) continue;
       if (!pick || e.lastActive < pick[1].lastActive) pick = [id, e];
     }
-    if (!pick) return false;
-    this.sessions.delete(pick[0]);
-    void pick[1].server.close().catch(() => undefined);
+    return pick?.[0];
+  }
+
+  private evict(id: string, principalKey: string, reason: EvictReason): void {
+    const e = this.sessions.get(id);
+    if (!e) return;
+    this.sessions.delete(id);
+    void e.server.close().catch(() => undefined);
     const kind = principalKey.startsWith('oauth:')
       ? 'oauth'
       : principalKey === 'local'
         ? 'local'
         : 'other';
-    const idle = Math.max(0, Math.round(this.now() - pick[1].lastActive));
+    const idle = Math.max(0, Math.round(this.now() - e.lastActive));
     this.o.log?.(`http session evicted: principal=${kind} reason=${reason} idle_ms=${idle}`);
-    return true;
   }
 
   private principalSessions(principalKey: string): number {

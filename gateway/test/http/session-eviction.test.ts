@@ -39,7 +39,10 @@ function release(m: FakeModule): void {
   gate.hold = false;
 }
 
+let hostHeader = 'gw.example.com';
+
 async function setup(over: Partial<HttpServerOptions> = {}) {
+  hostHeader = 'gw.example.com';
   gate.hold = false;
   gate.held = [];
   h = await startServer();
@@ -105,7 +108,7 @@ const raw = (
         path: '/mcp',
         method,
         headers: {
-          host: 'gw.example.com',
+          host: hostHeader,
           ...(body === undefined
             ? {}
             : {
@@ -151,6 +154,19 @@ const init = (port: number, principal: string, ip: string) =>
   raw(port, { 'x-principal': principal, 'x-forwarded-for': ip }, initBody);
 const call = (port: number, principal: string, ip: string, sid: string) =>
   raw(port, { 'x-principal': principal, 'x-forwarded-for': ip, 'mcp-session-id': sid }, callBody);
+
+/** Local mode: no public URL, and every client authenticates as the one `local` principal. */
+function localOptions(): Partial<HttpServerOptions> {
+  hostHeader = '127.0.0.1';
+  return {
+    publicUrl: undefined,
+    authenticate: () => ({ key: 'local', selector: { worldId: 'w1', userId: 'u1' } }),
+    maxSessions: 16,
+  };
+}
+const localInit = (port: number, ip: string) => raw(port, { 'x-forwarded-for': ip }, initBody);
+const localCall = (port: number, ip: string, sid: string) =>
+  raw(port, { 'x-forwarded-for': ip, 'mcp-session-id': sid }, callBody);
 
 describe('HTTP session eviction', () => {
   it('a principal that never closes sessions opens 20 from rotating IPs', async () => {
@@ -246,5 +262,194 @@ describe('HTTP session eviction', () => {
     );
     for (const secret of ['grant-secret-id', first.sid!, '203.0.113.77'])
       expect(lines[0]).not.toContain(secret);
+  });
+
+  it('local mode: 17 clients all get 200 and only the least recently active is evicted', async () => {
+    const { port, lines } = await setup(localOptions());
+    hostHeader = '127.0.0.1';
+    const sids: string[] = [];
+    for (let i = 1; i <= 17; i++) {
+      const r = await localInit(port, `7.7.7.${i}`);
+      expect(r.status).toBe(200);
+      sids.push(r.sid!);
+    }
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('principal=local reason=global-cap');
+    expect((await localCall(port, '7.7.7.1', sids[0]!)).status).toBe(404);
+    for (let i = 2; i <= 17; i++)
+      expect((await localCall(port, `7.7.7.${i}`, sids[i - 1]!)).status).toBe(200);
+  });
+
+  it('local mode: a global-cap eviction spares a session in flight', async () => {
+    const { port } = await setup(localOptions());
+    hostHeader = '127.0.0.1';
+    const sids: string[] = [];
+    for (let i = 1; i <= 16; i++) sids.push((await localInit(port, `7.7.7.${i}`)).sid!);
+    gate.hold = true;
+    const busy = localCall(port, '7.7.7.1', sids[0]!);
+    await until(() => gate.held.length === 1, 3000);
+    expect((await localInit(port, '7.7.7.99')).status).toBe(200);
+    release(mod!);
+    expect((await busy).status).toBe(200);
+    expect((await localCall(port, '7.7.7.2', sids[1]!)).status).toBe(404);
+  });
+
+  it('public mode still caps one principal at 4', async () => {
+    const { port } = await setup();
+    const sids: string[] = [];
+    for (let i = 1; i <= 5; i++) sids.push((await init(port, 'a', `8.8.8.${i}`)).sid!);
+    expect(http!.sessionCount).toBe(MAX_HTTP_SESSIONS_PER_PRINCIPAL);
+    expect((await call(port, 'a', '8.8.8.1', sids[0]!)).status).toBe(404);
+    expect((await call(port, 'a', '8.8.8.2', sids[1]!)).status).toBe(200);
+  });
+
+  it('at the client cap a principal replaces its own oldest session under that client key', async () => {
+    const { port, lines } = await setup();
+    for (let p = 0; p < 3; p++) for (let i = 0; i < 4; i++) await init(port, `o${p}`, '6.6.6.6');
+    await init(port, 'q', '6.6.6.6');
+    const mine = [];
+    for (let i = 0; i < 3; i++) mine.push(await init(port, 'p', '6.6.6.6'));
+    expect(lines).toEqual([]);
+    expect((await init(port, 'p', '6.6.6.6')).status).toBe(200);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('reason=client-cap');
+    expect((await call(port, 'p', '6.6.6.6', mine[0]!.sid!)).status).toBe(404);
+    expect((await call(port, 'p', '6.6.6.6', mine[1]!.sid!)).status).toBe(200);
+  });
+
+  it('at the client cap a principal whose only idle session is elsewhere gets 503', async () => {
+    const { port, lines } = await setup();
+    const elsewhere = await init(port, 'p', '6.6.6.7');
+    for (let p = 0; p < 4; p++) for (let i = 0; i < 4; i++) await init(port, `o${p}`, '6.6.6.6');
+    expect((await init(port, 'p', '6.6.6.6')).status).toBe(503);
+    expect(lines).toEqual([]);
+    expect((await call(port, 'p', '6.6.6.7', elsewhere.sid!)).status).toBe(200);
+  });
+
+  it('a refused initialize costs the requester no session', async () => {
+    const { port, lines } = await setup();
+    const mine = [];
+    for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
+      mine.push(await init(port, 'a', '4.4.4.4'));
+    for (let p = 0; p < 4; p++) for (let i = 0; i < 4; i++) await init(port, `o${p}`, '4.4.4.5');
+    expect((await init(port, 'a', '4.4.4.5')).status).toBe(503);
+    expect(lines).toEqual([]);
+    for (const r of mine) expect((await call(port, 'a', '4.4.4.4', r.sid!)).status).toBe(200);
+  });
+
+  it('evicts the least recently active session, not the oldest opened', async () => {
+    const { port } = await setup();
+    const s: Reply[] = [];
+    for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
+      s.push(await init(port, 'a', '3.3.3.3'));
+    expect((await call(port, 'a', '3.3.3.3', s[0]!.sid!)).status).toBe(200);
+    expect((await init(port, 'a', '3.3.3.3')).status).toBe(200);
+    expect((await call(port, 'a', '3.3.3.3', s[1]!.sid!)).status).toBe(404);
+    expect((await call(port, 'a', '3.3.3.3', s[0]!.sid!)).status).toBe(200);
+  });
+
+  it('counts pending initializes toward the principal cap', async () => {
+    let open!: () => void;
+    const gated = new Promise<void>((r) => (open = r));
+    let started = 0;
+    const { port } = await setup({
+      createSession: () => {
+        const server = createSessionServer({
+          version: '0.0.0',
+          registry: h!.registry,
+          selector: { world: 'w1', user: 'u1', exactId: true },
+          tools: [fixtureTool],
+          callTimeoutMs: 5000,
+        });
+        const connect = server.connect.bind(server);
+        server.connect = async (t) => {
+          started++;
+          await gated;
+          return connect(t);
+        };
+        return server;
+      },
+    });
+    const first = Array.from({ length: MAX_HTTP_SESSIONS_PER_PRINCIPAL }, () =>
+      init(port, 'a', '2.2.2.2'),
+    );
+    await until(() => started === MAX_HTTP_SESSIONS_PER_PRINCIPAL, 3000);
+    expect((await init(port, 'a', '2.2.2.2')).status).toBe(503);
+    open();
+    for (const r of await Promise.all(first)) expect(r.status).toBe(200);
+    expect(http!.sessionCount).toBe(MAX_HTTP_SESSIONS_PER_PRINCIPAL);
+  });
+
+  it('a POST whose body is still arriving pins its session against eviction', async () => {
+    const { port, lines } = await setup();
+    const s: Reply[] = [];
+    for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
+      s.push(await init(port, 'a', '1.1.1.1'));
+    gate.hold = true;
+    const busy = s.slice(0, 3).map((r) => call(port, 'a', '1.1.1.1', r.sid!));
+    await until(() => gate.held.length === 3, 3000);
+    const slow = await new Promise<{ status: number; finish: () => void; done: Promise<number> }>(
+      (resolve, reject) => {
+        const req = request({
+          host: '127.0.0.1',
+          port,
+          path: '/mcp',
+          method: 'POST',
+          headers: {
+            host: hostHeader,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+            'x-principal': 'a',
+            'x-forwarded-for': '1.1.1.1',
+            'mcp-session-id': s[3]!.sid!,
+          },
+        });
+        const done = new Promise<number>((res2, rej2) => {
+          req.on('response', (r) => {
+            r.resume();
+            r.on('end', () => res2(r.statusCode ?? 0));
+          });
+          req.on('error', rej2);
+        });
+        req.write(callBody.slice(0, 5));
+        setTimeout(
+          () =>
+            resolve({
+              status: 0,
+              finish: () => req.end(callBody.slice(5)),
+              done,
+            }),
+          150,
+        );
+        req.on('error', reject);
+      },
+    );
+    expect((await init(port, 'a', '1.1.1.1')).status).toBe(503);
+    expect(lines).toEqual([]);
+    release(mod!);
+    slow.finish();
+    expect(await slow.done).toBe(200);
+    for (const p of await Promise.all(busy)) expect(p.status).toBe(200);
+  });
+
+  it('closes the session server and its hub handlers when connect throws', async () => {
+    let base = -1;
+    const { port } = await setup({
+      createSession: () => {
+        const server = createSessionServer({
+          version: '0.0.0',
+          registry: h!.registry,
+          selector: { world: 'w1', user: 'u1', exactId: true },
+          tools: [fixtureTool],
+          callTimeoutMs: 5000,
+        });
+        server.connect = () => Promise.reject(new Error('boom'));
+        return server;
+      },
+    });
+    base = h!.registry.listenerCount('connected');
+    const r = await init(port, 'a', '9.9.9.9');
+    expect(r.status).toBe(500);
+    expect(h!.registry.listenerCount('connected')).toBe(base);
   });
 });
