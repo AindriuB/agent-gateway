@@ -86,6 +86,7 @@ export interface Store {
   onPairingRevoked(listener: (pairing: PairingRow) => void): () => void;
   createPairing(p: NewPairing): PairingRow;
   findPairingByHash(tokenHash: string): PairingRow | undefined;
+  getPairing(id: string): PairingRow | undefined;
   /** Pairings that are not revoked. */
   listActivePairings(): PairingRow[];
   /** Every pairing row, revoked or not, oldest first. */
@@ -306,6 +307,10 @@ export function openStore(
     },
     findPairingByHash(tokenHash) {
       const r = byHash.get(tokenHash) as Row | undefined;
+      return r ? toRow(r) : undefined;
+    },
+    getPairing(id) {
+      const r = byId.get(id) as Row | undefined;
       return r ? toRow(r) : undefined;
     },
     listActivePairings() {

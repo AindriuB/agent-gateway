@@ -25,6 +25,14 @@ import { BoundedMap } from '../http/limits.js';
 import { publicHostMatches } from '../http/public-url.js';
 import { canonicalOrigin } from './origin.js';
 import { toolsets } from '../routing/toolsets.js';
+import { safeText } from '../routing/sanitize.js';
+import {
+  pairFromMemoryInvite,
+  redeemInvite,
+  type InviteClaim,
+  type MemoryInviteProvider,
+  type PairingOutcome,
+} from './invites.js';
 import { handleGrantMessage } from './grants.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
@@ -42,6 +50,8 @@ export type OriginRejection =
   | 'origin is not an allowed browser origin'
   | 'host header is not loopback'
   | 'no valid pairing code'
+  | 'no valid invite'
+  | 'invite could not be redeemed (internal error)'
   | 'pairing was made from a different origin'
   | 'pairing predates origin binding; pair again with a code'
   | 'too many failed pairing codes'
@@ -72,6 +82,13 @@ export interface LinkServerOptions {
   publicUrl?: string;
   /** Key clients by the right-most `X-Forwarded-For` entry when the TCP peer is loopback. */
   trustProxy?: boolean;
+  /**
+   * Server mode (task 68): a `pairingCode` hello is checked as an operator invite; the shared code
+   * is never consulted.
+   */
+  serverMode?: boolean;
+  /** In-memory invites (task 37's headless runner); checked in both modes, before anything else. */
+  inviteProvider?: MemoryInviteProvider;
   /** Called after a pairing code was spent on a new pairing. */
   onCodePaired?: () => void;
   /** Time a socket may stay silent before sending `hello`. */
@@ -121,13 +138,14 @@ export class LinkServer {
   private readonly pendingByClient = new BoundedMap<number>();
   private readonly isPublic: boolean;
   private boundPort = 0;
+  private readonly sockets_ = new WeakMap<LinkConnection, WebSocket>();
 
   constructor(private readonly opts: LinkServerOptions) {
     this.host = opts.host ?? '127.0.0.1';
     this.isPublic = opts.publicUrl !== undefined;
     this.attempts = new CodeAttempts(
       opts.now,
-      this.isPublic
+      this.isPublic || opts.serverMode === true
         ? {
             global: MAX_FAILED_CODE_ATTEMPTS_PUBLIC,
             perClient: MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT,
@@ -160,6 +178,22 @@ export class LinkServer {
   async close(): Promise<void> {
     for (const ws of this.sockets) ws.terminate();
     await new Promise<void>((resolve) => this.http.close(() => resolve()));
+  }
+
+  /** Tell a live connection its pairing is revoked and close its socket (1008). */
+  dropConnection(conn: LinkConnection): void {
+    const ws = this.sockets_.get(conn);
+    if (!ws) return;
+    if (ws.readyState === ws.OPEN) {
+      ws.send(
+        JSON.stringify({
+          type: 'reject',
+          code: 'PAIRING_INVALID',
+          message: 'pairing was revoked',
+        } satisfies LinkMessage),
+      );
+    }
+    ws.close(1008, 'PAIRING_INVALID');
   }
 
   private onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
@@ -435,15 +469,71 @@ export class LinkServer {
       reason: OriginRejection,
       code: ErrorCode = 'PAIRING_INVALID',
       peerMessage: string = reason,
+      detail?: string,
     ): undefined => {
-      this.opts.onOriginRejected?.(origin, reason);
+      this.opts.onOriginRejected?.(origin, reason, detail);
       reject(code, peerMessage);
       return undefined;
     };
     let agentId: string;
     let issuedToken: string | undefined;
     let recordedName: string;
-    if (hello.auth.kind === 'pairingCode') {
+    let outcome: PairingOutcome | undefined;
+    let claim: InviteClaim | undefined;
+    if (
+      hello.auth.kind === 'pairingCode' &&
+      (this.opts.serverMode === true || this.opts.inviteProvider !== undefined)
+    ) {
+      // A socket that closed before this point must not spend an invite it can never be told about.
+      if (ws.readyState !== ws.OPEN) return undefined;
+      // Checked before the invite store, so a valid invite is neither spent nor found by guessing.
+      if (this.attempts.limited(client))
+        return invalid('too many failed pairing codes', 'RATE_LIMITED');
+      const code = hello.auth.code;
+      claim = {
+        worldId: hello.world.id,
+        userId: hello.user.id,
+        // Display only: identity is the ids.
+        userName: safeText(hello.user.name),
+        origin,
+      };
+      const onError = (err: unknown): void =>
+        void this.opts.onOriginRejected?.(
+          origin,
+          'invite could not be redeemed (internal error)',
+          safeText((err as Error).message ?? String(err)),
+        );
+      const memory = this.opts.inviteProvider?.redeem(code, {
+        worldId: claim.worldId,
+        userId: claim.userId,
+        origin,
+      });
+      if (memory === 'match') outcome = pairFromMemoryInvite(store, claim, onError);
+      else if (memory === 'mismatch') outcome = { ok: false, reason: 'refused' };
+      else if (this.opts.serverMode === true)
+        outcome = redeemInvite(store, code, claim, (this.opts.now ?? Date.now)(), onError);
+    }
+    if (outcome && claim) {
+      if (!outcome.ok) {
+        if (outcome.reason === 'internal') {
+          reject('INTERNAL', 'Could not redeem the invite');
+          return undefined;
+        }
+        this.attempts.recordFailure(client);
+        return invalid(
+          'no valid invite',
+          'PAIRING_INVALID',
+          'no valid invite',
+          `hello said world ${safeText(hello.world.id)}, user ${safeText(hello.user.id)}`,
+        );
+      }
+      issuedToken = outcome.token;
+      agentId = outcome.pairing.id;
+      recordedName = claim.userName;
+    } else if (hello.auth.kind === 'pairingCode') {
+      // Local mode: anyone who can reach the link port and holds the code can claim any user id;
+      // local mode assumes the gateway is reachable only from the owner's machine. Server mode
+      // uses operator invites instead.
       // Checked before the code store, so a valid code is neither spent nor found by guessing.
       if (this.attempts.limited(client))
         return invalid('too many failed pairing codes', 'RATE_LIMITED');
@@ -496,6 +586,7 @@ export class LinkServer {
       },
       { userName: recordedName, isGM: hello.user.isGM },
     );
+    this.sockets_.set(conn, ws);
     this.opts.registry.add(conn);
     try {
       this.opts.events?.connect(conn, hello.resume);

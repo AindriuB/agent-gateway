@@ -9,6 +9,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Config } from './config/index.js';
 import { LinkListenError } from './link/server.js';
+import { RevocationSweep } from './link/revocation.js';
 import {
   LinkRegistry,
   LinkServer,
@@ -109,6 +110,8 @@ export interface AppDeps {
     setTimer: (fn: () => void, ms: number) => unknown;
     clearTimer: (handle: unknown) => void;
   };
+  /** How often the primary closes connections whose pairing was revoked; tests shorten it. */
+  revocationSweepMs?: number;
   /** The OAuth consent step (public mode). Defaults to auto-deny until the consent page (67). */
   oauthConsent?: ConsentStep;
   /** Overrides for the HTTP limits; tests shorten them. */
@@ -136,6 +139,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let secondary: RelaySecondary | undefined;
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
+  let sweep: RevocationSweep | undefined;
   // One step-down transition at a time; a request that arrives during one is ignored.
   let steppingDown = false;
   let httpNoticeShown = false;
@@ -203,6 +207,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       stdioProxy = undefined;
       codes?.stop();
       codes = undefined;
+      sweep?.stop();
+      sweep = undefined;
       await httpServer?.close();
       httpServer = undefined;
       await secondary?.stop();
@@ -321,6 +327,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     cancelHttpRetry();
     codes?.stop();
     codes = undefined;
+    sweep?.stop();
+    sweep = undefined;
     await httpServer?.close();
     httpServer = undefined;
     await relay?.close();
@@ -462,6 +470,8 @@ export function createApp(config: Config, deps: AppDeps): App {
             .catch(() => undefined);
     const thisCodes = new PairingCodes({
       ...deps.codeClock,
+      // Server mode pairs with operator invites; the shared code is off.
+      disabled: serverMode,
       onIssued: (c) => {
         // Each code gets one refusal line per origin: a repeat refusal after a refresh must show
         // the new code. Clearing (not growing) keeps the set bounded.
@@ -490,6 +500,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       host: linkHost,
       allowNonLoopback: linkHost !== HTTP_BIND_HOST,
       ...(isPublic ? { publicUrl, trustProxy } : {}),
+      serverMode,
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
         if (isPublic) thisCodes.issue('consumed');
@@ -498,11 +509,14 @@ export function createApp(config: Config, deps: AppDeps): App {
         const shown = sanitizeOrigin(origin);
         if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
         const key = `${shown} ${reason} ${detail ?? ''}`;
+        // Nothing refreshes a code in server mode, so roll the set instead of going quiet.
+        if (serverMode && warned.size >= MAX_WARNED_ORIGINS) warned.clear();
         if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
         warned.add(key);
         const live = thisCodes.current();
-        const where =
-          reason === 'no valid pairing code'
+        const where = serverMode
+          ? ''
+          : reason === 'no valid pairing code'
             ? isPublic
               ? ' The code is in this log.'
               : " The code is in this log or the client's MCP log."
@@ -535,6 +549,14 @@ export function createApp(config: Config, deps: AppDeps): App {
     queue = new OfflineQueue(store, registry);
     events.startRetention();
     thisCodes.issue('startup');
+    sweep = new RevocationSweep({
+      registry,
+      store: () => store,
+      drop: (c) => link?.dropConnection(c),
+      ...(deps.revocationSweepMs !== undefined ? { intervalMs: deps.revocationSweepMs } : {}),
+      warn: writeStatus,
+    });
+    sweep.start();
     const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
       version: deps.version,
       registry,
@@ -550,7 +572,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       log: writeStatus,
       offlineCategory: (o: Parameters<Store['queue']['catalog']>[0], name: string) =>
         store?.queue.catalog(o)?.find((t) => t.name === name)?.category,
-      ...(isPublic
+      ...(isPublic || serverMode
         ? { askOperator: true }
         : {
             pairingHint: () => {
