@@ -12,16 +12,49 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { LinkRegistry } from '../link/index.js';
 import { renderStatus } from '../status/page.js';
 import type { HttpToken } from './token.js';
+import { clientKey } from './client-key.js';
+import {
+  FAILED_AUTH_WINDOW_MS,
+  FailureWindows,
+  MAX_FAILED_AUTH_PER_CLIENT,
+  MAX_HTTP_SESSIONS_PER_CLIENT,
+  PUBLIC_CLIENT_RPS,
+  RateWindows,
+} from './limits.js';
+
+/** Who a request is, as far as the transport knows. `selector` fixes the session's (world, user). */
+export interface HttpPrincipal {
+  key: string;
+  selector?: { worldId: string; userId: string };
+}
+
+export interface SessionContext {
+  principal: HttpPrincipal;
+}
 
 export interface HttpServerOptions {
   host: string;
   port: number;
-  token: HttpToken;
+  /** Local mode: the static bearer token. Ignored when `authenticate` is given. */
+  token?: HttpToken;
+  /**
+   * Who the request is, or undefined when it carries no accepted credential. Defaults to a
+   * wrapper around `token`; with neither, nothing is accepted.
+   */
+  authenticate?: (req: IncomingMessage) => HttpPrincipal | undefined;
+  /**
+   * The external origin (`https://gw.example.com`). Its host joins the allowed Host values and the
+   * origin is the only non-loopback Origin allowed. Setting it turns on the per-client request and
+   * session limits and the minimal `/status`.
+   */
+  publicUrl?: string;
+  /** Read the right-most `X-Forwarded-For` entry when the TCP peer is loopback. */
+  trustProxy?: boolean;
   registry: LinkRegistry;
   version: string;
   startedAt: number;
   /** One fresh session server per HTTP MCP session. */
-  createSession: () => McpServer;
+  createSession: (ctx: SessionContext) => McpServer;
   maxRequestBytes: number;
   rps: number;
   maxSessions: number;
@@ -33,6 +66,8 @@ interface Entry {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   lastActive: number;
+  principalKey: string;
+  clientKey: string;
 }
 
 class BodyTooLarge extends Error {}
@@ -72,11 +107,53 @@ export class HttpServer {
   private readonly sessions = new Map<string, Entry>();
   private pending = 0;
   private sweeper: NodeJS.Timeout | undefined;
+  private pendingByClient = new Map<string, number>();
   private window = { start: 0, count: 0 };
   private readonly now: () => number;
+  private readonly failedAuth: FailureWindows;
+  private readonly clientRate: RateWindows;
+  private readonly publicHost: string | undefined;
+  private readonly publicOrigin: string | undefined;
+  private readonly authenticate: (req: IncomingMessage) => HttpPrincipal | undefined;
 
   constructor(private readonly o: HttpServerOptions) {
     this.now = o.now ?? Date.now;
+    this.failedAuth = new FailureWindows(
+      MAX_FAILED_AUTH_PER_CLIENT,
+      FAILED_AUTH_WINDOW_MS,
+      this.now,
+    );
+    this.clientRate = new RateWindows(PUBLIC_CLIENT_RPS, this.now);
+    if (o.publicUrl) {
+      const u = new URL(o.publicUrl);
+      this.publicHost = u.host;
+      this.publicOrigin = u.origin;
+    }
+    const token = o.token;
+    this.authenticate =
+      o.authenticate ?? ((req) => (token?.verify(this.bearer(req)) ? { key: 'local' } : undefined));
+  }
+
+  private get isPublic(): boolean {
+    return this.publicHost !== undefined;
+  }
+
+  private hostAllowed(header: string | undefined): boolean {
+    const host = hostName(header);
+    if (host && LOOPBACK_HOSTS.has(host)) return true;
+    if (!this.publicHost || !header || !this.publicOrigin) return false;
+    try {
+      const scheme = new URL(this.publicOrigin).protocol;
+      return new URL(`${scheme}//${header}`).host === this.publicHost;
+    } catch {
+      return false;
+    }
+  }
+
+  private originAllowed(origin: string): boolean {
+    if (origin === this.publicOrigin) return true;
+    const name = hostName(origin.replace(/^[a-z]+:\/\//i, ''));
+    return !!name && LOOPBACK_HOSTS.has(name);
   }
 
   get sessionCount(): number {
@@ -158,20 +235,26 @@ export class HttpServer {
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Defence against DNS rebinding: only loopback Host and Origin names are served.
-    const host = hostName(req.headers.host);
-    if (!host || !LOOPBACK_HOSTS.has(host)) return send(res, 403, 'forbidden host');
-    if (req.headers.origin !== undefined) {
-      const origin = hostName(req.headers.origin.replace(/^[a-z]+:\/\//i, ''));
-      if (!origin || !LOOPBACK_HOSTS.has(origin)) return send(res, 403, 'forbidden origin');
-    }
+    if (!this.hostAllowed(req.headers.host)) return send(res, 403, 'forbidden host');
+    if (req.headers.origin !== undefined && !this.originAllowed(req.headers.origin))
+      return send(res, 403, 'forbidden origin');
+    const client = clientKey(
+      req.socket.remoteAddress,
+      req.headers['x-forwarded-for'],
+      this.o.trustProxy === true,
+    );
     const path = (req.url ?? '').split('?')[0];
     if (path === '/status') {
       if (req.method !== 'GET') return send(res, 405, 'method not allowed');
-      const worlds = this.o.registry.list().map((c) => ({
-        worldId: c.worldId,
-        userId: c.userId,
-        userName: c.info.userName,
-      }));
+      // A public gateway shows who is connected only to a request it can authenticate.
+      const detailed = !this.isPublic || this.authenticate(req) !== undefined;
+      const worlds = detailed
+        ? this.o.registry.list().map((c) => ({
+            worldId: c.worldId,
+            userId: c.userId,
+            userName: c.info.userName,
+          }))
+        : [];
       return send(
         res,
         200,
@@ -179,14 +262,27 @@ export class HttpServer {
           version: this.o.version,
           uptimeMs: this.now() - this.o.startedAt,
           worlds,
+          ...(detailed ? {} : { minimal: true }),
         }),
         'text/html',
       );
     }
     if (path !== '/mcp') return send(res, 404, 'not found');
-    if (!this.o.token.verify(this.bearer(req))) {
+    // Failed attempts are counted per client and checked before the token is, so a guesser is
+    // stopped without being able to learn anything from the answer.
+    if (this.failedAuth.limited(client)) {
+      res.setHeader('retry-after', String(Math.ceil(FAILED_AUTH_WINDOW_MS / 1000)));
+      return send(res, 429, 'too many failed attempts');
+    }
+    const principal = this.authenticate(req);
+    if (!principal) {
+      this.failedAuth.record(client);
       res.setHeader('www-authenticate', 'Bearer');
       return send(res, 401, 'unauthorized');
+    }
+    if (this.isPublic && this.clientRate.exceeded(client)) {
+      res.setHeader('retry-after', '1');
+      return send(res, 429, 'too many requests');
     }
     if (this.rateLimited()) {
       res.setHeader('retry-after', '1');
@@ -195,7 +291,8 @@ export class HttpServer {
     const sid = req.headers['mcp-session-id'];
     if (typeof sid === 'string') {
       const e = this.sessions.get(sid);
-      if (!e) return rpcError(res, 404, 'unknown session');
+      // A session id never works with another credential.
+      if (!e || e.principalKey !== principal.key) return rpcError(res, 404, 'unknown session');
       e.lastActive = this.now();
       let body: unknown;
       if (req.method === 'POST') {
@@ -216,13 +313,23 @@ export class HttpServer {
     if (this.sessions.size + this.pending >= this.o.maxSessions) {
       return rpcError(res, 503, 'too many sessions');
     }
+    if (this.isPublic && this.clientSessions(client) >= MAX_HTTP_SESSIONS_PER_CLIENT) {
+      return rpcError(res, 503, 'too many sessions');
+    }
     this.pending++;
+    this.pendingByClient.set(client, (this.pendingByClient.get(client) ?? 0) + 1);
     try {
-      const server = this.o.createSession();
+      const server = this.o.createSession({ principal });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
-          this.sessions.set(id, { transport, server, lastActive: this.now() });
+          this.sessions.set(id, {
+            transport,
+            server,
+            lastActive: this.now(),
+            principalKey: principal.key,
+            clientKey: client,
+          });
         },
       });
       transport.onclose = () => {
@@ -234,7 +341,16 @@ export class HttpServer {
       if (!transport.sessionId) await server.close().catch(() => undefined);
     } finally {
       this.pending--;
+      const n = (this.pendingByClient.get(client) ?? 1) - 1;
+      if (n <= 0) this.pendingByClient.delete(client);
+      else this.pendingByClient.set(client, n);
     }
+  }
+
+  private clientSessions(client: string): number {
+    let n = this.pendingByClient.get(client) ?? 0;
+    for (const e of this.sessions.values()) if (e.clientKey === client) n++;
+    return n;
   }
 
   /** Read and parse a JSON body; replies and returns undefined when it cannot. */
