@@ -69,7 +69,26 @@ describe('byo-caddy.Caddyfile', () => {
   });
 });
 
+const IMAGE =
+  'image: ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION:?set GATEWAY_VERSION in .env}';
+describe('image reference', () => {
+  it('pulls the GHCR image and can still build from source in both files', () => {
+    for (const text of [byo, bundled]) {
+      const body = service(text, 'gateway');
+      assert.equal(block(body, 'image').trim(), IMAGE);
+      assert.match(block(body, 'build'), /context: \.\.\/\.\.\n\s+dockerfile: gateway\/Dockerfile/);
+      assert.doesNotMatch(text, /foundry-agent-gateway:\$\{GATEWAY_VERSION:-/);
+    }
+  });
+});
+
 describe('.env.example', () => {
+  it('pins GATEWAY_VERSION with no latest', () => {
+    const env = read('.env.example');
+    assert.match(env, /^GATEWAY_VERSION=\d+\.\d+\.\d+$/m);
+    assert.doesNotMatch(env, /latest/);
+    assert.match(env, /--build/);
+  });
   it('gains the two commented lines and keeps the old ones', () => {
     const env = read('.env.example');
     assert.match(env, /^#COMPOSE_FILE=compose\.byo-caddy\.yaml$/m);
@@ -81,6 +100,20 @@ describe('.env.example', () => {
 });
 
 describe('README', () => {
+  it('explains the GHCR pull, login, version and build', () => {
+    const readme = read('README.md');
+    for (const s of [
+      'ghcr.io',
+      'read:packages',
+      '--password-stdin',
+      'GATEWAY_VERSION',
+      '--build',
+    ]) {
+      assert.ok(readme.includes(s), s);
+    }
+    assert.doesNotMatch(readme, /once an image is published/);
+  });
+
   it('has the Bring your own Caddy section', () => {
     const readme = read('README.md');
     const m = readme.match(/^## Bring your own Caddy\n([\s\S]*?)(?=^## |(?![\s\S]))/m);

@@ -21,6 +21,7 @@ const files = [
   'package-lock.json',
   'module.json',
   'gateway/mcpb/manifest.json',
+  'gateway/docker/.env.example',
 ];
 const tmp = mkdtempSync(path.join(tmpdir(), 'bump-version-'));
 after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -74,6 +75,11 @@ describe('bump-version', () => {
     for (const k of ['', 'protocol', 'module', 'gateway']) {
       assert.equal(lock.packages[k].version, '9.8.7', `lock ${k}`);
     }
+    const env = readFileSync(path.join(root, 'gateway/docker/.env.example'), 'utf8');
+    assert.equal(env.match(/^GATEWAY_VERSION=9\.8\.7$/gm).length, 1);
+    const orig = readFileSync(path.join(fixtures, 'gateway/docker/.env.example'), 'utf8');
+    const lines = (t) => t.split('\n').filter((l) => !l.startsWith('GATEWAY_VERSION='));
+    assert.deepEqual(lines(env), lines(orig));
     assert.equal(run('--check').status, 0);
     assert.equal(run('--check', '9.8.7').status, 0);
     assert.notEqual(run('--check', '1.0.0').status, 0);
@@ -110,6 +116,17 @@ describe('bump-version', () => {
     const r = run('--check');
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /pin @agent-gateway\/protocol is 0\.0\.1-stale/);
+  });
+
+  it('--check fails when only the .env.example pin disagrees', () => {
+    const f = path.join(root, 'gateway/docker/.env.example');
+    writeFileSync(
+      f,
+      readFileSync(f, 'utf8').replace(/^GATEWAY_VERSION=.*$/m, `GATEWAY_VERSION=${STALE}`),
+    );
+    const r = run('--check');
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /\.env\.example.* is 0\.0\.1-stale/);
   });
 
   it('--check fails when only the download tag disagrees', () => {

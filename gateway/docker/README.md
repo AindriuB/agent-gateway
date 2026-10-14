@@ -17,11 +17,18 @@ Caddy gets a TLS certificate for your domain and proxies to the gateway, which s
 
 ```
 cd gateway/docker
-cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL
-docker compose up -d --build
+cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION picks the image
+# While the package is private, log in first with a token that has read:packages:
+docker login ghcr.io -u <github-user> --password-stdin   # paste the token on stdin
+docker compose pull
+docker compose up -d
 docker compose ps         # both services should be running; gateway "healthy"
 curl https://<domain>/status
 ```
+
+To build from source instead of pulling, run `docker compose up -d --build`. Use it until v0.1.0
+is published, or for any version that has no image. Never put the token in a file or on the
+command line; pass it on stdin.
 
 `/status` shows only the version and uptime.
 
@@ -116,11 +123,11 @@ There is no static bearer token to rotate in this mode: it is off when a public 
 ## Update
 
 ```
-git pull
-docker compose up -d --build
+# set GATEWAY_VERSION in .env to the new version, then:
+docker compose pull && docker compose up -d
 ```
 
-(or `docker compose pull` and `docker compose up -d` once an image is published).
+To build from source instead: `git pull` and `docker compose up -d --build`.
 
 ## Data and backup
 

@@ -292,9 +292,9 @@ These are the core tools. Pack tools come on top, always named
   GHCR, decided 2026-10-14 by task 77).
 - Single version number across module, gateway and protocol; handshake refuses
   a major protocol mismatch with an actionable message.
-- GitHub Actions is blocked by billing, so `npm run release` runs locally from
-  the homelab (build, test on v13 and v14, upload with `gh`). Whether Actions
-  really is blocked is being tested by task 77's first PR run.
+- `npm run release` runs locally from the homelab (build, test on v13 and v14,
+  upload with `gh`). GitHub Actions does run on this private repo (first green
+  CI run 2026-10-14, PR #128) and runs the tests and the image publish.
 - Project submission checklist: confirm the "AI Tools" category with Foundry;
   AI-assisted code attestation; human-authored prepared content and listing;
   no other-module context without rights and opt-in; code confirmation; listing
