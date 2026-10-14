@@ -8,7 +8,8 @@ for several people at once. It has no stdio session and stays up when stdin clos
 
 `gateway/docker/compose.yaml` runs two services:
 
-- `gateway`: the image built from `gateway/Dockerfile`. It binds 127.0.0.1:7420 (the module
+- `gateway`: the image `ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` (built from
+  `gateway/Dockerfile`; `docker compose up -d --build` builds it locally). It binds 127.0.0.1:7420 (the module
   link) and 127.0.0.1:7421 (HTTP, with `/mcp` and `/status`). It has no browser and runs as a
   non-root user.
 - `caddy`: terminates TLS and shares the gateway's network namespace

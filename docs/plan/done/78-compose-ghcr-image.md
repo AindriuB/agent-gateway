@@ -87,3 +87,18 @@ The release.test.mjs entry is needed because of the bump-version change, not as 
 - The docs/releasing.md:14-16 list of files that bump-version touches is a scribe item at record time: add gateway/docker/.env.example.
 - The `v0.1.0-rc.1` scratch tag: leave it as it is.
 - scripts/release.mjs: no change. It already runs bump-version over the whole root.
+
+## Outcome
+
+Done on branch `claude/task-78` (HEAD 4a2f06d, based on `origin/main` 72561f9), 2026-10-14. `/review` was clean. `/verify`: reviewer APPROVE; tester PASS on build, lint, `test:slow` (2227) and `test:scripts` (62). `npm test` hit only the known stepdown flake (task 79 is fixing it) and passed alone once machine load dropped. The reviewer also ran real Docker: with `GATEWAY_VERSION` unset, Compose gives the clear `:?` error, and with it set the image resolves to `ghcr.io/aindriub/foundry-agent-gateway:0.1.0`.
+
+What landed:
+- Both Compose files use `image: ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION:?set GATEWAY_VERSION in .env}` and keep their `build:` block. There is no override file, and the README promises nothing about what a denied pull does (Amendment 1, decision 1).
+- `gateway/docker/.env.example` carries `GATEWAY_VERSION=0.1.0`. `scripts/bump-version.mjs` owns that line (Amendment 1, decision 2), so `--check` now prints `all 15 places agree on 0.1.0` (14 before) and the CI image job's tag check also guards the pin.
+- The README "Start" and "Update" sections describe the GHCR login (`read:packages`, `--password-stdin`), `docker compose pull`, and `--build` as the alternative.
+- A cross-file test shows the Compose image repository equals the `images:` value in `ci.yml`.
+
+Residuals:
+- No test fixture has a commented `#GATEWAY_VERSION` line to prove the `^` anchor in the bump-version regex. The regex is correct today; this is an optional P3.
+- `scripts/release.mjs` still tags its local build `foundry-agent-gateway:<version>`, a different name from the Compose image. Left alone as the task said.
+- Pulls fail until v0.1.0 is published (it is a private draft until MVP B is done), so use `docker compose up -d --build` until then.

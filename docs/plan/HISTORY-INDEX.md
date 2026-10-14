@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-14 | 78 | Compose uses the GHCR image: both files pull `ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` and keep `build:`; `bump-version` owns the pin (15 places) | `## 2026-10-14 — Compose uses the GHCR image (task 78)` |
 | 2026-10-14 | 77 | GHCR image workflow: `ci.yml` tests on PR, main and tags; multi-arch image pushed to private GHCR on `v*` tags after a version check; releasing.md gained image publishing and pulling | `## 2026-10-14 — GHCR image workflow (task 77)` |
 | 2026-10-14 | 75 | Consent page footer: optional privacy and source links (`--privacy-url`, `--source-url`), cookie note, GitHub and Ascend marks; relaxes 67's bans for the footer only | `## 2026-10-14 — Consent page footer (task 75)` |
 | 2026-10-14 | 76 | Run the gateway behind an existing Caddy: standalone `compose.byo-caddy.yaml` with host or container network mode, site block, README section | `## 2026-10-14 — Run behind an existing Caddy (task 76)` |

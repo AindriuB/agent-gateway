@@ -13,7 +13,7 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
 1. Refuses to start on a dirty tree or on any branch except `main`.
 2. Runs `scripts/bump-version.mjs <version>`: root, `protocol`, `module` and `gateway`
    `package.json`, `package-lock.json`, `module.json` (`version` and the `download` tag) and
-   `gateway/mcpb/manifest.json`. `npm run bump-version -- --check` reports any that disagree.
+   `gateway/mcpb/manifest.json`, and `GATEWAY_VERSION` in `gateway/docker/.env.example`. `npm run bump-version -- --check` reports any that disagree.
 3. Runs the gates in order, aborting on the first failure: `npm run verify`,
    `npm run test:scripts`, `npm run test:conformance` (must print
    `conformance: ok (inspector <v>, stdio, http)`), `npm run test:e2e -- --foundry v14`,
@@ -61,8 +61,10 @@ The image is multi-arch (amd64, arm64); the extra `unknown/unknown` entries in
 `docker buildx imagetools inspect` are provenance attestations and are expected.
 
 The package is private. To pull it on a VPS, run `docker login ghcr.io` with a GitHub token
-that has `read:packages`, then in `gateway/docker/` set the gateway service's image to
-`ghcr.io/aindriub/foundry-agent-gateway:<version>` in place of the local build.
+that has `read:packages`. Both Compose files in `gateway/docker/` pull
+`ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` by default, and `bump-version` keeps
+`GATEWAY_VERSION` in `.env.example` at the repo version. Pulls fail until v0.1.0 is published;
+use `docker compose up -d --build` until then.
 
 ## Stops that need Andrew's explicit go-ahead
 
