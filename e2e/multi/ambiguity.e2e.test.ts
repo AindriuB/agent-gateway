@@ -3,7 +3,8 @@ import { loadContext } from '../lib/context.js';
 import { AMBIGUITY_CALLS } from './calls.js';
 import { ambiguityProblems, countActivePairings } from './pairs.js';
 import { recordResult } from './results.js';
-import { Rig } from './rig.js';
+import { RECONNECT_MS, Rig } from './rig.js';
+import { waitFor } from './frames.js';
 
 const ctx = loadContext();
 const { gmUser, playerUser } = ctx.config;
@@ -15,7 +16,8 @@ describe('no --user with several paired identities', () => {
     expect(countActivePairings(ctx.paths.db), 'active pairings').toBeGreaterThanOrEqual(2);
     rig = new Rig(ctx);
     // Unbound gateway: --world test-world and no --user.
-    await rig.open(undefined, [gmUser, playerUser]);
+    // The MCP client connects only after both pages are welcomed (task 71 follow mode).
+    await rig.openThenConnect(undefined, [gmUser, playerUser]);
     closes = {
       gm: rig.frames(gmUser).closes,
       player: rig.frames(playerUser).closes,
@@ -59,5 +61,24 @@ describe('no --user with several paired identities', () => {
     });
     expect(gm).toBe(0);
     expect(pl).toBe(0);
+  });
+
+  it('binds to the survivor once the other page leaves', async () => {
+    const gmCallsBefore = rig.frames(gmUser).calls;
+    const plCallsBefore = rig.frames(playerUser).calls;
+    const player = rig.users.get(playerUser)!;
+    const closesBefore = player.frames.closes;
+    await player.browser.close();
+    const closed = await waitFor(() => player.frames.closes > closesBefore, RECONNECT_MS);
+    expect(closed, `${playerUser} link did not close`).toBeDefined();
+    let last = '';
+    const served = await waitFor(async () => {
+      const r = await rig.gateway!.call('world_info');
+      last = r.text;
+      return !r.isError;
+    }, RECONNECT_MS);
+    expect(served, `world_info never succeeded: ${last}`).toBeDefined();
+    expect(rig.frames(gmUser).calls).toBeGreaterThan(gmCallsBefore);
+    expect(rig.frames(playerUser).calls).toBe(plCallsBefore);
   });
 });

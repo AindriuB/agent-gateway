@@ -25,6 +25,10 @@ export class Rig {
   /** Start a gateway (bound to `user`, or unbound), then open and join every browser. */
   async open(boundTo: string | undefined, users: readonly string[]): Promise<void> {
     await this.startGateway(boundTo);
+    await this.joinAll(users);
+  }
+
+  private async joinAll(users: readonly string[]): Promise<void> {
     for (const user of users) {
       const frames = new FrameCounter(this.ctx.config.linkPort);
       const browser = await openUserBrowser(this.ctx.config, this.ctx.paths, user, {
@@ -37,16 +41,29 @@ export class Rig {
     await this.waitAllWelcomed(0, RECONNECT_MS);
   }
 
+  /**
+   * Like `open`, but the MCP client connects only after every page is welcomed, so the session's
+   * first resolve sees all pairings connected (task 71: an earlier session would bind in follow mode).
+   */
+  async openThenConnect(boundTo: string | undefined, users: readonly string[]): Promise<void> {
+    await this.startGateway(boundTo, { connectClient: false });
+    await this.joinAll(users);
+    await this.gateway!.connectClient();
+  }
+
   frames(user: string): FrameCounter {
     const u = this.users.get(user);
     if (!u) throw new Error(`no open browser for ${user}`);
     return u.frames;
   }
 
-  async startGateway(boundTo: string | undefined): Promise<void> {
+  async startGateway(
+    boundTo: string | undefined,
+    opts?: { connectClient?: boolean },
+  ): Promise<void> {
     const gw = new GatewayProcess(this.ctx.config, this.ctx.paths, boundTo);
-    await gw.start();
     this.gateway = gw;
+    await (opts ? gw.start(opts) : gw.start());
   }
 
   /** Stop the current gateway by its PID and start another on the same port and DB. */
