@@ -71,12 +71,23 @@ function toRow(r: Row): PairingRow {
   };
 }
 
-export function openStore(path: string, now: () => number = Date.now): Store {
+export function openStore(
+  path: string,
+  now: () => number = Date.now,
+  warn: (line: string) => void = (l) => void process.stderr.write(`${l}\n`),
+): Store {
   const db = new DatabaseSync(path);
   try {
     // Wait briefly for a concurrent reader instead of failing with SQLITE_BUSY.
     db.exec('PRAGMA busy_timeout = 5000');
-    db.exec('PRAGMA journal_mode = DELETE');
+    // WAL lets readers (the rotate check, --backup) run beside the gateway's writes. It is stored
+    // in the file; an older binary converts it back to DELETE and this one converts it again.
+    const mode = (db.prepare('PRAGMA journal_mode = WAL').get() as { journal_mode: string })
+      .journal_mode;
+    if (mode !== 'wal' && mode !== 'memory')
+      warn(
+        `SQLite journal mode is ${mode}, not wal (this filesystem may not support it); continuing`,
+      );
     applyMigrations(db, MIGRATIONS);
   } catch (err) {
     db.close();
