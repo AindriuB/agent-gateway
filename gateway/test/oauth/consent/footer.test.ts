@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { call } from '../helpers.js';
-import { ASCEND_PATH } from '../../../src/oauth/consent/marks.js';
+import { GITHUB_PATH } from '../../../src/oauth/consent/marks.js';
 import { COOKIE_PREFIX } from '../../../src/oauth/consent/render.js';
 import { consentRig, openConsent, postConsent, stopRig, type ConsentRig } from './rig.js';
 
@@ -62,22 +62,23 @@ describe('consent footer', () => {
     expect((await openConsent(r)).reply.body).not.toContain('>Privacy<');
   });
 
-  it('shows the source link with two decorative marks only when set', async () => {
+  it('shows the source link with one decorative mark only when set', async () => {
     r = await consentRig({ sourceUrl: SOURCE });
     const f = footerOf((await openConsent(r)).reply.body);
     const a = /<a href="https:\/\/example\.org\/source"[^>]*>[\s\S]*?<\/a>/.exec(f)?.[0] ?? '';
     expect(a).toContain('rel="noopener noreferrer"');
-    expect(a).toContain('aria-label="Source code on GitHub, by Ascend"');
+    expect(a).toContain('aria-label="Source code on GitHub"');
+    expect(a).not.toMatch(/ascend/i);
     expect(a).toContain('Source code</span>');
     const svgs = a.match(/<svg[\s\S]*?<\/svg>/g) ?? [];
-    expect(svgs).toHaveLength(2);
+    expect(svgs).toHaveLength(1);
     for (const s of svgs) {
       expect(s).toContain('aria-hidden="true"');
       expect(s).toContain('focusable="false"');
       expect(s).toContain('fill="currentColor"');
       expect(s).not.toMatch(/style=|<style|<title|\sid=|href|<use/);
     }
-    expect(svgs.some((s) => s.includes(`d="${ASCEND_PATH}"`))).toBe(true);
+    expect(svgs[0]).toContain(`d="${GITHUB_PATH}"`);
     await stopRig(r);
     r = await consentRig();
     const none = (await openConsent(r)).reply.body;

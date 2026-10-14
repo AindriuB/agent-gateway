@@ -46,7 +46,8 @@ describe('consent styling', () => {
         expect(p.body).not.toMatch(/<style|style=|<img|<script|\ssrc=|url\(|<use|xlink:/i);
         const foot = /<footer[\s\S]*<\/footer>/.exec(p.body)?.[0] ?? '';
         const outside = p.body.replace(foot, '');
-        expect(outside).not.toMatch(/<svg|ascend/i);
+        expect(outside).not.toMatch(/<svg/i);
+        expect(p.body).not.toMatch(/ascend/i);
         const hrefs = [...p.body.matchAll(/\bhref="([^"]*)"/gi)]
           .map((m) => m[1]!)
           .filter((h) => /^[a-z]+:\/\//i.test(h));
@@ -57,8 +58,8 @@ describe('consent styling', () => {
           expect(hrefs.sort()).toEqual([PRIVACY, SOURCE].sort());
           const inFoot = [...foot.matchAll(/\bhref="(https?:\/\/[^"]*)"/gi)].map((m) => m[1]!);
           expect(inFoot.sort()).toEqual([PRIVACY, SOURCE].sort());
-          expect(foot.match(/<svg/g)).toHaveLength(2);
-          expect(p.body.match(/<svg/g)).toHaveLength(2);
+          expect(foot.match(/<svg/g)).toHaveLength(1);
+          expect(p.body.match(/<svg/g)).toHaveLength(1);
           expect(foot).toMatch(/<svg/);
         }
       }
