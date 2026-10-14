@@ -1,7 +1,10 @@
 import { PassThrough } from 'node:stream';
+import WebSocket from 'ws';
+import { MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT } from '../../src/link/code-attempts.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../../src/app.js';
 import { createInvite } from '../../src/link/invites.js';
+import { loadOrCreateToken } from '../../src/http/index.js';
 import { openStore } from '../../src/store/index.js';
 import { ORIGIN, TestClient, hello } from './helpers.js';
 import { freePort, tempState, until } from '../relay/harness.js';
@@ -103,6 +106,108 @@ describe('server mode, whole app', () => {
     const again = await t.connect();
     again.send(hello({ kind: 'pairingToken', token: welcome.pairingToken }));
     expect(await again.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
+  });
+});
+
+describe('server mode with --trust-proxy and no public URL', () => {
+  const apps: App[] = [];
+  const clients: TestClient[] = [];
+  const cleanups: (() => void)[] = [];
+  afterEach(async () => {
+    clients.splice(0).forEach((c) => c.ws.terminate());
+    for (const a of apps.splice(0)) await a.stop();
+    for (const c of cleanups.splice(0)) c();
+  });
+
+  it('keys invite failures by X-Forwarded-For: one client is limited, another still redeems', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const linkPort = await freePort();
+    let httpPort = await freePort();
+    while (httpPort === linkPort) httpPort = await freePort();
+    const app = createApp(config({ serverMode: true, trustProxy: true }, linkPort, httpPort), {
+      version: '0.0.0-test',
+      dbPath: state.db,
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      writeStatus: () => undefined,
+    });
+    apps.push(app);
+    await app.start();
+    const store = openStore(state.db);
+    const { code } = createInvite(store, { worldId: 'w1', userId: 'u1' }, Date.now());
+    store.close();
+    const attempt = async (ip: string, c: string) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${linkPort}`, {
+        origin: ORIGIN,
+        headers: { 'x-forwarded-for': ip },
+      });
+      await new Promise<void>((res, rej) => {
+        ws.once('open', () => res());
+        ws.once('error', rej);
+      });
+      const tc = new TestClient(ws);
+      clients.push(tc);
+      tc.send(hello({ kind: 'pairingCode', code: c }));
+      return tc.next();
+    };
+    for (let i = 0; i < MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT; i++)
+      expect(await attempt('203.0.113.9', 'ZZZZ-ZZZZ-ZZZZ')).toMatchObject({
+        code: 'PAIRING_INVALID',
+      });
+    expect(await attempt('203.0.113.9', 'ZZZZ-ZZZZ-ZZZZ')).toMatchObject({ code: 'RATE_LIMITED' });
+    expect(await attempt('203.0.113.10', code)).toMatchObject({ type: 'welcome' });
+  });
+});
+
+describe('server mode HTTP with --trust-proxy and no public URL', () => {
+  const apps: App[] = [];
+  const cleanups: (() => void)[] = [];
+  afterEach(async () => {
+    for (const a of apps.splice(0)) await a.stop();
+    for (const c of cleanups.splice(0)) c();
+  });
+
+  it('gives each forwarded client its own failed-auth bucket, and says when --trust-proxy is off', async () => {
+    for (const trustProxy of [true, false]) {
+      const state = tempState();
+      cleanups.push(state.cleanup);
+      const store = openStore(state.db);
+      const token = loadOrCreateToken(store);
+      const bearer = token.created!;
+      token.commit();
+      store.close();
+      const linkPort = await freePort();
+      let httpPort = await freePort();
+      while (httpPort === linkPort) httpPort = await freePort();
+      const lines: string[] = [];
+      const app = createApp(config({ serverMode: true, trustProxy }, linkPort, httpPort), {
+        version: '0.0.0-test',
+        dbPath: state.db,
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        writeStatus: (l) => lines.push(l),
+      });
+      apps.push(app);
+      await app.start();
+      expect(lines.some((l) => l.includes('--trust-proxy is off'))).toBe(!trustProxy);
+      if (!trustProxy) continue;
+      const mcp = (ip: string, auth: string) =>
+        fetch(`http://127.0.0.1:${httpPort}/mcp`, {
+          method: 'POST',
+          headers: {
+            'x-forwarded-for': ip,
+            authorization: `Bearer ${auth}`,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+          },
+          body: '{}',
+        });
+      for (let i = 0; i < 10; i++) expect((await mcp('203.0.113.9', 'wrong')).status).toBe(401);
+      expect((await mcp('203.0.113.9', 'wrong')).status).toBe(429);
+      const other = await mcp('203.0.113.10', bearer);
+      expect([401, 429]).not.toContain(other.status);
+    }
   });
 });
 

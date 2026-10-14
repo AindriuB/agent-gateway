@@ -532,7 +532,9 @@ export function createApp(config: Config, deps: AppDeps): App {
       port: config.linkPort,
       host: linkHost,
       allowNonLoopback: linkHost !== HTTP_BIND_HOST,
-      ...(isPublic ? { publicUrl, trustProxy } : {}),
+      ...(isPublic ? { publicUrl } : {}),
+      // Per-client limits in server mode need real client keys with or without a public URL.
+      ...(trustProxy ? { trustProxy } : {}),
       serverMode,
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
@@ -635,7 +637,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         writeStatus(
           'warning: --public-url uses http: on a loopback host; this is for local testing only, use https: in production',
         );
-      if (isPublic && !trustProxy)
+      if ((isPublic || serverMode) && !trustProxy)
         writeStatus(
           '--trust-proxy is off: if a reverse proxy is in front, every client shares one rate-limit bucket',
         );
@@ -656,7 +658,8 @@ export function createApp(config: Config, deps: AppDeps): App {
         host: httpHost,
         port: config.httpPort,
         ...(token ? { token } : oauth ? { oauth } : { authenticate: () => undefined }),
-        ...(isPublic ? { publicUrl, trustProxy } : {}),
+        ...(isPublic ? { publicUrl } : {}),
+        ...(trustProxy ? { trustProxy } : {}),
         registry,
         version: deps.version,
         startedAt,
