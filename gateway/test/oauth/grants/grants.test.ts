@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { call } from '../helpers.js';
 import { pairModule, type FakeModule } from '../../routing/harness.js';
 import { form, grantVia, consentRig, mcpWith, stopRig, type ConsentRig } from '../consent/rig.js';
@@ -89,27 +91,23 @@ describe('grants over the link', () => {
 
   it('a token granted for one user never reaches the other user', async () => {
     const { u1, u2, t1 } = await twoGranted();
-    // The MCP session for t1 is pinned to (w1,u1): its tool call lands on u1 only.
-    const init = await call(r!.port, 'POST', '/mcp', {
-      headers: {
-        authorization: `Bearer ${t1.access}`,
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          capabilities: {},
-          clientInfo: { name: 't', version: '0' },
-        },
+    const c = new Client({ name: 't', version: '0' });
+    await c.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${r!.port}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${t1.access}` } },
       }),
-    });
-    expect(init.status).toBe(200);
-    expect(u2.tc.messages.filter((m) => m.type === 'call')).toHaveLength(0);
-    expect(r!.h.store.oauth.listLiveGrants('w1', 'u1')[0]!.userId).toBe('u1');
-    void u1;
+    );
+    try {
+      const res = c.callTool({ name: 'fixture_tool', arguments: { a: 'x' } });
+      // The call frame lands on u1's connection and is answered there.
+      const frame = (await u1.tc.next('call')) as { id: string; tool: string };
+      expect(frame.tool).toBe('fixture_tool');
+      u1.tc.send({ type: 'result', id: frame.id, ok: true, text: 'ok', structured: { b: 'y' } });
+      expect((await res).structuredContent).toEqual({ b: 'y' });
+      await new Promise((x) => setTimeout(x, 50));
+      expect(u2.tc.messages.filter((m) => m.type === 'call')).toHaveLength(0);
+    } finally {
+      await c.close().catch(() => undefined);
+    }
   });
 });

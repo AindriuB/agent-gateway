@@ -71,7 +71,11 @@ export const REPLACED_CLOSE_REASON = 'replaced';
 export type GrantSummary = Extract<LinkMessage, { type: 'grants' }>['grants'][number];
 export type ConsentCodeMessage = Extract<LinkMessage, { type: 'consentCode' }>;
 
-/** The first gateway version that answers `listGrants` and `revokeGrant`; older ones close the socket on them. */
+/**
+ * The first gateway version that answers `listGrants` and `revokeGrant`. Every build reports
+ * `0.1.0`, so this gate cannot tell a gateway from before this task apart; it only stops the
+ * module from sending to a gateway that reports a lower version.
+ */
 export const GRANTS_MIN_GATEWAY_VERSION = '0.1.0';
 
 /** True when `version` is a plain `x.y.z` (a suffix is ignored) at or above `min`. */

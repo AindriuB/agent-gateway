@@ -313,11 +313,12 @@ describe('headers, Host and secrets', () => {
       // Guards the Chrome `Origin: null` regression: `no-referrer` makes the same-origin POST fail the strict Origin check.
       expect(rep.headers['referrer-policy']).toBe('same-origin');
       expect(rep.headers['cache-control']).toBe('no-store');
-      expect(rep.body).not.toMatch(/<script|<link|src=/i);
+      expect(rep.body).not.toMatch(/<script|src=/i);
     }
-    expect(String(page.reply.headers['set-cookie'])).toMatch(
-      /^__Host-agcsrf-[0-9a-f]{32}=.*Secure; HttpOnly; SameSite=Strict; Path=\/$|Path=\//,
-    );
+    const cookie = String(page.reply.headers['set-cookie']);
+    expect(cookie).toMatch(/^__Host-agcsrf-[0-9a-f]{32}=/);
+    for (const attr of ['Secure', 'HttpOnly', 'SameSite=Strict', 'Path=/'])
+      expect(cookie.split('; ')).toContain(attr);
   });
 
   it('puts the same headers on the 405, 413 and 429 JSON answers of the consent route', async () => {

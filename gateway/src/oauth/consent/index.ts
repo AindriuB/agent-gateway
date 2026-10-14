@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BoundedMap, FailureWindows } from '../../http/limits.js';
 import { publicHostMatches } from '../../http/public-url.js';
 import type { OAuthRepository, Scope } from '../repository.js';
+import { CONSENT_CSS, CONSENT_STYLE_PATH } from './style.js';
 import {
   consentHeaders,
   renderCodePage,
@@ -11,6 +12,7 @@ import {
   type FormView,
 } from './render.js';
 
+export { CONSENT_STYLE_PATH } from './style.js';
 export { consentHeaders, consentCsp, consentJsonSecurity, CODE_SENT_TEXT } from './render.js';
 
 /** The one-time code is valid this long. */
@@ -49,7 +51,6 @@ interface Pending extends ConsentSeed {
   createdAt: number;
   sends: number;
   wrong: number;
-  /** The resolved (world, user) of the last send; undefined when it resolved to nobody. */
   /** The exact pairing the code was sent over; it must still be active when the code is entered. */
   target?: { worldId: string; userId: string; pairingId: string };
   chosen: Scope[];
@@ -120,6 +121,12 @@ export class ConsentPages {
     if (this.hostAllowed(req)) return false;
     send(res, 403, renderMessagePage('Forbidden', 'This page is not served on this address.'));
     return true;
+  }
+
+  /** GET the stylesheet: static, same security headers, public Host only. */
+  serveStyle(req: IncomingMessage, res: ServerResponse): void {
+    if (this.refuseHost(req, res)) return;
+    send(res, 200, CONSENT_CSS, { 'content-type': 'text/css; charset=utf-8' });
   }
 
   private cookie(p: Pending, clear = false): string {

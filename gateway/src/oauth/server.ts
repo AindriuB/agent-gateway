@@ -5,6 +5,7 @@ import { FailureWindows } from '../http/limits.js';
 import type { ConsentStep } from './consent.js';
 import {
   CONSENT_PATH,
+  CONSENT_STYLE_PATH,
   consentJsonSecurity,
   ConsentPages,
   type ConsentSeed,
@@ -181,6 +182,7 @@ export class OAuthServer implements OAuthRoutes {
       path === '/register' ||
       path === '/authorize' ||
       path === CONSENT_PATH ||
+      path === CONSENT_STYLE_PATH ||
       path === '/token'
     );
   }
@@ -221,13 +223,18 @@ export class OAuthServer implements OAuthRoutes {
       const want =
         path === '/register' || path === '/token' || path === CONSENT_PATH ? 'POST' : 'GET';
       // Every consent response carries the anti-framing headers, JSON errors included.
-      const secure = path === CONSENT_PATH ? consentJsonSecurity() : {};
+      const secure =
+        path === CONSENT_PATH || path === CONSENT_STYLE_PATH ? consentJsonSecurity() : {};
       if (method !== want)
         return json(res, 405, { error: 'invalid_request' }, { allow: want, ...secure });
       this.sweepIfDue();
       if (path === '/register') return await this.register(req, res, client);
       if (path === '/token') return await this.token(req, res, client);
       if (path === CONSENT_PATH) return await this.consentPost(req, res, client);
+      if (path === CONSENT_STYLE_PATH) {
+        if (!this.pages) return json(res, 404, { error: 'invalid_request' });
+        return this.pages.serveStyle(req, res);
+      }
       return await this.authorize(req, res, client);
     } catch (e) {
       const secure = path === CONSENT_PATH ? consentJsonSecurity() : {};

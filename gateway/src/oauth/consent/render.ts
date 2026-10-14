@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../status/page.js';
 import type { Scope } from '../repository.js';
+import { CONSENT_STYLE_PATH } from './style.js';
 
 /**
  * Security headers on every consent response, JSON errors included. `same-origin`, not
@@ -40,7 +41,7 @@ export const CODE_SENT_TEXT =
   'If that user is online in that world, a code was sent to their Foundry window.';
 
 const shell = (title: string, body: string): string =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${CONSENT_STYLE_PATH}"></head><body><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`;
 
 const hidden = (name: string, value: string): string =>
   `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`;
