@@ -12,6 +12,7 @@ import {
   type CredentialStore,
 } from './credential-store.js';
 import { effectiveFromSettings } from './gateway-url.js';
+import { postVouch } from './vouch.js';
 import {
   installToolsetAnnouncer,
   policyDenies,
@@ -120,6 +121,7 @@ export function getLinkClient(): LinkClient {
     createSocket: (url) => new WebSocket(url) as any,
     notifyError: (m) => ui.notifications.error(m),
     notifyWarn: (k) => ui.notifications.warn(game.i18n.localize(k)),
+    postVouch,
   });
   announcer ??= installToolsetAnnouncer(client, {
     isGM: () => Boolean(game.user?.isGM),

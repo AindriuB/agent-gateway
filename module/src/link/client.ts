@@ -19,6 +19,8 @@ export type LinkState =
       reason?: ErrorCode | 'ERROR' | 'REPLACED' | 'PAIRING_REQUIRED' | 'TOKEN_REJECTED';
     }
   | { kind: 'connecting'; codeRejected?: boolean }
+  /** Paired with a valid invite; waiting for an admin GM to vouch for this user. */
+  | { kind: 'awaiting-gm' }
   | { kind: 'connected'; user: string; world: string };
 
 /** A pairing token bound to the gateway endpoint that issued it. */
@@ -76,6 +78,11 @@ export interface LinkClientDeps {
   getIdentity(): Omit<HelloMessage, 'type' | 'protocolVersion' | 'auth'>;
   createSocket(url: string): SocketLike;
   notifyError(message: string): void;
+  /**
+   * Post the vouch chat message for this challenge nonce (task 90). Resolves false when it could
+   * not be posted. The nonce must go nowhere else: not a log, a toast or a window.
+   */
+  postVouch?(nonce: string): Promise<boolean> | boolean;
   /** A non-fatal notice; the argument is an i18n key, localized by the caller. Never carries a token. */
   notifyWarn?(message: string): void;
   random?: () => number;
@@ -250,6 +257,7 @@ export class LinkClient {
   private listeners = new Set<(s: LinkState) => void>();
   /** The agent id the gateway assigned in `welcome`; null until connected. */
   agentId: string | null = null;
+  private admin = false;
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
   onCall: CallHandler | null = null;
@@ -275,6 +283,21 @@ export class LinkClient {
   }
 
   constructor(private readonly deps: LinkClientDeps) {}
+
+  /**
+   * True only while connected and the last `welcome` said `admin: true`. The gateway sets it from
+   * the operator-set flag on this pairing; nothing in this module can raise it.
+   */
+  get isAdmin(): boolean {
+    return this.admin && this._state.kind === 'connected';
+  }
+
+  /** Vouch for the author Foundry recorded on a challenge message. Sent only by an admin link. */
+  attest(nonce: string, authorId: string, authorIsGM: boolean): boolean {
+    if (!this.isAdmin || !this.socket) return false;
+    this.send({ type: 'attest', nonce, authorId, authorIsGM });
+    return true;
+  }
 
   get state(): LinkState {
     return this._state;
@@ -587,6 +610,7 @@ export class LinkClient {
         this.codeRejected = false;
         this.attempt = 0;
         this.agentId = msg.agentId;
+        this.admin = msg.admin === true;
         this.gatewayVersion = msg.gatewayVersion;
         const id = this.deps.getIdentity();
         const token = this.tokenFor(url)?.token;
@@ -601,6 +625,21 @@ export class LinkClient {
             }
           : undefined;
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
+        break;
+      }
+      case 'pairingChallenge': {
+        // Only an invite redemption can be challenged, and only on the socket in use.
+        if (this.socket !== origin || this.authSource !== 'code') break;
+        this.setState({ kind: 'awaiting-gm' });
+        const posted = this.deps.postVouch;
+        if (!posted) break;
+        // The nonce goes to the hook only; nothing here logs or shows it.
+        void Promise.resolve()
+          .then(() => posted(msg.nonce))
+          .then((ok) => {
+            if (ok === false) this.deps.notifyWarn?.('AGENT_GATEWAY.Pairing.Vouch.noGm');
+          })
+          .catch(() => this.deps.notifyWarn?.('AGENT_GATEWAY.Pairing.Vouch.failed'));
         break;
       }
       case 'purgeEventsResult': {
@@ -639,6 +678,11 @@ export class LinkClient {
           break;
         } else if (msg.code === 'PROTOCOL_MAJOR_MISMATCH') {
           this.deps.notifyError(msg.message);
+        } else if (msg.code === 'PAIRING_UNCONFIRMED') {
+          // No admin GM vouched. The invite is still unused on the gateway and any stored token is
+          // untouched; only the in-memory code is dropped.
+          this.clearCode();
+          this.codeRejected = false;
         }
         this.setState({ kind: 'disconnected', reason: msg.code });
         break;
@@ -828,6 +872,7 @@ export class LinkClient {
   private setState(s: LinkState): void {
     this._state = s;
     if (s.kind !== 'connected') {
+      this.admin = false;
       this.gatewayVersion = null;
       for (const [id, p] of this.grantRequests) {
         clearTimeout(p.timer);
