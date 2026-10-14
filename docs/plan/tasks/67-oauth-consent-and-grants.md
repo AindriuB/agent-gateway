@@ -8,7 +8,7 @@
 - gateway/test/oauth/consent/**
 - gateway/src/oauth/grants/**
 - gateway/test/oauth/grants/**
-- gateway/src/oauth/** (replace 35's `AutoDenyConsent` default with the real consent step, add the revoke path, and add the token retention sweep from the Amendments, which runs from inside the OAuth server; no other change)
+- gateway/src/oauth/** (replace 35's `AutoDenyConsent` default with the real consent step, add the revoke path, and add the token retention sweep from the Amendments, which runs from inside the OAuth server, and register the `GET /authorize/consent.css` route in gateway/src/oauth/server.ts (handles, the GET method rule, dispatch to `ConsentPages.serveStyle`; Owns widening approved by Andrew, 2026-10-14, see Branding); no other change)
 - gateway/src/http/** (mount the consent routes only)
 - gateway/test/http/oauth-flow.test.ts (only: replace 35's "shipped default is auto-deny" test with one asserting that the consent page renders; approved by Andrew, 2026-10-14, review round 1)
 - gateway/src/link/grants.ts (new: handles the grant and consent-code link messages)
@@ -126,15 +126,16 @@ From /verify on f41abce.
 
 ### Branding (Andrew, 2026-10-14)
 
-Style every HTML page in gateway/src/oauth/consent/render.ts with Andrew's Ascend design system. The source is ~/workspace/branding (private, AindriuB/branding). Read `brand/guidelines.md`, `tokens/ascend.css`, `tokens/themes.json` and `assets/master/ascend.svg` there and copy the values in. Never import from that path at build or run time.
+Style every HTML page in gateway/src/oauth/consent/render.ts using styling cues from Andrew's Ascend design pack. The source is ~/workspace/branding (private, AindriuB/branding). Read `brand/guidelines.md`, `tokens/ascend.css` and `tokens/themes.json` there and copy the values in. Never import from that path at build or run time.
+
+- **Styling cues only (Andrew, 2026-10-14).** No Ascend logo, mark, name or label appears on any page. Take only styling cues from the pack: the palette and the light/dark semantic theme values, font stacks, type scale, spacing rhythm, radii, the focus ring and the contrast rules. Nothing else from the pack ships.
 
 - **No external assets, CSP unchanged.** The page has no inline `<style>` today, and the CSP's `style-src 'self'` forbids inline `<style>` and `style=""` attributes, so an inline block would need a CSP change. Do not loosen the CSP: no `'unsafe-inline'`, no hash or nonce. Instead serve the stylesheet same-origin, which `style-src 'self'` already allows:
-  - The CSS is a string constant in gateway/src/oauth/consent/** and is linked with a relative `<link rel="stylesheet">`.
-  - It is served by a GET route next to the consent path. The registration in gateway/src/oauth/server.ts is the only change outside gateway/src/oauth/consent/**, and it falls under the existing `gateway/src/oauth/**` Owns entry as part of the consent step.
+  - The CSS is a string constant in gateway/src/oauth/consent/style.ts and is linked with a relative `<link rel="stylesheet">`.
+  - It is served same-origin at `GET /authorize/consent.css` by `ConsentPages.serveStyle`. Registering that route in gateway/src/oauth/server.ts (the handled paths, the GET method rule and the dispatch) is the only change outside gateway/src/oauth/consent/**. Andrew approved it as an Owns widening, 2026-10-14; it is recorded on the `gateway/src/oauth/**` Owns entry.
   - The route answers under the same public-Host rule and with the same security headers as the consent pages, as `text/css`. Its body is static, so it is identical for every user.
   - If this turns out to need any CSP change, stop and report.
 - **Tokens.** Include only the tokens the page uses, as CSS custom properties. Light and dark themes come from `themes.json` and are switched by `prefers-color-scheme`.
-- **Mark.** Inline SVG of `assets/master/ascend.svg` (about 878 bytes). Drop the `xmlns` attribute, which inline HTML SVG does not need. Make the `<title>` id and the gradient ids (`ribbon`, `fold`) unique to the page. The accessible name is "Ascend". Do not recolour, stretch or add effects. You may add an adjacent "Ascend" label in semibold sans with normal tracking.
 - **Fonts.** Use the token font stacks (Inter, then system fallbacks). Bundle no font files (RIGHTS.md says they are not included).
 - **Layout, per the guidelines:**
   - 42rem reading measure and a 4px spacing rhythm;
@@ -147,16 +148,16 @@ Style every HTML page in gateway/src/oauth/consent/render.ts with Andrew's Ascen
   - do not set a fixed root font size.
 - **Unchanged.** Escaping, CSRF, the anti-framing headers and the identical-response rules stay as they are. The step-1 response stays byte-identical across users, apart from the masked id and the CSRF token.
 - **Files.** Add no new file outside gateway/src/oauth/consent/** and gateway/test/oauth/consent/**.
-- **Rights.** The Ascend assets are all rights reserved, for the owner's use. Embedding them in this private repo is the owner's own use.
+- **Rights.** No Ascend assets ship: no logo, mark, name, image or font file. Only colour, type and spacing values are copied into the stylesheet.
 
-**Go-public prerequisite (for the scribe to copy to PLAN.md):** before agent-gateway becomes public, Andrew decides whether the Ascend mark and styling may ship in a public repo.
+**Go-public prerequisite (for the scribe to copy to PLAN.md):** before agent-gateway becomes public, Andrew's only remaining check is whether he is happy for those style values (colour, type and spacing) to be public.
 
 Additional acceptance:
 - [ ] A test renders every consent page and asserts that the page:
   - contains no `http://` or `https://` in any `src`, `href` or `url()` other than the form action;
-  - contains the inline Ascend `<svg>` with a `<title>` whose id is referenced by `aria-labelledby`;
-  - links only a same-origin stylesheet.
-- [ ] A test fetches the stylesheet route and asserts that it:
+  - contains no `<svg>`, `<style>` or `<script>` element and no "ascend" (case-insensitive);
+  - links only the same-origin stylesheet `consent.css`.
+- [ ] A test fetches `GET /authorize/consent.css` and asserts that it:
   - defines the light custom properties and the dark ones inside `@media (prefers-color-scheme: dark)`;
   - contains a `prefers-reduced-motion` rule;
   - contains no `http(s)://`, `@import` or `@font-face`;
