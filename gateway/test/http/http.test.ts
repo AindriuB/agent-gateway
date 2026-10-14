@@ -159,11 +159,43 @@ describe('local HTTP transport', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
-  it('caps concurrent sessions with 503', async () => {
+  it('replaces the requester own idle session at the cap', async () => {
     const { url } = await setup({ maxSessions: 2 });
     await connect(url);
     await connect(url);
-    expect((await post(url, initBody)).status).toBe(503);
+    expect((await post(url, initBody)).status).toBe(200);
+    expect(http?.sessionCount).toBe(2);
+  });
+
+  it('answers 503 at the cap when other principals hold every session', async () => {
+    const { url } = await setup({
+      maxSessions: 2,
+      authenticate: (req) => {
+        const b = req.headers.authorization;
+        return typeof b === 'string' ? { key: b } : undefined;
+      },
+    });
+    const as = (who: string) =>
+      post(url, initBody, `Bearer ${who}`).then((r) => {
+        expect(r.status).toBe(200);
+        return r.headers.get('mcp-session-id')!;
+      });
+    const first = await as('one');
+    await as('two');
+    expect((await post(url, initBody, 'Bearer three')).status).toBe(503);
+    expect(http?.sessionCount).toBe(2);
+    const ping = JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
+    const still = await fetch(`${url}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: 'Bearer one',
+        'mcp-session-id': first,
+      },
+      body: ping,
+    });
+    expect(still.status).toBe(200);
   });
 
   it('closes idle sessions and runs their cleanup', async () => {

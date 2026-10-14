@@ -22,6 +22,7 @@ import {
   MAX_DISCOVERY_PER_CLIENT,
   MAX_FAILED_AUTH_PER_CLIENT,
   MAX_HTTP_SESSIONS_PER_CLIENT,
+  MAX_HTTP_SESSIONS_PER_PRINCIPAL,
   PUBLIC_CLIENT_RPS,
   RateWindows,
 } from './limits.js';
@@ -81,6 +82,8 @@ export interface HttpServerOptions {
   maxSessions: number;
   idleMs: number;
   now?: () => number;
+  /** One line per evicted session. Never carries a grant id, session id, IP or client key. */
+  log?: (line: string) => void;
 }
 
 interface Entry {
@@ -89,7 +92,11 @@ interface Entry {
   lastActive: number;
   principalKey: string;
   clientKey: string;
+  /** Requests being handled now; a session with one is never evicted. */
+  inFlight: number;
 }
+
+type EvictReason = 'principal-cap' | 'client-cap' | 'global-cap';
 
 class BodyTooLarge extends Error {}
 
@@ -118,6 +125,7 @@ export class HttpServer {
   private pending = 0;
   private sweeper: NodeJS.Timeout | undefined;
   private pendingByClient = new Map<string, number>();
+  private pendingByPrincipal = new Map<string, number>();
   private window = { start: 0, count: 0 };
   private readonly now: () => number;
   private readonly failedAuth: FailureWindows;
@@ -345,8 +353,16 @@ export class HttpServer {
         if (parsed === undefined) return;
         body = parsed.value;
       }
-      await e.transport.handleRequest(req, res, body);
-      e.lastActive = this.now();
+      // A GET is the long-lived server-to-client stream, open for as long as the client is: it
+      // is not work in progress, so it must not pin the session against eviction.
+      const work = req.method === 'GET' ? 0 : 1;
+      e.inFlight += work;
+      try {
+        await e.transport.handleRequest(req, res, body);
+      } finally {
+        e.inFlight -= work;
+        e.lastActive = this.now();
+      }
       return;
     }
     if (req.method !== 'POST') return rpcError(res, 400, 'missing Mcp-Session-Id header');
@@ -360,13 +376,12 @@ export class HttpServer {
     if (this.isPublic && !principal.selector) {
       return rpcError(res, 403, 'this credential does not grant a Foundry user');
     }
-    if (this.sessions.size + this.pending >= this.o.maxSessions) {
-      return rpcError(res, 503, 'too many sessions');
-    }
-    if (this.isPublic && this.clientSessions(client) >= MAX_HTTP_SESSIONS_PER_CLIENT) {
-      return rpcError(res, 503, 'too many sessions');
-    }
+    if (!this.admit(principal.key, client)) return rpcError(res, 503, 'too many sessions');
     this.pending++;
+    this.pendingByPrincipal.set(
+      principal.key,
+      (this.pendingByPrincipal.get(principal.key) ?? 0) + 1,
+    );
     this.pendingByClient.set(client, (this.pendingByClient.get(client) ?? 0) + 1);
     try {
       const server = this.o.createSession({ principal });
@@ -379,6 +394,7 @@ export class HttpServer {
             lastActive: this.now(),
             principalKey: principal.key,
             clientKey: client,
+            inFlight: 0,
           });
         },
       });
@@ -391,10 +407,56 @@ export class HttpServer {
       if (!transport.sessionId) await server.close().catch(() => undefined);
     } finally {
       this.pending--;
+      const np = (this.pendingByPrincipal.get(principal.key) ?? 1) - 1;
+      if (np <= 0) this.pendingByPrincipal.delete(principal.key);
+      else this.pendingByPrincipal.set(principal.key, np);
       const n = (this.pendingByClient.get(client) ?? 1) - 1;
       if (n <= 0) this.pendingByClient.delete(client);
       else this.pendingByClient.set(client, n);
     }
+  }
+
+  /**
+   * Make room for a new session of `principalKey`. When a cap is full, the principal's own
+   * least-recently-active idle session is closed; another principal's never is. False means 503.
+   */
+  private admit(principalKey: string, client: string): boolean {
+    if (this.principalSessions(principalKey) >= MAX_HTTP_SESSIONS_PER_PRINCIPAL) {
+      if (!this.evictOne(principalKey, undefined, 'principal-cap')) return false;
+    }
+    if (this.isPublic && this.clientSessions(client) >= MAX_HTTP_SESSIONS_PER_CLIENT) {
+      if (!this.evictOne(principalKey, client, 'client-cap')) return false;
+    }
+    if (this.sessions.size + this.pending >= this.o.maxSessions) {
+      if (!this.evictOne(principalKey, undefined, 'global-cap')) return false;
+    }
+    return true;
+  }
+
+  private evictOne(principalKey: string, client: string | undefined, reason: EvictReason): boolean {
+    let pick: [string, Entry] | undefined;
+    for (const [id, e] of this.sessions) {
+      if (e.principalKey !== principalKey || e.inFlight > 0) continue;
+      if (client !== undefined && e.clientKey !== client) continue;
+      if (!pick || e.lastActive < pick[1].lastActive) pick = [id, e];
+    }
+    if (!pick) return false;
+    this.sessions.delete(pick[0]);
+    void pick[1].server.close().catch(() => undefined);
+    const kind = principalKey.startsWith('oauth:')
+      ? 'oauth'
+      : principalKey === 'local'
+        ? 'local'
+        : 'other';
+    const idle = Math.max(0, Math.round(this.now() - pick[1].lastActive));
+    this.o.log?.(`http session evicted: principal=${kind} reason=${reason} idle_ms=${idle}`);
+    return true;
+  }
+
+  private principalSessions(principalKey: string): number {
+    let n = this.pendingByPrincipal.get(principalKey) ?? 0;
+    for (const e of this.sessions.values()) if (e.principalKey === principalKey) n++;
+    return n;
   }
 
   private clientSessions(client: string): number {

@@ -9,6 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import { validateArgs, type AnnouncedTool, type ErrorCode } from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
+import { subscribe } from './session-hub.js';
 import {
   ASK_OPERATOR,
   STATUS_TOOL,
@@ -557,24 +558,23 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     binding.noteDisconnected(c);
     onDisconnectedChanged(c);
   };
-  opts.registry.on('connected', onConnected);
-  opts.registry.on('disconnected', onDisconnected);
+  const unsubscribe = [
+    subscribe(opts.registry, 'connected', onConnected),
+    subscribe(opts.registry, 'disconnected', onDisconnected),
+  ];
   const onToolset = changed(false);
-  toolsets.on('changed', onToolset);
+  unsubscribe.push(subscribe(toolsets, 'changed', onToolset));
   const onEventsChanged = () => {
     if (!timer) {
       timer = setTimeout(flush, interval);
       timer.unref();
     }
   };
-  opts.events?.on('changed', onEventsChanged);
+  if (opts.events) unsubscribe.push(subscribe(opts.events, 'changed', onEventsChanged));
   const previousOnClose = server.onclose;
   server.onclose = () => {
     opts.events?.cancelSession(sessionId);
-    opts.registry.off('connected', onConnected);
-    opts.registry.off('disconnected', onDisconnected);
-    toolsets.off('changed', onToolset);
-    opts.events?.off('changed', onEventsChanged);
+    for (const off of unsubscribe) off();
     if (timer) clearTimeout(timer);
     previousOnClose?.();
   };

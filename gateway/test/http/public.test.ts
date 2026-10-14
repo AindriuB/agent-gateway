@@ -225,17 +225,35 @@ describe('per-client limits', () => {
     expect((await bad('203.0.113.99')).status).toBe(429);
   });
 
-  it('caps sessions per client key in public mode', async () => {
+  it('caps sessions per client key in public mode, evicting only the same principal', async () => {
     const { port } = await setup({
       publicUrl: PUBLIC,
       trustProxy: true,
-      authenticate: () => ({ key: 'p', selector: { worldId: 'w1', userId: 'u1' } }),
+      maxSessions: 64,
+      now: (() => {
+        let t = 1_000_000;
+        return () => (t += 100);
+      })(),
+      authenticate: (req) => ({
+        key: `oauth:${String(req.headers['x-principal'] ?? 'p')}`,
+        selector: { worldId: 'w1', userId: 'u1' },
+      }),
     });
-    const init = (ip: string) =>
-      raw(port, { host: 'gw.example.com', 'x-forwarded-for': ip }, '/mcp', initBody);
-    for (let i = 0; i < 4; i++) expect((await init('203.0.113.9')).status).toBe(200);
-    expect((await init('203.0.113.9')).status).toBe(503);
-    expect((await init('203.0.113.10')).status).toBe(200);
+    const init = (ip: string, who: string) =>
+      raw(
+        port,
+        { host: 'gw.example.com', 'x-forwarded-for': ip, 'x-principal': who },
+        '/mcp',
+        initBody,
+      );
+    // One principal never hits the client cap: it replaces its own idle sessions.
+    for (let i = 0; i < 6; i++) expect((await init('203.0.113.9', 'p')).status).toBe(200);
+    expect(http?.sessionCount).toBe(4);
+    // Four other principals fill the client key; a fifth is refused there, not elsewhere.
+    for (let p = 0; p < 4; p++)
+      for (let i = 0; i < 4; i++) expect((await init('203.0.113.20', `o${p}`)).status).toBe(200);
+    expect((await init('203.0.113.20', 'fifth')).status).toBe(503);
+    expect((await init('203.0.113.21', 'fifth')).status).toBe(200);
   });
 
   it('caps the request rate per client key in public mode', async () => {

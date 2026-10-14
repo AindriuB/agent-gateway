@@ -205,5 +205,9 @@ export const MAX_REQUEST_BYTES = 1_000_000;
 export const SELF_PROTECT_RPS = 50;
 export const MAX_HTTP_SESSIONS = 16;
 export const HTTP_SESSION_IDLE_MS = 30 * 60_000;
+/** Public mode: 16 principals at full quota (MAX_HTTP_SESSIONS_PER_PRINCIPAL). */
+export const MAX_HTTP_SESSIONS_PUBLIC = 64;
+/** Public clients rarely send DELETE, so an abandoned session is swept sooner. */
+export const PUBLIC_HTTP_SESSION_IDLE_MS = 10 * 60_000;
 /** The only address the local HTTP transport may bind in this release. */
 export const HTTP_BIND_HOST = '127.0.0.1';
