@@ -216,3 +216,35 @@ Overall:
 - [P2] gateway/test/routing/binding.test.ts:205/:211 — after the 500→100 change, "caps a very long name in the log line" no longer guards the cap. The line with the uncapped 100-character name is about 150 characters and meets `toBeLessThan(200)`. route: implementer (Owns widened above). Input: replace the safeText length check in gateway/src/routing/sanitize.ts:13 with `false` → the test still passes. Fix: lower the :211 threshold so that mutation fails and the real code passes, and confirm by mutation.
 - [P3, cheap] gateway/test/link/invites-app.test.ts — the refusal-cap test doesn't cover the stale-timer guard (`gen === windowGen`) or the inline flush when a window expires. Mutations dropping either still pass. Add tests: a late timer after an inline flush writes no second summary; a refusal after the window ends flushes the pending summary first.
 - [P3, cheap] align tests with the acceptance lines. The (m) line says 25 distinct-origin refusals: use distinct origins, or reword the line to match the test. The module name line says a 150-character name parses under the capped HelloMessage and pairs: add a parse check of the trimmed hello against `HelloMessage`.
+
+## Outcome (2026-10-14)
+
+Branch `claude/task-68` (HEAD 5080a04 before this record), based on main c64dd18, PR pending Andrew. The task went through review rounds 1 and 2 and the final review was CLEAN. The reviewer approved every criterion. The tester passed: `npm run verify` exit 0, 4362 fast tests and 2227 slow, 0 failed.
+
+Andrew's decisions, beyond the original design:
+- (j) Grant revocation is transactional with the pairing revoke on every path; the in-memory listeners fire after COMMIT and are isolated from each other. 35's built-in oauth listener is gone.
+- (k) Every CLI write path runs in `BEGIN IMMEDIATE`, and a busy database exits 1 with nothing changed.
+- (l) 67's consent codes stay bound to the delivering pairing, so a replacement or revocation kills outstanding codes.
+- (m) Server-mode refusal logs are capped at 20 per minute, with one `N more refusals suppressed` line when the minute ends.
+- (n) The extra `Store` helpers `transaction`, `revokeActiveFor`, `notifyPairingRevoked`, `getPairing` and `listPairings` are accepted.
+- Also from round 1: the module truncates the user name to 100 characters (f), and the vacuous re-pair sweep test was removed.
+
+Owns widenings, approved:
+- gateway/src/store/store.ts: existing lines (the oauth listener, `revokePairing`, the `onPairingRevoked` comment), per (j).
+- gateway/src/link/server.ts: the `CodeAttempts` setup, so server mode always uses the per-client and global buckets; and `sockets_` renamed to descriptive camelCase after round 1.
+- gateway/test/routing/binding.test.ts: :205 and :211, plus one accepted comment line. The :211 threshold had to drop because the 100-character cap made the old 200 limit meaningless; this was confirmed by mutating sanitize.ts:13. The orchestrator had wrongly claimed the 500 to 100 change still guarded the cap.
+- module/src/link/runtime.ts:59 and module/test/link/hello-name.test.ts.
+- gateway/src/link/pairing-codes.ts: a small `PAIRING_ALPHABET` export, so invite codes share the alphabet.
+
+Round 2 also added timer-edge tests for the refusal cap (a late timer after an inline flush writes no second summary; a refusal after the window flushes the pending summary first) and a parse check of the trimmed hello against `HelloMessage`.
+
+Known residuals (as recorded above):
+- `inviteProvider` (server.ts:91) is a seam with no app.ts wiring; 37 wires it.
+- The "pairing code" wording in status-tool.ts:18, :36 and session.ts:283 stays.
+- `store.transaction` is synchronous, so a redeem can block the event loop for up to `busy_timeout` (5 s) while a CLI command holds the write lock.
+
+Reviewer notes, not fixed:
+- gateway/src/link/revocation.ts:56, the sweep's warn line, lacks `safeText`. The text is not untrusted.
+- `revokePairing` called inside an open `store.transaction` fires the listeners before the outer COMMIT. No caller does this today.
+
+Pending Andrew (manual): the real foundry.local v14 server-mode check through 42's Compose stack.
