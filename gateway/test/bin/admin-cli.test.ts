@@ -82,6 +82,9 @@ describe.each(['--admin', '--gm'])('%s invites', (flag) => {
     expect(a.stderr).toContain(`${flag} needs --origin`);
     const b = await run(db, flag, 'w1', 'u1');
     expect(b.status).toBe(2);
+    const c = await run(db, flag);
+    expect(c.status).toBe(2);
+    expect(c.stderr).toContain(`${flag} goes with --invite`);
     expect(rows(db)).toEqual([]);
   });
 
@@ -167,6 +170,13 @@ describe('--demote', () => {
     });
     await run(h.dbPath, '--invite', 'w1', 'gm1');
     const before = rows(h.dbPath).length;
+    for (const [w, u] of [
+      ['w1', 'nobody'],
+      ['w2', 'gm1'],
+    ] as const) {
+      expect((await run(h.dbPath, '--demote', w, u)).status).toBe(1);
+      expect(h.store.listActivePairings()[0]).toMatchObject({ userId: 'gm1', admin: true });
+    }
     const r = await run(h.dbPath, '--demote', 'w1', 'gm1');
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('Demoted 1');
@@ -176,7 +186,6 @@ describe('--demote', () => {
     expect(rows(h.dbPath).filter((i) => i.result === 'cancelled')).toEqual([]);
     const again = await run(h.dbPath, '--demote', 'w1', 'gm1');
     expect(again.status).toBe(1);
-    expect((await run(h.dbPath, '--demote', 'w1', 'nobody')).status).toBe(1);
   });
 
   it('refuses the next attest from a running gateway', async () => {
@@ -252,7 +261,8 @@ describe('lists and help', () => {
     const pl = pair.stdout.trim().split('\n');
     expect(pl.find((l) => l.includes('gm1'))).toMatch(/\s+admin\s/);
     expect(pl.find((l) => l.includes('p1'))).not.toMatch(/\sadmin\s/);
-    const secrets = [a, g, p].map((r) => r.stdout.trim()).concat('secret-hash-a', 'secret-hash-b');
+    const codes = [a, g, p].map((r) => r.stdout.trim());
+    const secrets = [...codes, ...codes.map(hashInviteCode), 'secret-hash-a', 'secret-hash-b'];
     for (const out of [inv.stdout + inv.stderr, pair.stdout + pair.stderr])
       for (const secret of secrets) expect(out).not.toContain(secret);
   });
