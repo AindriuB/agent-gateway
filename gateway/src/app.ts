@@ -53,6 +53,9 @@ const HTTP_RETRY_MIN_MS = 5_000;
 const HTTP_RETRY_MAX_MS = 60_000;
 const MAX_WARNED_ORIGINS = 20;
 const MAX_ORIGIN_CHARS = 100;
+/** Server mode: refusal log lines per window; the rest are counted and summed up in one line. */
+const MAX_REFUSAL_LINES = 20;
+const REFUSAL_WINDOW_MS = 60_000;
 
 /** Refusals of a stored token: the browser should be offered a code to pair again. */
 const TOKEN_REFUSALS: ReadonlySet<string> = new Set([
@@ -495,6 +498,36 @@ export function createApp(config: Config, deps: AppDeps): App {
       return s;
     };
     const warned = new Set<string>();
+    // Server mode: a counter and a window start, so memory stays bounded whatever the attackers do.
+    const refusals = { start: 0, lines: 0, suppressed: 0 };
+    let windowGen = 0;
+    const flushRefusals = (): void => {
+      if (refusals.suppressed > 0 && link)
+        writeStatus(`${refusals.suppressed} more refusals suppressed`);
+      refusals.suppressed = 0;
+      refusals.lines = 0;
+      refusals.start = 0;
+      windowGen++;
+    };
+    /** True when this refusal may be logged. */
+    const refusalAllowed = (): boolean => {
+      const t = now();
+      if (refusals.lines > 0 && t - refusals.start >= REFUSAL_WINDOW_MS) flushRefusals();
+      if (refusals.lines === 0) refusals.start = t;
+      if (refusals.lines < MAX_REFUSAL_LINES) {
+        refusals.lines++;
+        return true;
+      }
+      if (refusals.suppressed++ === 0) {
+        const wait = Math.max(0, REFUSAL_WINDOW_MS - (t - refusals.start));
+        const arm = deps.codeClock?.setTimer ?? ((fn, ms) => setTimeout(fn, ms).unref());
+        const gen = windowGen;
+        arm(() => {
+          if (gen === windowGen) flushRefusals();
+        }, wait);
+      }
+      return false;
+    };
     link = new LinkServer({
       port: config.linkPort,
       host: linkHost,
@@ -509,10 +542,12 @@ export function createApp(config: Config, deps: AppDeps): App {
         const shown = sanitizeOrigin(origin);
         if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
         const key = `${shown} ${reason} ${detail ?? ''}`;
-        // Nothing refreshes a code in server mode, so roll the set instead of going quiet.
-        if (serverMode && warned.size >= MAX_WARNED_ORIGINS) warned.clear();
-        if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
-        warned.add(key);
+        if (serverMode) {
+          if (!refusalAllowed()) return;
+        } else {
+          if (warned.has(key) || warned.size >= MAX_WARNED_ORIGINS) return;
+          warned.add(key);
+        }
         const live = thisCodes.current();
         const where = serverMode
           ? ''

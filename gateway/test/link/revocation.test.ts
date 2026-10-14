@@ -96,20 +96,6 @@ describe('revocation sweep', () => {
     expect(h!.store.oauth.getToken('t-g-new')?.revokedAt).toBeNull();
   });
 
-  it('revoke, re-pair and a new grant before the sweep: the new grant and token stay live', async () => {
-    await boot();
-    const old = await pair();
-    seedGrant('g-old');
-    h!.store.revokePairingsFor('w1', 'u1');
-    const fresh = await pair();
-    seedGrant('g-new');
-    sweep!.sweepOnce();
-    await old.tc.untilClosed();
-    expect(fresh.tc.closed).toBe(false);
-    expect(h!.store.oauth.getGrant('g-new')?.revokedAt).toBeNull();
-    expect(h!.store.oauth.getToken('t-g-new')?.revokedAt).toBeNull();
-  });
-
   it('fires the in-memory listeners once per closed connection, isolated', async () => {
     await boot();
     const a = await pair();

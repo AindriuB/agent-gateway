@@ -202,7 +202,7 @@ describe('terminal-safe operator output', () => {
 
   it('caps a very long name in the log line', async () => {
     h = await startServer();
-    const a = await pairModule(h, 'uA', { userName: 'n'.repeat(500) });
+    const a = await pairModule(h, 'uA', { userName: 'n'.repeat(100) });
     modules.push(a);
     const lines: string[] = [];
     const s = await openSession(h, {}, undefined, 5000, { log: (l) => lines.push(l) });

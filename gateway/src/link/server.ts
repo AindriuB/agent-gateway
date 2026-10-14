@@ -138,7 +138,7 @@ export class LinkServer {
   private readonly pendingByClient = new BoundedMap<number>();
   private readonly isPublic: boolean;
   private boundPort = 0;
-  private readonly sockets_ = new WeakMap<LinkConnection, WebSocket>();
+  private readonly socketByConnection = new WeakMap<LinkConnection, WebSocket>();
 
   constructor(private readonly opts: LinkServerOptions) {
     this.host = opts.host ?? '127.0.0.1';
@@ -182,7 +182,7 @@ export class LinkServer {
 
   /** Tell a live connection its pairing is revoked and close its socket (1008). */
   dropConnection(conn: LinkConnection): void {
-    const ws = this.sockets_.get(conn);
+    const ws = this.socketByConnection.get(conn);
     if (!ws) return;
     if (ws.readyState === ws.OPEN) {
       ws.send(
@@ -586,7 +586,7 @@ export class LinkServer {
       },
       { userName: recordedName, isGM: hello.user.isGM },
     );
-    this.sockets_.set(conn, ws);
+    this.socketByConnection.set(conn, ws);
     this.opts.registry.add(conn);
     try {
       this.opts.events?.connect(conn, hello.resume);

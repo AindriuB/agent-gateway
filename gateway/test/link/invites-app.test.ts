@@ -105,3 +105,59 @@ describe('server mode, whole app', () => {
     expect(await again.next()).toMatchObject({ type: 'reject', code: 'PAIRING_INVALID' });
   });
 });
+
+describe('server mode refusal-log cap', () => {
+  const apps: App[] = [];
+  const clients: TestClient[] = [];
+  const cleanups: (() => void)[] = [];
+  afterEach(async () => {
+    clients.splice(0).forEach((c) => c.ws.terminate());
+    for (const a of apps.splice(0)) await a.stop();
+    for (const c of cleanups.splice(0)) c();
+  });
+
+  it('writes 20 lines a minute, then one summary line; the clock is injectable', async () => {
+    const state = tempState();
+    cleanups.push(state.cleanup);
+    const linkPort = await freePort();
+    let httpPort = await freePort();
+    while (httpPort === linkPort) httpPort = await freePort();
+    let t = 1_000_000;
+    const timers: (() => void)[] = [];
+    const lines: string[] = [];
+    const app = createApp(
+      config({ publicUrl: PUBLIC, serverMode: true, trustProxy: true }, linkPort, httpPort),
+      {
+        version: '0.0.0-test',
+        dbPath: state.db,
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        writeStatus: (l) => lines.push(l),
+        codeClock: { now: () => t, setTimer: (fn) => timers.push(fn) },
+      },
+    );
+    apps.push(app);
+    await app.start();
+    const refuse = async (i: number) => {
+      const c = await TestClient.connect(linkPort, ORIGIN, { host: 'gw.example.com' });
+      clients.push(c);
+      // Distinct users so that a per-message dedupe could not hide the cap.
+      c.send(hello({ kind: 'pairingToken', token: 'bogus' }, { userId: `u${i}` }));
+      await c.next();
+    };
+    const refusalLines = () => lines.filter((l) => l.startsWith('rejected link connection'));
+    for (let i = 0; i < 25; i++) await refuse(i);
+    expect(refusalLines()).toHaveLength(20);
+    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toEqual([]);
+    t += 60_000;
+    timers.splice(0).forEach((f) => f());
+    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toEqual([
+      '5 more refusals suppressed',
+    ]);
+    await refuse(99);
+    expect(refusalLines()).toHaveLength(21);
+    t += 60_000;
+    timers.splice(0).forEach((f) => f());
+    expect(lines.filter((l) => /more refusals suppressed/.test(l))).toHaveLength(1);
+  });
+});
