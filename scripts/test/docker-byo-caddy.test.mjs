@@ -86,9 +86,19 @@ describe('README', () => {
     const m = readme.match(/^## Bring your own Caddy\n([\s\S]*?)(?=^## |(?![\s\S]))/m);
     assert.ok(m, 'heading present');
     for (const s of [
-      'COMPOSE_FILE=compose.byo-caddy.yaml', 'network_mode: host', 'GATEWAY_NETWORK_MODE=container:',
-      'X-Forwarded-For', 'rate-limit', 'subdomain', '__Host-', '/link', '7420', '7421', 'WebSocket',
-      'docker compose exec gateway', '--invite',
+      'COMPOSE_FILE=compose.byo-caddy.yaml',
+      'network_mode: host',
+      'GATEWAY_NETWORK_MODE=container:',
+      'X-Forwarded-For',
+      'rate-limit',
+      'subdomain',
+      '__Host-',
+      '/link',
+      '7420',
+      '7421',
+      'WebSocket',
+      'docker compose exec gateway',
+      '--invite',
     ]) {
       assert.ok(m[1].includes(s), s);
     }
