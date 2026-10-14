@@ -103,9 +103,13 @@ The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each
 - Untrusted text is escaped and bounded before it reaches a client; protocol schemas are strict.
 - Only the primary binds the link and HTTP endpoints; secondaries and standbys never do.
 
+## Public exposure and server mode (task 74)
+
+`--public-url <https-url>` (or `AGENT_GATEWAY_PUBLIC_URL`) puts the gateway behind a reverse proxy that terminates TLS (`gateway/src/http/public-url.ts`). Host and Origin allowlists are derived from that URL, the static bearer is off, pairing codes go only to the operator log, and `/status` shows only the version and uptime. `--trust-proxy` makes the HTTP and link servers read the right-most `X-Forwarded-For`, from a loopback peer only. `--server-mode` keeps the process alive without stdio, turns HTTP on, and exits rather than degrade on EADDRINUSE or a database lock. Rate and failure buckets are per client (`gateway/src/http/client-key.ts`, `limits.ts`; IPv6 keyed by /64) with a global backstop. Public-mode MCP sessions bind through an exact-id selector from the authenticated principal and fail closed without one. The store runs in WAL mode, and `--backup <path>` writes an online copy while the gateway runs.
+
 ## Planned (MVP B)
 
-Not built yet; `docs/plan/PLAN.md` has the order. A public URL option (`--public-url`) and a server mode with host allowlists and per-client limits (task 74); a Compose stack with Caddy terminating TLS in front of the gateway (task 42); an OAuth 2.1 authorization server for remote clients, with a consent page and grant revocation (tasks 35, 67); operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). In server mode the static bearer is off, pairing codes appear only in operator logs, and the store gains WAL and a `--backup` command. Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
+Not built yet; `docs/plan/PLAN.md` has the order. A Compose stack with Caddy terminating TLS in front of the gateway (task 42); an OAuth 2.1 authorization server for remote clients, with a consent page and grant revocation (tasks 35, 67); operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
 
 ## Decisions worth knowing
 

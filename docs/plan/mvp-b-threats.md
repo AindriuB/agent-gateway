@@ -15,11 +15,11 @@ From the architect's review of task 68 on 2026-10-14. Andrew chose operator invi
 | T7 Old token and grants survive replacement | M | Closed. Replacement revokes the old rows in the redeem transaction (68 d), and 35 (h) revokes the grants. |
 | T8 Revoked connection stays live | M | Closed. A sweep closes revoked connections (68 e), within 5 s. |
 | T9 Lockout after losing storage | M | Closed. A new invite re-pairs; a headless agent mints its own (37 c, 38). |
-| T10 No code left for the next player | M | Closed. Server mode uses per-person invites; public non-server mode re-issues a consumed code to the operator log (74 d). |
-| T11 Pairing denial of service | M | Closed by 74 (c, e) per-client keys, IPv6 /64 keying and a global backstop; 42 requires `--trust-proxy`. Accepted residual: a distributed flood above 300 failed codes a minute blocks new pairings, including a headless runner with no stored token. Paired clients are unaffected, and it is a denial of service, not a compromise. |
+| T10 No code left for the next player | M | Implemented (74). Closed. Server mode uses per-person invites; public non-server mode re-issues a consumed code to the operator log (74 d). |
+| T11 Pairing denial of service | M | Implemented (74). Closed by 74 (c, e) per-client keys, IPv6 /64 keying and a global backstop; 42 requires `--trust-proxy`. Accepted residual: a distributed flood above 300 failed codes a minute blocks new pairings, including a headless runner with no stored token. Paired clients are unaffected, and it is a denial of service, not a compromise. |
 | T12 Concurrent claims | M | Removed or closed. An invite is single use with one winner per transaction (68 c). |
 | T13 Pending lifecycle and restart | L-M | Removed or closed. The open-socket guard leaves an invite unused (68 c); database invites survive a restart. |
-| T14 Name lookalikes | L-M | Closed. The name is display only, sanitised and capped (68 f); OAuth binds by id (74 f); 67 refuses an ambiguous name. |
+| T14 Name lookalikes | L-M | Implemented (74). Closed. The name is display only, sanitised and capped (68 f); OAuth binds by id (74 f); 67 refuses an ambiguous name. |
 | T15 Unbounded hello fields | L | Closed. Caps on ids, name and code, and sanitised output (68 f). |
 | T16 Role sync and CLI overwrite | L | Removed by Model I. No role sync or promote/demote CLIs. |
 | T17 Link frame flood | L | Accepted residual for MVP B. Pre-existing and not 68's: toolset and event frames have no per-connection cap. Only an invited user can send them, and `--revoke-pairing` stops them. A per-connection frame budget is a Go public prerequisite, not yet filed. |
@@ -27,7 +27,7 @@ From the architect's review of task 68 on 2026-10-14. Andrew chose operator invi
 | T19 Grants for unconfirmed identities | covered | Closed. A grant needs a consent code over the user's own paired link (67), and 35 (h) ties grants to the pairing. |
 | T20 Headless provisioned codes | covered | Closed. Exact world, user and origin match, single use (37 c, 68 i). Residual as T11. |
 | T21 No operator revoke | M | Closed. `--revoke-pairing` revokes the pairings, their grants and every unused invite for that target. `--cancel-invite` cancels unused invites only. `--list-pairings` and `--list-invites` show status (68 e). |
-| T22 Spoofed X-Forwarded-For | L | Closed. Right-most entry from a loopback peer only, with `::ffff:127.0.0.1` and /64 keying (74 c). |
+| T22 Spoofed X-Forwarded-For | L | Implemented (74). Closed. Right-most entry from a loopback peer only, with `::ffff:127.0.0.1` and /64 keying (74 c). |
 
 ## Other accepted residuals
 

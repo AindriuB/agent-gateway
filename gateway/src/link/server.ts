@@ -15,7 +15,14 @@ import {
 } from '@agent-gateway/protocol';
 import type { Store } from '../store/index.js';
 import type { PairingCodes } from './pairing-codes.js';
-import { CodeAttempts } from './code-attempts.js';
+import {
+  CodeAttempts,
+  MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT,
+  MAX_FAILED_CODE_ATTEMPTS_PUBLIC,
+} from './code-attempts.js';
+import { clientKey, loopbackAuthority } from '../http/client-key.js';
+import { BoundedMap } from '../http/limits.js';
+import { publicHostMatches } from '../http/public-url.js';
 import { canonicalOrigin } from './origin.js';
 import { toolsets } from '../routing/toolsets.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
@@ -26,6 +33,8 @@ export const MAX_MISSED_PONGS = 2;
 export const MAX_PENDING_HANDSHAKES = 16;
 /** Within the global cap, so one page cannot starve every other origin's reconnects. */
 export const MAX_PENDING_PER_ORIGIN = 4;
+/** Public mode: pre-hello sockets per client key (the Origin header is attacker-chosen). */
+export const MAX_PENDING_PER_CLIENT = 4;
 
 /** Why a connection attempt was refused; the text goes to the local log; the peer sees only the message built from it. */
 export type OriginRejection =
@@ -55,6 +64,15 @@ export interface LinkServerOptions {
   /** Defaults to 127.0.0.1. Any other address also requires `allowNonLoopback`. */
   host?: string;
   allowNonLoopback?: boolean;
+  /**
+   * The gateway's external origin. Its host is accepted in the `Host` header next to the loopback
+   * names, and its presence turns on the per-client failed-code and pre-hello limits.
+   */
+  publicUrl?: string;
+  /** Key clients by the right-most `X-Forwarded-For` entry when the TCP peer is loopback. */
+  trustProxy?: boolean;
+  /** Called after a pairing code was spent on a new pairing. */
+  onCodePaired?: () => void;
   /** Time a socket may stay silent before sending `hello`. */
   helloTimeoutMs?: number;
   events?: EventBuffer;
@@ -99,11 +117,22 @@ export class LinkServer {
   private readonly attempts: CodeAttempts;
   private pending = 0;
   private readonly pendingByOrigin = new Map<string, number>();
+  private readonly pendingByClient = new BoundedMap<number>();
+  private readonly isPublic: boolean;
   private boundPort = 0;
 
   constructor(private readonly opts: LinkServerOptions) {
     this.host = opts.host ?? '127.0.0.1';
-    this.attempts = new CodeAttempts(opts.now);
+    this.isPublic = opts.publicUrl !== undefined;
+    this.attempts = new CodeAttempts(
+      opts.now,
+      this.isPublic
+        ? {
+            global: MAX_FAILED_CODE_ATTEMPTS_PUBLIC,
+            perClient: MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT,
+          }
+        : undefined,
+    );
     if (this.host !== '127.0.0.1' && !opts.allowNonLoopback) {
       throw new Error(`Refusing to bind link server to ${this.host} without allowNonLoopback`);
     }
@@ -139,13 +168,23 @@ export class LinkServer {
       socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
     };
     // A rebound DNS name still reaches loopback, but its Host is the attacker's name.
-    if (!this.opts.allowNonLoopback) {
+    // The check holds whatever the bind address: only the loopback names and the public host pass.
+    {
       const host = req.headers.host;
-      if (host !== `localhost:${this.boundPort}` && host !== `127.0.0.1:${this.boundPort}`) {
+      const loopback = loopbackAuthority(host);
+      if (
+        loopback?.port !== String(this.boundPort) &&
+        !publicHostMatches(host, this.opts.publicUrl)
+      ) {
         refuse('403 Forbidden', 'host header is not loopback');
         return;
       }
     }
+    const client = clientKey(
+      req.socket.remoteAddress,
+      req.headers['x-forwarded-for'],
+      this.opts.trustProxy === true,
+    );
     const origin = canonicalOrigin(header);
     const allowed = this.opts.allowedOrigins;
     if (origin === undefined || (allowed && allowed.length > 0 && !allowed.includes(origin))) {
@@ -175,8 +214,18 @@ export class LinkServer {
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       return;
     }
+    if (this.isPublic && (this.pendingByClient.get(client) ?? 0) >= MAX_PENDING_PER_CLIENT) {
+      this.opts.onOriginRejected?.(
+        origin,
+        'too many sockets waiting to say hello; close this page',
+      );
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return;
+    }
     // Held until hello arrives or the socket closes, whichever comes first.
     this.pending++;
+    if (this.isPublic)
+      this.pendingByClient.set(client, (this.pendingByClient.get(client) ?? 0) + 1);
     this.pendingByOrigin.set(origin, (this.pendingByOrigin.get(origin) ?? 0) + 1);
     let released = false;
     const release = (): void => {
@@ -186,12 +235,24 @@ export class LinkServer {
       const n = (this.pendingByOrigin.get(origin) ?? 1) - 1;
       if (n <= 0) this.pendingByOrigin.delete(origin);
       else this.pendingByOrigin.set(origin, n);
+      if (this.isPublic) {
+        const c = (this.pendingByClient.get(client) ?? 1) - 1;
+        if (c <= 0) this.pendingByClient.delete(client);
+        else this.pendingByClient.set(client, c);
+      }
     };
     socket.once('close', release);
-    this.wss.handleUpgrade(req, socket, head, (ws) => this.onConnection(ws, origin, release));
+    this.wss.handleUpgrade(req, socket, head, (ws) =>
+      this.onConnection(ws, origin, release, client),
+    );
   }
 
-  private onConnection(ws: WebSocket, origin: string, releasePending: () => void): void {
+  private onConnection(
+    ws: WebSocket,
+    origin: string,
+    releasePending: () => void,
+    client: string,
+  ): void {
     this.sockets.add(ws);
     let conn: LinkConnection | undefined;
     let handshaking = false;
@@ -259,7 +320,7 @@ export class LinkServer {
         handshaking = true;
         clearTimeout(helloTimer);
         releasePending();
-        conn = this.handshake(msg, origin, send, reject, ws);
+        conn = this.handshake(msg, origin, send, reject, ws, client);
         if (conn) {
           heartbeat = setInterval(() => {
             if (missed >= MAX_MISSED_PONGS) {
@@ -352,6 +413,7 @@ export class LinkServer {
     send: (m: LinkMessage) => void,
     reject: (code: ErrorCode, message: string) => void,
     ws: WebSocket,
+    client: string,
   ): LinkConnection | undefined {
     const compat = checkCompat(PROTOCOL_VERSION, hello.protocolVersion);
     if (!compat.ok) {
@@ -373,9 +435,10 @@ export class LinkServer {
     let recordedName: string;
     if (hello.auth.kind === 'pairingCode') {
       // Checked before the code store, so a valid code is neither spent nor found by guessing.
-      if (this.attempts.limited()) return invalid('too many failed pairing codes', 'RATE_LIMITED');
+      if (this.attempts.limited(client))
+        return invalid('too many failed pairing codes', 'RATE_LIMITED');
       if (!codes.consume(hello.auth.code)) {
-        this.attempts.recordFailure();
+        this.attempts.recordFailure(client);
         return invalid('no valid pairing code');
       }
       issuedToken = randomBytes(32).toString('base64url');
@@ -389,6 +452,7 @@ export class LinkServer {
         origin,
       });
       recordedName = hello.user.name;
+      this.opts.onCodePaired?.();
     } else {
       const row = store.findPairingByHash(hashToken(hello.auth.token));
       if (

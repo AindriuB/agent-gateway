@@ -11,6 +11,14 @@ export interface RelayConfig {
   httpPort: number;
   logLevel: string;
   startedAt: number;
+  /** The external origin, or `''` when unset. Session-affecting: it decides what a session may see. */
+  publicUrl: string;
+  /** Always-on, many users. Session-affecting. */
+  serverMode: boolean;
+  /** Bind addresses and proxy trust: session-neutral, like `httpPort`. */
+  linkHost: string;
+  httpHost: string;
+  trustProxy: boolean;
 }
 
 export const makeRelayConfig = (
@@ -18,7 +26,23 @@ export const makeRelayConfig = (
   httpPort: number,
   logLevel: string,
   startedAt: number,
-): RelayConfig => ({ allowOrigins: [...allowOrigins].sort(), httpPort, logLevel, startedAt });
+  extra: Partial<
+    Pick<RelayConfig, 'publicUrl' | 'serverMode' | 'linkHost' | 'httpHost' | 'trustProxy'>
+  > = {},
+): RelayConfig => ({
+  allowOrigins: [...allowOrigins].sort(),
+  httpPort,
+  logLevel,
+  startedAt,
+  publicUrl: extra.publicUrl ?? '',
+  serverMode: extra.serverMode ?? false,
+  linkHost: extra.linkHost ?? '127.0.0.1',
+  httpHost: extra.httpHost ?? '127.0.0.1',
+  trustProxy: extra.trustProxy ?? false,
+});
+
+const str = (v: unknown, fallback: string): string =>
+  typeof v === 'string' ? v.slice(0, 300) : fallback;
 
 export function parseRelayConfig(v: unknown): RelayConfig | undefined {
   if (typeof v !== 'object' || v === null) return undefined;
@@ -37,6 +61,12 @@ export function parseRelayConfig(v: unknown): RelayConfig | undefined {
     httpPort: c.httpPort,
     logLevel: c.logLevel,
     startedAt: c.startedAt,
+    // A peer from before these settings existed reads as off.
+    publicUrl: str(c.publicUrl, ''),
+    serverMode: c.serverMode === true,
+    linkHost: str(c.linkHost, '127.0.0.1'),
+    httpHost: str(c.httpHost, '127.0.0.1'),
+    trustProxy: c.trustProxy === true,
   };
 }
 
@@ -46,6 +76,8 @@ export function parseRelayConfig(v: unknown): RelayConfig | undefined {
  * session can do. A mismatch here is never served.
  */
 export const sameSessionConfig = (a: RelayConfig, b: RelayConfig): boolean =>
+  a.publicUrl === b.publicUrl &&
+  a.serverMode === b.serverMode &&
   a.allowOrigins.length === b.allowOrigins.length &&
   a.allowOrigins.every((o, i) => o === b.allowOrigins[i]);
 
@@ -56,7 +88,12 @@ export const sameSessionConfig = (a: RelayConfig, b: RelayConfig): boolean =>
  * `allowOrigins` mismatch from an older caller is refused (it becomes a standby).
  */
 export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
-  a.httpPort === b.httpPort && a.logLevel === b.logLevel && sameSessionConfig(a, b);
+  a.httpPort === b.httpPort &&
+  a.logLevel === b.logLevel &&
+  a.linkHost === b.linkHost &&
+  a.httpHost === b.httpHost &&
+  a.trustProxy === b.trustProxy &&
+  sameSessionConfig(a, b);
 
 /** Names what differs, for logs and the degraded reason. Untrusted text is sanitised. */
 export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | undefined): string {
@@ -72,5 +109,21 @@ export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | unde
     );
   if (mine.logLevel !== theirs.logLevel)
     parts.push(`log level ${safeText(mine.logLevel)} here vs ${safeText(theirs.logLevel)} there`);
+  if (mine.publicUrl !== theirs.publicUrl)
+    parts.push(
+      `public URL ${safeText(mine.publicUrl) || '(none)'} here vs ${safeText(theirs.publicUrl) || '(none)'} there`,
+    );
+  if (mine.serverMode !== theirs.serverMode)
+    parts.push(
+      `server mode ${mine.serverMode ? 'on' : 'off'} here vs ${theirs.serverMode ? 'on' : 'off'} there`,
+    );
+  if (mine.linkHost !== theirs.linkHost)
+    parts.push(`link host ${safeText(mine.linkHost)} here vs ${safeText(theirs.linkHost)} there`);
+  if (mine.httpHost !== theirs.httpHost)
+    parts.push(`http host ${safeText(mine.httpHost)} here vs ${safeText(theirs.httpHost)} there`);
+  if (mine.trustProxy !== theirs.trustProxy)
+    parts.push(
+      `trust proxy ${mine.trustProxy ? 'on' : 'off'} here vs ${theirs.trustProxy ? 'on' : 'off'} there`,
+    );
   return parts.join('; ') || 'configuration differs';
 }

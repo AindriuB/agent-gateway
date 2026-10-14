@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { closeSync, linkSync, openSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createApp, defaultDbPath } from '../app.js';
-import { ConfigError, HTTP_BIND_HOST, loadConfig } from '../config/index.js';
+import { ConfigError, loadConfig } from '../config/index.js';
 import { rotateToken } from '../http/token.js';
 import { openStore } from '../store/index.js';
 import { MIGRATIONS } from '../store/migrations/index.js';
@@ -22,9 +23,19 @@ Options:
   --http              Also serve MCP over Streamable HTTP at http://127.0.0.1:7421/mcp
                       (bearer token printed once on first run)
   --http-port <n>     Port for --http (default 7421)
-  --http-host <addr>  Only 127.0.0.1 is accepted
+  --http-host <addr>  HTTP bind address (default 127.0.0.1; anything else needs --public-url)
+  --link-host <addr>  Link bind address (default 127.0.0.1; anything else needs --public-url)
+  --public-url <url>  The external https origin behind a reverse proxy that terminates TLS
+                      (AGENT_GATEWAY_PUBLIC_URL). Turns HTTP on, turns the local bearer token
+                      off, and keeps pairing codes out of MCP clients
+  --server-mode       Always-on, many users (AGENT_GATEWAY_SERVER_MODE=1): no stdio session,
+                      stays up when stdin closes, HTTP on
+  --trust-proxy       Behind a reverse proxy on this host, key clients by X-Forwarded-For
+                      (AGENT_GATEWAY_TRUST_PROXY=1)
   --http-rotate-token Generate a new HTTP bearer token, print it once, and exit. The old token
                       stops working at once, also in a gateway that is already running
+  --backup <path>     Write a consistent copy of the database to a new file (mode 0600) and
+                      exit; safe while the gateway runs
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -72,6 +83,56 @@ function schemaProblem(path: string): string | undefined {
   } finally {
     db.close();
   }
+}
+
+/** One-shot: copy the db with VACUUM INTO, read-only, to a new 0600 file. Never migrates. */
+function backup(dbOption: string | undefined, target: string): void {
+  const dbPath = dbOption ?? defaultDbPath();
+  if (dbPath === ':memory:') {
+    process.stderr.write('--backup needs a database file, not :memory:\n');
+    process.exit(2);
+  }
+  const out = resolve(target);
+  const fail = (why: string): never => {
+    process.stderr.write(`Could not back up the database: ${why}\n`);
+    return process.exit(1);
+  };
+  const problem = (() => {
+    try {
+      return schemaProblem(dbPath);
+    } catch (err) {
+      return (err as Error).message;
+    }
+  })();
+  if (problem) fail(problem);
+  if (existsSync(out)) fail(`${out} already exists; it was left unchanged`);
+  // Written beside the target and linked into place, so a failure leaves nothing at `out`
+  // and an existing file is never replaced.
+  const tmp = `${out}.partial-${process.pid}`;
+  let error: string | undefined;
+  try {
+    closeSync(openSync(tmp, 'wx', 0o600));
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      db.exec('PRAGMA busy_timeout = 5000');
+      db.exec(`VACUUM INTO '${tmp.replaceAll("'", "''")}'`);
+    } finally {
+      db.close();
+    }
+    linkSync(tmp, out);
+  } catch (err) {
+    error =
+      (err as NodeJS.ErrnoException).code === 'EEXIST' && existsSync(out)
+        ? `${out} already exists; it was left unchanged`
+        : (err as Error).message;
+  }
+  try {
+    unlinkSync(tmp);
+  } catch {
+    // Nothing to clean up.
+  }
+  if (error !== undefined) fail(error);
+  process.stdout.write(`Backup written: ${out} (${statSync(out).size} bytes)\n`);
 }
 
 /**
@@ -123,6 +184,11 @@ function main(): void {
         http: { type: 'boolean' },
         'http-port': { type: 'string' },
         'http-host': { type: 'string' },
+        'link-host': { type: 'string' },
+        'public-url': { type: 'string' },
+        'server-mode': { type: 'boolean' },
+        'trust-proxy': { type: 'boolean' },
+        backup: { type: 'string' },
         'http-rotate-token': { type: 'boolean' },
         world: { type: 'string' },
         user: { type: 'string' },
@@ -143,35 +209,50 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
-  if (values['http-host'] !== undefined && values['http-host'] !== HTTP_BIND_HOST) {
-    process.stderr.write(
-      `Refusing --http-host ${values['http-host']}: local HTTP binds ${HTTP_BIND_HOST} only\n`,
-    );
-    process.exit(2);
-  }
   if (values['http-rotate-token']) {
+    // Remote clients sign in with OAuth; there is no static token to rotate on a public gateway.
+    if (values['public-url'] !== undefined || (process.env.AGENT_GATEWAY_PUBLIC_URL ?? '') !== '') {
+      process.stderr.write(
+        '--http-rotate-token cannot be used with --public-url (or AGENT_GATEWAY_PUBLIC_URL): the HTTP bearer token is off on a public gateway\n',
+      );
+      process.exit(2);
+    }
     rotate(values.db ?? process.env.AGENT_GATEWAY_DB);
+    return;
+  }
+  if (values.backup !== undefined) {
+    backup(values.db ?? process.env.AGENT_GATEWAY_DB, values.backup);
     return;
   }
   let config;
   try {
     config = loadConfig({
       configPath: values.config,
-      flags: { linkPort: values['link-port'], httpPort: values['http-port'] },
+      flags: {
+        linkPort: values['link-port'],
+        httpPort: values['http-port'],
+        http: values.http,
+        allowOrigin: values['allow-origin'],
+        publicUrl: values['public-url'],
+        serverMode: values['server-mode'],
+        linkHost: values['link-host'],
+        httpHost: values['http-host'],
+        trustProxy: values['trust-proxy'],
+      },
       onIgnored: (m) => process.stderr.write(`${m}\n`),
     });
   } catch (err) {
     if (err instanceof ConfigError) {
       process.stderr.write(`${err.message}\n`);
-      process.exit(1);
+      process.exit(err.exitCode);
     }
     throw err;
   }
   // An empty value (a cleared host setting) means no restriction.
-  const allowOrigins = (values['allow-origin'] ?? []).filter((v) => v !== '');
+  const allowOrigins = config.allowOrigin.filter((v) => v !== '');
   const app = createApp(config, {
     version: pkg.version,
-    ...(values.http ? { http: true } : {}),
+    ...(config.http || config.publicUrl !== '' || config.serverMode ? { http: true } : {}),
     selector: { world: values.world, user: values.user },
     ...(allowOrigins.length ? { allowedOrigins: normalizeOrigins(allowOrigins) } : {}),
     ...((values.db ?? process.env.AGENT_GATEWAY_DB)
@@ -181,7 +262,8 @@ function main(): void {
   const shutdown = () => void app.stop().finally(() => process.exit(0));
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
-  process.stdin.once('end', shutdown);
+  // A server-mode gateway runs in a container or service whose stdin may be closed.
+  if (!config.serverMode) process.stdin.once('end', shutdown);
   app.start().catch((err: unknown) =>
     reportStartFailure(err, {
       writeStderr: (line) => process.stderr.write(line),

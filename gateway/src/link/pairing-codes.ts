@@ -5,7 +5,7 @@ const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const PAIRING_CODE_TTL_MS = 10 * 60 * 1000;
 export const PAIRING_CODE_PATTERN = /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/;
 
-export type CodeReason = 'startup' | 'expired' | 'refused-token' | 'mcp';
+export type CodeReason = 'startup' | 'expired' | 'refused-token' | 'mcp' | 'consumed';
 
 export interface LiveCode {
   code: string;

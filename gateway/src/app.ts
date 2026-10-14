@@ -139,14 +139,34 @@ export function createApp(config: Config, deps: AppDeps): App {
   // The relay and its secret/socket files live in the db's directory; an in-memory db has none.
   const dbPath = deps.dbPath ?? defaultDbPath();
   const startedAt = Date.now();
+  // Tests build partial configs, so every exposure setting reads as off when missing.
+  const publicUrl = config.publicUrl || '';
+  const isPublic = publicUrl !== '';
+  const serverMode = config.serverMode === true;
+  const linkHost = config.linkHost || HTTP_BIND_HOST;
+  const httpHost = config.httpHost || HTTP_BIND_HOST;
+  const trustProxy = config.trustProxy === true;
+  const httpOn = deps.http === true || isPublic || serverMode;
+  let exposureNoticesShown = false;
   const relayConfig = () =>
-    makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt);
+    makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt, {
+      publicUrl,
+      serverMode,
+      linkHost,
+      httpHost,
+      trustProxy,
+    });
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
   // What this instance found in its way, for the one log line written once its role is final.
   let holds = `another gateway holds link port ${config.linkPort}`;
   const app: App = {
     async start() {
       try {
+        // A server-mode gateway has no stdio client and nothing to degrade to: a conflict is fatal.
+        if (serverMode) {
+          await startPrimary(undefined);
+          return;
+        }
         // The client's stdio goes through the same proxy as a relay's, so every instance gets the
         // same stdout back-pressure, cap and oversized-line handling. It only starts reading
         // stdin once this instance really is the primary.
@@ -160,6 +180,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         await attachStdio(stdioSide);
       } catch (err) {
         await this.stop();
+        if (serverMode) throw err;
         // Only a conflict with another running gateway degrades. A real failure of the
         // only instance (corrupt db, permissions) must still exit 1 via reportStartFailure.
         if (!isInstanceConflict(err)) throw err;
@@ -287,7 +308,7 @@ export function createApp(config: Config, deps: AppDeps): App {
 
   function httpFailure(err: unknown): string {
     return (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
-      ? `${HTTP_BIND_HOST}:${config.httpPort} in use`
+      ? `${httpHost}:${config.httpPort} in use`
       : (err as Error).message;
   }
 
@@ -319,7 +340,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     if (role === 'relay') logger.info(text('relays to it and cannot pair'));
     else if (role === 'standby') logger.warn(text('is a standby and cannot pair'));
     else logger.warn(text('is degraded and cannot pair'));
-    if (deps.http && !httpNoticeShown) {
+    if (httpOn && !httpNoticeShown) {
       httpNoticeShown = true;
       writeStatus(
         'HTTP is served only by the primary gateway instance; if that was started without --http, restart it with --http',
@@ -406,7 +427,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     await secondary.start(reason);
   }
 
-  async function startPrimary(transport: Transport, retryHttp = false): Promise<void> {
+  async function startPrimary(transport: Transport | undefined, retryHttp = false): Promise<void> {
     // Never start over a live primary: it would replace `link` and orphan the original.
     if (link) throw new Error('this process already holds the link');
     // Hold the link port before touching the shared db: opening it runs migrations and
@@ -425,10 +446,17 @@ export function createApp(config: Config, deps: AppDeps): App {
     ];
     // Hosts such as Claude Desktop hide stderr, so also offer the code as an MCP log message.
     // Only to sessions past their handshake: a notification before `initialize` is out of order.
+    // A public gateway never shows a code to an MCP client: it goes to the operator's log only.
     const sendNotice = (s: Server, c: LiveCode): void =>
-      void s
-        .sendLoggingMessage({ level: 'notice', logger: 'pairing', data: linesFor(c).join('. ') })
-        .catch(() => undefined);
+      isPublic
+        ? undefined
+        : void s
+            .sendLoggingMessage({
+              level: 'notice',
+              logger: 'pairing',
+              data: linesFor(c).join('. '),
+            })
+            .catch(() => undefined);
     const thisCodes = new PairingCodes({
       ...deps.codeClock,
       onIssued: (c) => {
@@ -456,6 +484,13 @@ export function createApp(config: Config, deps: AppDeps): App {
     const warned = new Set<string>();
     link = new LinkServer({
       port: config.linkPort,
+      host: linkHost,
+      allowNonLoopback: linkHost !== HTTP_BIND_HOST,
+      ...(isPublic ? { publicUrl, trustProxy } : {}),
+      // With nothing asking for a code, a spent one would never be replaced.
+      onCodePaired: () => {
+        if (isPublic) thisCodes.issue('consumed');
+      },
       onOriginRejected: (origin, reason, detail) => {
         const shown = sanitizeOrigin(origin);
         if (TOKEN_REFUSALS.has(reason)) thisCodes.issue('refused-token');
@@ -465,9 +500,11 @@ export function createApp(config: Config, deps: AppDeps): App {
         const live = thisCodes.current();
         const where =
           reason === 'no valid pairing code'
-            ? " The code is in this log or the client's MCP log."
+            ? isPublic
+              ? ' The code is in this log.'
+              : " The code is in this log or the client's MCP log."
             : live && TOKEN_REFUSALS.has(reason)
-              ? ` Enter pairing code ${live.code} (expires in ${minutesLeft(live.expiresAt, now())} min) in the Agent Gateway pairing prompt; it is also in the client's MCP log.`
+              ? ` Enter pairing code ${live.code} (expires in ${minutesLeft(live.expiresAt, now())} min) in the Agent Gateway pairing prompt${isPublic ? '.' : "; it is also in the client's MCP log."}`
               : '';
         writeStatus(
           `rejected link connection from origin ${shown}: ${reason}${detail ? ` (${detail})` : ''}.${where}`,
@@ -508,30 +545,72 @@ export function createApp(config: Config, deps: AppDeps): App {
           userName: p.userName,
         })) ?? [],
       log: writeStatus,
-      pairingHint: () => {
-        const c = thisCodes.issue('mcp');
-        return { code: c.code, expiresInMin: minutesLeft(c.expiresAt, now()) };
-      },
+      ...(isPublic
+        ? { askOperator: true }
+        : {
+            pairingHint: () => {
+              const c = thisCodes.issue('mcp');
+              return { code: c.code, expiresInMin: minutesLeft(c.expiresAt, now()) };
+            },
+          }),
     });
     const ready = { events, queue };
-    server = track(createSessionServer(sessionOptions(ready.events, ready.queue)));
-    await server.connect(transport);
+    if (transport) {
+      server = track(createSessionServer(sessionOptions(ready.events, ready.queue)));
+      await server.connect(transport);
+    }
     // Relayed sessions are accepted only once everything they share is ready.
     await startRelay(port, () =>
       track(createSessionServer(sessionOptions(ready.events, ready.queue))),
     );
+    if (!exposureNoticesShown && (isPublic || serverMode)) {
+      exposureNoticesShown = true;
+      if (linkHost !== HTTP_BIND_HOST || httpHost !== HTTP_BIND_HOST)
+        writeStatus(
+          'listening beyond loopback: TLS must be terminated by a reverse proxy in front of the gateway',
+        );
+      if (publicUrl.startsWith('http:'))
+        writeStatus(
+          'warning: --public-url uses http: on a loopback host; this is for local testing only, use https: in production',
+        );
+      if (isPublic && !trustProxy)
+        writeStatus(
+          '--trust-proxy is off: if a reverse proxy is in front, every client shares one rate-limit bucket',
+        );
+    }
     const gen = httpGen;
     const startHttp = async (): Promise<void> => {
-      const token = loadOrCreateToken(openedStore());
+      // A public gateway has no static bearer: remote clients sign in with OAuth (task 35).
+      const token = isPublic ? undefined : loadOrCreateToken(openedStore());
       const lim = deps.httpLimits ?? {};
       const candidate = new HttpServer({
-        host: HTTP_BIND_HOST,
+        host: httpHost,
         port: config.httpPort,
-        token,
+        ...(token ? { token } : { authenticate: () => undefined }),
+        ...(isPublic ? { publicUrl, trustProxy } : {}),
         registry,
         version: deps.version,
         startedAt,
-        createSession: () => track(createSessionServer(sessionOptions(ready.events, ready.queue))),
+        createSession: ({ principal }) => {
+          // Fail closed (the HttpServer already answers 403): never fall back to deps.selector or
+          // follow mode for a public session.
+          if (isPublic && !principal.selector)
+            throw new Error('a public session needs a granted (world, user)');
+          return track(
+            createSessionServer({
+              ...sessionOptions(ready.events, ready.queue),
+              ...(principal.selector
+                ? {
+                    selector: {
+                      world: principal.selector.worldId,
+                      user: principal.selector.userId,
+                      exactId: true,
+                    },
+                  }
+                : {}),
+            }),
+          );
+        },
         maxRequestBytes: lim.maxRequestBytes ?? MAX_REQUEST_BYTES,
         rps: lim.rps ?? SELF_PROTECT_RPS,
         maxSessions: lim.maxSessions ?? MAX_HTTP_SESSIONS,
@@ -547,13 +626,17 @@ export function createApp(config: Config, deps: AppDeps): App {
       // would hit EADDRINUSE against our own listener.
       let stored: boolean;
       try {
-        stored = token.commit();
+        stored = token?.commit() ?? true;
       } catch (err) {
         await candidate.close().catch(() => undefined);
         throw err;
       }
       httpServer = candidate;
-      if (token.created && stored) {
+      if (!token) {
+        writeStatus(
+          'HTTP bearer token is off because --public-url is set; remote clients sign in with OAuth',
+        );
+      } else if (token.created && stored) {
         writeStatus(`HTTP bearer token (shown once, stored hashed): ${token.created}`);
       } else if (token.created) {
         writeStatus(
@@ -561,10 +644,12 @@ export function createApp(config: Config, deps: AppDeps): App {
         );
       }
       writeStatus(
-        `MCP HTTP at http://${HTTP_BIND_HOST}:${httpPort}/mcp (Authorization: Bearer <token>)`,
+        token
+          ? `MCP HTTP at http://${httpHost}:${httpPort}/mcp (Authorization: Bearer <token>)`
+          : `MCP HTTP at http://${httpHost}:${httpPort}/mcp (public URL ${publicUrl})`,
       );
     };
-    if (deps.http) {
+    if (httpOn) {
       try {
         await startHttp();
       } catch (err) {

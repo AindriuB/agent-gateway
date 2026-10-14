@@ -9,7 +9,13 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
 import { validateArgs, type AnnouncedTool, type ErrorCode } from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
-import { STATUS_TOOL, statusText, statusToolListing, type GatewayStatus } from './status-tool.js';
+import {
+  ASK_OPERATOR,
+  STATUS_TOOL,
+  statusText,
+  statusToolListing,
+  type GatewayStatus,
+} from './status-tool.js';
 import {
   SessionBinding,
   describePairs,
@@ -44,6 +50,11 @@ export interface SessionServerOptions {
    * not on offer. Called only when a result needs it, so it must be cheap and return the live code.
    */
   pairingHint?: () => { code: string; expiresInMin: number } | undefined;
+  /**
+   * The gateway never shows a pairing code to an MCP client (a public gateway): a session that is
+   * not connected is told to ask the gateway operator for one instead.
+   */
+  askOperator?: boolean;
   /** Clock for the re-bind grace period and notice limit; injectable for tests. */
   now?: () => number;
 }
@@ -246,15 +257,18 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   const notConnected = (): ReturnType<typeof failure> => {
     const clause = pairingClause(opts.pairingHint?.());
     const who = binding.identity;
+    const operator = opts.askOperator && !clause;
     if (!who)
       return failure(
         'WORLD_OFFLINE',
-        `Not connected to Foundry yet. Open your world in a browser${clause ? ` and ${clause}` : ''}.`,
+        operator
+          ? `Not connected to Foundry yet. ${ASK_OPERATOR}`
+          : `Not connected to Foundry yet. Open your world in a browser${clause ? ` and ${clause}` : ''}.`,
       );
     const name = safeText(who.userName || who.userId);
     return failure(
       'WORLD_OFFLINE',
-      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : ''}.`,
+      `world ${safeText(who.worldId)} / user ${name} is not connected. Open that world in a browser as ${name}${clause ? `; to pair a different browser, ${clause}` : operator ? '; to pair a different browser, ask the gateway operator for a pairing code' : ''}.`,
     );
   };
 
@@ -287,7 +301,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       }
     }
     return {
-      content: [{ type: 'text' as const, text: statusText(status) }],
+      content: [{ type: 'text' as const, text: statusText(status, opts.askOperator) }],
       structuredContent: status as unknown as Record<string, unknown>,
     };
   };

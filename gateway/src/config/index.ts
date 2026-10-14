@@ -1,21 +1,94 @@
 import { statSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
+import { isLoopbackAddress } from '../http/client-key.js';
+
+/** '1'/'true'/'yes'/'on' and their opposites, as an env var or config file may spell them. */
+const boolish = z.preprocess((v) => {
+  if (typeof v !== 'string') return v;
+  const t = v.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(t)) return true;
+  if (['0', 'false', 'no', 'off', ''].includes(t)) return false;
+  return v;
+}, z.boolean());
+
+/** A comma-separated string (the env form) or a list; blanks are dropped. */
+const stringList = z.preprocess(
+  (v) =>
+    typeof v === 'string'
+      ? v.split(',')
+      : Array.isArray(v)
+        ? v.flatMap((x) => (typeof x === 'string' ? x.split(',') : [x]))
+        : v,
+  z.array(z.string().transform((x) => x.trim())).transform((l) => l.filter((x) => x !== '')),
+);
 
 export const ConfigSchema = z.object({
   linkPort: z.coerce.number().int().min(1).max(65535).default(7420),
   httpPort: z.coerce.number().int().min(1).max(65535).default(7421),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  /** Serve MCP over Streamable HTTP. Also on whenever `publicUrl` or `serverMode` is set. */
+  http: boolish.default(false),
+  /** `--allow-origin`: only these browser origins may reach the link. Empty means any. */
+  allowOrigin: stringList.default([]),
+  /** The external origin behind a reverse proxy, normalized; '' when unset. */
+  publicUrl: z.string().default(''),
+  /** Always-on, many users: no stdio session, and stdin ending does not stop the process. */
+  serverMode: boolish.default(false),
+  linkHost: z.string().min(1).default('127.0.0.1'),
+  httpHost: z.string().min(1).default('127.0.0.1'),
+  /** Key clients by the right-most `X-Forwarded-For` entry when the peer is loopback. */
+  trustProxy: boolish.default(false),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export class ConfigError extends Error {}
+export class ConfigError extends Error {
+  /** 2 for a refused setting (usage), 1 for a file or value that could not be read. */
+  constructor(
+    message: string,
+    readonly exitCode: 1 | 2 = 1,
+  ) {
+    super(message);
+  }
+}
 
 const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_LINK_PORT: 'linkPort',
   AGENT_GATEWAY_HTTP_PORT: 'httpPort',
   AGENT_GATEWAY_LOG_LEVEL: 'logLevel',
+  AGENT_GATEWAY_HTTP: 'http',
+  AGENT_GATEWAY_ALLOW_ORIGIN: 'allowOrigin',
+  AGENT_GATEWAY_PUBLIC_URL: 'publicUrl',
+  AGENT_GATEWAY_SERVER_MODE: 'serverMode',
+  AGENT_GATEWAY_LINK_HOST: 'linkHost',
+  AGENT_GATEWAY_HTTP_HOST: 'httpHost',
+  AGENT_GATEWAY_TRUST_PROXY: 'trustProxy',
 };
+
+/**
+ * The public URL as a bare origin: `https:` only (`http:` on a loopback host for local testing),
+ * no path, query or fragment; a trailing `/` is dropped. Throws a usage error otherwise.
+ */
+export function normalizePublicUrl(value: string): string {
+  const refuse = (why: string): never => {
+    throw new ConfigError(`Invalid --public-url ${value}: ${why}`, 2);
+  };
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return refuse('not a URL (use e.g. https://gw.example.com)');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    return refuse('the scheme must be https');
+  const bare = url.hostname.replace(/^\[|\]$/g, '');
+  if (url.protocol === 'http:' && !isLoopbackAddress(bare) && bare !== 'localhost')
+    return refuse('http is allowed only on a loopback host; use https');
+  if (url.username || url.password) return refuse('it must not carry credentials');
+  if (url.pathname !== '/' || url.search || url.hash)
+    return refuse('it must be an origin only: no path, query or fragment');
+  return url.origin;
+}
 
 export function readConfigFile(path: string): Record<string, unknown> {
   let mode: number;
@@ -72,7 +145,20 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   if (!result.success) {
     throw new ConfigError(`Invalid configuration: ${z.prettifyError(result.error)}`);
   }
-  return result.data;
+  const config = result.data;
+  if (config.publicUrl !== '') config.publicUrl = normalizePublicUrl(config.publicUrl);
+  // Exposing a listener beyond loopback is allowed only behind a public URL (and a reverse proxy).
+  for (const [flag, host] of [
+    ['--link-host', config.linkHost],
+    ['--http-host', config.httpHost],
+  ] as const) {
+    if (config.publicUrl === '' && !isLoopbackAddress(host))
+      throw new ConfigError(
+        `Refusing ${flag} ${host}: a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
+        2,
+      );
+  }
+  return config;
 }
 
 /** Local HTTP transport limits (task 34). */

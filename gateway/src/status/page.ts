@@ -2,6 +2,8 @@ export interface StatusView {
   version: string;
   uptimeMs: number;
   worlds: readonly { worldId: string; userName: string; userId: string }[];
+  /** Version and uptime only: for a request that is not authenticated on a public gateway. */
+  minimal?: boolean;
 }
 
 const ESCAPES: Record<string, string> = {
@@ -25,6 +27,11 @@ export function renderStatus(view: StatusView): string {
   const more =
     view.worlds.length > MAX_ROWS ? `<p>and ${view.worlds.length - MAX_ROWS} more</p>` : '';
   const secs = Math.floor(view.uptimeMs / 1000);
+  if (view.minimal)
+    return (
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Agent Gateway</title></head><body>' +
+      `<h1>Agent Gateway</h1><p>Version: ${escapeHtml(view.version)}</p><p>Uptime: ${secs} s</p></body></html>`
+    );
   return (
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Agent Gateway</title></head><body>' +
     `<h1>Agent Gateway</h1><p>Version: ${escapeHtml(view.version)}</p><p>Uptime: ${secs} s</p>` +
