@@ -500,18 +500,6 @@ export class HttpServer {
     this.o.log?.(`http session evicted: principal=${kind} reason=${reason} idle_ms=${idle}`);
   }
 
-  private principalSessions(principalKey: string): number {
-    let n = this.pendingByPrincipal.get(principalKey) ?? 0;
-    for (const e of this.sessions.values()) if (e.principalKey === principalKey) n++;
-    return n;
-  }
-
-  private clientSessions(client: string): number {
-    let n = this.pendingByClient.get(client) ?? 0;
-    for (const e of this.sessions.values()) if (e.clientKey === client) n++;
-    return n;
-  }
-
   /** Read and parse a JSON body; replies and returns undefined when it cannot. */
   private async parseBody(
     req: IncomingMessage,

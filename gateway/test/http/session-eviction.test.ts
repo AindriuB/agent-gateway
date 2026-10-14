@@ -452,4 +452,30 @@ describe('HTTP session eviction', () => {
     expect(r.status).toBe(500);
     expect(h!.registry.listenerCount('connected')).toBe(base);
   });
+
+  it('closes an attached session server when handleRequest throws', async () => {
+    const { port } = await setup({
+      createSession: () => {
+        const server = createSessionServer({
+          version: '0.0.0',
+          registry: h!.registry,
+          selector: { world: 'w1', user: 'u1', exactId: true },
+          tools: [fixtureTool],
+          callTimeoutMs: 5000,
+        });
+        const connect = server.connect.bind(server);
+        server.connect = async (t) => {
+          await connect(t);
+          (t as unknown as { handleRequest: () => Promise<void> }).handleRequest = () =>
+            Promise.reject(new Error('boom'));
+        };
+        return server;
+      },
+    });
+    const base = h!.registry.listenerCount('connected');
+    const r = await init(port, 'a', '9.9.9.9');
+    expect(r.status).toBe(500);
+    expect(h!.registry.listenerCount('connected')).toBe(base);
+    expect(http!.sessionCount).toBe(0);
+  });
 });
