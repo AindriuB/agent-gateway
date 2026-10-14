@@ -44,3 +44,17 @@ Make `npm run verify` also run `npm run test:scripts`, so a local verify runs th
 - scripts/release.mjs:77-78 and scripts/test/release.test.mjs still run `test:scripts` as a separate gate after `verify`, so it runs twice in a release. Leave this alone and note it in the PR for Andrew.
 - gateway/docker/** and scripts/test/docker-*.test.mjs belong to task 78.
 - Scribe items, done at record time: docs/conventions.md:18 ("`npm run verify` runs both and is the gate") and PROJECT.md:44 (rule 9) should say that verify also runs the script tests. docs/releasing.md:17-18 lists the gates.
+
+## Outcome
+
+Done on branch `claude/task-80` (HEAD 970ade6, based on `origin/main` 72561f9), 2026-10-14. `/review` was clean on the first round. `/verify`: tester PASS (`npm run verify` exit 0, 4396 fast, 2227 slow, 58 script tests), reviewer APPROVE.
+
+What landed:
+- `scripts.verify` in package.json ends with `&& npm run test:scripts`, after the build, so build-mcpb.test.mjs finds a fresh build.
+- The `test` job in `.github/workflows/ci.yml` no longer has a separate `test:scripts` step; the gate runs through `npm run verify`.
+- `scripts/test/ci-workflow.test.mjs` asserts that the test job has no `test:scripts` step and that `scripts.verify` ends with `npm run test:scripts`.
+- Machine independence: the reviewer read all 7 script tests. None needs the network, the real HOME or a Docker daemon. They need git, zip, unzip and bash. Verify does not recurse, because the release tests stub `npm`.
+
+Residuals:
+- The static test's no-separate-step check catches only a single-line `run:`. The `verify` endsWith assertion is the real guarantee that CI runs the script tests.
+- `scripts/release.mjs:77-78` still runs `test:scripts` after `verify`, so a release runs the script tests twice. Left for Andrew.
