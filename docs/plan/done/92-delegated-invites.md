@@ -103,3 +103,10 @@ Checked and found clean:
 Mutation runs: 15 mutations against the guards in a scratch copy. 13 were killed, among them dropping `row.admin`, dropping `revokedAt`, the world filters in cancel and list, the redeem admin check, the create admin check, the cap off-by-one, setting `createdBy` to null, the create and all-message limits, ttl 0 being accepted, an admin check that ignores the world, and a count that ignores expiry. Two survived; they are the two test findings above.
 
 SCOPE: clean
+
+## Review round 2 — findings (external review on PR #147)
+
+Reviewed HEAD: d1120d8. In-spec, routed to the implementer. Fix: every open invite (unused, uncancelled, unexpired; at most 20 by the per-world cap) is always in the list, and history fills the remaining slots up to MAX_LISTED_INVITES.
+
+[P2] Keep open invitations discoverable when limiting history — gateway/src/store/store.ts:271
+The query limits active and historical invitations together to the newest 100. After creating a long-lived invite and then creating and cancelling 100 newer invites, the original remains redeemable and counts toward the 20-open limit but disappears from every listInvites response. There is no pagination or filter, and cancellation requires the invite ID. An administrator reconnecting without the original response therefore cannot discover or cancel it through the link. Include all open invites before limiting history, or provide pagination.
