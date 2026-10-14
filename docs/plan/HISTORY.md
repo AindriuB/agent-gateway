@@ -33,9 +33,11 @@ The module now keeps pairing credentials in browser-local storage keyed by (gate
 
 **Round 7 (tests only, Andrew approved):** an adversarial audit found no behaviour bug but four unguarded mutants. Four tests were fixed or added, each of them mutation-checked.
 
-**Cost:** seven review rounds in total, three of them prompted by external review. The in-memory session-token fallback (Amendment 2) caused rounds 4-7.
+**Round 8 / Amendment 3 (Andrew):** a third external review found a fifth defect in the in-memory session-token fallback: `authSource` stayed `'code'` after a failed store, so revoking the live socket cleared the wrong entry. Andrew chose to remove the session token entirely. On a failed code store the link stays connected, warns once, and the next drop needs re-pairing. `authSource` is now `'keyed'` after a stored code welcome and `'unstored'` after a failed one, and `pairingInvalid` clears persisted state only for `'keyed'`.
 
-**Lesson:** the external review caught a "current setting instead of presented credential" bug class that internal review missed.
+**Cost:** eight review rounds in total, with external reviews prompting rounds 3, 6 and 8. Rounds 4-8 were caused by the session-token fallback.
+
+**Lesson:** the external review caught a "current setting instead of presented credential" bug class that internal review missed. A fallback for a rare failure (storage writes throwing) doubled the state machine and produced five defects. Prefer the simplest degraded behaviour for rare failures.
 
 ## 2026-10-14 — Link resilience and diagnostics (task 87)
 The gateway now logs each authenticated link connect and disconnect (through `onLinkEvent`, with the reason passed through `safeText` and cut to 64 characters, and no tokens or secrets). `Store.pairingStateFor(worldId, userId)` returns `active`, `revoked` or `none`, and `gateway_status` words the three cases differently: `active` tells the user to reload the Foundry tab, with no new code; `revoked` says the pairing was revoked; `none` is unchanged. This matters because a new code revokes the existing pairing and its OAuth grants.
