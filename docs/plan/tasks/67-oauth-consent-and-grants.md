@@ -40,7 +40,7 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 - gateway/src/status/page.ts:15 `escapeHtml`: reuse it.
 
 ## Amendments (2026-10-14)
-- **Storage.** Grants live in 35's migration 010 (`oauth_grants`, with tokens linked by `grant_id`). This task adds no migration. If it finds it needs one, it stops and reports first, because the array in gateway/src/store/migrations/index.ts is positional and 011 is reserved for 38 (74 decision h).
+- **Storage.** Grants live in 35's migration 010 (`oauth_grants`, with tokens linked by `grant_id`). This task adds no migration. If it finds it needs one, it stops and reports first, because the array in gateway/src/store/migrations/index.ts is positional and 011 is reserved for 68 and 012 for 38 (74 decision h).
 - **Host.** The consent routes answer only when `Host` is the public URL's host (74's allowlist). Any other Host gets 403, loopback included, so the page is never served on a rebinding name.
 - **CSRF.** Each consent request gets a random request id and a CSRF token. The token goes in a `__Host-` prefixed cookie (`Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`) and in a hidden form field. A POST is accepted only when the two match, the request id is live, and `Origin` is exactly the public origin. A missing `Origin` is refused.
 - **Anti-framing and assets.** Every consent response sets:

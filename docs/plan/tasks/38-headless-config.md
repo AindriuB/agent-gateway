@@ -1,12 +1,12 @@
 # 38 — Add headless agent configuration, explicit binding and the owner override
 
 **Repo:** .
-**Depends on:** 37, 35, 74 (35 for migration order: 010 must merge before 011)
-**Status:** MVP B wave 4, after 37. Rewritten 2026-10-14 in the MVP B re-plan. It holds migration 011 (74 decision h).
+**Depends on:** 37, 35, 68, 74 (for migration order: 35's 010 and 68's 011 must merge before this task's 012)
+**Status:** MVP B wave 4, after 37. Rewritten 2026-10-14 in the MVP B re-plan. It holds migration 012 (74 decision h; it moved from 011 because 68 lands first and takes 011).
 **Owns:**
 - gateway/src/headless/config/**
 - gateway/test/headless/config/**
-- gateway/src/store/migrations/011-headless-agents.ts (new)
+- gateway/src/store/migrations/012-headless-agents.ts (new)
 - gateway/src/store/migrations/index.ts (insertion only: one import and one array entry)
 - gateway/src/store/store.ts (insertion only: one `headless` repository field and its construction)
 - gateway/src/bin/cli.ts (the `headless` subcommands only)
@@ -26,7 +26,7 @@ Make headless agents configurable and safe. The operator manages several agents 
 ## Context
 - docs/plan/specs/2026-10-09-agent-gateway.md:204-207 (credentials in a 0600 file or env), :213-214 (headless config in SQLite), :229-233 (headless off until enabled; the owner is the human who paired the agent).
 - docs/plan/tasks/37-headless-runner.md decisions (a) to (d): the single-agent settings, identity from config, provisioned pairing, and the agent user is not for humans.
-- docs/plan/tasks/74-remote-exposure-foundation.md decision (h): 011 is this task's. Because the migrations array is positional, 35's 010 must have merged first, which the wave order guarantees.
+- docs/plan/tasks/74-remote-exposure-foundation.md decision (h): 012 is this task's. Because the migrations array is positional, 35's 010 and 68's 011 must have merged first, which the wave order guarantees.
 - gateway/src/app.ts:504-509 `knownIdentities` from `store.listActivePairings()`.
 - gateway/src/routing/binding.ts:
   - :87-89 follow mode means no user selector;
@@ -38,7 +38,7 @@ Make headless agents configurable and safe. The operator manages several agents 
 
 ## Decisions
 Defaults. Follow them unless the PR shows a reason not to.
-- (a) **Storage.** Migration 011 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an extra agent that is not stored. Every agent, stored or not, uses 37's `profileDir(stateDir, worldId, userId)`, so moving the flag/env agent into SQLite with `headless add` reuses its profile with no file moves. 38 does not define profile paths of its own.
+- (a) **Storage.** Migration 012 adds `headless_agents`: name (primary key), foundry_url, world_id, user_id, owner_user_id or null, created_at. There is no password column. The password comes from `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or the `headless.<name>.password` key of the 0600 `--config` file. 37's single-agent settings still work as an extra agent that is not stored. Every agent, stored or not, uses 37's `profileDir(stateDir, worldId, userId)`, so moving the flag/env agent into SQLite with `headless add` reuses its profile with no file moves. 38 does not define profile paths of its own.
 - (b) **Explicit binding, and how it interacts with 71.**
   - Headless identities are removed from the follow pool. app.ts filters them out of `knownIdentities`, which is the whole pool when there is no user selector (binding.ts:232-236).
   - A follow-mode session therefore never binds or re-binds to a headless pairing. A GM tab plus a headless agent is not "ambiguous" for it: it follows the GM tab, and the 30 s re-bind grace never moves it onto the agent.
@@ -63,7 +63,7 @@ Defaults. Follow them unless the PR shows a reason not to.
 - [ ] `welcome` for a headless-classified connection carries `headless: true` and the configured `ownerUserId`. A browser connection for a non-agent user, even one that sent `hello.headless: true`, gets neither field (gateway/test/link/headless-welcome.test.ts).
 - [ ] Module: with `welcome.headless: true` and `ownerUserId: 'owner1'` (an existing user), both bridge paths set `ctx.agent.ownerUserId` to `owner1` and `headless` to true. With `ownerUserId` but no `headless: true` the field is ignored, and with an unknown owner id it falls back (module/test/link/headless-owner.test.ts).
 - [ ] With `headlessAgentsEnabled` off, a call from a connection whose `welcome` said `headless: true` is denied with the localized reason, even when the session flag is absent (test).
-- [ ] `gateway/src/store/migrations/011-headless-agents.ts` is the 11th entry of `MIGRATIONS`, after 35's 010.
+- [ ] `gateway/src/store/migrations/012-headless-agents.ts` is the 12th entry of `MIGRATIONS`, after 35's 010 and 68's 011.
 - [ ] `npm run verify` passes.
 
 ## Out of scope

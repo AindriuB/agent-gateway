@@ -45,7 +45,8 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 - The first GM pairing of a world is accepted and logged (68, part c).
 - The consent page does not list users (67).
 - SQLite stays the store, with WAL and a `--backup` CLI (74).
-- Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
+- Observer eligibility uses a gateway-side verified role, never the hello `isGM` flag; provisioned headless codes skip confirmation only on an exact world/user/origin match (68 f, 37 c).
+- Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 68's (`pairings.verified_role`), 012 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
 
 **Order:**
 1. **Wave 1: 74** Remote-exposure foundation: public URL, server mode, host allowlists, per-client limits, session-selector seam, WAL and `--backup`.
@@ -55,7 +56,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 5. **Wave 4, after the milestone:** 37 with 40 in parallel, then 38, then 43.
    - **37** Headless runner with provisioned pairing (`playwright-core`, logs in as an agent user, follows world lifecycle).
    - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
-   - **38** Headless config, explicit binding, owner override (after 37; migration 011).
+   - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
 
 ### Later (after MVP B)

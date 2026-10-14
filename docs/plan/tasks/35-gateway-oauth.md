@@ -41,7 +41,7 @@ Defaults: follow them unless the PR shows a reason not to.
   - `oauth_codes`: code hash, grant_id, redirect_uri, code_challenge, resource, expires_at, used_at;
   - `oauth_tokens`: token hash, kind (`access` or `refresh`), grant_id, family id, audience, expires_at, revoked_at, replaced_by.
 
-  67 lists and revokes `oauth_grants` and adds no migration. Decision (h) of 74 reserves 011 for 38.
+  67 lists and revokes `oauth_grants` and adds no migration. Decision (h) of 74 reserves 011 for 68 and 012 for 38.
 - (b) **Redirect URIs.** At registration each URI must be `https:`, or `http:` with host `127.0.0.1`, `[::1]` or `localhost`. No fragment, at most 5 per client, at most 512 characters each. `/authorize` and `/token` compare by exact string equality with a registered URI: no prefix match, and no port wildcard for loopback.
 - (c) **Audience.** The canonical resource is `<publicUrl>/mcp`. A `resource` parameter at `/authorize` or `/token` that is present and not equal to it gets `invalid_target`. An absent one is bound to it. Access tokens carry the audience, and `/mcp` accepts only tokens whose audience is the canonical resource.
 - (d) **Lifetimes.** Named constants: access token 1 h (`ACCESS_TOKEN_TTL_MS`), authorization code 60 s, refresh token 30 days. Refresh rotates on every use. Presenting a rotated-out refresh token, or a used authorization code a second time, revokes every token in that family.

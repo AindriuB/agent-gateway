@@ -6,8 +6,8 @@
 **Owns:**
 - gateway/src/headless/** (except gateway/src/headless/config/**, which is 38's; includes the new `profile.ts` path function)
 - gateway/test/headless/** (except gateway/test/headless/config/**)
-- gateway/src/link/pairing-codes.ts (provisioned codes only)
-- gateway/src/link/server.ts (the headless handshake rules only)
+- gateway/src/link/pairing-codes.ts (minting provisioned codes and returning them as the `provisioned` kind from 68's lookup only)
+- gateway/src/link/server.ts (the decision (d) refusal of human codes for the agent identity only; the provisioned bypass check is 68's)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
 - gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only)
@@ -47,9 +47,11 @@ Defaults. Follow them unless the PR shows a reason not to.
   38 generalizes this to several agents stored in SQLite.
 - (b) **Identity from config.** A link connection is headless if and only if its (world id, user id) equals the configured agent's. `hello.headless` is informational: when it disagrees with the classification the gateway logs one line and ignores it.
 - (c) **Provisioned pairing.**
-  - When the runner's page has no stored token, the gateway calls `PairingCodes.provision({ worldId, userId })`. This mints a separate single-use code that expires after 2 min (named constant), never appears in `current()`, `issue()`, the operator log, an MCP result or a notice, and does not replace the human code.
+  - When the runner's page has no stored token, the gateway calls `PairingCodes.provision({ worldId, userId, origin })`. `origin` is the canonical origin of the configured `--headless-foundry-url`, the origin the runner's page will connect from.
+  - This mints a separate single-use code in memory, marked `provisioned`. It expires after 2 min (`PROVISIONED_CODE_TTL_MS`). It never appears in `current()`, `issue()`, an MCP result or a notice, and does not replace the human code. The operator log gets only a redacted note: "provisioned a pairing code for headless agent <world>/<user> (redacted)".
   - Playwright types it, with the gateway URL, into the module's pairing prompt, the same UI a human uses.
-  - The handshake accepts a provisioned code only when `hello.world.id` and `hello.user.id` equal its target. Otherwise the code is spent and refused.
+  - 68's lookup returns it as `{ kind: 'provisioned', worldId, userId, origin }`. 68's handshake branch (68 decision f) accepts it directly, skipping server-mode confirmation, only on an exact match of world, user and origin. On any mismatch the code is spent and refused, never left pending. The pairing row gets `verified_role = 'headless'`, so a headless agent is never a pairing observer.
+  - Ordering: 68 merges before 37 (wave 3 before wave 4), so 37 only mints, wires the runner and tests end to end. It does not touch the bypass check.
 - (d) **The agent user is not for humans.** A human pairing code (not provisioned) whose `hello` claims the configured agent (world, user) is refused with `PAIRING_INVALID`, and the operator log has one line saying that user is the headless agent and pairs only through the runner. At startup, active pairings for the agent identity are listed in the log as a warning. If the runner's page is closed with `replaced`, the runner logs "agent user <name> was taken by another client; the runner is paused" and does not reload until the next world start or 5 min (named constant). It never fights for the slot.
 - (e) **Profile, one directory per agent.** Chromium cannot run two persistent contexts on one user-data dir, and a shared profile would mix Foundry login cookies and pairing tokens. So every agent gets its own dir from the start.
   - `profileDir(stateDir, worldId, userId)` in `gateway/src/headless/profile.ts` returns `<state dir>/headless/profiles/<agent-id>/`.
@@ -67,7 +69,9 @@ Runner:
 - [ ] The runner runs only on the primary. It stops within 5 s of `app.stop()`, a step-down, or `teardown` (tests with a fake browser launcher).
 
 Pairing and identity:
-- [ ] A provisioned code for (w1,u-agent) pairs a FakeModule that says hello as (w1,u-agent). The same code presented with (w1,u-gm) is refused, and the code is then spent (tests).
+- [ ] A provisioned code for (w1,u-agent) pairs a FakeModule that says hello as (w1,u-agent) from the configured origin. The same code presented with (w1,u-gm), or from another origin, is refused, and the code is then spent (tests).
+- [ ] Server mode, unattended: with `--server-mode`, no observer online and no stored token in the agent's profile, the runner (fake browser launcher, FakeModule page) gets a provisioned code, pairs without any confirmation prompt, and its `world_info` call succeeds. In the same gateway, a human code for another user still goes to pending (test).
+- [ ] The operator log contains the redacted provisioning note and never the code itself (test).
 - [ ] A provisioned code never appears in stderr, in `gateway_status`, in a not-connected error or in an MCP notice (test captures all four).
 - [ ] A human code with a `hello` for the configured agent identity is refused with `PAIRING_INVALID`, and the log names the reason (test).
 - [ ] A FakeModule for the agent identity sending `headless: true` and one for another user sending `headless: true` are classified headless and not headless, respectively, and the second produces the mismatch log line (test).
