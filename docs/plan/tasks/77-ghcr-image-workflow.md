@@ -111,3 +111,10 @@ Add one GitHub Actions workflow with a test gate on every pull request to `main`
 - Making the package or the repo public, Docker Hub, image signing, provenance or SBOM attestations, and release automation such as creating GitHub releases or `npm publish` from CI.
 - Running e2e or conformance suites in CI, or adding a self-hosted runner.
 - Adding `.nvmrc`, changing `engines`, or adding any dependency.
+
+## Review round 1 — findings
+
+- [P3] scripts/test/ci-workflow.test.mjs:77-82 — the version-check test only proves the command appears before login and build, not that it can fail the job. Adding `continue-on-error: true` or `if: false` to the "Check tag matches repo version" step (ci.yml:40) still passes the test. route: implementer. Assert the image job has no `continue-on-error` and that the check step has no `if:`, and confirm both mutations fail.
+- [P3, cheap] scripts/test/ci-workflow.test.mjs:145 — a `concurrency` block with `cancel-in-progress: ${{ true }}` (or any expression) gets past the regex. route: implementer. Tighten it so the mutation fails.
+- [P3, cheap] .github/workflows/ci.yml:67-68 — the `type=gha` build cache was not in the spec, and it almost never hits: a tag run can restore only from its own tag ref and from main, and main never builds the image. With `mode=max` it fills cache quota that nothing reads. route: implementer. Remove the cache-from and cache-to lines, and update the test if it references them.
+- [NOTE for Andrew, no change] build-push-action@v6 adds a provenance attestation by default, so `imagetools inspect` shows `unknown/unknown` entries next to amd64 and arm64 and GHCR shows extra untagged entries. Expected; out of scope.
