@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 47 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 48 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -50,8 +50,8 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 - Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 68's (the `invites` table), 012 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
 
 **Order:**
-1. **Wave 1: 74** Remote-exposure foundation: public URL, server mode, host allowlists, per-client limits, session-selector seam, WAL and `--backup`.
-2. **Wave 2: 35 and 42, in parallel (disjoint Owns).** 35 is the OAuth 2.1 authorization server (migration 010). 42 is the server-mode Docker image and Compose stack with Caddy.
+1. **Wave 1: 74 (done on branch `claude/task-74`, archived in `docs/plan/done/`; PR awaiting Andrew).** Remote-exposure foundation: public URL, server mode, host allowlists, per-client limits, session-selector seam, WAL and `--backup`. 35 must add a failure count and rate limit to public `/status` when OAuth authenticates it, and every OAuth principal must carry a selector (74 fails closed without one).
+2. **Wave 2 (next): 35 and 42, in parallel (disjoint Owns).** 35 is the OAuth 2.1 authorization server (migration 010). 42 is the server-mode Docker image and Compose stack with Caddy.
 3. **Wave 3: 67, then 68 (serialized; they share `gateway/src/link/server.ts` and `module/src/link/client.ts`).** 67 is the consent page and grant revocation, without which 35 auto-denies every authorization. 68 is operator invites for server mode: `--invite <world> <user>`, `--revoke-pairing`, replacement that revokes the old token and its grants, and "Copy my ids" in the module. It is the impersonation defence.
 4. **Milestone: friend test on a public VPS (Compose and Caddy).** Andrew deploys 42's stack with 74, 35, 67 and 68 merged. The operator invites the GM and each friend with `--invite`, they pair, and one friend connects claude.ai or ChatGPT through OAuth and consent, makes a read call and a write held for approval, then revokes the grant. Feedback is filed as tasks before wave 4 starts.
 5. **Wave 4, after the milestone:** 37 with 40 in parallel, then 38, then 43.

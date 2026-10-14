@@ -189,3 +189,23 @@ Overall:
 - Docs: README, guides, docs/security.md (43). Adding the new env keys to docs is scribe or 43 work.
 - Changing the local-mode limits that 34 and 70 set.
 - Headless agents (37, 38).
+
+## Outcome
+
+Done 2026-10-14 on branch `claude/task-74` (HEAD 51a12cd, based on main 3619598). Tester PASS at 40b1d33: verify twice (4161 fast, 2227 slow), the 8 new test files 3/3 each, scripts, mcpb and conformance (stdio and http), and the real gateway untouched. Reviewer APPROVE at 40b1d33. Of 16 mutations, 14 were killed and 2 survived: the failed-auth ordering with a valid credential at the limit, and `MAX_PENDING_PER_CLIENT` masked by the per-origin cap. Follow-up 51a12cd killed both (checked by running against the mutants), added a startup warning for an `http:` public URL on loopback, and made public mode fail closed: a principal without a selector gets 403 at initialize and `createSession` throws, with no fallback to `deps.selector` or follow mode. Verify then passed at 4164 + 2227, and the 3 changed files passed 30/30.
+
+Threat-map rows closed by 74 (also marked in `docs/plan/mvp-b-threats.md`): T10 (consumed-code re-issue to the operator log), T11 (per-client keys, IPv6 /64 keying, global backstop; the distributed-flood residual stays accepted), T14 (OAuth binds by id; the selector is exact-id), T22 (right-most X-Forwarded-For from a loopback peer only). Rows that depend on later tasks (T7, T8, T19, T20, T21) are unchanged.
+
+Deviations accepted by review:
+- `HttpServerOptions.token` stays as a back-compat option, alongside a new `authenticate` hook.
+- Public `/status` does not record auth failures.
+- Config booleans accept 1/true/yes/on; `ConfigError.exitCode` is 2 for refused and 1 for bad.
+- HTTP is switched on automatically in public or server mode.
+- `localhost` counts as non-loopback for bind checks, so it fails closed.
+- `openStore` takes a `warn` parameter.
+- `||` fallbacks cover partial test configs.
+- Server mode exits instead of degrading on EADDRINUSE or a database lock.
+- Commit 859f7b1 repeats b3e3805's message (cosmetic; it only edits `test/http/cli.test.ts`).
+- Peer relay strings are truncated to 300 characters and sanitised.
+
+Notes for task 35: public `/status` calls `authenticate` with no failure count or rate limit, so 35 must add both once OAuth authenticates it. Every OAuth principal must carry a selector, because 74 now fails closed without one.
