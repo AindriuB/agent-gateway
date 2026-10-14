@@ -52,3 +52,54 @@ or displace one. The vouch from 90 still applies when a delegated invite is rede
 ## Notes for the scribe
 - Threat map: delegated invites, their caps, and the blast radius of a compromised admin GM, which is limited to its own world.
 - docs/architecture.md "Operator invites": add delegated invites and `created_by`.
+
+## Amendment 1 (Andrew, 2026-10-14): bound the invites table
+
+1. The create limit is keyed by the creating pairing id (`conn.agentId`), not by the connection object, so it survives reconnects. Keep it bounded in memory: cap the number of tracked pairing keys and evict expired windows. Keep the existing 10 per 10 minutes.
+2. Minimum `ttlMs` for a delegated invite is 10 minutes. A smaller value gets INVALID_ARGS.
+3. Prune invite rows that are settled (paired or mismatch), cancelled, or expired, and older than 30 days, on the gateway's existing periodic sweep. Rows that are unused and unexpired are never pruned. Owns widens to the store prune query and to the minimal wiring needed to call it from the existing sweep; name the files you touch.
+Reason: a compromised admin GM could loop create/cancel or 1 ms invites across reconnects and grow the table without limit. Disk growth affects every world.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 6f03a26. Routed to the implementer:
+- P2: a test for the `completeVouchedInvite` admin-target check, covering the target becoming admin between challenge and attest;
+- P3: a test for the stale-connection check on the invite messages;
+- the P2 on table growth, as decided in Amendment 1.
+
+VERDICT: FIX
+
+FINDINGS
+- [P2] gateway/test/link/invite-admin.test.ts:174-218 — Nothing tests the admin-target check in `completeVouchedInvite` (gateway/src/link/invites.ts:225-228). That check is the one that matters most. A delegated invite is never `gm` or `admin`, so `redeemInvite` always returns `vouch`, and the pairing is actually written only in `completeVouchedInvite`. The race this check closes is "the target becomes admin between the challenge and the attest", and no test covers it.
+  route: implementer
+  input: admin GM A creates a delegated invite for user U. U redeems and gets `pairingChallenge`. The operator then pairs U as admin. A attests. With the check removed, `pairTarget` revokes U's new admin pairing and replaces it with a non-admin one, so a delegated invite displaces an admin.
+  proof: replaced the `completeVouchedInvite` check with `if (false)`. All 187 tests in gateway/test/link plus test/store/invites.test.ts still passed. The matching mutation in `redeemInvite` (line 180) was killed.
+
+- [P2] gateway/src/link/invite-admin.ts:23,113-127 — Delegated invite rows can grow without limit. The store never prunes them, and three things let an admin keep adding rows:
+  1. The per-world cap counts only invites that are unused, uncancelled and unexpired.
+  2. `ttlMs` accepts 1.
+  3. The per-connection create window lives in a WeakMap keyed on the connection, and the token-reconnect hello path (gateway/src/link/server.ts, the `findPairingByHash` branch) has no rate limit.
+  route: orchestrator — the per-connection create cap in Acceptance is met as written. Bounding total rows needs a decision the task does not make: a retention or prune policy, a per-world lifetime or row cap, a minimum ttl, or a per-pairing (not per-connection) create window. This also bears on the spec's "blast radius limited to its own world" claim, because disk growth affects the whole gateway.
+  input: an admin GM loops: reconnect with its token, send 10 `createInvite{ttlMs:1}` (or create 10 and cancel 10), and repeat. Every create succeeds because expired and cancelled rows drop out of `countUnusedForWorld` and each new connection gets fresh windows. Each loop adds 10 permanent `invites` rows, with nothing bounding the loop rate except reconnect speed.
+
+- [P3] gateway/src/link/server.ts:505-514 — No test covers the stale-connection check on the three invite messages.
+  route: implementer
+  input: removing the `break` after `ws.close(1008, 'stale invite connection')`, so a replaced connection's request still reaches the handler, is not detected.
+  proof: that mutation survived; 187 tests passed. The damage is limited because `senderIsAdmin` re-reads the store row, so this is P3.
+
+- [NOTE] gateway/src/link/invite-admin.ts:88-91 — The FORBIDDEN check runs before the rate limiter, so a non-admin connection can send these messages without limit. Each costs one indexed `getPairing` read and nothing is written, which is the same exposure `listGrants` already has.
+- [NOTE] gateway/src/link/invite-admin.ts:104 and the list reply — An admin GM can list and cancel invites the operator minted in its world, including `--admin` or `gm` invites for another admin GM. That fits the Acceptance wording ("one unused invite in the sender's world") and stays within its world. The scribe should list it in the threat map.
+- [NOTE] gateway/src/link/invite-admin.ts:33-42 duplicates `LinkServer.isAdmin` (gateway/src/link/server.ts:749-758). The two are identical today. They will drift if either changes.
+- [NOTE] gateway/src/link/invite-admin.ts:141 — `catch {}` maps every failure to INTERNAL and logs nothing. The code is never logged, which is what the task asks for, but unexpected store errors leave no trace either.
+
+Checked and found clean:
+- **World and admin scope.** Admin status comes only from the store row: active, admin, and matching world and user. No message carries a world (strict schemas). `createInvite` hard-codes `world_id = conn.worldId`, `admin` and `gm` to false, and `createdBy = conn.agentId`.
+- **Cross-world.** `cancelInWorld` returns the same error, with the same query shape, for a foreign, used or unknown id. `listForWorld` is filtered by world.
+- **Admin targets.** The create-time check and the redeem-time check are both scoped to the world. An attest whose author is a GM is already refused by task 90's `authorIsGM` path, so GM targets are covered.
+- **The code.** It appears only in `inviteCreated`. It is not in the list reply and not in any log.
+- **Memory.** The `all` and `creates` arrays are bounded at 60 and 10 per connection, and the WeakMap entries are freed with the connection.
+- **Protocol.** `ErrorMessage.requestId` is optional and is only sent in reply to the new request types, so existing clients are unaffected.
+
+Mutation runs: 15 mutations against the guards in a scratch copy. 13 were killed, among them dropping `row.admin`, dropping `revokedAt`, the world filters in cancel and list, the redeem admin check, the create admin check, the cap off-by-one, setting `createdBy` to null, the create and all-message limits, ttl 0 being accepted, an admin check that ignores the world, and a count that ignores expiry. Two survived; they are the two test findings above.
+
+SCOPE: clean
