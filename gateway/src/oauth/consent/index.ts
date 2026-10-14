@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BoundedMap, FailureWindows } from '../../http/limits.js';
 import { publicHostMatches } from '../../http/public-url.js';
 import type { OAuthRepository, Scope } from '../repository.js';
-import { CONSENT_CSS, CONSENT_STYLE_PATH } from './style.js';
+import { CONSENT_CSS } from './style.js';
 import {
   consentHeaders,
   renderCodePage,
