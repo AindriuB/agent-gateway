@@ -97,3 +97,10 @@ With both settings unset, every one of 67's original assertions must still hold 
 - [P3] gateway/src/config/index.ts:109 — the 2048 cap is checked on the raw input, but the stored and rendered value is `url.href`, which percent-encoding can make about 3 times longer (`https://x.example/` + 2000 `"` is accepted and stored at about 6018 characters). route: implementer. Also check `url.href.length` against MAX_LINK_URL, with a test.
 - [P3] gateway/src/oauth/consent/style.ts:1-6 — the header comment says "no font, image or logo is shipped", which is now false (marks.ts). route: implementer. Fix the comment.
 - [P3, cheap] gateway/test/oauth/consent/branding.test.ts:46-55 — with both URLs set, the external-href check covers the whole body. The decision says "inside `<footer>`". route: implementer. Also assert that the external hrefs and both `<svg>`s occur only inside `<footer>`.
+
+## Attempt 1 — failed
+
+- The CSP-exact test (gateway/test/oauth/consent/branding.test.ts:91-92) and the step-1 byte-identical test (:107-108) were switched to both-URLs only, so 67's original neither-URL runs no longer happen. This breaks "with both settings unset, every one of 67's original assertions must still hold unchanged". Fix: run both over `[{}, {privacyUrl, sourceUrl}]` with `it.each`, as :22 already does.
+- gateway/test/config/consent-links.test.ts:10: the title claims "and the config file", but no test uses a config file. Fix: write a temp config file (mode 0600, like the other config tests) with `privacyUrl`/`sourceUrl`, and assert the precedence file < env < flag.
+- Manual: the neither-URL screenshot is missing. Render it light and dark next to the existing two.
+- Cheap note: the branding.test.ts:54 `inFoot` regex uses `/g` and `m[1]`, while :46-48 uses `/gi` and `m[1]!`. Make them consistent.
