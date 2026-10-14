@@ -1,4 +1,4 @@
-# 37 — Add the headless runner with gateway-provisioned pairing
+# 37 — Add the headless runner with gateway-minted invites
 
 **Repo:** .
 **Depends on:** 16, 42, 68, 74
@@ -6,8 +6,8 @@
 **Owns:**
 - gateway/src/headless/** (except gateway/src/headless/config/**, which is 38's; includes the new `profile.ts` path function)
 - gateway/test/headless/** (except gateway/test/headless/config/**)
-- gateway/src/link/pairing-codes.ts (minting provisioned codes and returning them as the `provisioned` kind from 68's lookup only)
-- gateway/src/link/server.ts (the decision (d) refusal of human codes for the agent identity only; the provisioned bypass check is 68's)
+- gateway/src/headless/invites.ts (new, under headless/**: the in-memory invite provider that 68's redeem path reads)
+- gateway/src/link/server.ts (the decision (d) refusal for the agent identity only; the invite check itself is 68's)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
 - gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only)
@@ -28,7 +28,7 @@ Let the gateway run an agent without anyone's browser open. It launches Chromium
 - The module's headless toggle is already enforced: module/src/policy/evaluate.ts:30-31 and module/src/policy/stage.ts:64-71 deny every call with `headless: true` while `headlessAgentsEnabled` is off.
 - module/src/link/runtime.ts:47-62 `getIdentity`, which builds every `hello` field except `type`, `protocolVersion` and `auth`.
 - protocol/src/link/messages.ts:11-38 `HelloMessage` is a `strictObject`, so a gateway without this field rejects a `hello` that carries it. Send `headless` only when true: a human's module never sends it, and the runner always talks to the gateway that launched it.
-- gateway/src/link/pairing-codes.ts:1-40 and on: `PairingCodes` holds one live human code. `consume` is called at gateway/src/link/server.ts:377.
+- docs/plan/tasks/68-server-mode-pairing-confirmation.md decisions (c) and (i): the invite redeem path, which takes invites from the database or an in-memory provider and checks world, user and origin exactly, transactionally and single-use.
 - gateway/src/link/server.ts:374-391 the pairing-code branch; :392-412 the token branch; :425 `registry.add`.
 - gateway/src/link/registry.ts:116-127: last writer wins per (world, user). A human logged in as the agent user would evict the runner, and the reverse.
 - module/src/link/client.ts:347-358: on close 1000/`replaced` the client stops for good and reports `REPLACED`.
@@ -46,13 +46,15 @@ Defaults. Follow them unless the PR shows a reason not to.
 
   38 generalizes this to several agents stored in SQLite.
 - (b) **Identity from config.** A link connection is headless if and only if its (world id, user id) equals the configured agent's. `hello.headless` is informational: when it disagrees with the classification the gateway logs one line and ignores it.
-- (c) **Provisioned pairing.**
-  - When the runner's page has no stored token, the gateway calls `PairingCodes.provision({ worldId, userId, origin })`. `origin` is the canonical origin of the configured `--headless-foundry-url`, the origin the runner's page will connect from.
-  - This mints a separate single-use code in memory, marked `provisioned`. It expires after 2 min (`PROVISIONED_CODE_TTL_MS`). It never appears in `current()`, `issue()`, an MCP result or a notice, and does not replace the human code. The operator log gets only a redacted note: "provisioned a pairing code for headless agent <world>/<user> (redacted)".
+- (c) **Gateway-minted invites.**
+  - When the runner's page has no stored token, the gateway mints an **in-memory invite** of the same shape as 68's operator invites: target world id, user id and origin (the canonical origin of `--headless-foundry-url`, where the runner's page connects from); single use; expiring after 2 min (`HEADLESS_INVITE_TTL_MS`).
+  - The invite lives only in the provider in `gateway/src/headless/invites.ts`, holding at most one live invite per agent. It is never written to SQLite, printed, logged, or put in an MCP result, a notice or `/status`. The operator log gets only a redacted note: "minted an invite for headless agent <world>/<user> (redacted)", with ids through `safeText`.
+  - It does not touch the shared local code or the operator's database invites.
   - Playwright types it, with the gateway URL, into the module's pairing prompt, the same UI a human uses.
-  - 68's lookup returns it as `{ kind: 'provisioned', worldId, userId, origin }`. 68's handshake branch (68 decision f) accepts it directly, skipping server-mode confirmation, only on an exact match of world, user and origin. On any mismatch the code is spent and refused, never left pending. The pairing row gets `verified_role = 'headless'`, so a headless agent is never a pairing observer.
-  - Ordering: 68 merges before 37 (wave 3 before wave 4), so 37 only mints, wires the runner and tests end to end. It does not touch the bypass check.
-- (d) **The agent user is not for humans.** A human pairing code (not provisioned) whose `hello` claims the configured agent (world, user) is refused with `PAIRING_INVALID`, and the operator log has one line saying that user is the headless agent and pairs only through the runner. At startup, active pairings for the agent identity are listed in the log as a warning. If the runner's page is closed with `replaced`, the runner logs "agent user <name> was taken by another client; the runner is paused" and does not reload until the next world start or 5 min (named constant). It never fights for the slot.
+  - **Decision (planner, accepted in plan review 2026-10-14): minted invites also work in local mode.** 68's redeem path checks the in-memory provider in both modes, before the shared local code, so an agent starts unattended without a human copying the local code. Database invites stay server-mode only.
+  - It is redeemed by 68's invite path (68 decision i) exactly like an operator invite: an exact match of world, user and origin, single use, and on a mismatch spent and refused with `PAIRING_INVALID`. There is no separate bypass branch, and in server mode no confirmation exists to bypass.
+  - Ordering: 68 merges before 37 (wave 3 before wave 4). 37 only mints, registers its provider with 68's redeem path, wires the runner and tests end to end. It does not change the invite check.
+- (d) **The agent user is not for humans.** A shared local code, or an operator database invite, whose `hello` claims the configured agent (world, user) is refused with `PAIRING_INVALID`, and the operator log has one line saying that user is the headless agent and pairs only through the runner. At startup, active pairings for the agent identity are listed in the log as a warning. If the runner's page is closed with `replaced`, the runner logs "agent user <name> was taken by another client; the runner is paused" and does not reload until the next world start or 5 min (named constant). It never fights for the slot.
 - (e) **Profile, one directory per agent.** Chromium cannot run two persistent contexts on one user-data dir, and a shared profile would mix Foundry login cookies and pairing tokens. So every agent gets its own dir from the start.
   - `profileDir(stateDir, worldId, userId)` in `gateway/src/headless/profile.ts` returns `<state dir>/headless/profiles/<agent-id>/`.
   - `<agent-id>` is `<slug>-<hash>`. `slug` is `<worldId>-<userId>` lowercased, with every character outside `[a-z0-9-]` replaced by `-`, runs of `-` collapsed, and the result cut to 48 characters. `hash` is the first 12 hex characters of `sha256(JSON.stringify([worldId, userId]))`. The hash is computed on the original, case-sensitive ids, so ids that differ only in case or punctuation still get distinct dirs. The id is stable and depends only on (world id, user id).
@@ -69,13 +71,15 @@ Runner:
 - [ ] The runner runs only on the primary. It stops within 5 s of `app.stop()`, a step-down, or `teardown` (tests with a fake browser launcher).
 
 Pairing and identity:
-- [ ] A provisioned code for (w1,u-agent) pairs a FakeModule that says hello as (w1,u-agent) from the configured origin. The same code presented with (w1,u-gm), or from another origin, is refused, and the code is then spent (tests).
-- [ ] Server mode, unattended: with `--server-mode`, no observer online and no stored token in the agent's profile, the runner (fake browser launcher, FakeModule page) gets a provisioned code, pairs without any confirmation prompt, and its `world_info` call succeeds. In the same gateway, a human code for another user still goes to pending (test).
-- [ ] The operator log contains the redacted provisioning note and never the code itself (test).
-- [ ] A provisioned code never appears in stderr, in `gateway_status`, in a not-connected error or in an MCP notice (test captures all four).
+- [ ] A minted invite for (w1,u-agent) pairs a FakeModule that says hello as (w1,u-agent) from the configured origin. The same code presented with (w1,u-gm), or from another origin, is refused, and the invite is then spent (tests).
+- [ ] Server mode, unattended: with `--server-mode`, no operator invite for the agent and no stored token in the agent's profile, the runner (fake browser launcher, FakeModule page) gets a minted invite, pairs, and its `world_info` call succeeds. In the same gateway, a code that is not a live invite is still refused (test).
+- [ ] Local mode: the same unattended start works, and the shared local code still pairs a human (test).
+- [ ] An expired minted invite (after 2 min, injectable clock) is refused, and the runner mints a new one on its next attempt (test).
+- [ ] The operator log contains the redacted note and never the code itself (test).
+- [ ] A minted invite code never appears in stderr, in `gateway_status`, in a not-connected error or in an MCP notice (test captures all four).
 - [ ] A human code with a `hello` for the configured agent identity is refused with `PAIRING_INVALID`, and the log names the reason (test).
 - [ ] A FakeModule for the agent identity sending `headless: true` and one for another user sending `headless: true` are classified headless and not headless, respectively, and the second produces the mismatch log line (test).
-- [ ] A restart with the same profile dir reconnects with the stored token and mints no provisioned code (test with a fake browser whose storage persists).
+- [ ] A restart with the same profile dir reconnects with the stored token and mints no invite (test with a fake browser whose storage persists).
 - [ ] `profileDir` (gateway/test/headless/profile.test.ts):
   - two agents (w1,uA) and (w1,uB) get distinct dirs;
   - so do ids differing only in case (`(w1,"AbC")` and `(w1,"abc")`);
@@ -99,5 +103,5 @@ Manual:
 - Several agents, SQLite storage of agent config, the `headless add|list|remove` commands and the owner override (38).
 - `welcome` fields (38).
 - Follow-mode exclusion of headless identities (38).
-- Headless agents as pairing observers for 68.
+- Changing 68's invite check.
 - Docs (43).

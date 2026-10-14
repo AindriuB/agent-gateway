@@ -17,7 +17,8 @@ Package the gateway for server mode next to a self-hosted Foundry. Andrew should
 ## Context
 - Andrew, 2026-10-14:
   - TLS terminates at a reverse proxy, with the gateway on 127.0.0.1 behind it. This task ships the Compose file with Caddy, and the gateway does no TLS.
-  - With `--public-url` set, the static bearer is off and the pairing code goes only to the operator's log, so the operator reads it from `docker compose logs`.
+  - With `--public-url` set, the static bearer is off and the pairing code goes only to the operator's log.
+  - Server mode pairs through operator invites (68, Model I, Andrew 2026-10-14). Once 68 lands, there is no shared code in the logs, and the operator runs `--invite <world> <user>` through `docker compose exec`. Until then, the smoke run reads the shared code from `docker compose logs`.
   - Compose on a VPS comes first. Native installers come later, and tunnel or self-TLS setups are not planned.
 - 74 provides every setting as an env key: `AGENT_GATEWAY_PUBLIC_URL`, `AGENT_GATEWAY_SERVER_MODE`, `AGENT_GATEWAY_TRUST_PROXY`, `AGENT_GATEWAY_ALLOW_ORIGIN`, `AGENT_GATEWAY_LINK_HOST` and `AGENT_GATEWAY_HTTP_HOST` (default 127.0.0.1), `AGENT_GATEWAY_HTTP`, plus the existing `AGENT_GATEWAY_LINK_PORT`, `AGENT_GATEWAY_HTTP_PORT`, `AGENT_GATEWAY_LOG_LEVEL` (gateway/src/config/index.ts:14-18) and `AGENT_GATEWAY_DB` (gateway/src/bin/cli.ts:153, :177). With `--server-mode`, stdin end does not stop the process, and there is no stdio session.
 - gateway/src/bin/cli.ts:184: before 74, a closed stdin stops the gateway. Check that the image runs with 74 merged.
@@ -39,7 +40,7 @@ Package the gateway for server mode next to a self-hosted Foundry. Andrew should
 - (c) **Gateway settings in Compose**, from `.env`:
   - `AGENT_GATEWAY_SERVER_MODE=1`;
   - `AGENT_GATEWAY_PUBLIC_URL=https://${DOMAIN}`;
-  - `AGENT_GATEWAY_TRUST_PROXY=1`, safe because the only loopback peer is Caddy;
+  - `AGENT_GATEWAY_TRUST_PROXY=1` (required, F7), safe because the only loopback peer is Caddy. Without it every client shares one rate-limit bucket, and 74 logs a warning;
   - `AGENT_GATEWAY_ALLOW_ORIGIN=${FOUNDRY_ORIGIN}`;
   - `AGENT_GATEWAY_DB=/data/gateway.db`.
 
@@ -57,7 +58,7 @@ Stack:
 - [ ] Local smoke run on the homelab with `DOMAIN=localhost` (Caddy's internal CA), including one `--backup` through `docker compose exec` while the stack runs:
   - `docker compose up -d` brings both services healthy;
   - `curl -k https://localhost/status` shows only the version and uptime;
-  - `docker compose logs gateway` shows a `Pairing code:` line;
+  - `docker compose logs gateway` shows a `Pairing code:` line before 68 lands (after 68, `docker compose exec gateway … --invite <world> <user>` prints an invite code instead), and does not show 74's shared-bucket warning;
   - a static bearer on `/mcp` gets 401.
 
   Output in the PR.
@@ -66,7 +67,11 @@ Stack:
   - prerequisites: a VPS with Docker, a DNS A/AAAA record for the domain, and ports 80/443 open;
   - copy `.env.example` to `.env` and fill it in;
   - `docker compose up -d`;
-  - the first pairing: read the code with `docker compose logs gateway | grep 'Pairing code'`, then in Foundry set the gateway URL to `wss://<domain>/link` and enter the code;
+  - pairing each person:
+    1. they open Agent Gateway's pairing app in Foundry and send the operator the world id and user id from its "Copy my ids" line (68);
+    2. the operator runs `docker compose exec gateway <cli> --invite <world id> <user id>` and sends them the printed code privately (single use, 24 h);
+    3. they set the gateway URL to `wss://<domain>/link` and enter the code;
+  - re-pairing a lost device needs a new invite; `--revoke-pairing <world> <user>` removes someone; `--list-invites` and `--list-pairings` show status without codes;
   - that there is no static bearer token to rotate in this mode;
   - how to update (`docker compose pull` or rebuild, then `up -d`);
   - where the data lives (`gateway.db` and its `-wal`/`-shm` files in the `gateway-data` volume, since 74 turns on WAL);
@@ -76,7 +81,7 @@ Stack:
 
 Release:
 - [ ] `scripts/release.mjs` builds and tags the image locally as `foundry-agent-gateway:<version>`. A push step sits behind a `--push-image` flag and prints "registry not configured" and exits non-zero until Andrew chooses GHCR or Docker Hub. Without the flag nothing is pushed.
-- [ ] `docs/server-mode.md` covers what server mode is, the Compose stack, volumes, ports, the public URL, why the pairing code is only in the logs, and that first pairings need confirmation once 68 lands. It links `gateway/docker/README.md` for the steps.
+- [ ] `docs/server-mode.md` covers what server mode is, the Compose stack, volumes, ports, the public URL, that pairing is by operator invite (68), and why nobody can pair without one. It links `gateway/docker/README.md` for the steps.
 - [ ] `npm run verify` passes, and `git diff --stat main` lists only files in Owns.
 
 ## Out of scope

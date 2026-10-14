@@ -36,25 +36,26 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 ## Next
 
 ### MVP B: VPS / hosted (next phase; MVP A is complete)
-Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Task files are in `docs/plan/tasks/`; the full wave, overlap and migration analysis was done in that re-plan.
+Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Task files are in `docs/plan/tasks/`; threats and their handling are in `docs/plan/mvp-b-threats.md`; the full wave, overlap and migration analysis was done in that re-plan.
 
 **Decisions (Andrew, 2026-10-14):**
 - Docker Compose on a VPS is the primary deployment.
 - TLS terminates at a reverse proxy (Caddy); the gateway does no TLS itself.
 - With `--public-url`, the static bearer token is off (OAuth only), pairing codes appear only in operator logs, and `/status` shows only version and uptime.
-- The first GM pairing of a world is accepted and logged (68, part c).
+- WITHDRAWN: the earlier approval to accept and log the first GM pairing of a world. It rested on the hello `isGM` flag, which a code holder can forge (threat T1). GM-attested self-onboarding is deferred to a future task, not in MVP B.
+- Public-mode pairing uses operator invites (Model I, Andrew 2026-10-14, after an architect threat review): the operator mints a single-use invite for an exact world and user with `--invite <world> <user>`, and a code holder pairs only as that target. The threat map is `docs/plan/mvp-b-threats.md`.
 - The consent page does not list users (67).
 - SQLite stays the store, with WAL and a `--backup` CLI (74).
-- Observer eligibility uses a gateway-side verified role, never the hello `isGM` flag; provisioned headless codes skip confirmation only on an exact world/user/origin match (68 f, 37 c).
-- Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 68's (`pairings.verified_role`), 012 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
+- Identity comes from the invite, never the hello `isGM` flag; headless runners mint their own in-memory invites with an exact world/user/origin match (68 i, 37 c).
+- Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 68's (the `invites` table), 012 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
 
 **Order:**
 1. **Wave 1: 74** Remote-exposure foundation: public URL, server mode, host allowlists, per-client limits, session-selector seam, WAL and `--backup`.
 2. **Wave 2: 35 and 42, in parallel (disjoint Owns).** 35 is the OAuth 2.1 authorization server (migration 010). 42 is the server-mode Docker image and Compose stack with Caddy.
-3. **Wave 3: 67, then 68 (serialized; they share `gateway/src/link/server.ts` and `module/src/link/client.ts`).** 67 is the consent page and grant revocation, without which 35 auto-denies every authorization. 68 is server-mode pairing confirmation, the impersonation defence.
-4. **Milestone: friend test on a public VPS (Compose and Caddy).** Andrew deploys 42's stack with 74, 35, 67 and 68 merged. The GM pairs (68's bootstrap rule), friends pair and confirm, and one friend connects claude.ai or ChatGPT through OAuth and consent, makes a read call and a write held for approval, then revokes the grant. Feedback is filed as tasks before wave 4 starts.
+3. **Wave 3: 67, then 68 (serialized; they share `gateway/src/link/server.ts` and `module/src/link/client.ts`).** 67 is the consent page and grant revocation, without which 35 auto-denies every authorization. 68 is operator invites for server mode: `--invite <world> <user>`, `--revoke-pairing`, replacement that revokes the old token and its grants, and "Copy my ids" in the module. It is the impersonation defence.
+4. **Milestone: friend test on a public VPS (Compose and Caddy).** Andrew deploys 42's stack with 74, 35, 67 and 68 merged. The operator invites the GM and each friend with `--invite`, they pair, and one friend connects claude.ai or ChatGPT through OAuth and consent, makes a read call and a write held for approval, then revokes the grant. Feedback is filed as tasks before wave 4 starts.
 5. **Wave 4, after the milestone:** 37 with 40 in parallel, then 38, then 43.
-   - **37** Headless runner with provisioned pairing (`playwright-core`, logs in as an agent user, follows world lifecycle).
+   - **37** Headless runner with gateway-minted invites (`playwright-core`, logs in as an agent user, follows world lifecycle).
    - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
    - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
@@ -62,7 +63,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 ### Later (after MVP B)
 
 - **Ease of installation:** native installers (Windows .exe, macOS .pkg, and a Linux script with Node bundled). No task yet.
-- **Go public:** publish the 0.1.0 draft (rebuild if `main` has moved), make the repo public, real `npm publish`, Foundry package listing, Ask Foundry answers in `docs/releasing.md`, and the manifest-URL install check. The 0.1.0 after-action report (`/aar 0.1.0`, presented in chat, never committed) is due once the release is actually published. Task not yet created; MVP B must be done first (Andrew, 2026-10-14).
+- **Go public:** publish the 0.1.0 draft (rebuild if `main` has moved), make the repo public, real `npm publish`, Foundry package listing, Ask Foundry answers in `docs/releasing.md`, and the manifest-URL install check. Prerequisite: a per-connection frame budget for toolset and event link frames (threat T17, pre-existing at `gateway/src/link/server.ts:275-345`; not yet filed as a task). The 0.1.0 after-action report (`/aar 0.1.0`, presented in chat, never committed) is due once the release is actually published. Task not yet created; MVP B must be done first (Andrew, 2026-10-14).
 
 Not planned now: a tunnel or `share` mode, port-forwarding, and TLS in the gateway itself.
 

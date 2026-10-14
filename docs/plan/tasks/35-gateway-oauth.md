@@ -8,7 +8,7 @@
 - gateway/test/oauth/** (new)
 - gateway/src/store/migrations/010-oauth.ts (new)
 - gateway/src/store/migrations/index.ts (insertion only: one import and one array entry)
-- gateway/src/store/store.ts (insertion only: one `oauth` repository field and its construction, as `events` and `queue` are built)
+- gateway/src/store/store.ts (insertions only: one `oauth` repository field and its construction, as `events` and `queue` are built; and widening `onPairingRevoked` listeners to receive the revoked `PairingRow`, with the oauth repository subscribed inside `openStore`)
 - gateway/src/http/server.ts (mount the OAuth routes, and the OAuth branch of the authenticator and `/status` check only)
 - gateway/src/app.ts (build the OAuth server and authenticator when `publicUrl` is set, and the principal's scopes in `sessionOptions` only)
 - gateway/src/mcp/session.ts (scope filtering only)
@@ -53,6 +53,7 @@ Defaults: follow them unless the PR shows a reason not to.
 
   `client_name` is stored only after trimming to 100 printable characters.
 - (f) **Scopes** are `read`, `write`, `destructive` and `code`, with `read` the default when none is asked. The principal carries the grant's scopes, and app.ts passes them to `createSessionServer` as `allowedCategories`. The filter applies before the event tools, before the offline queue and before the module call. `gateway_status` is always listed.
+- (h) **Grants die with their pairing.** `onPairingRevoked` listeners (store.ts:34, :105-110, :126-130) receive the revoked `PairingRow`; the existing listeners (events/buffer.ts:60, offline-queue/service.ts:46) ignore it. `openStore` subscribes the oauth repository, so revoking a pairing revokes every grant for that row's (world, user) and their access and refresh tokens. This happens in whichever process revokes: the gateway, or a one-shot CLI such as 68's `--revoke-pairing`. 68's invite replacement and 67's flows rely on it.
 - (g) **Consent step interface.** `ConsentStep.decide(request) → Promise<{ approve: { worldId, userId, scopes } } | { deny: string }>`. This PR ships `AutoDenyConsent`, which redirects with `error=access_denied`. Tests inject an approving step. 67 replaces the default.
 
 ## Acceptance
@@ -73,6 +74,7 @@ Flow:
 Binding and scopes (through 74's seam):
 - [ ] A token granted for (w1,u1) creates an HTTP session bound to (w1,u1) with `exactId`. With FakeModules for (w1,u1) and (w1,u2), `world_info` reaches u1. With only u2 connected it returns `WORLD_OFFLINE`, and u2's FakeModule receives no call frame.
 - [ ] Revoking the grant (a direct store call in the test) makes the next request on an open session get 401.
+- [ ] `store.revokePairing(id)` for a (w1,u1) pairing revokes every (w1,u1) grant and its tokens; a (w1,u2) grant is untouched; the (w1,u1) access token then gets 401 (test). The existing event and queue revocation tests pass unchanged.
 - [ ] A `read`-only token: `tools/list` omits every `write`, `destructive` and `code` tool (core and a FakeModule-announced pack tool) and still lists `gateway_status`. Calling a `write` tool returns `FORBIDDEN` while the world is connected, and also while it is offline: no row is added to the offline queue (test inspects the queue table), and the FakeModule receives no frame.
 - [ ] A token with `read write` can call a `write` tool and not a `destructive` one.
 

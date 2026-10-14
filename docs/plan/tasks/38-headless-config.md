@@ -1,7 +1,7 @@
 # 38 — Add headless agent configuration, explicit binding and the owner override
 
 **Repo:** .
-**Depends on:** 37, 35, 68, 74 (for migration order: 35's 010 and 68's 011 must merge before this task's 012)
+**Depends on:** 37, 35, 68, 74 (68 for its invite redeem path and `revokePairingsFor`, which re-pairing and removal use; also for migration order: 35's 010 and 68's 011 must merge before this task's 012)
 **Status:** MVP B wave 4, after 37. Rewritten 2026-10-14 in the MVP B re-plan. It holds migration 012 (74 decision h; it moved from 011 because 68 lands first and takes 011).
 **Owns:**
 - gateway/src/headless/config/**
@@ -25,7 +25,8 @@ Make headless agents configurable and safe. The operator manages several agents 
 
 ## Context
 - docs/plan/specs/2026-10-09-agent-gateway.md:204-207 (credentials in a 0600 file or env), :213-214 (headless config in SQLite), :229-233 (headless off until enabled; the owner is the human who paired the agent).
-- docs/plan/tasks/37-headless-runner.md decisions (a) to (d): the single-agent settings, identity from config, provisioned pairing, and the agent user is not for humans.
+- docs/plan/tasks/37-headless-runner.md decisions (a) to (d): the single-agent settings, identity from config, gateway-minted invites, and the agent user is not for humans.
+- docs/plan/tasks/68-server-mode-pairing-confirmation.md decisions (c), (d), (e) and (i): the invite redeem path (an in-memory provider is accepted in both modes), replacement on re-pairing, and `store.revokePairingsFor(world, user)`, which also revokes OAuth grants through 35's `onPairingRevoked` subscription.
 - docs/plan/tasks/74-remote-exposure-foundation.md decision (h): 012 is this task's. Because the migrations array is positional, 35's 010 and 68's 011 must have merged first, which the wave order guarantees.
 - gateway/src/app.ts:504-509 `knownIdentities` from `store.listActivePairings()`.
 - gateway/src/routing/binding.ts:
@@ -45,7 +46,7 @@ Defaults. Follow them unless the PR shows a reason not to.
   - A session reaches a headless identity only with `--world` and `--user <agent id>`, or with an OAuth grant naming it (35, through 74's `exactId` seam).
   - `gateway_status` in follow mode does not list headless identities as candidates.
 - (c) **Trust model of the owner override.**
-  - `welcome.ownerUserId` and `welcome.headless: true` are sent only to a connection that the gateway classifies as headless from its own config (37 decision b): its (world, user) is a configured agent's. Since 37 refuses human codes for that identity, its pairings come only from provisioned codes. They are never sent to a browser connection.
+  - `welcome.ownerUserId` and `welcome.headless: true` are sent only to a connection that the gateway classifies as headless from its own config (37 decision b): its (world, user) is a configured agent's. Since 37 refuses the shared code and operator invites for that identity, its pairings come only from gateway-minted invites. They are never sent to a browser connection.
   - The module uses `ownerUserId` only when the same `welcome` has `headless: true`, and only if `game.users.get(ownerUserId)` exists. Otherwise approvals fall back to the existing route (owner is the connected user, and GMs can approve).
   - The override is a routing hint for approvals chosen by the operator. It grants no permission: role, policy and Foundry's checks still apply to the agent user.
   - `ctx.agent.headless` is `welcome.headless || the session flag` (37). Either one makes the agent headless, and neither can make a headless agent non-headless.
@@ -54,7 +55,7 @@ Defaults. Follow them unless the PR shows a reason not to.
 - [ ] `foundry-agent-gateway headless add <name> --foundry-url <u> --world <id> --user <id> [--owner <id>]`, `headless list` and `headless remove <name>` manage rows in `headless_agents`. `list` prints no password. A test inspects the SQLite file after `add` with a password in env and finds no password.
 - [ ] `add` refuses a password flag, and refuses `--user` equal to an existing agent's user in the same world.
 - [ ] The primary starts one 37 runner per stored agent that has a password available, each on its own `profileDir`, and logs one line naming any agent that has none. A test with the fake launcher starts two agents and asserts two different user-data dirs, both under `<state dir>/headless/profiles/`.
-- [ ] Profile cleanup on `headless remove <name>` keeps the profile. The command deletes the row, revokes that agent's active pairings (so the token in the old profile is useless), and prints the profile path, saying it can be deleted once the gateway has restarted. It never deletes files, because a running gateway's Chromium may still hold the dir. Re-adding the same (world, user) reuses the dir, and the runner pairs again with a provisioned code (test).
+- [ ] Profile cleanup on `headless remove <name>` keeps the profile. The command deletes the row and revokes that agent's active pairings through 68's `store.revokePairingsFor(world, user)`, the same path as `--revoke-pairing`. The token in the old profile is then useless, a running gateway closes the agent's live connection within 68's sweep interval, and the agent's OAuth grants are revoked. The command then prints the profile path, saying it can be deleted once the gateway has restarted. It never deletes files, because a running gateway's Chromium may still hold the dir. Re-adding the same (world, user) reuses the dir, and the runner pairs again through a newly minted invite. Each agent re-pairs (a lost token, a new profile) only through a fresh minted invite redeemed by 68's path, which revokes the old pairing as a replacement (tests).
 - [ ] Follow mode (gateway/test/routing/headless-follow.test.ts):
   - with only a headless agent connected, a follow-mode session is unbound and gets the not-connected error;
   - with a GM tab and a headless agent connected, it binds to the GM tab and is not ambiguous;
@@ -67,7 +68,7 @@ Defaults. Follow them unless the PR shows a reason not to.
 - [ ] `npm run verify` passes.
 
 ## Out of scope
-- The runner, provisioned codes and Chromium in the image (37).
-- Headless agents as observers for 68's pairing confirmation.
+- The runner, minting its invites, and Chromium in the image (37).
+- Changing 68's invite or revocation mechanism.
 - A GM-facing agents app (18).
 - Docs (43).

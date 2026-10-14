@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 35, 74
-**Status:** MVP B wave 3. It runs before 68 because both edit gateway/src/link/server.ts and module/src/link/client.ts. Split from 36; does not depend on 18. Amended 2026-10-14 in the MVP B re-plan: no migration; CSRF, anti-framing and Host rules; the pairing code is never shown; the page does not list users (approved by Andrew, 2026-10-14).
+**Status:** MVP B wave 3. It runs before 68 because both edit gateway/src/link/server.ts (after 68's 2026-10-14 rewrite as operator invites, that is the only shared file). Split from 36; does not depend on 18. Amended 2026-10-14 in the MVP B re-plan: no migration; CSRF, anti-framing and Host rules; the pairing code is never shown; the page does not list users (approved by Andrew, 2026-10-14).
 **Owns:**
 - gateway/src/oauth/consent/**
 - gateway/test/oauth/consent/**
@@ -54,6 +54,7 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 - **No user enumeration. Approved by Andrew, 2026-10-14.** The original contract listed every connected (world, user) pair on the page. Anyone on the internet can reach the page after an open DCR, so that would publish who is online. Instead the page asks for the world and the Foundry user name. Whether or not that user is connected, it answers with the same text: "If that user is online in that world, a code was sent to their Foundry window". It then shows the code field. Scopes are checkboxes as before.
 
 ## Acceptance
+- [ ] The user is resolved by Foundry user id, or by recorded name only when exactly one active pairing in that world has that name. A name shared by several pairings, which is possible because the name comes from the module's `hello` and is self-reported (threat T14), resolves to nobody: no code is sent, and the answer is the same text as for an unknown user (test with two pairings named `Gamemaster`).
 - [ ] The consent page asks for world, Foundry user and scopes (`read`, `write`, `destructive`, `code`). Approving needs a one-time code delivered only to the chosen user's Foundry client over that user's link connection. The response text and status are identical for a connected user, an unknown user and an offline user (test compares the bodies).
 - [ ] The code expires after 5 minutes (named constant). At most 5 wrong entries are allowed (named constant) before the consent request is void, and wrong entries also count in 74's per-client failure bucket. Tests cover expiry, a wrong code, lock-out and success.
 - [ ] CSRF: a POST without the cookie, with a mismatched token, with a missing `Origin`, or with `Origin: https://evil.example` gets 403 and approves nothing (four tests).
@@ -62,6 +63,7 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 - [ ] Granted tokens bind to that (world, user) and its chosen scopes in `oauth_grants`. A test shows that a token granted for one user never reaches another user's connection.
 - [ ] Link messages `listGrants`, `grants` and `revokeGrant`: a user's client lists only grants bound to its own (world, user), with client name, scopes and last used. The gateway takes the user from the link connection's binding, never from the message payload: a test sends a forged user id and gets only its own grants.
 - [ ] Revocation invalidates the grant's access and refresh tokens at once, and the next MCP call with either gets 401 (test).
+- [ ] Grants also die with their pairing: revoking or replacing a (world, user)'s pairing (68's `--revoke-pairing` or invite replacement) revokes that pair's grants through 35's `onPairingRevoked` subscription (35 decision h). This task adds no second path. A test revokes the pairing and asserts that the grants app then lists nothing for that user, and that the old token gets 401.
 - [ ] The page is plain server-rendered HTML with no external assets. Untrusted text (the client name from DCR, and the typed world and user) is escaped, tested with a `<script>` client name.
 - [ ] A grants app in module settings shows the current user's grants with a Revoke button. `module/test/apps/grants/**` covers list and revoke, strings are localized, and the module sends no grant message to a gateway older than this task's version (test).
 - [ ] No new file under gateway/src/store/migrations/.
@@ -71,7 +73,7 @@ Let a remote MCP client (claude.ai, ChatGPT, the Gemini app) finish OAuth. On a 
 ## Out of scope
 - A GM revoking another user's grants, or revoking while that user is offline (18 and the rest of 36).
 - The agents app (18).
-- Server-mode pairing confirmation (68).
+- Server-mode operator invites and pairing revocation (68).
 - Audit-trail entries for consent or revocation (35b).
 - Client setup guides (43).
 - Any migration (see Amendments).

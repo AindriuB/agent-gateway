@@ -10,6 +10,7 @@
 - gateway/src/http/** (server.ts, plus new helper files such as `client-key.ts` and `limits.ts`)
 - gateway/src/link/server.ts (the Host check, the per-client pending and failed-code buckets, and the pairing-code suppression hooks only)
 - gateway/src/link/code-attempts.ts
+- gateway/src/link/pairing-codes.ts (a `consumed` reason for `issue` only; T10)
 - gateway/src/relay/config.ts
 - gateway/src/relay/secondary.ts (the reason text at :268 only)
 - gateway/src/mcp/status-tool.ts
@@ -77,7 +78,7 @@ These are defaults. Follow them unless the PR shows a reason not to, and give th
   | Flag | Env | Default | Meaning |
   | --- | --- | --- | --- |
   | `--public-url <url>` | `AGENT_GATEWAY_PUBLIC_URL` | unset | The external origin. `https:` only, except `http:` on a loopback host for local testing (with a warning). No path, query or fragment; a trailing `/` is dropped. Setting it turns HTTP on. |
-  | `--server-mode` | `AGENT_GATEWAY_SERVER_MODE` (`1`/`true`) | off | Always-on, many users. No stdio MCP session, stdin end does not stop the process, and HTTP is on. 68 adds the pairing rules. |
+  | `--server-mode` | `AGENT_GATEWAY_SERVER_MODE` (`1`/`true`) | off | Always-on, many users. No stdio MCP session, stdin end does not stop the process, and HTTP is on. 68 adds operator invites. |
   | `--link-host <addr>` | `AGENT_GATEWAY_LINK_HOST` | `127.0.0.1` | Link bind address. |
   | `--http-host <addr>` | `AGENT_GATEWAY_HTTP_HOST` | `127.0.0.1` | HTTP bind address (replaces the refusal at cli.ts:146-151). |
   | `--trust-proxy` | `AGENT_GATEWAY_TRUST_PROXY` | off | See (c). |
@@ -87,18 +88,28 @@ These are defaults. Follow them unless the PR shows a reason not to, and give th
   A non-loopback `--link-host` or `--http-host` is refused (exit 2, naming the flag) unless `--public-url` is set. When it is accepted, the gateway logs once that TLS must be terminated by a reverse proxy in front of it. The recommended deployment (42) does not use it: Caddy shares the gateway's network namespace and the gateway stays on 127.0.0.1 (Andrew).
 - (b) **Host and Origin allowlists.** Allowed Host values are the loopback names (today's set) plus the public URL's host, with its port when the URL has a non-default one. The HTTP server applies this to `Host` and, when present, `Origin` (an `Origin` must be a loopback origin or exactly the public origin). The link server applies it to `Host` always: the check no longer switches off with `allowNonLoopback` (link/server.ts:142). Without `--public-url` behaviour is unchanged.
 - (c) **X-Forwarded-\*.** Not trusted by default. `X-Forwarded-Host` and `X-Forwarded-Proto` are never read: the proxy must forward the original `Host` (Caddy does by default; nginx needs `proxy_set_header Host $host`, which 43 documents). With `--trust-proxy`, and only when the TCP peer is a loopback address, the client key for the limits in (e) is the right-most `X-Forwarded-For` entry. Otherwise the client key is the TCP peer address. Without `--trust-proxy` behind a proxy every client shares one key, and the global backstops still hold.
+  - **Client key normalization (F7).**
+    - An IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) is keyed as the IPv4 address, so `::ffff:127.0.0.1` counts as loopback, both for the `--trust-proxy` peer check and for the Host and bind rules.
+    - Any other IPv6 address is keyed by its /64 prefix (one subscriber usually holds a whole /64, so per-address buckets would be free to rotate).
+    - `::1` is loopback.
+    - A malformed `X-Forwarded-For` entry falls back to the TCP peer's key.
+  - **Shared-bucket warning.** With `--public-url` set and `--trust-proxy` off, startup logs one warning: "--trust-proxy is off: if a reverse proxy is in front, every client shares one rate-limit bucket".
 - (d) **What a public gateway hides.** With `--public-url` set:
   - `pairingHint` is not passed to sessions (app.ts:511-514), so `gateway_status` and not-connected errors carry no code. Their text says to ask the gateway operator for a pairing code. The `gateway_status` description (status-tool.ts:18) no longer promises a code.
   - `sendNotice` is off (app.ts:428-431, :439, :447). The operator lines from `writeStatus` (:438, :466-474) stay.
   - `/status` renders only the version and uptime unless the request carries credentials that the HTTP authenticator accepts (see (f)). Until 35 lands nothing is accepted, so it is always minimal.
   - The static bearer is off: no token is loaded or created (app.ts:525), a static token on `/mcp` gets 401, and startup logs one line: "HTTP bearer token is off because --public-url is set; remote clients sign in with OAuth". A stored hash from earlier local runs is ignored, not deleted. `--http-rotate-token` together with `--public-url` (flag or env) exits 2 with a message that names both.
+  - **Code supply (T10).** Today a consumed code is not replaced until something asks (pairing-codes.ts, `consume` at :94, `issue` at :57), and with `--public-url` nothing asks, because the MCP hint is off. So with `--public-url`, a successful code pairing calls `issue('consumed')` (through a `LinkServer` `onCodePaired` hook wired in app.ts). The new code goes only to the operator log. In server mode, 68 later turns the shared code off and uses invites instead.
 - (e) **Per-client limits.** Client key as in (c). Every map is bounded (named cap, oldest evicted), so memory does not grow with the number of attackers.
   - HTTP, every mode: failed authentication is counted per client key, and a client at `MAX_FAILED_AUTH_PER_CLIENT` (10 per 60 s) gets 429 with `retry-after` before the token is checked. This fixes failed tokens never being limited (server.ts:187-194).
   - HTTP, public mode: the request rate (`PUBLIC_CLIENT_RPS`, 10) and the session cap (`MAX_HTTP_SESSIONS_PER_CLIENT`, 4) are per client key. The global window (`SELF_PROTECT_RPS`, config/index.ts:81) and `MAX_HTTP_SESSIONS` (:82) stay as backstops. Local mode keeps today's numbers.
-  - Link, public mode: failed pairing codes are counted per client key (`MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT`, 5 per 60 s). The global `CodeAttempts` stays as a backstop at `MAX_FAILED_CODE_ATTEMPTS_PUBLIC` (60 per 60 s), so one attacker cannot lock everyone out. Local mode keeps 10 per 60 s globally (Andrew, task 70). Pre-hello sockets are also capped per client key (`MAX_PENDING_PER_CLIENT`, 4), next to the per-origin cap.
+  - Link, public mode: failed pairing codes are counted per client key (`MAX_FAILED_CODE_ATTEMPTS_PER_CLIENT`, 5 per 60 s). The global `CodeAttempts` stays as a backstop at `MAX_FAILED_CODE_ATTEMPTS_PUBLIC` (**300 per 60 s**), so one attacker cannot lock everyone out.
+    - The reasoning is guess space against the window. 300 per minute is 432,000 guesses a day. In public non-server mode the one shared code has 8 characters from a 31-letter alphabet (31^8 ≈ 8.5 × 10^11) and lives 10 min, so 3,000 guesses per code give about 3.5 × 10^-9 per code, or about 5 × 10^-7 a day.
+    - Server mode uses 68's 12-character invites (31^12 ≈ 7.9 × 10^17): even 100 live 24 h invites give about 5.5 × 10^-11 a day.
+    - Against that, a backstop of 60 per minute would let a dozen /64 prefixes at 5 per minute lock everyone out. At 300 it takes 60. Local mode keeps 10 per 60 s globally (Andrew, task 70). Pre-hello sockets are also capped per client key (`MAX_PENDING_PER_CLIENT`, 4), next to the per-origin cap.
 - (f) **The per-session selector seam.** `HttpServerOptions` gains an `authenticate(req): HttpPrincipal | undefined` hook. In local mode it wraps today's `token.verify`, and in public mode nothing is accepted until 35 adds OAuth. An `HttpPrincipal` is `{ key: string; selector?: { worldId: string; userId: string } }`. `createSession` becomes `createSession(ctx: { principal: HttpPrincipal })`. app.ts builds the session with `selector: { world, user, exactId: true }` from `ctx.principal.selector` when one is set, else `deps.selector` as today. Each HTTP session remembers the principal key that created it. A request whose principal key differs is answered like an unknown session (404), so a session id never works with another credential. `UserSelector` gains `exactId?: boolean`: when set, `matching` (binding.ts:226-241) never falls back to a name match.
 - (g) **Relay config.** `RelayConfig` gains `publicUrl` (`''` when unset) and `serverMode`. Both are session-affecting: they decide what a relayed session may see, like `allowOrigins`, so they join `sameSessionConfig`. `linkHost`, `httpHost` and `trustProxy` join `sameConfig` as session-neutral, like `httpPort`. `parseRelayConfig` reads a missing field as off or `''`, so an older peer still parses. `describeConfigDiff` names each field. The secondary's reason text (secondary.ts:268) says "different session settings" and lists them through `describeConfigDiff`.
-- (h) **Migration numbers (MVP B).** `gateway/src/store/migrations/index.ts` is a positional array: a migration's number must equal its position when it merges. Reserved, in merge order: **010 for 35** (OAuth clients, codes, tokens and grants; wave 2), **011 for 68** (`pairings.verified_role`, observer eligibility; wave 3), **012 for 38** (headless agents; wave 4). 38 moved from 011 to 012 on 2026-10-14 because 68 lands first. 67 needs no migration, because its grants live in 010. If 67 or any other task finds it needs one, it stops and reports before writing it. 74 adds no migration.
+- (h) **Migration numbers (MVP B).** `gateway/src/store/migrations/index.ts` is a positional array: a migration's number must equal its position when it merges. Reserved, in merge order: **010 for 35** (OAuth clients, codes, tokens and grants; wave 2), **011 for 68** (the `invites` table for operator invites; wave 3), **012 for 38** (headless agents; wave 4). 38 moved from 011 to 012 on 2026-10-14 because 68 lands first. 67 needs no migration, because its grants live in 010. If 67 or any other task finds it needs one, it stops and reports before writing it. 74 adds no migration.
 
 - (i) **WAL.** `openStore` sets `PRAGMA journal_mode = WAL` instead of DELETE, keeps `busy_timeout = 5000` first, and checks the mode the pragma returns. If it is not `wal`, for example on a filesystem without shared memory, it logs one warning and carries on in the returned mode. WAL is persistent in the file. An older binary that sets DELETE converts the file back, and this one converts it again, so a downgrade still works. The `-wal` and `-shm` files sit next to the db in the 0700 state dir.
   - Rotate: the read-only schema check (cli.ts:64) must still work against a WAL db, both while a gateway holds it and when none does. The rotated hash must be visible to the running gateway's next request.
@@ -124,16 +135,19 @@ Host, Origin and proxy:
 - [ ] HTTP with `--public-url https://gw.example.com`: `Host: gw.example.com` gets past the Host check; `Host: evil.example` gets 403; `Origin: https://gw.example.com` passes and `Origin: https://evil.example` gets 403. Without `--public-url`, the existing loopback tests pass unchanged.
 - [ ] Link with `--public-url` and `allowNonLoopback`: an upgrade with `Host: gw.example.com` is accepted, and one with `Host: evil.example` is refused with `host header is not loopback` (the reason text may be renamed). The Host check runs even when `allowNonLoopback` is set.
 - [ ] Without `--trust-proxy`, a request with `X-Forwarded-For: 203.0.113.9` from 127.0.0.1 is keyed as 127.0.0.1. With `--trust-proxy`, the same request is keyed as 203.0.113.9. From a non-loopback peer the header is ignored either way. `X-Forwarded-Host` never changes the Host decision (test).
+- [ ] Client keys: `2001:db8:1:2::a` and `2001:db8:1:2::b` share one key, and `2001:db8:1:3::a` gets another; `::ffff:203.0.113.9` and `203.0.113.9` share one key; a peer of `::ffff:127.0.0.1` with `--trust-proxy` is treated as loopback and its `X-Forwarded-For` is used (tests).
+- [ ] With `--public-url` and no `--trust-proxy`, stderr has the shared-bucket warning exactly once; with `--trust-proxy` it does not (test).
 
 Hiding:
 - [ ] With `--public-url`: `gateway_status` while not connected has no `pairingCode` or `codeExpiresInMin`, and its text matches `/operator/`; a tool call while not connected returns `WORLD_OFFLINE` with no code; no MCP `notifications/message` with logger `pairing` is sent to an HTTP or stdio session; the code still appears on stderr. Without `--public-url` the existing status tests pass unchanged.
 - [ ] With `--public-url`, unauthenticated `GET /status` returns 200 with the version and uptime, and the body contains no world id, user id or user name of a connected FakeModule (test). Local mode still lists them.
+- [ ] With `--public-url`, after a FakeModule pairs with the live code, a new code line appears on stderr within 1 s, and it pairs a second FakeModule; no MCP session receives either code (T10, test).
 - [ ] With `--public-url`, a POST to `/mcp` carrying the token from the store gets 401. The startup log has the "bearer token is off" line and no `HTTP bearer token (shown once` line. `--http-rotate-token` with `AGENT_GATEWAY_PUBLIC_URL` set exits 2.
 
 Limits:
 - [ ] Eleven requests with a wrong bearer from one client key within 60 s: the 11th gets 429 with `retry-after`, and a request from a second client key still gets 401, not 429 (tests use an injectable clock).
 - [ ] Public mode: a client key at `MAX_HTTP_SESSIONS_PER_CLIENT` gets 503 on a new `initialize` while another key can still open one. A key over `PUBLIC_CLIENT_RPS` gets 429 while another key is served.
-- [ ] Public mode, link: after 5 wrong codes from one client key, that key gets `RATE_LIMITED` and a valid code from another key still pairs (the valid code is not spent by the limited key). After 60 failures in 60 s across keys, every key gets `RATE_LIMITED`. Local mode keeps the 10-per-60 s global rule (the existing code-attempts tests pass).
+- [ ] Public mode, link: after 5 wrong codes from one client key, that key gets `RATE_LIMITED` and a valid code from another key still pairs (the valid code is not spent by the limited key). After 300 failures in 60 s across keys, every key gets `RATE_LIMITED`. Local mode keeps the 10-per-60 s global rule (the existing code-attempts tests pass).
 - [ ] Every per-client map has a named cap, and a test inserts cap + 100 keys and asserts the size never exceeds the cap.
 
 Seam:
@@ -167,7 +181,7 @@ Overall:
 
 ## Out of scope
 - OAuth, its endpoints and the authenticator that accepts OAuth tokens (35).
-- Server-mode pairing confirmation (68). In 74, `--server-mode` only changes process lifetime, stdio and HTTP.
+- Server-mode operator invites (68). In 74, `--server-mode` only changes process lifetime, stdio and HTTP.
 - The Dockerfile, Compose file and Caddyfile (42).
 - Doing TLS in the gateway.
 - Any migration (decision h). WAL is a pragma, not a migration.

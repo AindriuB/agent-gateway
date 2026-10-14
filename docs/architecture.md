@@ -105,7 +105,7 @@ The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each
 
 ## Planned (MVP B)
 
-Not built yet; `docs/plan/PLAN.md` has the order. A public URL option (`--public-url`) and a server mode with host allowlists and per-client limits (task 74); a Compose stack with Caddy terminating TLS in front of the gateway (task 42); an OAuth 2.1 authorization server for remote clients, with a consent page and grant revocation (tasks 35, 67); pairing confirmation in server mode (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). In server mode the static bearer is off, pairing codes appear only in operator logs, and the store gains WAL and a `--backup` command. Three migrations are reserved: 010 (OAuth and grants), 011 (`pairings.verified_role`, task 68) and 012 (headless agents).
+Not built yet; `docs/plan/PLAN.md` has the order. A public URL option (`--public-url`) and a server mode with host allowlists and per-client limits (task 74); a Compose stack with Caddy terminating TLS in front of the gateway (task 42); an OAuth 2.1 authorization server for remote clients, with a consent page and grant revocation (tasks 35, 67); operator invites for pairing in server mode, with `--invite`, `--revoke-pairing` and revocation of the old token and grants on replacement (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). In server mode the static bearer is off, pairing codes appear only in operator logs, and the store gains WAL and a `--backup` command. Three migrations are reserved: 010 (OAuth and grants), 011 (the `invites` table, task 68) and 012 (headless agents).
 
 ## Decisions worth knowing
 

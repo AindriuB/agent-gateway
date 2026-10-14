@@ -32,7 +32,7 @@ Document what MVP B adds, for someone who has never seen the project: remote cli
   - 74: `--public-url`, the bind addresses, `--trust-proxy`, the static bearer is off in public mode, the pairing code only in the operator log, and the minimal `/status`;
   - 35: the scopes;
   - 67: consent and revoking a grant;
-  - 68: server-mode pairing confirmation and its bootstrap rule;
+  - 68: operator invites in server mode (`--invite`, `--revoke-pairing`, `--list-invites`, `--list-pairings`, and the pairing app's "Copy my ids" line);
   - 37 and 38: headless agents.
 - docs/spikes/foundry-socket-identity.md (10b): what Foundry can and cannot prove about identity.
 
@@ -46,9 +46,9 @@ Document what MVP B adds, for someone who has never seen the project: remote cli
   - `headless.md`: a dedicated agent user, `headless add`, the GM's headless toggle, the owner, and explicit binding with `--world`/`--user`.
 - [ ] docs/security.md edits:
   - "The permission model": token scopes become layer 1, and the line at :55 goes;
-  - "Pairing, code confirmation and token storage": codes only in the operator log with a public URL, and server-mode confirmation (68);
+  - "Pairing, code confirmation and token storage": codes only in the operator log with a public URL, and server-mode operator invites (68): single use, bound to one world and user, with a 24 h TTL by default;
   - "HTTP bearer token": off with a public URL;
-  - "Multi-user isolation": server-mode first pairing needs confirmation from the user's own client through a GM observer, the bootstrap rule (68 decision c, as approved), re-pairing needs that user's or a GM's approval, OAuth sessions are bound to the grant's (world, user), and headless identities are reachable only by explicit binding;
+  - "Multi-user isolation": in server mode only the operator decides who pairs as whom, through invites bound to an exact (world, user); re-pairing needs a new invite, which revokes the old pairing and its OAuth grants; the operator revokes with `--revoke-pairing`, and a running gateway closes the connection within seconds; Foundry cannot prove identity to the gateway, so the invite is the trust root and must be sent privately; OAuth sessions are bound to the grant's (world, user), and headless identities are reachable only by explicit binding;
   - "What a malicious agent can and cannot do": remote clients.
 
   A new "Remote access and OAuth" section covers PKCE, exact redirect URIs, audience binding, token lifetimes, revocation from Foundry, CSRF and anti-framing on the consent page, and the per-client limits.
