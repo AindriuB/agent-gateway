@@ -26,6 +26,16 @@ Origin values, turns the static bearer token off, and makes `/status` show only 
 uptime. `AGENT_GATEWAY_TRUST_PROXY=1` makes the gateway key clients by the address Caddy
 forwards, so each client has its own rate limit. The module connects to `wss://<domain>/link`.
 
+## Connecting a remote client
+
+When a remote client (claude.ai, ChatGPT) starts OAuth, the gateway shows a consent page at
+`<public URL>/authorize`. Whoever is connecting picks the world, the Foundry user and the scopes,
+and then types a code that appears in that user's own Foundry client (the module must be paired
+and open). Players can list and revoke what they have approved under "Connected apps" in the
+module. The gateway deletes expired OAuth codes and tokens on its own. The page loads its
+stylesheet from `/authorize/consent.css`; if you restrict paths at the proxy, allow
+`/authorize/*`.
+
 ## Pairing
 
 Pairing is meant to be by operator invite (task 68): the operator issues a single-use code

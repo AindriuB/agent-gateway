@@ -170,3 +170,27 @@ Additional acceptance:
 ## Review round 5 — findings (attempt 2)
 
 - [STYLE] gateway/src/oauth/consent/index.ts:6 — `CONSENT_STYLE_PATH` is imported but never used; line 15 re-exports it from `./style.js`. eslint `@typescript-eslint/no-unused-vars` fails, so `npm run verify` fails. route: implementer. Fix: drop it from the line 6 import and keep `CONSENT_CSS`.
+
+## Outcome (2026-10-14)
+
+Branch `task/67-oauth-consent-and-grants`, PR pending Andrew. Attempt 1 went through review rounds 1-4 (round 4 was past the three-round cap, approved by Andrew) and then failed `/verify` on a vacuous cross-user test. Attempt 2 added the fixes and the branding, and round 5 was a lint fix (an unused import). The final re-review was CLEAN. The reviewer approved every criterion at 2f55463. The tester passed: build and lint ok, 4292 fast tests with one failure (the relay stepdown load flake, which passed when re-run alone), and `test:slow` 2227/2227.
+
+Andrew's decisions:
+- `Referrer-Policy: same-origin` on consent responses.
+- The CSP `form-action` is built per request (`'self'` plus the redirect origin), not fixed.
+- Branding is styling cues only from his pack, with no logo. It is served same-origin as `/authorize/consent.css`, so the CSP stays `style-src 'self'` with no inline style.
+
+Owns widenings, approved:
+- `gateway/test/http/oauth-flow.test.ts` (replaced 35's "shipped default is auto-deny" test).
+- The `GET /authorize/consent.css` route registration in `gateway/src/oauth/server.ts`.
+
+Known residuals:
+- The version gate cannot detect a pre-67 gateway. A capability field in `welcome` is needed (go-public prerequisite).
+- The dark `--danger: #FCA5A5` is not in Andrew's pack.
+- JSON errors from `GET /authorize` lack the consent headers. No exploit is known.
+- `SWEEP_BATCH` (500) applies per table, so one sweep run deletes up to 3x500 rows.
+- A user with two same-name pairings can be entered only by id.
+- The consent CSS route has no per-client rate limit (static, about 2 KB).
+- The relay stepdown load flake is not 67's.
+
+Pending Andrew (manual): the MCP Inspector flow against foundry.local, and light and dark screenshots in the PR.
