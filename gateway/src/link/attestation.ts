@@ -70,7 +70,7 @@ export class PendingPairings<H> {
     owner: unknown,
     handle: H,
   ): ReserveResult<H> {
-    this.sweep();
+    // Never evicts: the owner calls `sweep()` first and rejects each expired socket it returns.
     if (this.reserved.has(invite.id)) return { ok: false, reason: 'reserved' };
     let inWorld = 0;
     for (const p of this.byNonce.values()) if (p.claim.worldId === claim.worldId) inWorld++;

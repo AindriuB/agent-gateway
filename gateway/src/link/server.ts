@@ -765,6 +765,8 @@ export class LinkServer {
       );
       return;
     }
+    // Expired entries are rejected here, never dropped silently by reserve().
+    this.sweepPending();
     const r = this.vouches.reserve(invite, claim, client, ws, handle);
     if (!r.ok) {
       if (r.reason === 'reserved')

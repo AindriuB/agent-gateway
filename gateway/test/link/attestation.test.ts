@@ -322,6 +322,21 @@ describe('the vouch', () => {
       expect(invite(inv.code).usedAt).toBeNull();
     });
 
+    it('a hello that arrives after expiry, before the timer, still rejects the expired socket', async () => {
+      await boot();
+      await admin();
+      const invA = plain('p1');
+      const invB = plain('p2');
+      const a = await player(invA.code);
+      challenge(a.first);
+      clock += PAIRING_CHALLENGE_TTL_MS + 1;
+      const b = await player(invB.code, { userId: 'p2' });
+      challenge(b.first);
+      expect(await a.c.next()).toMatchObject({ type: 'reject', code: 'PAIRING_UNCONFIRMED' });
+      await a.c.untilClosed();
+      expect(invite(invA.code).usedAt).toBeNull();
+    });
+
     it('an attest after the TTL, before any sweep, is too late', async () => {
       await boot();
       const gm = await admin();
