@@ -55,6 +55,11 @@ export interface SessionServerOptions {
    * not connected is told to ask the gateway operator for one instead.
    */
   askOperator?: boolean;
+  /**
+   * Tool categories this session may list and call (OAuth scopes, permission layer 1). Absent
+   * means unrestricted. `gateway_status` is always available.
+   */
+  allowedCategories?: readonly ToolDefinition['category'][];
   /** Clock for the re-bind grace period and notice limit; injectable for tests. */
   now?: () => number;
 }
@@ -202,7 +207,12 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     eventOwner ??= owner;
     return eventOwner;
   };
-  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
+  const allowed = opts.allowedCategories ? new Set<string>(opts.allowedCategories) : undefined;
+  const inScope = (category: string | undefined): boolean =>
+    !allowed || (category !== undefined && allowed.has(category));
+  const visibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] =>
+    unscopedVisibleFor(conn).filter((t) => inScope(t.definition.category));
+  const unscopedVisibleFor = (conn: LinkConnection | undefined): readonly VisibleTool[] => {
     const modules = moduleVisibleFor(conn);
     if (!opts.events || !binding.pair) return modules;
     try {
@@ -321,6 +331,17 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       );
     }
     if (r.kind === 'unbound') return notConnected();
+    // Scopes come before the event tools, the offline queue and the module call. A pack tool's
+    // category is known only from a connected user's announcement; offline it is unknown, so a
+    // scoped session cannot call it (nothing is queued).
+    if (allowed) {
+      const category =
+        all.find((t) => t.name === req.params.name)?.category ??
+        moduleVisibleFor(r.conn).find((t) => t.definition.name === req.params.name)?.definition
+          .category;
+      if (!inScope(category))
+        return failure('FORBIDDEN', `Tool not permitted by this token's scopes: ${req.params.name}`);
+    }
     if (gatewayTool && opts.events) {
       const parsed = gatewayTool.input.safeParse(req.params.arguments ?? {});
       if (!parsed.success) return failure('INVALID_ARGS', parsed.error.message);

@@ -27,6 +27,19 @@ import {
 export interface HttpPrincipal {
   key: string;
   selector?: { worldId: string; userId: string };
+  /** Tool categories this credential may use (OAuth scopes); absent means no restriction. */
+  scopes?: readonly string[];
+}
+
+/** The OAuth authorization server, as the transport sees it (task 35). */
+export interface OAuthRoutes {
+  /** Paths served by the OAuth server (metadata, register, authorize, token). */
+  handles(path: string): boolean;
+  handle(req: IncomingMessage, res: ServerResponse, path: string, client: string): Promise<void>;
+  /** The principal for a bearer access token, or undefined. */
+  authenticate(bearer: string | undefined): HttpPrincipal | undefined;
+  /** Advertised in `WWW-Authenticate` on a 401 from `/mcp`. */
+  resourceMetadataUrl: string;
 }
 
 export interface SessionContext {
@@ -43,6 +56,8 @@ export interface HttpServerOptions {
    * wrapper around `token`; with neither, nothing is accepted.
    */
   authenticate?: (req: IncomingMessage) => HttpPrincipal | undefined;
+  /** Public mode: serve OAuth and accept its access tokens (used when `authenticate` is not given). */
+  oauth?: OAuthRoutes;
   /**
    * The external origin (`https://gw.example.com`). Its host joins the allowed Host values and the
    * origin is the only non-loopback Origin allowed. Setting it turns on the per-client request and
@@ -120,8 +135,12 @@ export class HttpServer {
       this.publicOrigin = u.origin;
     }
     const token = o.token;
+    const oauth = o.oauth;
     this.authenticate =
-      o.authenticate ?? ((req) => (token?.verify(this.bearer(req)) ? { key: 'local' } : undefined));
+      o.authenticate ??
+      (oauth
+        ? (req) => oauth.authenticate(this.bearer(req))
+        : (req) => (token?.verify(this.bearer(req)) ? { key: 'local' } : undefined));
   }
 
   private get isPublic(): boolean {
@@ -225,11 +244,27 @@ export class HttpServer {
       req.headers['x-forwarded-for'],
       this.o.trustProxy === true,
     );
-    const path = (req.url ?? '').split('?')[0];
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    if (this.o.oauth?.handles(path)) return this.o.oauth.handle(req, res, path, client);
     if (path === '/status') {
       if (req.method !== 'GET') return send(res, 405, 'method not allowed');
-      // A public gateway shows who is connected only to a request it can authenticate.
-      const detailed = !this.isPublic || this.authenticate(req) !== undefined;
+      // A public gateway shows who is connected only to a request it can authenticate. A request
+      // that offers a credential is counted, rate limited and, if wrong, recorded as a failure,
+      // exactly as on /mcp; one that offers none gets the minimal page without a count.
+      const offered = this.isPublic && req.headers.authorization !== undefined;
+      if (offered) {
+        if (this.failedAuth.limited(client)) {
+          res.setHeader('retry-after', String(Math.ceil(FAILED_AUTH_WINDOW_MS / 1000)));
+          return send(res, 429, 'too many failed attempts');
+        }
+        if (this.clientRate.exceeded(client)) {
+          res.setHeader('retry-after', '1');
+          return send(res, 429, 'too many requests');
+        }
+      }
+      const principal = this.isPublic ? this.authenticate(req) : undefined;
+      if (offered && !principal) this.failedAuth.record(client);
+      const detailed = !this.isPublic || principal !== undefined;
       const worlds = detailed
         ? this.o.registry.list().map((c) => ({
             worldId: c.worldId,
@@ -259,7 +294,12 @@ export class HttpServer {
     const principal = this.authenticate(req);
     if (!principal) {
       this.failedAuth.record(client);
-      res.setHeader('www-authenticate', 'Bearer');
+      res.setHeader(
+        'www-authenticate',
+        this.o.oauth
+          ? `Bearer resource_metadata="${this.o.oauth.resourceMetadataUrl}"`
+          : 'Bearer',
+      );
       return send(res, 401, 'unauthorized');
     }
     if (this.isPublic && this.clientRate.exceeded(client)) {
