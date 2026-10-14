@@ -36,6 +36,7 @@ describe.each(CASES)('%s', (flag, key, envKey) => {
     'https://u:p@x.example',
     'not a url',
     `https://x.example/${'a'.repeat(2049)}`,
+    `https://x.example/${'"'.repeat(2000)}`,
   ])('refuses %s with exit code 2', (value) => {
     try {
       loadConfig({ env: {}, flags: { [key]: value } });

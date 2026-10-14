@@ -85,11 +85,15 @@ describe('consent footer', () => {
     expect(none).not.toContain('Source code');
   });
 
-  it('escapes the URLs it writes', async () => {
-    const raw = 'https://example.org/p?a=1&b="x"<y';
-    r = await consentRig({ privacyUrl: new URL(raw).href });
+  it('escapes both URLs it writes into href', async () => {
+    const privacy = new URL('https://a"b.example/privacy').href;
+    const source = new URL('https://c"d.example/source').href;
+    expect(privacy).toContain('"');
+    r = await consentRig({ privacyUrl: privacy, sourceUrl: source });
     const body = (await openConsent(r)).reply.body;
-    expect(body).not.toContain('"x"<y');
-    expect(body).toContain('&amp;');
+    expect(body).toContain('href="https://a&quot;b.example/privacy"');
+    expect(body).toContain('href="https://c&quot;d.example/source"');
+    expect(body).not.toContain('a"b.example');
+    expect(body).not.toContain('c"d.example');
   });
 });

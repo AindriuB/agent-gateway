@@ -2,7 +2,7 @@
  * The consent pages' stylesheet. It is served same-origin (the CSP's `style-src 'self'` forbids
  * inline styles) and is static, so every user gets the same bytes. Palette, themes, type stacks,
  * spacing and radii are copied in as plain values; nothing is imported at build or run time and
- * no font, image or logo is shipped.
+ * no font or image is loaded. The footer's two inline SVG marks live in marks.ts, not here.
  */
 export const CONSENT_STYLE_PATH = '/authorize/consent.css';
 

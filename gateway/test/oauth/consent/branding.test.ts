@@ -51,6 +51,9 @@ describe('consent styling', () => {
         expect(p.body).not.toMatch(/<svg|ascend/i);
       } else {
         expect(hrefs.sort()).toEqual([PRIVACY, SOURCE].sort());
+        const inFoot = [...foot.matchAll(/\bhref="(https?:\/\/[^"]*)"/g)].map((m) => m[1]);
+        expect(inFoot.sort()).toEqual([PRIVACY, SOURCE].sort());
+        expect(foot.match(/<svg/g)).toHaveLength(2);
         expect(p.body.match(/<svg/g)).toHaveLength(2);
         expect(foot).toMatch(/<svg/);
       }

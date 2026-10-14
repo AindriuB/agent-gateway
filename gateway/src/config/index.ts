@@ -119,6 +119,8 @@ export function normalizeLinkUrl(flag: '--privacy-url' | '--source-url', value: 
   if (url.protocol === 'http:' && !isLoopbackAddress(bare) && bare !== 'localhost')
     return refuse('http is allowed only on a loopback host; use https');
   if (url.username || url.password) return refuse('it must not carry credentials');
+  if (url.href.length > MAX_LINK_URL)
+    return refuse(`longer than ${MAX_LINK_URL} characters once encoded`);
   return url.href;
 }
 
