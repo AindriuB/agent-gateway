@@ -10,11 +10,50 @@ repo's own `PROJECT.md` (the agent guide that `CLAUDE.md` and `AGENTS.md` point 
 
 ## Components
 
-<!--
 | Component | Directory | Port | Owns |
 |---|---|---|---|
-| ... | ... | ... | ... |
--->
+| Foundry module, running in the browser tab of a logged-in user | `module/src` (entry `module/src/main.ts`) | none | Native permission checks, policy, approvals, audit log with Undo, tool execution, the link client (`module/src/link/`) |
+| Gateway, one Node process per MCP client | `gateway/src` (CLI `gateway/src/bin/cli.ts`, wiring `gateway/src/app.ts`) | link 7420, local HTTP 7421 | Link server, pairing, MCP sessions and routing, SQLite store, event buffer, offline queue |
+| MCP clients (Claude Desktop, Claude Code, others) | outside the repo | stdio, or HTTP on 7421 | Speak MCP to the gateway; never talk to Foundry directly |
+| Link protocol | `protocol/src` (`link/`, `tools/`, `events/`) | none | The wire types shared by module and gateway |
+
+The gateway never runs inside Foundry. The module, which runs in the browser with the user's own Foundry session, is the only thing that touches world data, so every action runs as that Foundry user.
+
+### Ports and endpoints
+
+- **Link, 7420** (`gateway/src/config/index.ts:5`, served by `gateway/src/link/server.ts`): a WebSocket the module dials. Only the primary holds it. The `Origin` must be a canonical http(s) origin (`gateway/src/link/origin.ts`) and the `Host` header is checked against DNS rebinding.
+- **Local HTTP, 7421** (`gateway/src/config/index.ts:6`, `gateway/src/http/server.ts`): optional Streamable HTTP MCP with `--http`, bound to loopback and guarded by a bearer token (`gateway/src/http/token.ts`), size and rate limits, and a status page (`gateway/src/status/page.ts`).
+- **Relay socket or pipe**: in the 0700 state dir, a Unix socket on darwin and linux and a named pipe on win32, namespaced by link port (`gateway/src/relay/endpoint.ts`), with a per-boot secret (`gateway/src/relay/secret.ts`). Secondaries reach the primary through it.
+
+## Roles of a gateway instance
+
+Several instances can share one state dir and one database, for example Claude Desktop's extension alongside a separate `--http` gateway.
+
+- **Primary**: the instance that holds the link port. It serves the module link, the optional HTTP endpoint and the relay (`gateway/src/relay/server.ts`).
+- **Secondary**: an instance that finds the port taken relays its stdio MCP session to the primary (`gateway/src/relay/secondary.ts`, `proxy.ts`, `upstream.ts`). Each connection gets its own session. On primary loss it takes over, replaying initialize and a `list_changed`; calls in flight get `RELAY_LOST`.
+- **Standby**: an instance that may not relay because its settings differ from the primary's, or that was stepped down (`gateway/src/relay/standby.ts`). It serves only `gateway_status`, keeps watching the link port, and takes over when it can.
+
+A secondary with a strictly newer config fingerprint asks the primary to step down after a 2 s grace. The primary writes a handover claim naming the heir by its `startedAt` (`gateway/src/relay/claim.ts`, file `relay-heir-<linkPort>.json`, mode 0600), so the old primary becomes a standby and the heir takes the port without a race (tasks 69 and 72). The step-down sequence is in `gateway/src/app.ts`.
+
+## Store
+
+SQLite, opened and migrated by `gateway/src/store/` (`store.ts`, `migrate.ts`). Migrations are numbered, positional files in `gateway/src/store/migrations/`, and a migration's number must equal its position in `index.ts`.
+
+| Migration | Adds |
+|---|---|
+| 001 | `pairings` |
+| 002 | `pairings.user_name` |
+| 003 | `event_streams`, `event_evictions`, `event_rows` |
+| 004 | `event_policies`, `event_read_permissions` |
+| 005 | `queued_catalogs`, `queued_calls` |
+| 006 | `queued_calls.result_failed` |
+| 007 | `pairings.origin` |
+| 008 | retires pairings with no origin |
+| 009 | `gateway_settings` (the HTTP token hash) |
+
+## Pairing
+
+A new browser pairs with a one-time code (`gateway/src/link/pairing-codes.ts`): `XXXX-XXXX` from an unambiguous alphabet, valid 10 minutes, self-refreshing, and shown in the not-connected errors and `gateway_status`. Entering it in the module's pairing app approves that browser's origin, which is stored on the pairing (migration 007); later reconnects with the token are accepted only from that origin (task 70). Failed codes are limited to 10 per 60 s across origins (`gateway/src/link/code-attempts.ts`), and the number of connections that have not yet sent `hello` is capped at 16. Role is whatever Foundry reports in `hello` (`isGM`), never a setting. A session without `--user` follows the connected pairing, re-binding on a switch with a 30 s grace (task 71, `gateway/src/routing/binding.ts`).
 
 ## Repository topology
 
@@ -55,17 +94,24 @@ does not exist.
 
 ## How they talk
 
-<!-- Synchronous calls, queues, shared databases. Name the contract and where it
-     is defined. Direction matters: say who calls whom. -->
+The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each tool call to the paired module over the link, and the module replies. The module dials out to the gateway, never the reverse. Link messages are defined in `protocol/src/link/messages.ts`; the module's side is `module/src/link/client.ts`. Tool schemas and event types live in `protocol/src/tools` and `protocol/src/events`.
 
 ## Boundaries that must not be crossed
 
-<!-- e.g. "nothing but the transaction service writes to the ledger tables" —
-     the rules whose violation is a defect regardless of how the code reads. -->
+- Identity comes only from Foundry's server-set user, never from a hint in a message and never from the MCP client.
+- The gateway holds no world permissions. Native permission checks, policy and approvals happen in the module, and a queued offline call never carries permission forward.
+- Untrusted text is escaped and bounded before it reaches a client; protocol schemas are strict.
+- Only the primary binds the link and HTTP endpoints; secondaries and standbys never do.
+
+## Planned (MVP B)
+
+Not built yet; `docs/plan/PLAN.md` has the order. A public URL option (`--public-url`) and a server mode with host allowlists and per-client limits (task 74); a Compose stack with Caddy terminating TLS in front of the gateway (task 42); an OAuth 2.1 authorization server for remote clients, with a consent page and grant revocation (tasks 35, 67); pairing confirmation in server mode (task 68); and a headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). In server mode the static bearer is off, pairing codes appear only in operator logs, and the store gains WAL and a `--backup` command. Two migrations are reserved: 010 (OAuth and grants) and 011 (headless agents).
 
 ## Decisions worth knowing
 
-<!-- One line each, with the date and the alternative that was rejected. -->
+- 2026-10-14: Compose on a VPS is the primary remote deployment, and TLS terminates at a reverse proxy. Rejected: a built-in tunnel or TLS in the gateway.
+- 2026-10-14: SQLite stays the store. Rejected: a server database, for single-operator deployments.
+- 2026-10-13: the pairing code approves a browser origin (task 70). Rejected: trusting a role or Foundry URL from settings.
 
 ## Offline intent replay (Task30 source verified)
 

@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 47 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-14).
+Inventory: 47 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-14).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -36,18 +36,34 @@ Goal: module zip, `npx foundry-agent-gateway`, unsigned Claude Desktop `.mcpb`, 
 ## Next
 
 ### MVP B: VPS / hosted (next phase; MVP A is complete)
-- **Order within MVP A:** A1 (60, 61, 63), A2 (62), A3 (69) and A4 (70) are done, then 71 and 34 (done), then 64 and 65 (done), then 72 and 66 (done). 69 and 34 left MVP B on 2026-10-13, so B starts directly at 37.
-- **37** Headless runner (`playwright-core`, logs in as an agent user, follows world lifecycle). Owns are disjoint from 34.
-- **38** Headless agent configuration and enforcement (after 37, 34).
-- **35** OAuth 2.1 authorization server for remote clients (after 34, which lands in MVP A).
-- **67** OAuth consent page and self-service grant revocation (after 35); without it 35 auto-denies every authorization.
-- **68** Server-mode pairing confirmation (after 38, 67); the impersonation defence 42 needs.
-- **40** MCP conformance for OAuth and the remote client rows (after 63, 34, 35, 67). The stdio and local HTTP modes are done by 63 and 34 in MVP A.
-- **42** Server-mode Docker image (after 38, 35, 64, 68).
-- **43** Full user documentation, headless and server-mode guides (last; after 65, 35, 38, 42, 67, 68).
+Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Task files are in `docs/plan/tasks/`; the full wave, overlap and migration analysis was done in that re-plan.
 
-### Go public (after MVP B; task not yet created)
-Publish the 0.1.0 draft (rebuild if `main` has moved), make the repo public, real `npm publish`, Foundry package listing, Ask Foundry answers in `docs/releasing.md`, and the manifest-URL install check. The 0.1.0 after-action report (`/aar 0.1.0`, presented in chat, never committed) is due once the release is actually published.
+**Decisions (Andrew, 2026-10-14):**
+- Docker Compose on a VPS is the primary deployment.
+- TLS terminates at a reverse proxy (Caddy); the gateway does no TLS itself.
+- With `--public-url`, the static bearer token is off (OAuth only), pairing codes appear only in operator logs, and `/status` shows only version and uptime.
+- The first GM pairing of a world is accepted and logged (68, part c).
+- The consent page does not list users (67).
+- SQLite stays the store, with WAL and a `--backup` CLI (74).
+- Migrations are positional: 010 is 35's (it also holds 67's grants), 011 is 38's. A task that finds it needs another migration stops and reports so the plan can renumber.
+
+**Order:**
+1. **Wave 1: 74** Remote-exposure foundation: public URL, server mode, host allowlists, per-client limits, session-selector seam, WAL and `--backup`.
+2. **Wave 2: 35 and 42, in parallel (disjoint Owns).** 35 is the OAuth 2.1 authorization server (migration 010). 42 is the server-mode Docker image and Compose stack with Caddy.
+3. **Wave 3: 67, then 68 (serialized; they share `gateway/src/link/server.ts` and `module/src/link/client.ts`).** 67 is the consent page and grant revocation, without which 35 auto-denies every authorization. 68 is server-mode pairing confirmation, the impersonation defence.
+4. **Milestone: friend test on a public VPS (Compose and Caddy).** Andrew deploys 42's stack with 74, 35, 67 and 68 merged. The GM pairs (68's bootstrap rule), friends pair and confirm, and one friend connects claude.ai or ChatGPT through OAuth and consent, makes a read call and a write held for approval, then revokes the grant. Feedback is filed as tasks before wave 4 starts.
+5. **Wave 4, after the milestone:** 37 with 40 in parallel, then 38, then 43.
+   - **37** Headless runner with provisioned pairing (`playwright-core`, logs in as an agent user, follows world lifecycle).
+   - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
+   - **38** Headless config, explicit binding, owner override (after 37; migration 011).
+   - **43** Remote, server-mode and headless docs (last).
+
+### Later (after MVP B)
+
+- **Ease of installation:** native installers (Windows .exe, macOS .pkg, and a Linux script with Node bundled). No task yet.
+- **Go public:** publish the 0.1.0 draft (rebuild if `main` has moved), make the repo public, real `npm publish`, Foundry package listing, Ask Foundry answers in `docs/releasing.md`, and the manifest-URL install check. The 0.1.0 after-action report (`/aar 0.1.0`, presented in chat, never committed) is due once the release is actually published. Task not yet created; MVP B must be done first (Andrew, 2026-10-14).
+
+Not planned now: a tunnel or `share` mode, port-forwarding, and TLS in the gateway itself.
 
 ### Deferred beyond B
 - **36** remainder: needs 18, 67, 68 and 35b. The consent page moved to 67 and pairing confirmation to 68. It must use the 10b recommendation (`docs/spikes/foundry-socket-identity.md`), with identity only from server-set args.
