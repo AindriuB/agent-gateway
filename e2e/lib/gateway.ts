@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { E2eConfig, E2ePaths } from './config.js';
 
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -52,8 +51,6 @@ export class GatewayProcess {
   private pid: number | null = null;
   private client: Client | undefined;
   private transport: StdioClientTransport | undefined;
-  /** True between `start({ connectClient: false })` and `connectClient()`. */
-  private deferred = false;
 
   constructor(
     private readonly config: E2eConfig,
@@ -72,11 +69,7 @@ export class GatewayProcess {
     return this.pid;
   }
 
-  /**
-   * Spawn the gateway. With `{ connectClient: false }` only the process starts (the link listener
-   * comes up, no MCP session exists) and `connectClient()` must be called later.
-   */
-  async start(opts: { connectClient?: boolean } = {}): Promise<void> {
+  async start(): Promise<void> {
     if (!existsSync(GATEWAY_CLI)) {
       throw new Error(`gateway is not built (${GATEWAY_CLI}); run npm run build`);
     }
@@ -89,57 +82,11 @@ export class GatewayProcess {
     transport.stderr?.on('data', (b: Buffer) => {
       this.stderrText += b.toString('utf8');
     });
-    this.transport = transport;
-    if (opts.connectClient === false) {
-      this.deferred = true;
-      try {
-        // Spawns the child now; the MCP client attaches later in connectClient().
-        await transport.start();
-      } catch (err) {
-        this.pid = transport.pid;
-        await this.stop();
-        throw err;
-      }
-      this.pid = transport.pid;
-      return;
-    }
-    await this.attachClient(transport);
-  }
-
-  /** Create the MCP session on a gateway started with `start({ connectClient: false })`. */
-  async connectClient(): Promise<void> {
-    const transport = this.transport;
-    if (!this.deferred || !transport) {
-      throw new Error('connectClient() needs a gateway started with { connectClient: false }');
-    }
-    if (this.client) throw new Error('the MCP client is already connected');
-    this.deferred = false;
-    // The child is already running, so connect() must not start the transport a second time.
-    const started: Transport = {
-      start: async () => undefined,
-      send: (m) => transport.send(m),
-      close: () => transport.close(),
-      set onmessage(h: Transport['onmessage']) {
-        transport.onmessage = h;
-      },
-      set onclose(h: Transport['onclose']) {
-        transport.onclose = h;
-      },
-      set onerror(h: Transport['onerror']) {
-        transport.onerror = h;
-      },
-    };
-    await this.attachClient(transport, started);
-  }
-
-  private async attachClient(
-    transport: StdioClientTransport,
-    via: Transport = transport,
-  ): Promise<void> {
     const client = new Client({ name: 'agent-gateway-e2e', version: '0.0.0' });
+    this.transport = transport;
     this.client = client;
     try {
-      await client.connect(via);
+      await client.connect(transport);
     } catch (err) {
       // The child may already be running; record its PID so stop() can still reap it.
       this.pid = transport.pid;
@@ -192,16 +139,8 @@ export class GatewayProcess {
     } catch {
       /* already closed */
     }
-    if (!this.client) {
-      try {
-        await this.transport?.close();
-      } catch {
-        /* already closed */
-      }
-    }
     this.client = undefined;
     this.transport = undefined;
-    this.deferred = false;
     if (pid !== null && isAlive(pid)) {
       await new Promise((r) => setTimeout(r, 1500));
       if (isAlive(pid)) process.kill(pid, 'SIGKILL');
@@ -210,12 +149,7 @@ export class GatewayProcess {
   }
 
   private mcp(): Client {
-    if (!this.client)
-      throw new Error(
-        this.deferred
-          ? 'MCP client not connected yet; call connectClient() first'
-          : 'gateway not started',
-      );
+    if (!this.client) throw new Error('gateway not started');
     return this.client;
   }
 }

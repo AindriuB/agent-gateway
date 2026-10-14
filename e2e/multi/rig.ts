@@ -18,6 +18,8 @@ export interface OpenUser {
  */
 export class Rig {
   gateway: GatewayProcess | undefined;
+  /** The relayed secondary from `openWithRelayedSession`; its MCP session is created on attach. */
+  relayed: GatewayProcess | undefined;
   readonly users = new Map<string, OpenUser>();
 
   constructor(readonly ctx: Context) {}
@@ -25,10 +27,6 @@ export class Rig {
   /** Start a gateway (bound to `user`, or unbound), then open and join every browser. */
   async open(boundTo: string | undefined, users: readonly string[]): Promise<void> {
     await this.startGateway(boundTo);
-    await this.joinAll(users);
-  }
-
-  private async joinAll(users: readonly string[]): Promise<void> {
     for (const user of users) {
       const frames = new FrameCounter(this.ctx.config.linkPort);
       const browser = await openUserBrowser(this.ctx.config, this.ctx.paths, user, {
@@ -42,13 +40,21 @@ export class Rig {
   }
 
   /**
-   * Like `open`, but the MCP client connects only after every page is welcomed, so the session's
-   * first resolve sees all pairings connected (task 71: an earlier session would bind in follow mode).
+   * Open every page against a primary, wait for all welcomes, then start a second, identical
+   * gateway. It relays to the primary, and its MCP session is created on attach with every pairing
+   * already connected, so its first resolve is ambiguous (task 71). The primary's own stdio session
+   * binds to the first page in follow mode and is ignored. Returns the secondary.
    */
-  async openThenConnect(boundTo: string | undefined, users: readonly string[]): Promise<void> {
-    await this.startGateway(boundTo, { connectClient: false });
-    await this.joinAll(users);
-    await this.gateway!.connectClient();
+  async openWithRelayedSession(users: readonly string[]): Promise<GatewayProcess> {
+    await this.open(undefined, users);
+    const s = new GatewayProcess(this.ctx.config, this.ctx.paths, undefined);
+    this.relayed = s; // assigned first so close() reaps it even if start() or the check below fails
+    await s.start();
+    const ok = await waitFor(() => /relays to it/.test(s.stderr), 30_000);
+    if (ok === undefined) {
+      throw new Error(`the second gateway did not settle as a relaying secondary:\n${s.stderr}`);
+    }
+    return s;
   }
 
   frames(user: string): FrameCounter {
@@ -57,13 +63,10 @@ export class Rig {
     return u.frames;
   }
 
-  async startGateway(
-    boundTo: string | undefined,
-    opts?: { connectClient?: boolean },
-  ): Promise<void> {
+  async startGateway(boundTo: string | undefined): Promise<void> {
     const gw = new GatewayProcess(this.ctx.config, this.ctx.paths, boundTo);
+    await gw.start();
     this.gateway = gw;
-    await (opts ? gw.start(opts) : gw.start());
   }
 
   /** Stop the current gateway by its PID and start another on the same port and DB. */
@@ -102,6 +105,8 @@ export class Rig {
   async close(): Promise<void> {
     for (const u of this.users.values()) await u.browser.close().catch(() => undefined);
     this.users.clear();
+    await this.relayed?.stop();
+    this.relayed = undefined;
     await this.gateway?.stop();
     this.gateway = undefined;
   }
