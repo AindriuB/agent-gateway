@@ -324,3 +324,16 @@ Andrew, from the code review of the round 9 fix (d94eb4e).
 - [ ] gateway/test/bin/signals.test.ts, with a fake process (an EventEmitter), shows that each of SIGINT, SIGTERM and SIGHUP calls `shutdown` exactly once, and that a second signal does not call it again. The test fails if the SIGHUP registration is removed or replaced with a direct exit.
 - [ ] gateway/src/bin/cli.ts registers no SIGINT, SIGTERM or SIGHUP handler inline; it calls the signals.ts function with its `shutdown`.
 - [ ] The existing SIGHUP exit-code test in gateway/test/bin/exposure.test.ts may stay.
+
+## Review round 10 — findings
+At HEAD a5bbb0a. Implements Amendment 4. Comes from the round 9 re-review: its finding went to the orchestrator and was settled by Amendment 4.
+
+- [P2] Implement Amendment 4.
+  - Add gateway/src/bin/signals.ts with the shutdown signal wiring (SIGINT, SIGTERM and SIGHUP, each a `once` handler calling the same `shutdown`). cli.ts calls it instead of registering handlers inline.
+  - Add gateway/test/bin/signals.test.ts, using a fake process (an EventEmitter):
+    - each signal calls `shutdown` exactly once;
+    - the same signal sent twice calls it once;
+    - a different signal sent after the first must not start a second shutdown. Either `shutdown` or the wiring must be idempotent; check what cli.ts's `shutdown` already does, and test the combined behaviour.
+  - Show that the test fails when the SIGHUP registration is removed, and when it is replaced with `() => proc.exit(0)`.
+  route: implementer
+  input: `process.once('SIGHUP', () => process.exit(0))` in cli.ts →  today's tests still pass.
