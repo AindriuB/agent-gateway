@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 77 done in `docs/plan/done/` (excluding its README.md), 19 active in `docs/plan/tasks/` (2026-10-15).
+Inventory: 78 done in `docs/plan/done/` (excluding its README.md), 18 active in `docs/plan/tasks/` (2026-10-15).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -18,19 +18,23 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 
 ## Now
 
-### 0a. Tasks 37, 38, 40, 43, 96 and 97 merged; 93 done on branch (PR #156 pending); next: 94
+### 0a. Tasks 37, 38, 40, 43, 93, 94, 96 and 97 merged; 98 done on branch (PR #160); 0.3.0 (93 + 94) ready to cut
 - **38: stored headless agents (merged, PR #153, be8ab45; archived in `docs/plan/done/`).** `headless add|list|remove`, agents stored in SQLite (migration 013, no password column), passwords only from `headless.<name>.password` config keys or `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD`; one runner per agent, reconciled on the revocation sweep. The agent password stays required (empty is a ConfigError), which closes 37's empty-password residual as by design. Manual run passed on Foundry 14.369 / pf2e 8.6.0. Residuals: the welcome `ownerUserId`/`headless` fields are covered by tests but not observable live; removing then re-adding the same identity within one sweep keeps the old runner until it re-pairs via a minted invite; `headless add` checks the flag/env agent only as the CLI invocation sees it (the app dedupes safely); server mode still logs "MCP stdio server started" (pre-existing). **96** has since merged (PR #154).
 - **37: headless runner (merged, PR #151, d8a8b8e; archived in `docs/plan/done/`).** Manual run passed twice on Foundry 14.369 / pf2e 8.6.0. Follow-ups: (**38** closed the empty-password item: the password stays required by design); a follow-up task for `gateway.db` being created 0644 inside the 0700 state dir; the "playwright-core is not installed" once-only check matches by message prefix (`runner.ts:198` vs `browser.ts:130`), so a shared constant would tie them. **43 (docs)** must explain the `--no-sandbox` default (config key `headlessNoSandbox`) and how to re-enable the sandbox; that the headless Foundry URL needs a certificate Node and Chromium trust (public cert or loopback http); that headless is not supported in the `.mcpb` bundle (`playwright-core` is not bundled and the runner logs one fixed message); that the runner's page always reaches the link at `ws://localhost:<port>`, so a `--link-host` bound to one non-loopback address cuts it off; and the `docs/releasing.md` conformance line (from 40). Round 4 follow-ups: **96** (merged, PR #154, ce398b9; archived in `docs/plan/done/`) redacted input echoes in `normalizePublicUrl`, `normalizeLinkUrl` and the `--allow-origin` validation errors; **97** (merged, PR #152, 5160196; archived in `docs/plan/done/`) a relay capability flag so a newer gateway can tell that a pre-37 primary ignores the headless field. 43 (docs) merged (PR #155); see below.
 - **40: MCP conformance for OAuth and the remote rows (merged, PR #150, fd701b5; archived in `docs/plan/done/`).** `scripts/conformance.sh` gains an OAuth mode (inspector 2.10.1: discovery, dynamic registration, consent, token, a call, static bearer refused). Pending Andrew: install `zip` on the host and re-run `npm run test:scripts` (9 fail and 6 cancelled on this host, the identical 20 test names that fail on main, all "zip is not installed"); run the manual checklists for claude.ai, ChatGPT, Gemini CLI and Gemini app in `docs/compatibility.md`, which are written and unticked. 43 corrected the `docs/releasing.md` conformance line to `stdio, http, oauth`.
 
 - **43: six guides (claude-ai, chatgpt, gemini-cli, gemini-app, reverse-proxy, headless) plus security, privacy, README and releasing edits (merged, PR #155, 28f95e7; archived in `docs/plan/done/`).** Pending Andrew: run the unticked client checklists in `docs/compatibility.md` (the guides say the client steps were not run). Follow-ups:
-  - **98: owner-routed OAuth consent for headless agents** is done on a branch with its PR open; see item 0b.
+  - **98: owner-routed OAuth consent for headless agents** is done on a branch (PR #160); see item 0b.
   - **35b owns the audit-trail docs** (Amendment 1); it is still deferred.
   - **Funding links:** none until the repo goes public (Amendment 1); add them as part of going public.
   - **Docs gap:** `docs/server-mode.md` and `gateway/docker/README.md` do not cover task 90's GM-vouched invites or `--admin`/`--gm`/`--demote`, and the docker README still says invites arrive "with task 68". Fix in a small docs task.
   - `docs/security.md` and `docs/releasing.md` fail prettier on main too; not touched by 43.
 
-- **93: GM management app (branch `claude/task-93`, done; PR #156 pending; archived in `docs/plan/done/`).** "Manage access" for an admin GM: Invites and Pairings tabs, with a split version gate (Invites from gateway 0.2.0, Pairings from 0.3.0). **94 (the GM grants view) is next; 93 and 94 ship as 0.3.0.** Follow-ups:
+- **94: GM grants view (merged, PR #159; archived in `docs/plan/done/`).** "Authorized apps" tab in Manage access, gated on gateway 0.3.0 or later. **93 and 94 complete 0.3.0, which is ready to cut.** Follow-ups:
+  - **Privacy docs:** a headless agent's owner may never see the "your GM can see your apps" notice, because it appears only in the grants-holder's own window. Say so in `docs/privacy.md`.
+  - NOTE: the admin grant schema duplicates the player shape's bounds; change them together or share the constants.
+
+- **93: GM management app (merged, PR #156; archived in `docs/plan/done/`).** "Manage access" for an admin GM: Invites and Pairings tabs, with a split version gate (Invites from gateway 0.2.0, Pairings from 0.3.0). **94 (the GM grants view) is merged (PR #159); 93 and 94 ship as 0.3.0.** Follow-ups:
   - Andrew's decision (2026-10-15): the headless agent's pairing (task 38) stays revocable from the Pairings tab, but its row must be labelled as the configured headless agent.
   - No test maps an OFFLINE request error to the whole-app state (`module/src/apps/manage/index.ts:152`).
   - A FORBIDDEN reply shows inside the tab rather than as the whole-app state.
@@ -41,9 +45,8 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 
 - **95: HTTP session eviction (merged, PR #148; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. **Gateway 0.2.0 (90 + 91 + 92 + 95; protocol 7.0.0, so the module and gateway must be upgraded together) is deployed on aindriub.app as of 2026-10-15.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
 
-### 0b. 98 done on branch (PR open); 94 in progress in another session
-- **98: owner-routed OAuth consent for headless agents (branch `claude/task-98`, archived in `docs/plan/done/`; PR open).** For a stored headless agent with an owner (`headless add --owner`), the OAuth consent code goes to the owner's Foundry link connection, never to the agent's own headless browser. The owner's dialog names the agent, and the grant is bound to the agent's (world, user) and pairing. This resolves the earlier finding that the Compose stack (server mode with a public URL) could not reach a headless agent: it now can, through the owner. Andrew's decisions (2026-10-15): the single flag/env agent is not supported (treated as no owner); the consent page stays uniform, with the same status and body whoever is named and whether or not they are online, so it never reveals headless, owner or online status; the grant is bound to the agent; the docs come from a real run; a grant ends when the agent re-pairs but survives a gateway restart. Not run: the claude.ai, ChatGPT and Gemini connectors themselves (a scripted OAuth client was). Follow-up: gateway/test/relay/link-reconnect.test.ts "baseline: A is primary, B takes over..." failed once with "Connection closed" and passed on every rerun; it is not in this diff.
-- **94 (GM grants view) is in progress in another session.** It touches `protocol/src/link/messages.ts`, `lang/en.json`, `module/src/apps/grants/index.ts` and `module/test/apps/grants/grants.test.ts`, as 98 does. Whichever of 94 and 98 merges second needs a merge from main first.
+### 0b. 98 done on branch (PR #160)
+- **98: owner-routed OAuth consent for headless agents (branch `claude/task-98`, archived in `docs/plan/done/`; PR #160).** For a stored headless agent with an owner (`headless add --owner`), the OAuth consent code goes to the owner's Foundry link connection, never to the agent's own headless browser. The owner's dialog names the agent, and the grant is bound to the agent's (world, user) and pairing. This resolves the earlier finding that the Compose stack (server mode with a public URL) could not reach a headless agent: it now can, through the owner. Andrew's decisions (2026-10-15): the single flag/env agent is not supported (treated as no owner); the consent page stays uniform, with the same status and body whoever is named and whether or not they are online, so it never reveals headless, owner or online status; the grant is bound to the agent; the docs come from a real run; a grant ends when the agent re-pairs but survives a gateway restart. Not run: the claude.ai, ChatGPT and Gemini connectors themselves (a scripted OAuth client was). Follow-up: gateway/test/relay/link-reconnect.test.ts "baseline: A is primary, B takes over..." failed once with "Connection closed" and passed on every rerun; it is not in this diff.
 
 ### 1. ChatGPT plugin
 - **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
@@ -55,7 +58,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - There is no index on `pairings(world_id, user_id)`, which `pairingStateFor` queries on every status call.
   - The Players-list indicator (hook `renderPlayers`) and the toast still need a live Foundry check.
 
-### 2a. 89, 90, 91 and 92 (merged); next: 94
+### 2a. 89, 90, 91 and 92 (merged)
 - **89: per-user pairing credentials (branch `claude/task-89`, done; PR pending; archived in `docs/plan/done/`).** Credentials are keyed by (gateway URL, world, user) in browser-local storage, so a second user in the same browser no longer wipes the first user's pairing. Follow-ups:
   - An entry for an old gateway cannot be removed from the UI; "Unpair this browser" only acts on the current gateway.
   - Rename `hasOtherTokens` in `module/src/link/client.ts`; the name no longer says what it checks.

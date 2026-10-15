@@ -184,6 +184,19 @@ describe('the grants app', () => {
     expect(tpl).not.toContain('{{{');
   });
 
+  it('tells the player their GM can see the list, whatever state the window is in', () => {
+    const tpl = readFileSync(resolve(__dirname, '../../../../templates/grants/grants.hbs'), 'utf8');
+    const line = tpl.indexOf('"AGENT_GATEWAY.Grants.gmCanSee"');
+    expect(line).toBeGreaterThan(-1);
+    // Rendered before any conditional, so the offline and too-old states show it too.
+    expect(line).toBeLessThan(tpl.indexOf('{{#if'));
+    const lang = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../lang/en.json'), 'utf8'),
+    ) as Record<string, string>;
+    expect(lang['AGENT_GATEWAY.Grants.gmCanSee']).toMatch(/GM can see/);
+    expect(lang['AGENT_GATEWAY.Grants.gmCanSee']).toMatch(/never any tokens/);
+  });
+
   it('explains instead of asking when offline or when the gateway is too old', async () => {
     const off = await load({ state: { kind: 'disconnected' }, listGrants: vi.fn() });
     expect((await off.prepareGrants()).unavailable).toBe('L:AGENT_GATEWAY.Grants.offline');
