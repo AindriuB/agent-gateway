@@ -13,6 +13,7 @@ import { safeText } from '../routing/sanitize.js';
 import { openStore, type Store } from '../store/index.js';
 import { MIGRATIONS } from '../store/migrations/index.js';
 import { reportStartFailure } from './start-failure.js';
+import { installShutdownSignals } from './signals.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -562,9 +563,7 @@ function main(): void {
       : {}),
   });
   const shutdown = () => void app.stop().finally(() => process.exit(0));
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
-  process.once('SIGHUP', shutdown);
+  installShutdownSignals(shutdown);
   // A server-mode gateway runs in a container or service whose stdin may be closed.
   if (!config.serverMode) process.stdin.once('end', shutdown);
   app.start().catch((err: unknown) =>
