@@ -75,3 +75,9 @@ Reviewed HEAD: c5a6928. Acceptance review APPROVE. Verify PASS once `npm ci` had
 
 - [P3] gateway/src/relay/secondary.ts:209-212: in `watchStandby`, a too-old primary only triggers `continue` and does not set the standby reason again. So a standby that started for another reason, such as a config mismatch, keeps that stale reason after a pre-37 primary takes the port, and the operator is never told the headless agent is not running because the primary is too old. Set the "primary too old, headless agent not running" reason, logging it once, whenever `watchStandby` sees a too-old primary. Add a test: a standby that started with a mismatch, then a fake old primary on the port, ends with the too-old reason.
   route: implementer
+
+## Review round 3 — findings
+Reviewed HEAD: a9a9163 (round 2 FIXED; the reviewer judged it CLEAN).
+
+- [P3] gateway/test/relay/headless-capability.test.ts:115-135: the new test's `RelayServer` is closed only inline (`await server.close()` at :135), not through `cleanups`, so a failed assertion leaves it listening. Register it the way the test at :168 does: `cleanups.push(() => server.close())`.
+  route: implementer
