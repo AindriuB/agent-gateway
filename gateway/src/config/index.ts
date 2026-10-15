@@ -150,7 +150,10 @@ function agentPasswords(
  */
 export function normalizePublicUrl(value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid --public-url ${value}: ${why}`, 2);
+    throw new ConfigError(
+      `Invalid --public-url (value not shown, it may carry a secret): ${why}`,
+      2,
+    );
   };
   let url: URL;
   try {
@@ -201,7 +204,7 @@ const MAX_LINK_URL = 2048;
  */
 export function normalizeLinkUrl(flag: '--privacy-url' | '--source-url', value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid ${flag} ${value.slice(0, 80)}: ${why}`, 2);
+    throw new ConfigError(`Invalid ${flag} (value not shown, it may carry a secret): ${why}`, 2);
   };
   if (value.length > MAX_LINK_URL) return refuse(`longer than ${MAX_LINK_URL} characters`);
   let url: URL;

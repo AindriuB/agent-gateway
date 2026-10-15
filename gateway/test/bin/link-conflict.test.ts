@@ -129,7 +129,7 @@ describe('--allow-origin validation (built cli)', () => {
     'ftp://foundry.local',
     'file:///etc/passwd',
   ]) {
-    it(`exits 2 naming ${bad}`, async () => {
+    it(`exits 2 naming the flag, not the value (${bad})`, async () => {
       const child = spawn(process.execPath, [cli, `--allow-origin=${bad}`], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -138,10 +138,32 @@ describe('--allow-origin validation (built cli)', () => {
       const code = await new Promise((r) => child.on('close', r));
       expect(code).toBe(2);
       expect(err.trim().split('\n')).toHaveLength(1);
-      expect(err).toContain(bad);
+      expect(err).toContain('--allow-origin');
       expect(err).toContain('include http:// or https://');
     });
   }
+  it('does not echo userinfo from a refused origin', async () => {
+    const child = spawn(
+      process.execPath,
+      [cli, '--allow-origin=ftp://agent:hunter2@foundry.local'],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let err = '';
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    expect(await new Promise((r) => child.on('close', r))).toBe(2);
+    expect(err).not.toContain('agent');
+    expect(err).not.toContain('hunter2');
+  });
+  it('does not echo a stray positional argument', async () => {
+    const child = spawn(process.execPath, [cli, 'hunter2'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    expect(await new Promise((r) => child.on('close', r))).toBe(2);
+    expect(err).toContain('Unexpected argument');
+    expect(err).not.toContain('hunter2');
+  });
 });
 
 describe('startup failures and origins (built cli)', () => {
