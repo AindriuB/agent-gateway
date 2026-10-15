@@ -101,8 +101,18 @@ if (bump.status !== 0) die('bump-version failed');
 
 // 3. Gates, in order.
 const notes = [];
-function gate(name, npmArgs, ok) {
+// Only scheme://host[:port]/path is ever printed: userinfo, query and fragment are dropped.
+function shown(u) {
+  try {
+    const x = new URL(u);
+    return `${x.protocol}//${x.host}${x.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return '<unparseable url>';
+  }
+}
+function gate(name, npmArgs, ok, info) {
   console.log(`\n== gate: ${name} ==`);
+  if (info) console.log(info);
   const r = run('npm', npmArgs);
   process.stdout.write(r.stdout ?? '');
   process.stderr.write(r.stderr ?? '');
@@ -114,10 +124,14 @@ gate('test:scripts', ['run', 'test:scripts']);
 gate('test:conformance', ['run', 'test:conformance'], (out) =>
   /^conformance: ok \(inspector [^)\s,]+, stdio, http, oauth\)$/m.test(out),
 );
-console.log(`\ne2e v14: url ${v14Url}, state ${v14State}`);
-gate('e2e v14', ['run', 'test:e2e', '--', '--foundry', 'v14']);
+gate(
+  'e2e v14',
+  ['run', 'test:e2e', '--', '--foundry', 'v14'],
+  undefined,
+  `e2e v14: url ${shown(v14Url)}, state ${v14State}`,
+);
 console.log('\n== gate: e2e v13 ==');
-console.log(`e2e v13: url ${v13Url ?? 'not set'}, state ${v13State}`);
+console.log(`e2e v13: url ${v13Url ? shown(v13Url) : 'not set'}, state ${v13State}`);
 {
   const r = run('npm', ['run', 'test:e2e', '--', '--foundry', 'v13'], {
     env: {
