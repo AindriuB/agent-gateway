@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../../src/app.js';
-import { headlessFingerprint, makeRelayConfig } from '../../src/relay/index.js';
+import { headlessFingerprint, makeRelayConfig, sameConfig } from '../../src/relay/index.js';
 import { ORIGIN } from '../link/helpers.js';
 import { freePort, sleep, tempState, until } from '../relay/harness.js';
 import { FakeLauncher } from './fake-browser.js';
@@ -112,6 +112,38 @@ describe('headless settings in the takeover comparison', () => {
     await b.app.start();
     await until(() => b.launcher.launches.length > 0, 15_000, 'B starts its agent');
   }, 30_000);
+});
+
+describe('headless wins on takeover', () => {
+  it('a newer gateway without headless settings relays and the runner keeps running', async () => {
+    const shared = await setup();
+    const httpPort = await freePort();
+    const a = gateway(shared, httpPort, 'hunter2', []);
+    await a.app.start();
+    await until(() => a.launcher.launches.length > 0, 15_000, 'A starts its agent');
+    await sleep(10);
+    const bLines: string[] = [];
+    const b = gateway(shared, httpPort, undefined, bLines);
+    await b.app.start();
+    await sleep(1_500);
+    expect(a.launcher.launches).toHaveLength(1);
+    expect(a.launcher.closes).toBe(0);
+    expect(b.launcher.launches).toHaveLength(0);
+  }, 30_000);
+
+  it('an older caller without headless settings is served by a headless primary', () => {
+    const fp = headlessFingerprint(
+      { foundryUrl: ORIGIN, worldId: W, userId: U, password: 'p' },
+      false,
+    );
+    const primary = makeRelayConfig([], 1, 'info', 200, { headless: fp });
+    const olderPlain = makeRelayConfig([], 1, 'info', 100);
+    expect(sameConfig(olderPlain, primary)).toBe(true);
+    // The other direction is not symmetric: a headless caller against a plain primary differs.
+    expect(sameConfig(primary, olderPlain)).toBe(false);
+    const other = makeRelayConfig([], 1, 'info', 100, { headless: 'f'.repeat(64) });
+    expect(sameConfig(other, primary)).toBe(false);
+  });
 });
 
 describe('the comparison value', () => {

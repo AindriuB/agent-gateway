@@ -102,11 +102,14 @@ export function parseRelayConfig(v: unknown): RelayConfig | undefined {
  * The session-affecting part: a relayed MCP session runs on the primary's link, store and
  * selector, so only `allowOrigins` (which decides who may reach that link) changes what such a
  * session can do; `headless` joins it because only the primary runs the agent. A mismatch here is never served.
+ * Argument order matters: `a` is the caller, `b` the primary. A caller with no headless settings
+ * (`''`) matches a primary that has them, so a plain MCP client relays to a running agent instead
+ * of stopping it; any other headless difference is a mismatch.
  */
 export const sameSessionConfig = (a: RelayConfig, b: RelayConfig): boolean =>
   a.publicUrl === b.publicUrl &&
   a.serverMode === b.serverMode &&
-  a.headless === b.headless &&
+  (a.headless === '' || a.headless === b.headless) &&
   a.allowOrigins.length === b.allowOrigins.length &&
   a.allowOrigins.every((o, i) => o === b.allowOrigins[i]);
 

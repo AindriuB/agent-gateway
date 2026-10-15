@@ -181,7 +181,9 @@ export function readConfigFile(path: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
-    throw new ConfigError(`Config file ${path} is not valid JSON: ${(err as Error).message}`);
+    // Never the parser's message: Node quotes a snippet of the file, which may hold a password.
+    if (err instanceof SyntaxError) throw new ConfigError(`Config file ${path} is not valid JSON`);
+    throw new ConfigError(`Cannot read config file ${path}: ${(err as Error).message}`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new ConfigError(`Config file ${path} must contain a JSON object`);
