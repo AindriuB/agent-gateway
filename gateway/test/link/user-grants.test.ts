@@ -42,6 +42,8 @@ const list = (c: TestClient, userId: string, requestId = 'r1') =>
   c.send({ type: 'listUserGrants', requestId, userId });
 const revoke = (c: TestClient, userId: string, grantId: string, requestId = 'r1') =>
   c.send({ type: 'revokeUserGrant', requestId, userId, grantId });
+const closeCode = (c: TestClient): Promise<number> =>
+  new Promise((res) => c.ws.once('close', (code) => res(code)));
 type UserGrants = Extract<LinkMessage, { type: 'userGrants' }>;
 const ids = (m: LinkMessage) => (m as UserGrants).grants.map((g) => g.id).sort();
 
@@ -174,6 +176,38 @@ describe('another admin', () => {
   });
 });
 
+describe('a pairing in another world', () => {
+  it('does not block this world admin from the same user id', async () => {
+    await boot();
+    const gm = await admin('w1', 'gm1');
+    await admin('w2', 'p1');
+    seed('g1', 'w1', 'p1');
+    list(gm, 'p1');
+    expect(ids(await gm.next('userGrants'))).toEqual(['g1']);
+  });
+});
+
+describe('a replaced connection', () => {
+  it('is closed with 1008 and revokes nothing', async () => {
+    await boot();
+    const gm = await admin();
+    seed('g1', 'w1', 'p1');
+    h!.registry.remove(h!.registry.get('w1', 'gm1')!);
+    const code1 = closeCode(gm);
+    revoke(gm, 'p1', 'g1');
+    await gm.untilClosed();
+    expect(await code1).toBe(1008);
+    expect(h!.store.oauth.getGrant('g1')!.revokedAt).toBeNull();
+    const gm2 = await admin('w1', 'gmS');
+    h!.registry.remove(h!.registry.get('w1', 'gmS')!);
+    const code2 = closeCode(gm2);
+    list(gm2, 'p1');
+    await gm2.untilClosed();
+    expect(await code2).toBe(1008);
+    expect(gm2.messages.filter((m) => m.type === 'userGrants' || m.type === 'error')).toEqual([]);
+  });
+});
+
 describe('what the reply carries', () => {
   it('has only grant summary fields and none of the seeded secrets', async () => {
     await boot();
@@ -189,7 +223,6 @@ describe('what the reply carries', () => {
       clientName: 'Claude',
       scopes: ['read', 'write'],
       createdAt: 5,
-      lastUsedAt: null,
     });
     revoke(gm, 'p1', 'g1', 'r2');
     const after = JSON.stringify(await gm.next('userGrants'));
@@ -198,6 +231,20 @@ describe('what the reply carries', () => {
 });
 
 describe('rate limit', () => {
+  it('shares the window with pairing and invite messages', async () => {
+    await boot();
+    const gm = await admin();
+    const half = MAX_INVITE_MESSAGES_PER_WINDOW / 2;
+    for (let i = 0; i < half; i++) {
+      gm.send({ type: 'listPairings', requestId: `p${i}` });
+      await gm.next('pairings');
+      gm.send({ type: 'listInvites', requestId: `i${i}` });
+      await gm.next('invites');
+    }
+    list(gm, 'p1', 'over');
+    expect(await gm.next('error')).toMatchObject({ code: 'RATE_LIMITED', requestId: 'over' });
+  });
+
   it('shares the invite window across list and revoke and recovers after it', async () => {
     await boot();
     const gm = await admin();

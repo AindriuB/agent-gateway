@@ -68,7 +68,9 @@ export function handleUserGrantMessage(
       type: 'userGrants',
       requestId: msg.requestId,
       userId: msg.userId,
-      grants: listGrantSummaries(store.oauth, conn.worldId, msg.userId),
+      grants: listGrantSummaries(store.oauth, conn.worldId, msg.userId).map(
+        ({ id, clientName, scopes, createdAt }) => ({ id, clientName, scopes, createdAt }),
+      ),
     });
   } catch {
     fail('INTERNAL', 'could not complete the grants request');

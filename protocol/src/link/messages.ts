@@ -315,7 +315,7 @@ export const PairingsMessage = z.strictObject({
 /**
  * Per-player grants view (task 94). The admin GM sees the metadata of the apps a player in its own
  * world has authorized, and can revoke them. No message names a world; no reply carries a token,
- * hash or secret. A grant is the same summary the player sees.
+ * hash or secret. A grant is the player's summary without its last-used time.
  */
 export const ListUserGrantsMessage = z.strictObject({
   type: z.literal('listUserGrants'),
@@ -332,7 +332,17 @@ export const UserGrantsMessage = z.strictObject({
   type: z.literal('userGrants'),
   requestId: z.string().min(1).max(100),
   userId: z.string().min(1).max(64),
-  grants: GrantsMessage.shape.grants,
+  // Metadata only: no `lastUsedAt`, which would be per-player activity tracking (Amendment 1).
+  grants: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(100),
+        clientName: z.string().max(200),
+        scopes: z.array(GrantScope).max(4),
+        createdAt: z.number().int().min(0),
+      }),
+    )
+    .max(200),
 });
 
 // Insertion-only: later tasks add schemas above and members below.

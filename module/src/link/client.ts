@@ -98,6 +98,8 @@ export const REPLACED_CLOSE_CODE = 1000;
 export const REPLACED_CLOSE_REASON = 'replaced';
 
 export type GrantSummary = Extract<LinkMessage, { type: 'grants' }>['grants'][number];
+/** What an admin GM sees of a player's grant: no last-used time. */
+export type UserGrantSummary = Extract<LinkMessage, { type: 'userGrants' }>['grants'][number];
 export type ConsentCodeMessage = Extract<LinkMessage, { type: 'consentCode' }>;
 
 /**
@@ -307,7 +309,7 @@ export class LinkClient {
     return (r as Extract<ManageReply, { type: 'pairings' }>).pairings;
   }
   /** The authorized apps of one user in this world, as metadata only (admin GM only). */
-  async listUserGrants(userId: string): Promise<GrantSummary[]> {
+  async listUserGrants(userId: string): Promise<UserGrantSummary[]> {
     const r = await this.manageRequest(
       'userGrants',
       (requestId) => ({ type: 'listUserGrants', requestId, userId }),
@@ -316,7 +318,7 @@ export class LinkClient {
     return (r as Extract<ManageReply, { type: 'userGrants' }>).grants;
   }
   /** Revoke one of that user's grants; resolves to the grants that remain. */
-  async revokeUserGrant(userId: string, grantId: string): Promise<GrantSummary[]> {
+  async revokeUserGrant(userId: string, grantId: string): Promise<UserGrantSummary[]> {
     const r = await this.manageRequest(
       'userGrants',
       (requestId) => ({ type: 'revokeUserGrant', requestId, userId, grantId }),

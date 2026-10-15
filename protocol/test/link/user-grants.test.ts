@@ -3,7 +3,7 @@ import { parseLinkMessage } from '../../src/link/index.js';
 
 const ok = (v: unknown): boolean => parseLinkMessage(JSON.stringify(v)).ok;
 
-const grant = { id: 'g', clientName: 'App', scopes: ['read'], createdAt: 1, lastUsedAt: null };
+const grant = { id: 'g', clientName: 'App', scopes: ['read'], createdAt: 1 };
 
 describe('per-user grants messages', () => {
   it('parse in their plain shapes', () => {
@@ -32,6 +32,19 @@ describe('per-user grants messages', () => {
         requestId: 'r',
         userId: 'u',
         grants: [{ ...grant, tokenHash: 'h' }],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('last-used time', () => {
+  it('never rides in an admin grants reply', () => {
+    expect(
+      ok({
+        type: 'userGrants',
+        requestId: 'r',
+        userId: 'u',
+        grants: [{ ...grant, lastUsedAt: null }],
       }),
     ).toBe(false);
   });

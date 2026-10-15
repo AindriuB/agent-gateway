@@ -179,7 +179,7 @@ describe('management requests on the link client', () => {
 });
 
 describe('per-user grants requests on the link client', () => {
-  const grant = { id: 'g1', clientName: 'App', scopes: ['read'], createdAt: 1, lastUsedAt: null };
+  const grant = { id: 'g1', clientName: 'App', scopes: ['read'], createdAt: 1 };
 
   it('send plain messages and resolve to the grants of the asked user', async () => {
     const { client, ws } = connected();

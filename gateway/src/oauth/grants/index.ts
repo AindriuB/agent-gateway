@@ -9,6 +9,9 @@ export interface GrantSummary {
   lastUsedAt: number | null;
 }
 
+/** What an admin GM sees of a player's grant: metadata only, never a last-used time. */
+export type UserGrantSummary = Omit<GrantSummary, 'lastUsedAt'>;
+
 /**
  * The grants bound to one (world, user). The caller passes the identity of an authenticated link
  * connection, never a value read from a message: nothing here can name another user's grants.
