@@ -6,10 +6,10 @@ A gateway that remote clients (claude.ai, ChatGPT, Gemini) or other people's Fou
 
 The gateway listens on two loopback ports, and the proxy splits traffic between them:
 
-| Path | Goes to | What it is |
-| --- | --- | --- |
-| `/link` (and anything under it) | `127.0.0.1:7420` | The WebSocket the Foundry module connects to (`wss://<host>/link`). |
-| everything else | `127.0.0.1:7421` | `/mcp`, `/status`, the OAuth endpoints (`/.well-known/...`, `/register`, `/authorize`, `/token`) and the consent page. |
+| Path                            | Goes to          | What it is                                                                                                             |
+| ------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `/link` (and anything under it) | `127.0.0.1:7420` | The WebSocket the Foundry module connects to (`wss://<host>/link`).                                                    |
+| everything else                 | `127.0.0.1:7421` | `/mcp`, `/status`, the OAuth endpoints (`/.well-known/...`, `/register`, `/authorize`, `/token`) and the consent page. |
 
 Use a host name of its own, for example `gateway.example.com`, never a path under your Foundry host. The public URL must be a bare origin, the gateway serves at its root, and the consent page's `__Host-` cookie is scoped to the whole host.
 

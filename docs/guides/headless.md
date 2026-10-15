@@ -197,6 +197,7 @@ Only one gateway process holds the link port; the others relay to it or wait. Wh
   ```
 
   (the brackets name the differing settings).
+
 - A caller that has headless settings follows the normal rules: if it is newer and different, it takes over; if it is older and different, it goes to standby.
 - A primary from before headless support ignores headless settings. A headless caller then goes to standby with the reason:
 
@@ -205,6 +206,7 @@ Only one gateway process holds the link port; the others relay to it or wait. Wh
   ```
 
   and takes over by itself when that old primary exits.
+
 - So run the same version on every gateway that shares a link port.
 
 ## Commands run for this guide
