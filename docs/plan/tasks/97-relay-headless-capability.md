@@ -69,3 +69,9 @@ Reviewed HEAD: 79f805e (code review: no bugs; both caller paths correct; the mut
   - RELAY_CONFIG_MISMATCH and RELAY_CONFIG_STEPDOWN refusals from an authenticated peer carry it, as does the ok reply.
   Put them in gateway/test/relay/headless-capability.test.ts.
   route: implementer
+
+## Review round 2 — findings
+Reviewed HEAD: c5a6928. Acceptance review APPROVE. Verify PASS once `npm ci` had run in the worktree (4907/4907 tests; the 3 earlier failures came from a missing node_modules).
+
+- [P3] gateway/src/relay/secondary.ts:209-212: in `watchStandby`, a too-old primary only triggers `continue` and does not set the standby reason again. So a standby that started for another reason, such as a config mismatch, keeps that stale reason after a pre-37 primary takes the port, and the operator is never told the headless agent is not running because the primary is too old. Set the "primary too old, headless agent not running" reason, logging it once, whenever `watchStandby` sees a too-old primary. Add a test: a standby that started with a mismatch, then a fake old primary on the port, ends with the too-old reason.
+  route: implementer
