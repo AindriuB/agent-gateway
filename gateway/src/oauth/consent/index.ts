@@ -53,7 +53,7 @@ interface Pending extends ConsentSeed {
   sends: number;
   wrong: number;
   /** The exact pairing the code was sent over; it must still be active when the code is entered. */
-  target?: { worldId: string; userId: string; pairingId: string };
+  target?: { worldId: string; userId: string; pairingId: string; userName?: string };
   chosen: Scope[];
   codeHash?: Buffer;
   codeExpiresAt: number;
@@ -65,7 +65,14 @@ export interface ConsentWiring {
     get(
       worldId: string,
       userId: string,
-    ): { send(data: string): void; closed?: boolean; agentId?: string } | undefined;
+    ):
+      | {
+          send(data: string): void;
+          closed?: boolean;
+          agentId?: string;
+          info?: { headless?: boolean };
+        }
+      | undefined;
   };
   failures: FailureWindows;
   /** Headless agents (task 98): their consent codes go to the owner, never to the agent. */
@@ -276,10 +283,21 @@ export class ConsentPages {
     const paired = this.o.repo.activePairedUsers(w);
     // Newest pairing of that user wins when a user holds more than one.
     const byId = paired.filter((r) => r.userId === u).at(-1);
-    if (byId) return { worldId: w, userId: byId.userId, pairingId: byId.pairingId };
+    if (byId)
+      return {
+        worldId: w,
+        userId: byId.userId,
+        pairingId: byId.pairingId,
+        userName: byId.userName,
+      };
     const named = paired.filter((r) => r.userName !== '' && r.userName === u);
     return named.length === 1 && named[0]
-      ? { worldId: w, userId: named[0].userId, pairingId: named[0].pairingId }
+      ? {
+          worldId: w,
+          userId: named[0].userId,
+          pairingId: named[0].pairingId,
+          userName: named[0].userName,
+        }
       : undefined;
   }
 
@@ -298,11 +316,12 @@ export class ConsentPages {
       const owner = h?.ownerOf(t.worldId, t.userId);
       if (!owner || owner === t.userId) return;
       to = owner;
-      const row = this.o.repo.activePairedUsers(t.worldId).find((r) => r.userId === t.userId);
-      forAgent = { userId: t.userId, name: row?.userName || t.userId };
+      forAgent = { userId: t.userId, name: t.userName || t.userId };
     }
     const conn = this.wiring?.registry.get(t.worldId, to);
     if (!conn || conn.closed) return;
+    // Fail closed: a headless connection never receives a code, whatever the lookup said.
+    if (conn.info?.headless) return;
     // Bind to the pairing of the connection that actually receives the code (the target's own).
     if (!agent && conn.agentId) t.pairingId = conn.agentId;
     try {

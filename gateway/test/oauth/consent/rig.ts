@@ -18,8 +18,9 @@ export async function consentRig(
   links: { privacyUrl?: string; sourceUrl?: string } = {},
   /** Task 98: wire the headless lookup the way app.ts does; `flag` is the flag/env agent. */
   headless?: { flag?: { worldId: string; userId: string } },
+  link: Parameters<typeof startServer>[0] = {},
 ): Promise<ConsentRig> {
-  const h = await startServer();
+  const h = await startServer(link);
   const clock = { t: 1_000_000 };
   const oauth = new OAuthServer({
     repo: h.store.oauth,

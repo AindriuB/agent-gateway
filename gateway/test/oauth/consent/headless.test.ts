@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { REDIRECT, call } from '../helpers.js';
-import { pairModule, type FakeModule } from '../../routing/harness.js';
+import { pairModule, reconnectModule, type FakeModule } from '../../routing/harness.js';
 import { consentRig, form, openConsent, postConsent, stopRig, type ConsentRig } from './rig.js';
 
 let r: ConsentRig | undefined;
@@ -137,5 +137,31 @@ describe('headless agent consent goes to its owner (task 98)', () => {
       });
     }
     for (const s of seen) expect({ ...s, u: '' }).toEqual({ ...seen[0]!, u: '' });
+  });
+
+  it('never sends a code to a headless connection, even when the lookup says it is no agent', async () => {
+    let headless = false;
+    r = await consentRig({}, {}, { isHeadlessAgent: () => headless });
+    const bot = await pairModule(r.h, 'bot');
+    modules.push(bot);
+    headless = true;
+    modules.push(await reconnectModule(r.h, bot));
+    const { page } = await send(r, 'bot');
+    await settle();
+    expect(modules.flatMap((m) => codes(m))).toHaveLength(0);
+    const res = await postConsent(r, page, { action: 'verify', code: '00000000' });
+    expect(res.status).toBe(400);
+  });
+
+  it('names the agent from its current (newest) pairing', async () => {
+    r = await consentRig({}, {});
+    addAgent(r, 'bot', 'owner');
+    const owner = await pairModule(r.h, 'owner');
+    modules.push(owner);
+    modules.push(await pairModule(r.h, 'bot', { userName: 'Old' }));
+    modules.push(await pairModule(r.h, 'bot', { userName: 'New' }));
+    await send(r, 'bot');
+    const frame = (await owner.tc.next('consentCode')) as { forAgent?: { name: string } };
+    expect(frame.forAgent?.name).toBe('New');
   });
 });
