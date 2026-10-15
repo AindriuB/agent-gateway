@@ -250,4 +250,33 @@ describe('stopping', () => {
     const { existsSync } = await import('node:fs');
     expect(existsSync(profileDir(t.state.dir, W, U))).toBe(true);
   });
+
+  it('a step-down for a newer instance closes the browser within 5 s and keeps the profile', async () => {
+    const t = await boot({ serverMode: false });
+    await until(() => t.launcher.launches.length > 0, 10_000, 'launch');
+    expect(t.launcher.closes).toBe(0);
+    // A newer instance with other settings (another HTTP port) makes this primary step down.
+    let httpPort = await freePort();
+    while (httpPort === t.httpPort || httpPort === t.linkPort) httpPort = await freePort();
+    const newer = createApp(
+      { linkPort: t.linkPort, httpPort, logLevel: 'error' } as unknown as Config,
+      {
+        version: '0.0.0-test',
+        dbPath: t.state.db,
+        stdin: new PassThrough(),
+        stdout: new PassThrough(),
+        writeStatus: () => undefined,
+        http: true,
+      },
+    );
+    apps.push(newer);
+    await newer.start();
+    await until(() => t.lines.some((l) => l.startsWith('stepping down')), 15_000, 'step-down');
+    const began = Date.now();
+    await until(() => t.launcher.closes === 1, 15_000, 'browser closed by the step-down');
+    // The close follows the 2 s grace period; it must not take longer than 5 s after it.
+    expect(Date.now() - began).toBeLessThan(5_000);
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(profileDir(t.state.dir, W, U))).toBe(true);
+  }, 60_000);
 });

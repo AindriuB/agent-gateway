@@ -106,7 +106,16 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
     async launch(req: LaunchRequest): Promise<RunnerBrowser> {
       // A non-literal specifier keeps esbuild (the .mcpb bundle) from inlining playwright-core.
       const specifier = 'playwright-core';
-      const { chromium } = (await import(specifier)) as typeof import('playwright-core');
+      let chromium: typeof import('playwright-core').chromium;
+      try {
+        ({ chromium } = (await import(specifier)) as typeof import('playwright-core'));
+      } catch (err) {
+        if ((err as { code?: string }).code === 'ERR_MODULE_NOT_FOUND')
+          throw new Error(
+            'playwright-core is not installed; the headless runner needs the npm or Docker install, not the .mcpb bundle',
+          );
+        throw err;
+      }
       const context = await chromium.launchPersistentContext(req.profileDir, {
         executablePath,
         headless: true,
