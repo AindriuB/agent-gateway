@@ -118,7 +118,9 @@ function agentPasswords(
     for (const [name, entry] of Object.entries(section)) {
       const key = `headless.${name}.password`;
       if (!AGENT_NAME.test(name))
-        throw new ConfigError(`Config key headless.${name.slice(0, 40)} is not a valid agent name`);
+        throw new ConfigError(
+          `Config key under headless is not a valid agent name (name not shown, it may carry a secret)`,
+        );
       if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
         throw new ConfigError(`Config key headless.${name} must be an object with a password`);
       const pw = (entry as { password?: unknown }).password;
@@ -310,7 +312,7 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   ] as const) {
     if (config.publicUrl === '' && !isLoopbackAddress(host))
       throw new ConfigError(
-        `Refusing ${flag} ${host}: a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
+        `Refusing ${flag} (value not shown, it may carry a secret): a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
         2,
       );
   }

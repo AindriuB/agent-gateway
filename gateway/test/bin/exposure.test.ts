@@ -117,6 +117,17 @@ describe('bind addresses and public URL', () => {
     },
   );
 
+  it.each(['--http-host', '--link-host'])(
+    '%s with a credential-bearing URL refuses without echoing it',
+    (flag) => {
+      const r = run([flag, 'https://agent:hunter2@foundry.local/?token=x', '--db', tmpDb()]);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(flag);
+      expect(r.stderr).not.toContain('hunter2');
+      expect(r.stderr).not.toContain('token=x');
+    },
+  );
+
   it('binds beyond loopback with --public-url and says TLS belongs to a reverse proxy once', async () => {
     const p = await ports();
     const g = await start([

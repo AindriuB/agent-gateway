@@ -1,3 +1,6 @@
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ConfigError,
@@ -54,5 +57,32 @@ describe('validation errors never echo the value', () => {
       expect(msg).not.toBe('');
       expect(msg).not.toContain('hunter2');
     }
+  });
+
+  it.each([
+    ['--link-host', 'linkHost'],
+    ['--http-host', 'httpHost'],
+  ])('%s refusal names the flag but not the host value', (flag, key) => {
+    const msg = message(() =>
+      loadConfig({
+        env: {},
+        flags: { [key]: 'https://agent:hunter2@foundry.local/?token=x' } as never,
+      }),
+    );
+    expect(msg).toContain(flag);
+    expect(msg).toContain('--public-url');
+    expectRedacted(msg);
+    expect(msg).not.toContain('token=x');
+    expect(msg).not.toContain('foundry.local');
+  });
+
+  it('a malformed headless agent key is not echoed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agw-'));
+    const p = join(dir, 'config.json');
+    writeFileSync(p, JSON.stringify({ headless: { 'hunter2 pasted by mistake': {} } }));
+    chmodSync(p, 0o600);
+    const msg = message(() => loadConfig({ env: {}, configPath: p }));
+    expect(msg).toContain('headless');
+    expect(msg).not.toContain('hunter2');
   });
 });
