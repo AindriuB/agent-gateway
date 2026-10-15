@@ -45,3 +45,13 @@ out of the message, or show only a redacted form with no userinfo and no query s
 - Changing what any validator accepts or refuses, or its exit code.
 - Redacting runtime log lines that are not config or CLI validation errors (e.g. `safeText` call sites).
 - Docs (43).
+
+## Review round 1 — findings
+Reviewed HEAD: 96e4baa (code review CLEAN apart from this item).
+
+- [P3] gateway/test/config/redaction.test.ts:47-60: the "schema errors carry no secret" test never checks that `loadConfig` threw. If an input stopped failing, `msg` would stay `''` and the test would pass vacuously. Assert a `ConfigError` with a non-empty message for each input (`linkPort`, `logLevel` and `httpPort` set to `'hunter2'`), reusing the file's `message()` helper.
+  route: implementer
+
+Orchestrator scope notes (round 1):
+- Accepted: the edited assertion in gateway/test/bin/link-conflict.test.ts ("exits 2 naming ${bad}", :132,141). Owns says insertions only, but the old assertion required the echoed value, which directly contradicts this task's Goal and Decision (b). It now checks the flag name and the reason hint instead.
+- For the record: docs/plan/done/75-consent-page-footer.md:42 quotes the old message format `Invalid --privacy-url <value>: <why>`. It is a historical record, so it is left as it is.
