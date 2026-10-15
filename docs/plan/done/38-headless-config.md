@@ -142,3 +142,13 @@ Reviewed HEAD: 2c6e2ab. All round 1 findings are FIXED (mutation-proven).
 
 - [P3] gateway/test/headless/follow-app.test.ts is a new file outside Owns. Move it to gateway/test/headless/config/follow-app.test.ts, which Owns already covers, and adjust only the relative imports. Content otherwise unchanged; both tests must still pass.
   route: implementer
+
+## Review round 3 — findings (external)
+Andrew's PR review of #153 at fa08e37 (2026-10-15).
+
+- [P2] gateway/src/headless/config/commands.ts:113: adding an agent leaves existing connections with a stale classification. A browser already connected as that (world, user) keeps its old `headless` status and approval owner, so it can bypass the headless-disabled policy and get requests attributed wrongly. When an identity becomes a headless agent, revoke the affected connections (and existing pairings) so they re-pair and are classified afresh. Revoking is consistent with 37 decision (d): the agent user is not for humans. Apply the same rule wherever classification can change at runtime: `add`, the owner changing on re-add, and `remove` if it is not already covered. A running gateway must close the affected live connection within one revocation sweep.
+  - Test: a connected non-headless client for (w, u), then `headless add` for (w, u) →  within one sweep that connection is closed and its pairing revoked, and the next connection for (w, u) is classified headless with the stored owner. The test must fail on fa08e37.
+  route: implementer
+- [P3] gateway/src/app.ts:634: an agent named `constructor` bypasses the missing-password check. The object lookup returns an inherited function, so the runner launches with an invalid password. Use own-property checks (`Object.hasOwn`) or a `Map` for every name-keyed lookup in the headless config path (config/index.ts per-agent keys, app.ts, commands.ts). Also refuse, or safely handle, names such as `constructor`, `__proto__` and `toString` if the name rule allows them.
+  - Test: an agent named `constructor` with no password is "not started" (one log line) and never launches.
+  route: implementer
