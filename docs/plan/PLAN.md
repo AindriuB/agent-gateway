@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 69 done in `docs/plan/done/` (excluding its README.md), 24 active in `docs/plan/tasks/` (2026-10-15).
+Inventory: 70 done in `docs/plan/done/` (excluding its README.md), 23 active in `docs/plan/tasks/` (2026-10-15).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -17,6 +17,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 ---
 
 ## Now
+
+### 0a. Task 40 done on branch, PR pending
+- **40: MCP conformance for OAuth and the remote rows (branch `claude/task-40`, done; PR pending; archived in `docs/plan/done/`).** `scripts/conformance.sh` gains an OAuth mode (inspector 2.10.1: discovery, dynamic registration, consent, token, a call, static bearer refused). Pending Andrew: install `zip` on the host and re-run `npm run test:scripts` (9 fail and 6 cancelled on this host, the identical 20 test names that fail on main, all "zip is not installed"); run the manual checklists for claude.ai, ChatGPT, Gemini CLI and Gemini app in `docs/compatibility.md`, which are written and unticked. Residual for 43: `docs/releasing.md:20` still quotes the old final conformance line.
 
 ### 0. 95 merged (PR #148); 92 awaiting PR #147; next: 93
 - **95: HTTP session eviction (merged, PR #148; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. **0.2.0 = 90 + 91 + 92 + 95 and is ready to cut once #147 (92) merges; protocol 7.0.0, so the module and gateway must be upgraded together. 93 is next.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
@@ -122,7 +125,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
 4. **Milestone: friend test on a public VPS (Compose and Caddy).** It is ready now (74, 35, 67, 68, 42 and 76 are all in; 75, the consent footer, is optional for the test). Andrew deploys 42's stack, or 76's gateway-only file behind his existing Caddy, with them. The operator invites the GM and each friend with `--invite`, they pair, and one friend connects claude.ai or ChatGPT through OAuth and consent, makes a read call and a write held for approval, then revokes the grant. Feedback is filed as tasks before wave 4 starts.
 5. **Wave 4, after the milestone:** 37 with 40 in parallel, then 38, then 43.
    - **37** Headless runner with gateway-minted invites (`playwright-core`, logs in as an agent user, follows world lifecycle).
-   - **40** MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
+   - **40** (done on branch `claude/task-40`, PR pending) MCP conformance for OAuth and the remote client rows. Stdio and local HTTP are done by 63 and 34.
    - **38** Headless config, explicit binding, owner override (after 37; migration 012).
    - **43** Remote, server-mode and headless docs (last).
 
