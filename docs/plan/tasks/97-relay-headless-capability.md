@@ -58,3 +58,14 @@ Andrew, from code review.
 ### Acceptance (added)
 - [ ] Test: a hello with a wrong token gets a `RELAY_AUTH` refusal with no capability field, and a hello with `relay` other than 1 gets a `RELAY_PROTOCOL` refusal with no capability field.
 - [ ] Test: an authenticated hello refused with `RELAY_CONFIG_MISMATCH` or `RELAY_CONFIG_STEPDOWN` carries the capability, as does the ok reply.
+
+## Review round 1 — findings
+Reviewed HEAD: 79f805e (code review: no bugs; both caller paths correct; the mutation proofs pass).
+
+- [STYLE] gateway/src/relay/server.ts:10: `RELAY_CAP_HEADLESS` is imported after `RELAY_HANDSHAKE_MS`, which breaks the alphabetical order of the import list at :6-13. secondary.ts:10 already has it in order.
+  route: implementer
+- [P3] Amendment 1 acceptance: add the two tests if they are not already covered.
+  - RELAY_AUTH (wrong token) and RELAY_PROTOCOL (relay ≠ 1) refusals carry no capability field.
+  - RELAY_CONFIG_MISMATCH and RELAY_CONFIG_STEPDOWN refusals from an authenticated peer carry it, as does the ok reply.
+  Put them in gateway/test/relay/headless-capability.test.ts.
+  route: implementer
