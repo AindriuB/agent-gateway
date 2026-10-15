@@ -166,7 +166,7 @@ export class HeadlessRunner {
 
   /** One poll, run to completion; overlapping calls share the running one. */
   tick(): Promise<void> {
-    if (this.stopped) return Promise.resolve();
+    if (this.stopped || this.profile === undefined) return Promise.resolve();
     this.busy ??= this.poll()
       .catch((err: unknown) =>
         this.o.log(`headless runner: ${safeText((err as Error).message ?? String(err))}`),
