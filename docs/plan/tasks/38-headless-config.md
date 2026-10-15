@@ -136,3 +136,9 @@ Reviewed HEAD: 37ce211.
 - [P3] gateway/src/config/index.ts:123: a `headless.<name>` entry that is not an object is silently treated as "no password". Refuse it with a ConfigError that names the key, never the value.
   route: implementer
   input: config file `{"headless": {"a1": "pw"}}` →  no error; a1 just never starts.
+
+## Review round 2 — findings
+Reviewed HEAD: 2c6e2ab. All round 1 findings are FIXED (mutation-proven).
+
+- [P3] gateway/test/headless/follow-app.test.ts is a new file outside Owns. Move it to gateway/test/headless/config/follow-app.test.ts, which Owns already covers, and adjust only the relative imports. Content otherwise unchanged; both tests must still pass.
+  route: implementer
