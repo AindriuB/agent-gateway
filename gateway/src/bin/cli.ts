@@ -100,13 +100,13 @@ function normalizeOrigins(values: readonly string[]): string[] {
       url = new URL(v);
     } catch {
       process.stderr.write(
-        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+        `Invalid --allow-origin value (value not shown, it may carry a secret): include http:// or https://, e.g. https://foundry.local\n`,
       );
       process.exit(2);
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       process.stderr.write(
-        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+        `Invalid --allow-origin value (value not shown, it may carry a secret): include http:// or https://, e.g. https://foundry.local\n`,
       );
       process.exit(2);
     }
@@ -550,7 +550,7 @@ function main(): void {
     return;
   }
   if (positionals.length > 0) {
-    process.stderr.write(`Unexpected argument: ${positionals[0]}\n${USAGE}`);
+    process.stderr.write(`Unexpected argument (value not shown)\n${USAGE}`);
     process.exit(2);
   }
   if (values['http-rotate-token']) {
