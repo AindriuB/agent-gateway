@@ -46,3 +46,15 @@ detect a primary that does not understand headless settings, and must not silent
 - The takeover rules from 37 Amendments 5 and 6.
 - A general capability negotiation for other features.
 - Docs (43; the "run the same version on one link port" note is from 37 Amendment 7).
+
+## Amendment 1 (2026-10-15)
+
+Andrew, from code review.
+
+### Decisions
+
+1. **Capabilities go only to an authenticated peer.** Decision (a)'s "both its ok and its refusal replies" narrows: the capability marker goes on the ok reply and on refusals sent after authentication succeeded (e.g. `RELAY_CONFIG_MISMATCH`, `RELAY_CONFIG_STEPDOWN`), and never on the pre-authentication refusals `RELAY_AUTH` and `RELAY_PROTOCOL`. Nothing reads caps from a refusal, so behaviour is unchanged, and an unauthenticated peer learns nothing about the primary. The Acceptance items above do not depend on caps in a refusal, so none changes; the items below pin the narrowing.
+
+### Acceptance (added)
+- [ ] Test: a hello with a wrong token gets a `RELAY_AUTH` refusal with no capability field, and a hello with `relay` other than 1 gets a `RELAY_PROTOCOL` refusal with no capability field.
+- [ ] Test: an authenticated hello refused with `RELAY_CONFIG_MISMATCH` or `RELAY_CONFIG_STEPDOWN` carries the capability, as does the ok reply.
