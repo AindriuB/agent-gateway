@@ -1,7 +1,17 @@
+import { chmodSync } from 'node:fs';
 import { PassThrough } from 'node:stream';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp, type App } from '../../src/app.js';
-import { headlessFingerprint, makeRelayConfig, sameConfig } from '../../src/relay/index.js';
+import {
+  headlessFingerprint,
+  makeRelayConfig,
+  RelayServer,
+  relayEndpoint,
+  RelaySecondary,
+  sameConfig,
+  type RelayConfig,
+} from '../../src/relay/index.js';
 import { ORIGIN } from '../link/helpers.js';
 import { freePort, sleep, tempState, until } from '../relay/harness.js';
 import { FakeLauncher } from './fake-browser.js';
@@ -151,7 +161,8 @@ describe('headless wins on takeover', () => {
     async (_name, over, otherPort) => {
       const shared = await setup();
       const httpPort = await freePort();
-      const a = gateway(shared, httpPort, 'hunter2', []);
+      const aLogs: string[] = [];
+      const a = gateway(shared, httpPort, 'hunter2', aLogs);
       await a.app.start();
       await until(() => a.launcher.launches.length > 0, 15_000, 'A starts its agent');
       await sleep(10);
@@ -163,6 +174,14 @@ describe('headless wins on takeover', () => {
       await b.app.start();
       await until(() => logs.some((l) => l.includes('relays to it')), 15_000, 'B relays');
       expect(logs.join('\n')).not.toContain('standby');
+      // The primary served a session-neutral difference; it must not call the plain caller's
+      // missing headless settings a difference (mineIsCaller is false on its side).
+      await until(
+        () => aLogs.some((l) => l.includes('session-neutral difference')),
+        5_000,
+        'A logs the neutral difference',
+      );
+      expect(aLogs.join('\n')).not.toContain('headless agent settings differ');
       await sleep(500);
       expect(a.launcher.launches).toHaveLength(1);
       expect(a.launcher.closes).toBe(0);
@@ -186,6 +205,8 @@ describe('headless wins on takeover', () => {
     await b.app.start();
     await until(() => logs.some((l) => l.includes('is a standby')), 15_000, 'B standby');
     expect(logs.join('\n')).toContain('different session settings');
+    expect(logs.join('\n')).toContain('kept because it runs a headless agent');
+    expect(logs.join('\n')).not.toContain('not older');
     expect(logs.join('\n')).not.toContain('headless agent settings differ');
     await sleep(500);
     expect(a.launcher.launches).toHaveLength(1);
@@ -234,4 +255,81 @@ describe('the comparison value', () => {
     expect(wire).not.toContain('foundry.local');
     expect(fp).toMatch(/^[0-9a-f]{64}$/);
   });
+});
+
+describe('the standby reason after a RELAY_CONFIG_MISMATCH', () => {
+  const rigs: { dir: string; server: RelayServer; cleanup: () => void }[] = [];
+  const secs: RelaySecondary[] = [];
+  afterEach(async () => {
+    for (const x of secs.splice(0)) await x.stop();
+    for (const r of rigs.splice(0)) {
+      await r.server.close();
+      r.cleanup();
+    }
+  });
+
+  /** A primary with `primary` config and a caller with `caller`; resolves to the standby reason. */
+  async function reasonFor(primary: RelayConfig, caller: RelayConfig): Promise<string> {
+    const port = 7791;
+    const state = tempState();
+    chmodSync(state.dir, 0o700);
+    const ep = relayEndpoint(state.dir, port);
+    if (!ep.ok) throw new Error(ep.reason);
+    const server = new RelayServer({
+      endpoint: ep.path,
+      stateDir: state.dir,
+      linkPort: port,
+      config: primary,
+      selector: {},
+      createSession: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
+      log: () => undefined,
+    });
+    await server.listen();
+    rigs.push({ dir: state.dir, server, cleanup: state.cleanup });
+    let reason = '';
+    const sec = new RelaySecondary({
+      endpoint: ep.path,
+      stateDir: state.dir,
+      linkPort: port,
+      selector: {},
+      config: caller,
+      input: new PassThrough(),
+      output: new PassThrough(),
+      log: () => undefined,
+      becomePrimary: () => Promise.resolve(false),
+      createDegraded: () => new Server({ name: 't', version: '0' }, { capabilities: {} }),
+      createStandby: (why) => {
+        reason = why;
+        return new Server({ name: 't', version: '0' }, { capabilities: {} });
+      },
+      sleep: () => sleep(10),
+    });
+    secs.push(sec);
+    await sec.start('test');
+    return reason;
+  }
+
+  const fp = headlessFingerprint(
+    { foundryUrl: ORIGIN, worldId: W, userId: U, password: 'p' },
+    false,
+  );
+  const origins = ['https://other.example.com'];
+
+  it('says a headless primary is kept for its agent, not that it is not older', async () => {
+    const reason = await reasonFor(
+      makeRelayConfig([], 1, 'info', 1000, { headless: fp }),
+      makeRelayConfig(origins, 1, 'info', 2000),
+    );
+    expect(reason).toContain('kept because it runs a headless agent');
+    expect(reason).toContain('allowed origins');
+    expect(reason).not.toContain('not older');
+  }, 20_000);
+
+  it('keeps the old wording for a plain primary that is not older', async () => {
+    const reason = await reasonFor(
+      makeRelayConfig([], 1, 'info', 2000),
+      makeRelayConfig(origins, 1, 'info', 1000),
+    );
+    expect(reason).toContain('is not older than this instance, so it is left running');
+  }, 20_000);
 });

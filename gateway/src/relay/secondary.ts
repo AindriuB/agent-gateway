@@ -262,11 +262,18 @@ export class RelaySecondary {
           return this.blocked(
             `the primary gateway refused this instance: selector mismatch (this instance: ${describe(this.opts.selector)}; primary: ${describe(r.selector)})`,
           );
-        if (r.code === 'RELAY_CONFIG_MISMATCH')
+        if (r.code === 'RELAY_CONFIG_MISMATCH') {
+          const diff = describeConfigDiff(this.opts.config, r.config, true);
+          // A newer plain caller refused by a headless primary: it is kept for its agent, not for its age.
+          const keptForAgent =
+            !!r.config && r.config.headless !== '' && this.opts.config.headless === '';
           return {
             kind: 'standby',
-            reason: `the primary gateway has different session settings (${describeConfigDiff(this.opts.config, r.config, true)}) and is not older than this instance, so it is left running`,
+            reason: keptForAgent
+              ? `the primary gateway has different session settings (${diff}) and is kept because it runs a headless agent`
+              : `the primary gateway has different session settings (${diff}) and is not older than this instance, so it is left running`,
           };
+        }
         if (r.code === 'RELAY_CONFIG_STEPDOWN') {
           this.opts.log('the primary gateway has an older configuration and is stepping down');
           takeOver = true;
