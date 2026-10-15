@@ -11,7 +11,7 @@
 - gateway/src/link/registry.ts (the optional `headless` field on `LinkConnection.info` only; Amendment 1)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
-- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only)
+- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts)
 - gateway/package.json (`playwright-core` dependency only) and package-lock.json
 - protocol/src/link/messages.ts (insertion only: an optional `headless` field in `HelloMessage`)
 - module/src/link/bridge.ts (the headless flag only)
@@ -272,3 +272,19 @@ Live result from round 7, for task 43: on this Ubuntu 26.04 host `apparmor_restr
   input: close the terminal running a local-mode gateway (or `kill -HUP <pid>`) →  node exits and headless Chromium keeps running against Foundry.
 - [P3] gateway/src/headless/runner.ts:228-235: the sandbox message is logged on every poll, about 240 times an hour. Log it once per run, like `notInstalledLogged`/`statusFailureLogged`, with a test of two polls giving one line. Also update the `RunnerOptions.noSandbox` doc comment at :104, which still says "Launch Chromium with `--no-sandbox`".
   route: implementer
+
+## Amendment 3 (2026-10-15)
+
+Andrew, from the review of the round 8 fix (see "Review round 8 — findings" and the round-8 re-review).
+
+### Decisions
+
+1. **SIGHUP shuts the gateway down gracefully, the same as SIGINT and SIGTERM.** gateway/src/bin/cli.ts adds `process.once('SIGHUP', shutdown)` next to the existing SIGINT and SIGTERM handlers (cli.ts:565-568), so `app.stop()` runs (closing the headless browser within 5 s) and the process exits. Playwright's own SIGHUP handler is turned off again: `launchOptions` sets `handleSIGHUP: false` alongside `handleSIGINT: false` and `handleSIGTERM: false`, so only the gateway decides what a signal does. This replaces the round 8 fix of keeping Playwright's default SIGHUP handler.
+   - Reason: with Playwright's default SIGHUP handler attached, Node's terminate-on-SIGHUP no longer applied. In server mode a terminal close or `kill -HUP` closed Chromium but left the gateway running, and the runner relaunched a logged-in Chromium on the next poll. Before task 37, SIGHUP hard-killed the gateway; a graceful stop is better than both.
+2. **Owns for cli.ts widens** to also allow the SIGHUP shutdown handler.
+3. **Note for 43:** the docs must say that SIGHUP, SIGINT and SIGTERM all stop the gateway gracefully.
+
+### Acceptance (added)
+- [ ] A test shows SIGHUP triggers the same shutdown path as SIGTERM: `app.stop()` is called once and the exit code is the same as for SIGTERM.
+- [ ] `launchOptions` sets `handleSIGINT`, `handleSIGTERM` and `handleSIGHUP` all to `false` (test).
+- [ ] Live on this host: with a server-mode gateway running and the headless runner's Chromium up, `kill -HUP <gateway pid>` makes the gateway and all its Chromium descendants exit within 5 s.
