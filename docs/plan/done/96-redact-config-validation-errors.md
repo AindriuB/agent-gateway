@@ -55,3 +55,10 @@ Reviewed HEAD: 96e4baa (code review CLEAN apart from this item).
 Orchestrator scope notes (round 1):
 - Accepted: the edited assertion in gateway/test/bin/link-conflict.test.ts ("exits 2 naming ${bad}", :132,141). Owns says insertions only, but the old assertion required the echoed value, which directly contradicts this task's Goal and Decision (b). It now checks the flag name and the reason hint instead.
 - For the record: docs/plan/done/75-consent-page-footer.md:42 quotes the old message format `Invalid --privacy-url <value>: <why>`. It is a historical record, so it is left as it is.
+
+## Review round 2 — findings (external)
+Andrew's PR review of #154 at 5212ced (2026-10-15).
+
+- [P3] gateway/src/config/index.ts:313: the `--link-host`/`--http-host` refusal ("Refusing --link-host/--http-host <host>…") echoes the value. Given a credential-bearing URL such as `https://agent:hunter2@foundry.local/?token=x`, it prints the credentials and the query string. Our sweep wrongly treated this site as safe ("a host address, not a secret"). That assumed the input is a valid host, when it is whatever the operator typed. Leave the value out of the message and keep the flag name and the reason. Add regression tests for both flags, asserting the message contains neither `hunter2` nor the query, and still names the flag.
+  - Whole class: re-sweep every validation and refusal message in gateway/src/config and gateway/src/bin that interpolates operator input, and drop the assumption that the input has the expected shape. Fix any other site that echoes raw input before it has been validated as safe: agent names already checked against AGENT_NAME and the config file path are fine. List each site and its outcome in the commit message.
+  route: implementer
