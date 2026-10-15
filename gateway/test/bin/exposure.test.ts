@@ -74,6 +74,22 @@ describe('--server-mode', () => {
     expect(await g.exited).toBe(0);
   }, 30_000);
 
+  it('exits 0 on SIGHUP, the same as SIGTERM', async () => {
+    const p = await ports();
+    const g = await start([
+      '--server-mode',
+      '--db',
+      tmpDb(),
+      '--link-port',
+      String(p.link),
+      '--http-port',
+      String(p.http),
+    ]);
+    await until(() => g.err().includes('MCP HTTP at'), 15_000, 'start');
+    g.gw.kill('SIGHUP');
+    expect(await g.exited).toBe(0);
+  }, 30_000);
+
   it('reads server mode and the public URL from the environment', async () => {
     const p = await ports();
     const g = await start(
@@ -98,6 +114,17 @@ describe('bind addresses and public URL', () => {
       const r = run([flag, '0.0.0.0', '--db', tmpDb()]);
       expect(r.status).toBe(2);
       expect(r.stderr).toContain(flag);
+    },
+  );
+
+  it.each(['--http-host', '--link-host'])(
+    '%s with a credential-bearing URL refuses without echoing it',
+    (flag) => {
+      const r = run([flag, 'https://agent:hunter2@foundry.local/?token=x', '--db', tmpDb()]);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(flag);
+      expect(r.stderr).not.toContain('hunter2');
+      expect(r.stderr).not.toContain('token=x');
     },
   );
 

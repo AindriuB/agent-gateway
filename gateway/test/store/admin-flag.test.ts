@@ -66,8 +66,8 @@ describe('migration 012: admin flags', () => {
     ]);
     s.close();
     const check = new DatabaseSync(path);
-    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 });
-    expect(MIGRATIONS).toHaveLength(12);
+    expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 });
+    expect(MIGRATIONS).toHaveLength(13);
     check.close();
   });
 });

@@ -1,3 +1,4 @@
+import { createHash, scryptSync } from 'node:crypto';
 import { safeText } from '../routing/index.js';
 
 /**
@@ -19,6 +20,44 @@ export interface RelayConfig {
   linkHost: string;
   httpHost: string;
   trustProxy: boolean;
+  /**
+   * `''` when no headless agent is configured and this process holds no stored agent's password,
+   * else a one-way digest of the flag/env agent's Foundry URL, world, user, sandbox flag and
+   * password, and of the stored agents' names and passwords this process holds (the stored rows
+   * themselves are shared through the state dir, so they are not part of it). Session-affecting:
+   * only the primary runs the agents, so a gateway with different headless settings must take
+   * over, not relay. Never the raw values.
+   */
+  headless: string;
+}
+
+/**
+ * The comparable form of the headless settings. The password goes through scrypt first, so the
+ * digest of a weak password is not a cheap offline guess; the result is held in memory and sent
+ * only over the owner-only relay socket, never logged or written.
+ */
+export function headlessFingerprint(
+  agent: { foundryUrl: string; worldId: string; userId: string; password: string } | undefined,
+  noSandbox: boolean,
+  stored: readonly { name: string; password: string }[] = [],
+): string {
+  if (!agent && stored.length === 0) return '';
+  const scrypt = (pw: string): string =>
+    scryptSync(pw, 'agent-gateway/headless/relay-config', 32).toString('hex');
+  const base: unknown[] = agent
+    ? [agent.foundryUrl, agent.worldId, agent.userId, noSandbox, scrypt(agent.password)]
+    : [null, null, null, noSandbox, null];
+  // With no stored passwords the input is exactly the single-agent form, so the digest is unchanged.
+  const parts =
+    stored.length === 0
+      ? base
+      : [
+          ...base,
+          [...stored]
+            .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+            .map((s) => [s.name, scrypt(s.password)]),
+        ];
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 
 export const makeRelayConfig = (
@@ -27,7 +66,10 @@ export const makeRelayConfig = (
   logLevel: string,
   startedAt: number,
   extra: Partial<
-    Pick<RelayConfig, 'publicUrl' | 'serverMode' | 'linkHost' | 'httpHost' | 'trustProxy'>
+    Pick<
+      RelayConfig,
+      'publicUrl' | 'serverMode' | 'linkHost' | 'httpHost' | 'trustProxy' | 'headless'
+    >
   > = {},
 ): RelayConfig => ({
   allowOrigins: [...allowOrigins].sort(),
@@ -39,6 +81,7 @@ export const makeRelayConfig = (
   linkHost: extra.linkHost ?? '127.0.0.1',
   httpHost: extra.httpHost ?? '127.0.0.1',
   trustProxy: extra.trustProxy ?? false,
+  headless: extra.headless ?? '',
 });
 
 const str = (v: unknown, fallback: string): string =>
@@ -67,17 +110,22 @@ export function parseRelayConfig(v: unknown): RelayConfig | undefined {
     linkHost: str(c.linkHost, '127.0.0.1'),
     httpHost: str(c.httpHost, '127.0.0.1'),
     trustProxy: c.trustProxy === true,
+    headless: str(c.headless, ''),
   };
 }
 
 /**
  * The session-affecting part: a relayed MCP session runs on the primary's link, store and
  * selector, so only `allowOrigins` (which decides who may reach that link) changes what such a
- * session can do. A mismatch here is never served.
+ * session can do; `headless` joins it because only the primary runs the agent. A mismatch here is never served.
+ * Argument order matters: `a` is the caller, `b` the primary. A caller with no headless settings
+ * (`''`) matches a primary that has them, so a plain MCP client relays to a running agent instead
+ * of stopping it; any other headless difference is a mismatch.
  */
 export const sameSessionConfig = (a: RelayConfig, b: RelayConfig): boolean =>
   a.publicUrl === b.publicUrl &&
   a.serverMode === b.serverMode &&
+  (a.headless === '' || a.headless === b.headless) &&
   a.allowOrigins.length === b.allowOrigins.length &&
   a.allowOrigins.every((o, i) => o === b.allowOrigins[i]);
 
@@ -95,8 +143,16 @@ export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
   a.trustProxy === b.trustProxy &&
   sameSessionConfig(a, b);
 
-/** Names what differs, for logs and the degraded reason. Untrusted text is sanitised. */
-export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | undefined): string {
+/**
+ * Names what differs, for logs and the degraded reason. Untrusted text is sanitised.
+ * `mineIsCaller` says which side `mine` is: a caller with no headless settings against a primary
+ * that has them is tolerated (see `sameSessionConfig`), so that difference is not reported.
+ */
+export function describeConfigDiff(
+  mine: RelayConfig,
+  theirs: RelayConfig | undefined,
+  mineIsCaller: boolean,
+): string {
   if (!theirs) return 'the other gateway did not report its configuration';
   const parts: string[] = [];
   if (mine.allowOrigins.join(',') !== theirs.allowOrigins.join(','))
@@ -125,5 +181,9 @@ export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | unde
     parts.push(
       `trust proxy ${mine.trustProxy ? 'on' : 'off'} here vs ${theirs.trustProxy ? 'on' : 'off'} there`,
     );
+  const caller = mineIsCaller ? mine : theirs;
+  const primary = mineIsCaller ? theirs : mine;
+  if (mine.headless !== theirs.headless && !(caller.headless === '' && primary.headless !== ''))
+    parts.push('headless agent settings differ');
   return parts.join('; ') || 'configuration differs';
 }

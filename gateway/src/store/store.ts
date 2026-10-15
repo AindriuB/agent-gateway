@@ -1,5 +1,9 @@
 import { createEventRepository, type EventRepository } from '../events/repository.js';
 import { createQueueRepository, type QueueRepository } from '../offline-queue/repository.js';
+import {
+  createHeadlessRepository,
+  type HeadlessRepository,
+} from '../headless/config/repository.js';
 import { createOAuthRepository, type OAuthRepository } from '../oauth/repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
@@ -100,6 +104,7 @@ export interface Store {
   readonly queue: QueueRepository;
   readonly oauth: OAuthRepository;
   readonly invites: InviteRepository;
+  readonly headless: HeadlessRepository;
   /**
    * Run `fn` inside `BEGIN IMMEDIATE ... COMMIT`, so the write lock is taken first and
    * `busy_timeout` covers the wait. Rolls back and rethrows the original error on failure. Inside
@@ -384,6 +389,7 @@ export function openStore(
     queue: createQueueRepository(db),
     oauth,
     invites,
+    headless: createHeadlessRepository(db),
     transaction,
     onPairingRevoked(listener) {
       revokedListeners.add(listener);

@@ -8,14 +8,22 @@ port. `gateway/test/conformance/schemas.test.ts` checks every emitted tool
 schema (object type, `additionalProperties: false`, no `$ref`) and every tool
 name (`^[a-zA-Z0-9_-]{1,64}$`, at most 36 characters).
 
+The same script then runs an OAuth mode: it starts the gateway with
+`--public-url http://127.0.0.1:<free port>`, registers a client, authorizes
+through the consent page (the fake module receives the consent code over the
+link and the script submits it with the CSRF token), exchanges the code, and runs
+the Inspector CLI `tools/list` and one `tools/call` with the access token. A
+static bearer against that gateway must get 401. The final line names the modes
+that ran, `oauth` among them.
+
 | Client         | stdio                                 | `.mcpb` | Local HTTP                            | OAuth                                 |
 | -------------- | ------------------------------------- | ------- | ------------------------------------- | ------------------------------------- |
 | Claude Desktop | MVP A                                 | MVP A   | not supported in this release (MVP B) | not supported in this release (MVP B) |
 | Claude Code    | MVP A                                 | n/a     | MVP A                                 | not supported in this release (MVP B) |
-| claude.ai      | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
-| ChatGPT        | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
-| Gemini CLI     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
-| Gemini app     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | not supported in this release (MVP B) |
+| claude.ai      | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
+| ChatGPT        | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
+| Gemini CLI     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
+| Gemini app     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
 
 ## Per-release manual checklist (MVP A rows)
 
@@ -41,3 +49,45 @@ Claude Code (Local HTTP):
 
 - [ ] `claude mcp add --transport http` with `http://127.0.0.1:7421/mcp` and the bearer header connects; `/mcp` shows it healthy.
 - [ ] A read tool call works over HTTP; a request without the token is refused with 401.
+
+## Per-release manual checklist (remote clients, OAuth)
+
+Run for each release candidate against a test world, with the gateway reachable
+through its public HTTPS URL (`--public-url`). Record the result and the client
+version. Each client needs the account named; these cannot run in CI.
+
+The steps are the same for each client:
+
+1. Connect the client to `https://<public host>/mcp`; it discovers OAuth and registers itself.
+2. On the consent page, name the world and the Foundry user, choose scopes, and enter the code shown in that user's Foundry window; the client reports it is connected.
+3. One read call returns a sensible result from Foundry.
+4. One write call is held for approval in Foundry; nothing changes until approved.
+5. Revoke the grant from Foundry; the next call from the client gets 401 and the client asks to reconnect.
+
+claude.ai (custom connector, Claude account):
+
+- [ ] Connect through the public URL and complete consent.
+- [ ] One read call works.
+- [ ] One write call is held for approval.
+- [ ] Revoke from Foundry; the next call gets 401.
+
+ChatGPT (developer mode connector, ChatGPT account):
+
+- [ ] Connect through the public URL and complete consent.
+- [ ] One read call works.
+- [ ] One write call is held for approval.
+- [ ] Revoke from Foundry; the next call gets 401.
+
+Gemini CLI (`gemini mcp add` with the public URL):
+
+- [ ] Connect through the public URL and complete consent.
+- [ ] One read call works.
+- [ ] One write call is held for approval.
+- [ ] Revoke from Foundry; the next call gets 401.
+
+Gemini app (Google account):
+
+- [ ] Connect through the public URL and complete consent.
+- [ ] One read call works.
+- [ ] One write call is held for approval.
+- [ ] Revoke from Foundry; the next call gets 401.

@@ -12,6 +12,7 @@ import {
   type CredentialStore,
 } from './credential-store.js';
 import { effectiveFromSettings } from './gateway-url.js';
+import { linkAgentHeadless } from './bridge.js';
 import { postVouch } from './vouch.js';
 import {
   installToolsetAnnouncer,
@@ -24,6 +25,23 @@ declare const game: any;
 declare const ui: any;
 
 const NS = 'agent-gateway';
+
+/** Session-storage key the headless runner reads (with `page.evaluate`) to see the link's state. */
+export const HEADLESS_LINK_KEY = 'agent-gateway.headless.link';
+
+/** Mirrors the link state into session storage for the runner. Never carries a token, code or nonce. */
+function mirrorHeadlessState(c: LinkClient): void {
+  const write = (s: LinkClient['state']): void => {
+    try {
+      const v = s.kind === 'disconnected' && s.reason === 'REPLACED' ? 'replaced' : s.kind;
+      globalThis.sessionStorage?.setItem(HEADLESS_LINK_KEY, v);
+    } catch {
+      // Storage blocked: the runner sees no signal.
+    }
+  };
+  write(c.state);
+  c.onState(write);
+}
 
 let client: LinkClient | null = null;
 let store: CredentialStore | null = null;
@@ -47,6 +65,7 @@ const owner = (owner?: TokenOwner): Omit<CredentialOwner, 'url'> => ({
   userId: owner?.userId ?? String(game.user?.id ?? ''),
 });
 let announcer: ToolsetAnnouncer | null = null;
+let mirrored = false;
 
 /**
  * The old `pairingToken` string is not tied to any gateway, so it is never sent: clear it
@@ -117,12 +136,18 @@ export function getLinkClient(): LinkClient {
         role: Number(game.user?.role ?? 0),
         isGM: Boolean(game.user?.isGM),
       },
+      // Sent only when set: a human's module never carries the field.
+      ...(linkAgentHeadless() ? { headless: true } : {}),
     }),
     createSocket: (url) => new WebSocket(url) as any,
     notifyError: (m) => ui.notifications.error(m),
     notifyWarn: (k) => ui.notifications.warn(game.i18n.localize(k)),
     postVouch,
   });
+  if (!mirrored && linkAgentHeadless()) {
+    mirrored = true;
+    mirrorHeadlessState(client);
+  }
   announcer ??= installToolsetAnnouncer(client, {
     isGM: () => Boolean(game.user?.isGM),
     isCategoryDenied: policyDenies(liveInputs, () => Boolean(game.user?.isGM)),

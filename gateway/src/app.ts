@@ -18,6 +18,16 @@ import {
   type PairingCodesOptions,
 } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import { HeadlessInvites } from './headless/invites.js';
+import {
+  HeadlessRunner,
+  type BrowserLauncher,
+  type HeadlessAgent,
+  type RunnerOptions,
+} from './headless/runner.js';
+import { knownIdentitiesFor } from './headless/config/follow.js';
+import { findBrowser, playwrightLauncher } from './headless/browser.js';
+import { canonicalOrigin } from './link/origin.js';
 import {
   HTTP_BIND_HOST,
   HTTP_SESSION_IDLE_MS,
@@ -35,6 +45,7 @@ import { safeText, type UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 import {
   LocalUpstream,
+  headlessFingerprint,
   makeRelayConfig,
   createStandbyServer,
   RelaySecondary,
@@ -119,6 +130,28 @@ export interface AppDeps {
   revocationSweepMs?: number;
   /** The OAuth consent step (public mode). Defaults to auto-deny until the consent page (67). */
   oauthConsent?: ConsentStep;
+  /** The headless runner's browser, clocks and timings; tests replace them. */
+  headless?: {
+    launcher?: BrowserLauncher;
+    /** Browser discovery, run once per primary when no `launcher` is given. */
+    discover?: typeof findBrowser;
+    /** Builds the one shared launcher from the discovered browser's path. */
+    launcherFor?: (executablePath: string) => BrowserLauncher;
+    now?: () => number;
+    runner?: Partial<
+      Pick<
+        RunnerOptions,
+        | 'fetch'
+        | 'now'
+        | 'pollMs'
+        | 'linkGraceMs'
+        | 'pairWaitMs'
+        | 'setInterval'
+        | 'clearInterval'
+        | 'sleep'
+      >
+    >;
+  };
   /** Overrides for the HTTP limits; tests shorten them. */
   httpLimits?: Partial<{
     maxRequestBytes: number;
@@ -145,6 +178,15 @@ export function createApp(config: Config, deps: AppDeps): App {
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
   let sweep: RevocationSweep | undefined;
+  // One runner per headless agent, keyed by [world, user]; reconciled with the stored agents on
+  // every revocation sweep. `stops` holds a removed agent's runner until its browser has closed.
+  const runners = new Map<string, { runner: HeadlessRunner; sig: string }>();
+  const stops = new Map<string, Promise<void>>();
+  const failedStarts = new Set<string>();
+  const passwordWarned = new Set<string>();
+  let headlessCtx: { invites: HeadlessInvites; registry: LinkRegistry; port: number } | undefined;
+  // The one browser discovery and launcher, shared by every runner. null: none was found.
+  let sharedLauncher: BrowserLauncher | null | undefined;
   // One step-down transition at a time; a request that arrives during one is ignored.
   let steppingDown = false;
   let httpNoticeShown = false;
@@ -160,6 +202,12 @@ export function createApp(config: Config, deps: AppDeps): App {
   const trustProxy = config.trustProxy === true;
   const httpOn = deps.http === true || isPublic || serverMode;
   let exposureNoticesShown = false;
+  // Every Config field that changes what the primary does is compared, or is left out on purpose:
+  //  - compared: httpPort, logLevel, publicUrl, serverMode, linkHost, httpHost, trustProxy,
+  //    allowedOrigins, and the headless agent (as a digest, see headlessFingerprint);
+  //  - linkPort: the port is what finds the primary, so a different one never meets it;
+  //  - http: the app reads deps.http, not this field (the CLI maps the flag to it);
+  //  - privacyUrl, sourceUrl: only links on the consent pages; not compared (known gap).
   const relayConfig = () =>
     makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt, {
       publicUrl,
@@ -167,8 +215,45 @@ export function createApp(config: Config, deps: AppDeps): App {
       linkHost,
       httpHost,
       trustProxy,
+      headless: (fingerprint ??= headlessFingerprint(
+        agentCfg,
+        config.headlessNoSandbox === true,
+        Object.entries(storedPasswords).map(([name, password]) => ({ name, password })),
+      )),
     });
+  // Computed once: the scrypt behind it is slow on purpose, and the inputs never change.
+  let fingerprint: string | undefined;
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
+  // The one flag/env headless agent (task 37); all four settings are present or none.
+  const agentCfg =
+    config.headlessFoundryUrl && config.headlessWorld && config.headlessUser
+      ? {
+          foundryUrl: config.headlessFoundryUrl,
+          worldId: config.headlessWorld,
+          userId: config.headlessUser,
+          password: config.headlessPassword ?? '',
+        }
+      : undefined;
+  const isConfiguredAgent = (worldId: string, userId: string): boolean =>
+    agentCfg !== undefined && worldId === agentCfg.worldId && userId === agentCfg.userId;
+  // Passwords of the stored agents this process holds, read once at start (task 38).
+  const storedPasswords: Readonly<Record<string, string>> = config.headlessAgentPasswords ?? {};
+  const storedRow = (worldId: string, userId: string) => {
+    try {
+      return store?.headless.getByIdentity(worldId, userId);
+    } catch {
+      // A store that is closing answers "no": the safe side for activity checks.
+      return undefined;
+    }
+  };
+  /** The flag/env agent, or any (world, user) with a stored row, read now. Redeem time is the authority. */
+  const isActiveAgent = (worldId: string, userId: string): boolean =>
+    isConfiguredAgent(worldId, userId) || storedRow(worldId, userId) !== undefined;
+  const headlessOwner = (worldId: string, userId: string): string | undefined =>
+    isConfiguredAgent(worldId, userId)
+      ? undefined
+      : (storedRow(worldId, userId)?.ownerUserId ?? undefined);
+  const agentKey = (worldId: string, userId: string): string => JSON.stringify([worldId, userId]);
   // What this instance found in its way, for the one log line written once its role is final.
   let holds = `another gateway holds link port ${config.linkPort}`;
   const app: App = {
@@ -214,6 +299,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       codes = undefined;
       sweep?.stop();
       sweep = undefined;
+      await stopRunners();
       await httpServer?.close();
       httpServer = undefined;
       await secondary?.stop();
@@ -334,6 +420,7 @@ export function createApp(config: Config, deps: AppDeps): App {
     codes = undefined;
     sweep?.stop();
     sweep = undefined;
+    await stopRunners();
     await httpServer?.close();
     httpServer = undefined;
     await relay?.close();
@@ -443,6 +530,148 @@ export function createApp(config: Config, deps: AppDeps): App {
     await secondary.start(reason);
   }
 
+  /** Stop every runner and forget the shared browser; the next primary term discovers it again. */
+  async function stopRunners(): Promise<void> {
+    const all = [...runners.values()].map((r) => r.runner);
+    runners.clear();
+    failedStarts.clear();
+    headlessCtx = undefined;
+    sharedLauncher = undefined;
+    await Promise.all([...all.map((r) => r.stop()), ...stops.values()]);
+  }
+
+  /** The browser launcher shared by every runner; discovery and its log line happen once. */
+  function launcherForRunners(dir: string): BrowserLauncher | undefined {
+    if (sharedLauncher !== undefined) return sharedLauncher ?? undefined;
+    if (deps.headless?.launcher) return (sharedLauncher = deps.headless.launcher);
+    const found = (deps.headless?.discover ?? findBrowser)(dir);
+    if (!found) {
+      writeStatus(
+        `headless agents: no Chrome, Edge or Chromium found; install one, or put Chromium under ${join(dir, 'browsers')}. Runners off`,
+      );
+      sharedLauncher = null;
+      return undefined;
+    }
+    writeStatus(`headless runner browser: ${found.kind} at ${found.path}`);
+    sharedLauncher = (deps.headless?.launcherFor ?? playwrightLauncher)(found.path);
+    return sharedLauncher;
+  }
+
+  /** Primary only: warn about stray pairings for the agent identity, then start its runner. */
+  function startHeadless(agent: HeadlessAgent, key: string, sig: string): void {
+    const ctx = headlessCtx;
+    if (!ctx) return;
+    const who = `${safeText(agent.worldId)}/${safeText(agent.userId)}`;
+    const origin = canonicalOrigin(new URL(agent.foundryUrl).origin);
+    for (const p of store?.listActivePairings() ?? []) {
+      if (p.worldId !== agent.worldId || p.userId !== agent.userId) continue;
+      writeStatus(
+        p.origin === origin
+          ? `headless agent ${who} has an active pairing from its own origin ${sanitizeOrigin(p.origin ?? undefined)}; the runner reconnects with it`
+          : `warning: headless agent ${who} has an active pairing from origin ${sanitizeOrigin(p.origin ?? undefined)}, which is not the runner's; revoke it with --revoke-pairing ${agent.worldId} ${agent.userId} unless it is yours`,
+      );
+    }
+    if (!stateDir) {
+      writeStatus(
+        `headless agent ${who} needs a database file for its browser profile; runner off`,
+      );
+      failedStarts.add(key);
+      return;
+    }
+    const launcher = launcherForRunners(stateDir);
+    if (!launcher) {
+      failedStarts.add(key);
+      return;
+    }
+    const candidate = new HeadlessRunner({
+      agent,
+      stateDir,
+      gatewayLinkUrl: `ws://localhost:${ctx.port}`,
+      invites: ctx.invites,
+      noSandbox: config.headlessNoSandbox,
+      launcher,
+      isLinked: () => {
+        const c = ctx.registry.get(agent.worldId, agent.userId);
+        return c !== undefined && !c.closed;
+      },
+      log: writeStatus,
+      ...deps.headless?.runner,
+    });
+    if (candidate.start()) runners.set(key, { runner: candidate, sig });
+    else failedStarts.add(key);
+  }
+
+  /**
+   * Make the running agents match the flag/env agent plus the stored ones this process holds a
+   * password for. Runs once at start and on every revocation sweep, so a `headless add` or
+   * `remove` made by the CLI reaches a running gateway. A removed agent's runner is stopped (its
+   * profile is kept); its live connection is closed by the same sweep, because `remove` revoked
+   * its pairings.
+   */
+  function reconcileHeadless(): void {
+    const ctx = headlessCtx;
+    if (!ctx || !store) return;
+    const wanted = new Map<string, { agent: HeadlessAgent; sig: string }>();
+    const want = (agent: HeadlessAgent): void => {
+      const key = agentKey(agent.worldId, agent.userId);
+      if (!wanted.has(key))
+        wanted.set(key, {
+          agent,
+          sig: JSON.stringify([agent.foundryUrl, agent.password]),
+        });
+    };
+    if (agentCfg) want(agentCfg);
+    let rows;
+    try {
+      rows = store.headless.list();
+    } catch (err) {
+      writeStatus(`headless agents could not be read: ${safeText((err as Error).message)}`);
+      return;
+    }
+    const names = new Set<string>();
+    for (const row of rows) {
+      names.add(row.name);
+      // Own keys only: an agent named `constructor` must not find an inherited function.
+      const password = Object.hasOwn(storedPasswords, row.name)
+        ? storedPasswords[row.name]
+        : undefined;
+      if (password === undefined) {
+        if (!passwordWarned.has(row.name)) {
+          passwordWarned.add(row.name);
+          writeStatus(
+            `headless agent ${safeText(row.name)} has no password in this gateway's environment or config file; not started`,
+          );
+        }
+        continue;
+      }
+      want({
+        foundryUrl: row.foundryUrl,
+        worldId: row.worldId,
+        userId: row.userId,
+        password,
+      });
+    }
+    for (const n of passwordWarned) if (!names.has(n)) passwordWarned.delete(n);
+    for (const [key, entry] of [...runners]) {
+      const w = wanted.get(key);
+      if (w && w.sig === entry.sig) continue;
+      runners.delete(key);
+      const agent = JSON.parse(key) as [string, string];
+      ctx.invites.dropAgent(agent[0], agent[1]);
+      const stopping = entry.runner.stop().finally(() => {
+        if (stops.get(key) === stopping) stops.delete(key);
+        // A re-add that waited for this stop starts on the next pass, or right now.
+        if (headlessCtx === ctx) reconcileHeadless();
+      });
+      stops.set(key, stopping);
+    }
+    for (const key of [...failedStarts]) if (!wanted.has(key)) failedStarts.delete(key);
+    for (const [key, w] of wanted) {
+      if (runners.has(key) || stops.has(key) || failedStarts.has(key)) continue;
+      startHeadless(w.agent, key, w.sig);
+    }
+  }
+
   async function startPrimary(transport: Transport | undefined, retryHttp = false): Promise<void> {
     // Never start over a live primary: it would replace `link` and orphan the original.
     if (link) throw new Error('this process already holds the link');
@@ -530,6 +759,12 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
       return false;
     };
+    // Always on: an agent can be stored while the gateway runs, and a provider with no matching
+    // invite leaves the local shared code working for everyone else.
+    const headlessInvites = new HeadlessInvites({
+      isAgentActive: isActiveAgent,
+      ...(deps.headless?.now ? { now: deps.headless.now } : {}),
+    });
     link = new LinkServer({
       port: config.linkPort,
       host: linkHost,
@@ -538,6 +773,10 @@ export function createApp(config: Config, deps: AppDeps): App {
       // Per-client limits in server mode need real client keys with or without a public URL.
       ...(trustProxy ? { trustProxy } : {}),
       serverMode,
+      inviteProvider: headlessInvites,
+      isHeadlessAgent: isActiveAgent,
+      headlessOwner,
+      log: writeStatus,
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
         if (isPublic) thisCodes.issue('consumed');
@@ -606,19 +845,32 @@ export function createApp(config: Config, deps: AppDeps): App {
       ...(deps.revocationSweepMs !== undefined ? { intervalMs: deps.revocationSweepMs } : {}),
       warn: writeStatus,
     });
+    sweep.onSweep(reconcileHeadless);
     sweep.start();
-    const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
+    headlessCtx = { invites: headlessInvites, registry, port };
+    reconcileHeadless();
+    // The pool a session binds from: follow mode (no user selector) never sees a headless agent.
+    const sessionOptions = (
+      e: EventBuffer,
+      q: OfflineQueue,
+      selectorUser: string | undefined = deps.selector?.user,
+    ) => ({
       version: deps.version,
       registry,
       events: e,
       queue: q,
       ...(deps.selector ? { selector: deps.selector } : {}),
       knownIdentities: () =>
-        store?.listActivePairings().map((p) => ({
-          worldId: p.worldId,
-          userId: p.userId,
-          userName: p.userName,
-        })) ?? [],
+        knownIdentitiesFor(
+          selectorUser,
+          () =>
+            store?.listActivePairings().map((p) => ({
+              worldId: p.worldId,
+              userId: p.userId,
+              userName: p.userName,
+            })) ?? [],
+          isActiveAgent,
+        ),
       log: writeStatus,
       pairingState: (worldId: string, userId: string) =>
         store?.pairingStateFor(worldId, userId) ?? 'none',
@@ -687,7 +939,11 @@ export function createApp(config: Config, deps: AppDeps): App {
             throw new Error('a public session needs a granted (world, user)');
           return track(
             createSessionServer({
-              ...sessionOptions(ready.events, ready.queue),
+              ...sessionOptions(
+                ready.events,
+                ready.queue,
+                principal.selector ? principal.selector.userId : deps.selector?.user,
+              ),
               ...(principal.selector
                 ? {
                     selector: {

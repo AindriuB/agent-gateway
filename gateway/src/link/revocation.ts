@@ -28,8 +28,15 @@ export class RevocationSweep {
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly dropped = new WeakSet<LinkConnection>();
   private lastPrune: number | undefined;
+  private readonly sweepCallbacks = new Set<() => void>();
 
   constructor(private readonly opts: RevocationSweepOptions) {}
+
+  /** Run `fn` on every pass (task 38: the headless agents' reconcile). Returns the unsubscribe. */
+  onSweep(fn: () => void): () => void {
+    this.sweepCallbacks.add(fn);
+    return () => void this.sweepCallbacks.delete(fn);
+  }
 
   start(): void {
     if (this.timer) return;
@@ -60,6 +67,13 @@ export class RevocationSweep {
       } catch (err) {
         // A closing store must not crash the timer.
         this.opts.warn?.(`revocation sweep failed: ${(err as Error).message}`);
+      }
+    }
+    for (const fn of this.sweepCallbacks) {
+      try {
+        fn();
+      } catch (err) {
+        this.opts.warn?.(`sweep callback failed: ${(err as Error).message}`);
       }
     }
     return closed;

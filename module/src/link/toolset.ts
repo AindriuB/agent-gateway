@@ -1,4 +1,4 @@
-import { LINK_AGENT_HEADLESS } from './bridge.js';
+import { linkAgentHeadless } from './bridge.js';
 import type { LinkClient } from './client.js';
 import { evaluate, type PolicyInputs } from '../policy/evaluate.js';
 import { type AnnouncedTool, type ToolCategory } from '@agent-gateway/protocol';
@@ -83,7 +83,7 @@ export class ToolsetAnnouncer {
 export function policyDenies(
   inputs: () => PolicyInputs,
   isGM: () => boolean,
-  headless: boolean = LINK_AGENT_HEADLESS,
+  headless: boolean = linkAgentHeadless(),
 ): (category: ToolCategory) => boolean {
   return (category) => {
     const v = evaluate(inputs(), { isGM: isGM(), headless, category });
@@ -117,7 +117,7 @@ export function installToolsetAnnouncer(
 export function policyAllowsEventReads(
   inputs: () => PolicyInputs,
   isGM: () => boolean,
-  headless = LINK_AGENT_HEADLESS,
+  headless = linkAgentHeadless(),
 ): () => boolean {
   return () => {
     const verdict = evaluate(inputs(), { isGM: isGM(), headless, category: 'read' });

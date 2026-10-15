@@ -6,6 +6,7 @@ import {
   MAX_RELAY_HANDSHAKE_BYTES,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_SESSIONS,
+  RELAY_CAP_HEADLESS,
   RELAY_HANDSHAKE_MS,
   RELAY_VERSION,
   STEPDOWN_GRACE_MS,
@@ -196,7 +197,10 @@ export class RelayServer {
   }
 
   private refuse(socket: Socket, code: RelayRefusal, extra: object = {}): void {
-    socket.end(`${JSON.stringify({ relay: RELAY_VERSION, ok: false, code, ...extra })}\n`);
+    // Capabilities are only told to an authenticated peer.
+    const caps =
+      code === 'RELAY_AUTH' || code === 'RELAY_PROTOCOL' ? {} : { caps: [RELAY_CAP_HEADLESS] };
+    socket.end(`${JSON.stringify({ relay: RELAY_VERSION, ok: false, code, ...caps, ...extra })}\n`);
     // A peer that never closes its side must not hold a pre-auth slot.
     const grace = setTimeout(() => socket.destroy(), REFUSAL_GRACE_MS);
     grace.unref();
@@ -290,10 +294,15 @@ export class RelayServer {
       // A relayed session runs on this primary's link, store and selector, so a difference in
       // `allowOrigins` is never served. A difference only in the session-neutral ports and log
       // level is served, unless the caller is strictly newer: then this primary steps down for it.
-      const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
+      // A headless primary never steps down for a caller with no headless settings: a plain MCP
+      // client must not stop a running agent, however new it is or whatever else differs.
+      const newer =
+        !!theirConfig &&
+        theirConfig.startedAt > this.opts.config.startedAt &&
+        !(this.opts.config.headless !== '' && theirConfig.headless === '');
       const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
       if (newer || !neutralOnly) {
-        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`;
+        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig, false)}${newer ? '; stepping down for the newer instance' : ''}`;
         // Keyed on the logged text, not the peer's start time: peers with the same settings but
         // different start times must not take turns defeating the dedup. Bounded; cleared when full.
         const key = `${newer ? 'STEPDOWN' : 'MISMATCH'} ${text}`;
@@ -306,11 +315,14 @@ export class RelayServer {
           config: this.opts.config,
         });
         if (newer)
-          this.stepDown(describeConfigDiff(this.opts.config, theirConfig), theirConfig!.startedAt);
+          this.stepDown(
+            describeConfigDiff(this.opts.config, theirConfig, false),
+            theirConfig!.startedAt,
+          );
         return;
       }
       this.opts.log(
-        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig)}`,
+        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig, false)}`,
       );
     }
     if (this.active >= MAX_RELAY_SESSIONS) {
@@ -342,7 +354,9 @@ export class RelayServer {
       this.opts.log(`relay session ${n} closed`);
     };
     socket.once('close', end);
-    socket.write(`${JSON.stringify({ relay: RELAY_VERSION, ok: true })}\n`);
+    socket.write(
+      `${JSON.stringify({ relay: RELAY_VERSION, ok: true, caps: [RELAY_CAP_HEADLESS] })}\n`,
+    );
     this.opts.log(`relay session ${n} opened`);
     server.connect(transport).then(
       () => socket.resume(),

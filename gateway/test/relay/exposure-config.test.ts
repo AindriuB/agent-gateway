@@ -80,16 +80,37 @@ describe('exposure settings in the relay config', () => {
   });
 
   it('names each differing field', () => {
-    const text = describeConfigDiff(BASE, {
-      ...BASE,
-      publicUrl: 'https://gw.example.com',
-      serverMode: true,
-      linkHost: '0.0.0.0',
-      httpHost: '0.0.0.0',
-      trustProxy: true,
-    });
+    const text = describeConfigDiff(
+      BASE,
+      {
+        ...BASE,
+        publicUrl: 'https://gw.example.com',
+        serverMode: true,
+        linkHost: '0.0.0.0',
+        httpHost: '0.0.0.0',
+        trustProxy: true,
+      },
+      true,
+    );
     for (const w of ['public URL', 'server mode', 'link host', 'http host', 'trust proxy'])
       expect(text).toContain(w);
+  });
+
+  it('reports a headless difference only when it was not tolerated', () => {
+    const fp = 'a'.repeat(64);
+    const plain = BASE;
+    const headless = { ...BASE, headless: fp };
+    const other = { ...BASE, headless: 'b'.repeat(64) };
+    const says = (m: RelayConfig, t: RelayConfig, mineIsCaller: boolean) =>
+      describeConfigDiff(m, t, mineIsCaller).includes('headless agent settings differ');
+    // Tolerated: an empty caller against a primary that has headless settings.
+    expect(says(plain, headless, true)).toBe(false);
+    expect(says(headless, plain, false)).toBe(false);
+    // Not tolerated: a headless caller against a plain primary, and two different fingerprints.
+    expect(says(headless, plain, true)).toBe(true);
+    expect(says(plain, headless, false)).toBe(true);
+    expect(says(headless, other, true)).toBe(true);
+    expect(says(other, headless, false)).toBe(true);
   });
 
   it.each([{ publicUrl: 'https://gw.example.com' }, { serverMode: true }])(

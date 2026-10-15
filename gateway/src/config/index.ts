@@ -42,6 +42,24 @@ export const ConfigSchema = z.object({
   httpHost: z.string().min(1).default('127.0.0.1'),
   /** Key clients by the right-most `X-Forwarded-For` entry when the peer is loopback. */
   trustProxy: boolish.default(false),
+  /** The single headless agent (task 37; 38 generalizes it). All four are set, or none. */
+  headlessFoundryUrl: z.string().default(''),
+  headlessWorld: z.string().default(''),
+  /** A Foundry user id, not a name. */
+  headlessUser: z.string().default(''),
+  /** Only from the environment or the 0600 config file; never a flag. */
+  headlessPassword: z.string().default(''),
+  /**
+   * Run the headless Chromium with `--no-sandbox`. Off by default; the Docker image turns it on,
+   * because Chromium's sandbox cannot start as a non-root user without extra capabilities.
+   */
+  headlessNoSandbox: boolish.default(false),
+  /**
+   * Passwords of the stored headless agents (task 38), by agent name. From
+   * `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or `headless.<name>.password` in the 0600 config file;
+   * never a flag. An agent without an entry is not started. Never an empty string.
+   */
+  headlessAgentPasswords: z.record(z.string(), z.string()).default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -69,7 +87,64 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_LINK_HOST: 'linkHost',
   AGENT_GATEWAY_HTTP_HOST: 'httpHost',
   AGENT_GATEWAY_TRUST_PROXY: 'trustProxy',
+  AGENT_GATEWAY_HEADLESS_FOUNDRY_URL: 'headlessFoundryUrl',
+  AGENT_GATEWAY_HEADLESS_WORLD: 'headlessWorld',
+  AGENT_GATEWAY_HEADLESS_USER: 'headlessUser',
+  AGENT_GATEWAY_HEADLESS_PASSWORD: 'headlessPassword',
+  AGENT_GATEWAY_HEADLESS_NO_SANDBOX: 'headlessNoSandbox',
 };
+
+const AGENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const AGENT_ENV = /^AGENT_GATEWAY_HEADLESS_([A-Z0-9_]+)_PASSWORD$/;
+
+/** The env variable that holds a stored agent's password. */
+export const agentPasswordEnv = (name: string): string =>
+  `AGENT_GATEWAY_HEADLESS_${name.toUpperCase().replaceAll('-', '_')}_PASSWORD`;
+
+/**
+ * The stored agents' passwords: the file's nested `headless.<name>.password`, then env. A key that
+ * is present but empty is refused (the agent user needs a Foundry password); messages name the
+ * key and never a value.
+ */
+function agentPasswords(
+  file: Record<string, unknown>,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const section = file.headless;
+  if (section !== undefined) {
+    if (typeof section !== 'object' || section === null || Array.isArray(section))
+      throw new ConfigError('Config key headless must be an object of agent names');
+    for (const [name, entry] of Object.entries(section)) {
+      const key = `headless.${name}.password`;
+      if (!AGENT_NAME.test(name))
+        throw new ConfigError(
+          `Config key under headless is not a valid agent name (name not shown, it may carry a secret)`,
+        );
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
+        throw new ConfigError(`Config key headless.${name} must be an object with a password`);
+      const pw = (entry as { password?: unknown }).password;
+      if (pw === undefined) continue;
+      if (typeof pw !== 'string') throw new ConfigError(`Config key ${key} must be a string`);
+      if (pw === '')
+        throw new ConfigError(
+          `Config key ${key} is empty; the agent user needs a Foundry password`,
+        );
+      out[name] = pw;
+    }
+  }
+  for (const [envKey, value] of Object.entries(env)) {
+    const m = AGENT_ENV.exec(envKey);
+    // The flag/env agent's own AGENT_GATEWAY_HEADLESS_PASSWORD has no name part and never matches.
+    if (!m || value === undefined) continue;
+    const name = m[1]!.toLowerCase().replaceAll('_', '-');
+    if (!AGENT_NAME.test(name)) continue;
+    if (value === '')
+      throw new ConfigError(`${envKey} is set but empty; the agent user needs a Foundry password`);
+    out[name] = value;
+  }
+  return out;
+}
 
 /**
  * The public URL as a bare origin: `https:` only (`http:` on a loopback host for local testing),
@@ -77,7 +152,10 @@ const ENV_KEYS: Record<string, keyof Config> = {
  */
 export function normalizePublicUrl(value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid --public-url ${value}: ${why}`, 2);
+    throw new ConfigError(
+      `Invalid --public-url (value not shown, it may carry a secret): ${why}`,
+      2,
+    );
   };
   let url: URL;
   try {
@@ -96,6 +174,30 @@ export function normalizePublicUrl(value: string): string {
   return url.origin;
 }
 
+/**
+ * The Foundry URL of the headless agent: http(s), no credentials, query or fragment. A path
+ * (a Foundry route prefix) is kept; a trailing `/` is dropped.
+ */
+export function normalizeFoundryUrl(value: string): string {
+  const refuse = (why: string): never => {
+    throw new ConfigError(
+      `Invalid --headless-foundry-url (value not shown, it may carry a secret): ${why}`,
+      2,
+    );
+  };
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return refuse('not a URL (use e.g. http://foundry.local:30000)');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    return refuse('the scheme must be http or https');
+  if (url.username || url.password) return refuse('it must not carry credentials');
+  if (url.search || url.hash) return refuse('it must not carry a query or fragment');
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+}
+
 const MAX_LINK_URL = 2048;
 
 /**
@@ -104,7 +206,7 @@ const MAX_LINK_URL = 2048;
  */
 export function normalizeLinkUrl(flag: '--privacy-url' | '--source-url', value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid ${flag} ${value.slice(0, 80)}: ${why}`, 2);
+    throw new ConfigError(`Invalid ${flag} (value not shown, it may carry a secret): ${why}`, 2);
   };
   if (value.length > MAX_LINK_URL) return refuse(`longer than ${MAX_LINK_URL} characters`);
   let url: URL;
@@ -140,7 +242,9 @@ export function readConfigFile(path: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
-    throw new ConfigError(`Config file ${path} is not valid JSON: ${(err as Error).message}`);
+    // Never the parser's message: Node quotes a snippet of the file, which may hold a password.
+    if (err instanceof SyntaxError) throw new ConfigError(`Config file ${path} is not valid JSON`);
+    throw new ConfigError(`Cannot read config file ${path}: ${(err as Error).message}`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new ConfigError(`Config file ${path} must contain a JSON object`);
@@ -175,6 +279,8 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   for (const [k, v] of Object.entries(input.flags ?? {})) {
     if (v !== undefined) merged[k] = v;
   }
+  merged.headlessAgentPasswords = agentPasswords(merged, env);
+  delete merged.headless;
   const result = ConfigSchema.safeParse(merged);
   if (!result.success) {
     throw new ConfigError(`Invalid configuration: ${z.prettifyError(result.error)}`);
@@ -185,6 +291,20 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
     config.privacyUrl = normalizeLinkUrl('--privacy-url', config.privacyUrl);
   if (config.sourceUrl !== '')
     config.sourceUrl = normalizeLinkUrl('--source-url', config.sourceUrl);
+  const headless = [
+    config.headlessFoundryUrl,
+    config.headlessWorld,
+    config.headlessUser,
+    config.headlessPassword,
+  ];
+  if (headless.some((v) => v !== '')) {
+    if (headless.some((v) => v === ''))
+      throw new ConfigError(
+        'The headless agent needs --headless-foundry-url, --headless-world, --headless-user and AGENT_GATEWAY_HEADLESS_PASSWORD (or headlessPassword in the 0600 --config file) together',
+        2,
+      );
+    config.headlessFoundryUrl = normalizeFoundryUrl(config.headlessFoundryUrl);
+  }
   // Exposing a listener beyond loopback is allowed only behind a public URL (and a reverse proxy).
   for (const [flag, host] of [
     ['--link-host', config.linkHost],
@@ -192,7 +312,7 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   ] as const) {
     if (config.publicUrl === '' && !isLoopbackAddress(host))
       throw new ConfigError(
-        `Refusing ${flag} ${host}: a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
+        `Refusing ${flag} (value not shown, it may carry a secret): a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
         2,
       );
   }

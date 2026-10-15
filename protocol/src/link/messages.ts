@@ -25,6 +25,8 @@ export const HelloMessage = z.strictObject({
     role: z.number().int(),
     isGM: z.boolean(),
   }),
+  /** Sent only by the gateway's own headless runner; informational, the gateway classifies itself. */
+  headless: z.literal(true).optional(),
   resume: z
     .strictObject({
       connectionId: z.string().min(1).max(100),
@@ -46,6 +48,13 @@ export const WelcomeMessage = z.strictObject({
   pairingToken: z.string().optional(),
   /** Operator-set admin flag of the pairing at this moment; never derived from `hello.user.isGM`. */
   admin: z.boolean().optional(),
+  /**
+   * Sent only to a connection the gateway classifies as headless from its own configuration: the
+   * Foundry user id that approvals for this agent should reach. A routing hint, not a permission.
+   */
+  ownerUserId: z.string().max(64).optional(),
+  /** True only for a connection the gateway itself classified as the headless agent. */
+  headless: z.boolean().optional(),
 });
 
 export const RejectMessage = z.strictObject({

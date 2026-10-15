@@ -364,6 +364,8 @@ export class LinkClient {
   /** The agent id the gateway assigned in `welcome`; null until connected. */
   agentId: string | null = null;
   private admin = false;
+  private welcomeHeadless = false;
+  private welcomeOwner: string | null = null;
   private _state: LinkState = { kind: 'disconnected' };
   /** Injectable; with none installed every call is answered TOOL_NOT_FOUND. */
   onCall: CallHandler | null = null;
@@ -396,6 +398,16 @@ export class LinkClient {
    */
   get isAdmin(): boolean {
     return this.admin && this._state.kind === 'connected';
+  }
+
+  /** True while connected and the last `welcome` said `headless: true` (the gateway's own classification). */
+  get headlessByGateway(): boolean {
+    return this.welcomeHeadless && this._state.kind === 'connected';
+  }
+
+  /** The owner the gateway named in the last `welcome`; meaningful only with `headlessByGateway`. */
+  get headlessOwnerUserId(): string | null {
+    return this.headlessByGateway ? this.welcomeOwner : null;
   }
 
   /** Vouch for the author Foundry recorded on a challenge message. Sent only by an admin link. */
@@ -708,6 +720,8 @@ export class LinkClient {
         this.attempt = 0;
         this.agentId = msg.agentId;
         this.admin = msg.admin === true;
+        this.welcomeHeadless = msg.headless === true;
+        this.welcomeOwner = msg.headless === true ? (msg.ownerUserId ?? null) : null;
         this.gatewayVersion = msg.gatewayVersion;
         const id = this.deps.getIdentity();
         const token = this.authSource === 'unstored' ? undefined : this.tokenFor(url)?.token;
@@ -989,6 +1003,8 @@ export class LinkClient {
     this._state = s;
     if (s.kind !== 'connected') {
       this.admin = false;
+      this.welcomeHeadless = false;
+      this.welcomeOwner = null;
       this.gatewayVersion = null;
       for (const [id, p] of this.grantRequests) {
         clearTimeout(p.timer);

@@ -12,7 +12,9 @@ import { INVITE_TTL_MS, createInvite, parseTtl } from '../link/invites.js';
 import { safeText } from '../routing/sanitize.js';
 import { openStore, type Store } from '../store/index.js';
 import { MIGRATIONS } from '../store/migrations/index.js';
+import { HEADLESS_USAGE, runHeadlessCommand } from '../headless/config/commands.js';
 import { reportStartFailure } from './start-failure.js';
+import { installShutdownSignals } from './signals.js';
 
 const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -68,7 +70,15 @@ Options:
                       Cancel that user's unused invites and exit (exit 1 if there were none)
   --list-invites      List invites (id, target, kind, created, expiry, status; never the code), exit
   --list-pairings     List pairings (world, user, admin, name, origin, created, revoked), exit
-  --world <id>        Bind the MCP session to this Foundry world
+  --headless-foundry-url <url>
+                      Run one agent with no browser open (AGENT_GATEWAY_HEADLESS_FOUNDRY_URL):
+                      the gateway launches Chromium, logs into this Foundry as the agent user
+                      and pairs it itself. Needs --headless-world and --headless-user, and the
+                      password in AGENT_GATEWAY_HEADLESS_PASSWORD (or the 0600 --config file's
+                      headlessPassword); there is no password flag
+  --headless-world <id>  World id the agent joins (AGENT_GATEWAY_HEADLESS_WORLD)
+  --headless-user <id>   Foundry user id of the agent (AGENT_GATEWAY_HEADLESS_USER); an id, not a name
+${HEADLESS_USAGE}  --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
                       default: any http(s) origin, with a pairing code or its own token)
@@ -90,13 +100,13 @@ function normalizeOrigins(values: readonly string[]): string[] {
       url = new URL(v);
     } catch {
       process.stderr.write(
-        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+        `Invalid --allow-origin value (value not shown, it may carry a secret): include http:// or https://, e.g. https://foundry.local\n`,
       );
       process.exit(2);
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       process.stderr.write(
-        `Invalid --allow-origin value: ${v} (include http:// or https://, e.g. https://foundry.local)\n`,
+        `Invalid --allow-origin value (value not shown, it may carry a secret): include http:// or https://, e.g. https://foundry.local\n`,
       );
       process.exit(2);
     }
@@ -454,6 +464,12 @@ function main(): void {
         'source-url': { type: 'string' },
         'server-mode': { type: 'boolean' },
         'trust-proxy': { type: 'boolean' },
+        'headless-foundry-url': { type: 'string' },
+        'headless-world': { type: 'string' },
+        'headless-user': { type: 'string' },
+        'foundry-url': { type: 'string' },
+        owner: { type: 'string' },
+        password: { type: 'string' },
         backup: { type: 'string' },
         invite: { type: 'boolean' },
         'revoke-pairing': { type: 'boolean' },
@@ -486,13 +502,55 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
+  if (!(positionals[0] === 'headless' && positionals[1] === 'add')) {
+    // These belong to `headless add` alone; refuse them elsewhere rather than ignore them. The
+    // message names the flag, never its value.
+    const stray = (['foundry-url', 'owner', 'password'] as const).find(
+      (k) => values[k] !== undefined,
+    );
+    if (stray) {
+      process.stderr.write(`--${stray} goes with headless add\n${USAGE}`);
+      process.exit(2);
+    }
+  }
+  if (positionals[0] === 'headless') {
+    process.exitCode = runHeadlessCommand({
+      argv: positionals.slice(1),
+      values,
+      dbPath: values.db ?? process.env.AGENT_GATEWAY_DB ?? defaultDbPath(),
+      schemaProblem,
+      // Only `add` asks: the flag/env agent is what this invocation's flags, env and file say.
+      flagAgent: () => {
+        try {
+          const c = loadConfig({
+            configPath: values.config,
+            flags: {
+              headlessFoundryUrl: values['headless-foundry-url'],
+              headlessWorld: values['headless-world'],
+              headlessUser: values['headless-user'],
+            },
+          });
+          return c.headlessWorld && c.headlessUser
+            ? { worldId: c.headlessWorld, userId: c.headlessUser }
+            : undefined;
+        } catch (err) {
+          if (!(err instanceof ConfigError)) throw err;
+          process.stderr.write(`${err.message}\n`);
+          return process.exit(err.exitCode);
+        }
+      },
+      out: (l) => void process.stdout.write(l),
+      err: (l) => void process.stderr.write(l.endsWith('\n') ? l : `${l}\n`),
+    });
+    return;
+  }
   const operatorCommand = operatorCommandOf(values, positionals);
   if (operatorCommand) {
     runOperatorCommand(operatorCommand, values.db ?? process.env.AGENT_GATEWAY_DB);
     return;
   }
   if (positionals.length > 0) {
-    process.stderr.write(`Unexpected argument: ${positionals[0]}\n${USAGE}`);
+    process.stderr.write(`Unexpected argument (value not shown)\n${USAGE}`);
     process.exit(2);
   }
   if (values['http-rotate-token']) {
@@ -526,6 +584,9 @@ function main(): void {
         linkHost: values['link-host'],
         httpHost: values['http-host'],
         trustProxy: values['trust-proxy'],
+        headlessFoundryUrl: values['headless-foundry-url'],
+        headlessWorld: values['headless-world'],
+        headlessUser: values['headless-user'],
       },
       onIgnored: (m) => process.stderr.write(`${m}\n`),
     });
@@ -548,8 +609,7 @@ function main(): void {
       : {}),
   });
   const shutdown = () => void app.stop().finally(() => process.exit(0));
-  process.once('SIGINT', shutdown);
-  process.once('SIGTERM', shutdown);
+  installShutdownSignals(shutdown);
   // A server-mode gateway runs in a container or service whose stdin may be closed.
   if (!config.serverMode) process.stdin.once('end', shutdown);
   app.start().catch((err: unknown) =>
