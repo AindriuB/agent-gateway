@@ -107,3 +107,18 @@ Checked and sound:
 - **Gateway mutation results.** I mutated the cross-world check, the admin guard, the sender admin flag, the world filter, the rate limit, `own`, `self` and `connected`, one at a time. Each mutation failed a test.
 
 SCOPE: clean
+
+## Review round 2 — findings
+
+Reviewed HEAD: 9e8d64a. These were fixed in 46b6e68:
+- [STYLE] gateway/test/link/pairing-admin.test.ts — the revoked-admin test was filed under `describe('rate limit')`, with an unused `const p`. Moved under `describe('who may manage pairings')`.
+- [P3] gateway/src/link/invite-admin.ts — the `MAX_INVITE_MESSAGES_PER_WINDOW` comment still said three message types. Updated to five.
+
+## Attempt 1 — failed (/verify, acceptance reviewer)
+
+At HEAD 46b6e68 the acceptance review returned CHANGES:
+- [DEFECT] templates/manage/manage.hbs:2-4 with module/src/apps/manage/index.ts:102-104. An admin GM on a 0.2.0 gateway clicks the Pairings tab, and `prepareManage('pairings')` returns `unavailable: tooOld`. The template's `{{#if unavailable}}` then hides the whole `<nav class="tabs">`, so the window shows only "update the gateway" with no way back to the Invites tab, which Amendment 1.1 says works on 0.2.0. A TIMEOUT or FORBIDDEN on either tab does the same: it removes the tabs and gives no way to retry.
+Fix: a failure specific to one tab keeps the tab nav visible and shows the state inside that tab's panel. Only the whole-app states (not admin, offline, protocol mismatch, gateway below 0.2.0) may replace the nav. Add a retry action for TIMEOUT. Tests:
+- on 0.2.0, Pairings shows tooOld with the nav present, and switching to Invites works;
+- a TIMEOUT on Invites keeps the nav, and retry re-requests.
+Optional: a test for the BUSY path (a fifth concurrent request).
