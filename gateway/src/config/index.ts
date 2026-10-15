@@ -118,7 +118,9 @@ function agentPasswords(
     for (const [name, entry] of Object.entries(section)) {
       const key = `headless.${name}.password`;
       if (!AGENT_NAME.test(name))
-        throw new ConfigError(`Config key headless.${name.slice(0, 40)} is not a valid agent name`);
+        throw new ConfigError(
+          `Config key under headless is not a valid agent name (name not shown, it may carry a secret)`,
+        );
       if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
         throw new ConfigError(`Config key headless.${name} must be an object with a password`);
       const pw = (entry as { password?: unknown }).password;
@@ -150,7 +152,10 @@ function agentPasswords(
  */
 export function normalizePublicUrl(value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid --public-url ${value}: ${why}`, 2);
+    throw new ConfigError(
+      `Invalid --public-url (value not shown, it may carry a secret): ${why}`,
+      2,
+    );
   };
   let url: URL;
   try {
@@ -201,7 +206,7 @@ const MAX_LINK_URL = 2048;
  */
 export function normalizeLinkUrl(flag: '--privacy-url' | '--source-url', value: string): string {
   const refuse = (why: string): never => {
-    throw new ConfigError(`Invalid ${flag} ${value.slice(0, 80)}: ${why}`, 2);
+    throw new ConfigError(`Invalid ${flag} (value not shown, it may carry a secret): ${why}`, 2);
   };
   if (value.length > MAX_LINK_URL) return refuse(`longer than ${MAX_LINK_URL} characters`);
   let url: URL;
@@ -307,7 +312,7 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   ] as const) {
     if (config.publicUrl === '' && !isLoopbackAddress(host))
       throw new ConfigError(
-        `Refusing ${flag} ${host}: a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
+        `Refusing ${flag} (value not shown, it may carry a secret): a non-loopback address needs --public-url (TLS is terminated by a reverse proxy in front of the gateway)`,
         2,
       );
   }
