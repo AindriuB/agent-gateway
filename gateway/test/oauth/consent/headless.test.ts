@@ -123,14 +123,25 @@ describe('headless agent consent goes to its owner (task 98)', () => {
     expect(r.h.store.oauth.listLiveGrants('w1', 'bot')).toHaveLength(0);
   });
 
-  it('delivers no code to a user whose own pairing was revoked but whose socket remains', async () => {
+  it('delivers no code when the live connection pairing is revoked but a newer pairing is active', async () => {
     r = await consentRig({}, {});
     const alice = await pairModule(r.h, 'alice');
     modules.push(alice);
-    r.h.store.revokePairingsFor('w1', 'alice');
-    await send(r, 'alice');
+    r.h.store.createPairing({
+      id: 'p-newer',
+      tokenHash: 'h-newer',
+      worldId: 'w1',
+      userId: 'alice',
+      userName: 'alice',
+      origin: 'http://localhost:30000',
+    });
+    r.h.store.revokePairing(alice.agentId); // the 5 s sweep has not closed the socket yet
+    expect(r.h.store.listPairings().find((x) => x.id === 'p-newer')?.revokedAt).toBeFalsy();
+    const { page } = await send(r, 'alice');
     await settle();
     expect(codes(alice)).toHaveLength(0);
+    const res = await postConsent(r, page, { action: 'verify', code: '00000000' });
+    expect(res.status).toBe(400);
   });
 
   it('sends nothing for no owner, an offline owner, or the flag agent, and no code works', async () => {

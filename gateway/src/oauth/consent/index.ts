@@ -114,6 +114,10 @@ function send(
 /** The origin of the request's registered (already exact-matched) redirect URI. */
 const originOf = (p: { redirectUri: string }): string => new URL(p.redirectUri).origin;
 
+/** Placeholder id for lookups when nothing was delivered; matches no pairing. */
+const NO_PAIRING = 'no-pairing';
+const NO_HASH = sha(NO_PAIRING);
+
 /** The consent page: world, Foundry user and scopes, then a one-time code shown only in that user's client. */
 export class ConsentPages {
   private readonly pending = new BoundedMap<Pending>(MAX_PENDING_CONSENTS);
@@ -366,19 +370,21 @@ export class ConsentPages {
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
     // The exact pairing the code was sent over may have been revoked or replaced since.
     // So may the pairing of the connection that received it (the owner's, for a headless agent).
-    const stillPaired =
-      p.target !== undefined &&
-      p.receiverPairingId !== undefined &&
-      this.o.repo.pairingActive(p.target.pairingId) &&
-      this.o.repo.pairingActive(p.receiverPairingId);
+    // Every lookup and the hash comparison run whatever the target, with placeholders where
+    // nothing was delivered, so a wrong code costs the same for every kind of target.
+    const targetPaired = this.o.repo.pairingActive(p.target?.pairingId ?? NO_PAIRING);
+    const receiverPaired = this.o.repo.pairingActive(p.receiverPairingId ?? NO_PAIRING);
+    const hashMatches = sameBytes(sha(typed), p.codeHash ?? NO_HASH);
     const ok =
-      stillPaired &&
+      targetPaired &&
+      receiverPaired &&
+      p.receiverPairingId !== undefined &&
+      hashMatches &&
       typed.length > 0 &&
       typed.length <= 32 &&
       p.codeHash !== undefined &&
       p.target !== undefined &&
-      p.codeExpiresAt > this.o.now() &&
-      sameBytes(sha(typed), p.codeHash);
+      p.codeExpiresAt > this.o.now();
     if (!ok || !p.target) {
       p.wrong++;
       this.failures.record(client);
