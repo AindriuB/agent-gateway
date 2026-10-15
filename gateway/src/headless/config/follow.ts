@@ -11,5 +11,7 @@ export function knownIdentitiesFor(
   isHeadless: (worldId: string, userId: string) => boolean,
 ): Identity[] {
   const all = active();
-  return selectorUser === undefined ? all.filter((i) => !isHeadless(i.worldId, i.userId)) : [...all];
+  return selectorUser === undefined
+    ? all.filter((i) => !isHeadless(i.worldId, i.userId))
+    : [...all];
 }

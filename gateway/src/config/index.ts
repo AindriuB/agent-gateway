@@ -123,7 +123,9 @@ function agentPasswords(
       if (pw === undefined) continue;
       if (typeof pw !== 'string') throw new ConfigError(`Config key ${key} must be a string`);
       if (pw === '')
-        throw new ConfigError(`Config key ${key} is empty; the agent user needs a Foundry password`);
+        throw new ConfigError(
+          `Config key ${key} is empty; the agent user needs a Foundry password`,
+        );
       out[name] = pw;
     }
   }
