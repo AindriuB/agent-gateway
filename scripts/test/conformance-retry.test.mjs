@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -15,11 +15,14 @@ let n = 0;
 // stub body is bash; $count is the call number (1-based).
 function run(body) {
   const dir = path.join(tmp, String(++n));
-  spawnSync('mkdir', ['-p', dir]);
+  mkdirSync(dir, { recursive: true });
   const stub = path.join(dir, 'stub.sh');
   const counter = path.join(dir, 'count');
   const log = path.join(dir, 'log');
-  writeFileSync(stub, `#!/usr/bin/env bash\necho x >> "${counter}"\ncount=$(wc -l < "${counter}")\n${body}\n`);
+  writeFileSync(
+    stub,
+    `#!/usr/bin/env bash\necho x >> "${counter}"\ncount=$(wc -l < "${counter}")\n${body}\n`,
+  );
   chmodSync(stub, 0o755);
   const r = spawnSync('bash', ['-c', `. "${helper}"; retry_429 "${log}" "${stub}"`], {
     encoding: 'utf8',
