@@ -247,3 +247,14 @@ Reviewed HEAD: 7d89d78 (re-review of the round 5 external fix since 588972b). Ro
   input: the page reports `replaced`, and the browser then dies or is closed after 3 status failures. 5 min later a poll runs with `isLinked()` still false →  openSession, closeBrowser, openSession in one poll.
 - [P3] gateway/src/headless/runner.ts:414-432: `ensureLinked` has no liveness check after its awaits, unlike `openSession` (378-383). A stop or crash mid-invite logs "headless runner: could not enter the invite: …target closed…", on top of "closed unexpectedly" after a crash. Use the same `live()` guards, so an abandoned or dead session returns quietly.
   route: implementer
+
+## Review round 7 — findings (external)
+From Andrew's PR review of #151 at 8482f47 (2026-10-15).
+
+- [P2] gateway/src/headless/browser.ts:134: the sandbox setting has no effect. Playwright adds `--no-sandbox` unless `chromiumSandbox: true` is passed explicitly, so with `headlessNoSandbox: false` Chromium still runs unsandboxed. Pass `chromiumSandbox: !noSandbox` to `launchPersistentContext` and stop relying on a hand-added `--no-sandbox` arg. Fix the whole class: check every other place where the runner's intent can be silently overridden by a Playwright default.
+  - **Unit test:** the launcher gets `chromiumSandbox: true` when `headlessNoSandbox` is false, and `false` when it is true. It must fail on 8482f47.
+  - **Live check on this host:** with `headlessNoSandbox` false, launch the real Chromium in the state dir and inspect the browser process's command line (`/proc/<pid>/cmdline`): it must not carry `--no-sandbox`.
+  - **If the sandbox fails:** Ubuntu's AppArmor limits on unprivileged user namespaces can stop a sandboxed Chromium from starting. If that happens, the runner must log one clear line naming the cause and the `AGENT_GATEWAY_HEADLESS_NO_SANDBOX` setting, not a raw Playwright stack, and the result must be reported back so the docs (task 43) can cover it.
+  - **Docker:** the image keeps `AGENT_GATEWAY_HEADLESS_NO_SANDBOX=1` (Amendment 2.2), and the launcher must still get `chromiumSandbox: false` there.
+  route: implementer
+  input: run the gateway with headlessNoSandbox false →  Chromium's command line still has --no-sandbox.
