@@ -77,6 +77,17 @@ Suites that use player2 skip with `SKIP: player2 not configured` when `FOUNDRY_P
 
 `npm run test:e2e -- --foundry v13` targets `AGENT_GATEWAY_E2E_V13_URL`. Without it the run prints `SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)` and exits 0. For setup and seed, set `FOUNDRY_URL` to that same v13 URL; those commands do not accept `--foundry`. Set `AGENT_GATEWAY_E2E_STATE_DIR` consistently to a separate directory (for example `~/.config/agent-gateway/e2e-v13`) for setup, seed and runs, keeping v13 pairings and profiles separate from v14.
 
+One-time setup on a release machine, for the v13 test bed at `https://foundry13.local` (Foundry 13.351, pf2e 7.12.2, world `test-world`):
+
+1. Add `AGENT_GATEWAY_E2E_V13_URL=https://foundry13.local` to `~/.config/agent-gateway/test.env`.
+2. Pair the GM: `FOUNDRY_URL=https://foundry13.local AGENT_GATEWAY_E2E_STATE_DIR=~/.config/agent-gateway/e2e-v13 npm run test:e2e:setup -- --only dev-gm`. Pairing codes are typed by a human, never by an agent.
+3. Seed with the same two variables (`npm run test:e2e:seed`), with Andrew's consent.
+4. Pair the players with the same two variables, using `--only <user>` and `--player2` and the world's exact user names.
+5. Run `AGENT_GATEWAY_E2E_STATE_DIR=~/.config/agent-gateway/e2e-v13 npm run test:e2e -- --foundry v13`.
+6. `scripts/release.mjs` sets the state directory for the v13 gate itself, so no shell exports are needed at release time.
+
+`AGENT_GATEWAY_E2E_V13_STATE_DIR` (default `~/.config/agent-gateway/e2e-v13`) is a release-script-only key, read from the environment or test.env. The e2e harness ignores it and reads only `AGENT_GATEWAY_E2E_STATE_DIR`.
+
 The configured v13.351 / PF2e 7.12.2 instance passed the full core/read/multi-user gate: 34 tests passed, zero failed, and the optional Hello Pack test skipped (35 discovered). The v14.369 gate passed all 35 tests, and Hello Pack enabled/disabled lifecycle acceptance was also checked separately on v14. These results do not claim Hello Pack lifecycle validation on v13.
 
 ## dnd5e live run (task 32)
