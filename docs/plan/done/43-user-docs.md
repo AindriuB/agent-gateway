@@ -173,3 +173,17 @@ Reviewed HEAD: 1c2400c (code review of the implementer's commits c117d4d..51fd32
   route: implementer
 - [P3, optional] docs/guides/headless.md:153: quote the `.mcpb` line with its `headless runner: ` prefix, as :123 does for the sandbox line. :104 "When it starts it logs one of": say discovery happens when the first headless runner starts, not at every gateway start.
   route: implementer
+
+## Review round 2 — findings (external)
+Andrew's PR review of #155 at f95072d (2026-10-15).
+
+- [P2] docs/guides/headless.md:14: the headless setup leaves out a required permission. A non-GM agent still cannot use tools after following the guide, because the player permission is off as well as the headless one. Tell users to open the module's Configure policies, enable both player agents and headless agents, then save. Check the exact setting names, labels and defaults against module/src (lang/en.json and the policy settings) and quote the labels exactly. Check the rest of the guide for any other step a non-GM agent needs that is missing.
+  route: implementer
+- [P2] docs/guides/headless.md:95: the binding command fails against the recommended server-mode deployment. A plain stdio client with `--world`/`--user` goes to standby, because its session settings (publicUrl, serverMode, allowOrigins) differ from the server-mode primary's, and public HTTP clients cannot reach headless agents until task 98. Find out by running them, not by reading code alone, which deployment and client combinations can actually reach a headless agent today:
+  - local mode with a stdio client;
+  - local mode with HTTP and a static bearer;
+  - server mode with a stdio client started with the same session settings as the primary;
+  - server mode with Docker `compose exec`;
+  - server mode with remote OAuth (not possible until task 98).
+  Document them as a short table. Scope the binding command to the combinations that work, and say plainly which do not work yet. Make the README and security.md statements consistent with the table. Record in the PR which combinations were run.
+  route: implementer
