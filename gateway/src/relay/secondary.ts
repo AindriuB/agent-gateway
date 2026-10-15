@@ -74,6 +74,7 @@ export class RelaySecondary {
   /** A demoted primary has a live client session to keep, so it never settles for degraded. */
   private demoted = false;
   private watching = false;
+  private standbyReason = '';
 
   constructor(private readonly opts: SecondaryOptions) {
     this.proxy = opts.proxy ?? new StdioRelayProxy(opts.input, opts.output, opts.log);
@@ -172,6 +173,7 @@ export class RelaySecondary {
 
   private async serveStandby(reason: string): Promise<void> {
     this.role = 'standby';
+    this.standbyReason = reason;
     this.opts.log(`standby: ${reason}`);
     await this.serveLocal((this.opts.createStandby ?? this.opts.createDegraded)(reason));
     this.opts.onSettled?.('standby', reason);
@@ -208,6 +210,7 @@ export class RelaySecondary {
         const r = await connectRelay(this.opts);
         if (r.kind === 'ok' && this.tooOld(r.caps)) {
           r.upstream.close();
+          await this.refreshStandby(TOO_OLD);
           continue;
         }
         if (r.kind === 'ok') {
@@ -220,6 +223,17 @@ export class RelaySecondary {
     } finally {
       this.watching = false;
     }
+  }
+
+  /** The standby's reason went stale (the port holder changed): serve and report the new one, once. */
+  private async refreshStandby(reason: string): Promise<void> {
+    if (this.stopped || this.role !== 'standby' || this.standbyReason === reason) return;
+    this.standbyReason = reason;
+    this.opts.log(`standby: ${reason}`);
+    const old = this.local;
+    await this.serveLocal((this.opts.createStandby ?? this.opts.createDegraded)(reason));
+    await old?.close();
+    this.opts.onSettled?.('standby', reason);
   }
 
   private async leaveStandby(next: Upstream): Promise<void> {

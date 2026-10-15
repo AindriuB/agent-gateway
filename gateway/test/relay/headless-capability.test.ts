@@ -37,8 +37,11 @@ function dirAndEndpoint(): { dir: string; path: string } {
 }
 
 /** A pre-37 primary: answers every hello with `{relay: 1, ok: true}` and no capability. */
-async function oldPrimary(): Promise<{ dir: string; path: string; close: () => Promise<void> }> {
-  const { dir, path } = dirAndEndpoint();
+async function oldPrimary(at?: {
+  dir: string;
+  path: string;
+}): Promise<{ dir: string; path: string; close: () => Promise<void> }> {
+  const { dir, path } = at ?? dirAndEndpoint();
   writeSecret(dir, PORT, newSecret());
   const socks = new Set<Socket>();
   const net: NetServer = createServer((sock) => {
@@ -106,6 +109,39 @@ describe('a headless caller and a primary from before headless settings', () => 
     await old.close();
     free = true;
     await until(() => s.currentRole === 'primary', 5000, 'takeover');
+  });
+
+  it('replaces a stale standby reason when an old primary takes the port', async () => {
+    const at = dirAndEndpoint();
+    const server = new RelayServer({
+      endpoint: at.path,
+      stateDir: at.dir,
+      linkPort: PORT,
+      selector: {},
+      config: makeRelayConfig(['x'], 17555, 'info', 9000, { headless: 'abc' }),
+      createSession: mcp,
+      log: () => undefined,
+    });
+    await server.listen();
+    const s = secondary(at, HEADLESS);
+    const settled: [string, string][] = [];
+    (s as unknown as { opts: { onSettled: (r: string, why: string) => void } }).opts.onSettled = (
+      r,
+      why,
+    ) => settled.push([r, why]);
+    await s.start('startup');
+    expect(s.currentRole).toBe('standby');
+    expect(settled[0]?.[1]).toContain('different session settings');
+    await server.close();
+    await oldPrimary(at);
+    await until(
+      () => settled.some(([, why]) => why.includes('primary too old, headless agent not running')),
+      5000,
+      'too-old reason',
+    );
+    expect(s.currentRole).toBe('standby');
+    await sleep(200);
+    expect(settled.filter(([, why]) => why.includes('too old'))).toHaveLength(1);
   });
 
   it('is relayed to as before by a plain caller', async () => {
