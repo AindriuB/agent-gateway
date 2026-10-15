@@ -14,9 +14,12 @@ export interface BridgeDeps {
   /** The user this browser is logged in as. */
   storage(): Pick<Storage, 'getItem' | 'setItem'>;
   getUser(): { id?: unknown; isGM?: unknown } | undefined;
+  /** Does Foundry have a user with this id? Guards the gateway's owner hint. */
+  userExists?(id: string): boolean;
 }
 
 const defaults: BridgeDeps = {
+  userExists: (id) => typeof game !== 'undefined' && !!game.users?.get(id),
   // The registry/stages/runtime imports form a cycle; resolve the live binding at call time.
   dispatch: (call, user) => realDispatch(call, user),
   storage: () => localStorage,
@@ -52,12 +55,32 @@ export function resetHeadlessFlagForTests(): void {
 }
 
 /**
+ * Who approvals for this agent reach, and whether it counts as headless. The gateway's owner hint
+ * is used only when its own `welcome` classified this connection as headless and the owner is a
+ * real user here; otherwise the connected user owns the call as before. A routing hint only: it
+ * grants nothing. Either source makes the agent headless, and neither can clear it.
+ */
+function agentFor(
+  client: LinkClient,
+  user: OpUser,
+  agentId: string,
+  userExists: (id: string) => boolean,
+): OpCall['agent'] {
+  const hinted = client.headlessOwnerUserId;
+  return {
+    id: agentId,
+    ownerUserId: hinted !== null && userExists(hinted) ? hinted : user.id,
+    headless: client.headlessByGateway || linkAgentHeadless(),
+  };
+}
+
+/**
  * Run inbound link calls through the dispatcher as the local Foundry user. Identity comes only
  * from `game.user`; nothing about who is calling is read from the call frame, which is why the
  * handler below touches only `tool`, `args` and `sessionId` of it.
  */
 export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}): void {
-  const { dispatch, getUser, storage } = { ...defaults, ...deps };
+  const { dispatch, getUser, storage, userExists } = { ...defaults, ...deps };
   const handler: CallHandler = async (frame) => {
     const u = getUser();
     if (!u || typeof u.id !== 'string' || u.id === '') {
@@ -68,7 +91,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       {
         tool: frame.tool,
         args: frame.args,
-        agent: { id: client.agentId ?? '', ownerUserId: user.id, headless: linkAgentHeadless() },
+        agent: agentFor(client, user, client.agentId ?? '', userExists ?? (() => false)),
         sessionId: frame.sessionId,
       },
       user,
@@ -139,7 +162,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       tool: frame.tool,
       args: frame.args,
       sessionId: frame.sessionId,
-      agent: { id: agentId, ownerUserId: user.id, headless: linkAgentHeadless() },
+      agent: agentFor(client, user, agentId, userExists ?? (() => false)),
     };
     let approvedGM = false;
     bindReplay(call, {
