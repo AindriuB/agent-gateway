@@ -193,9 +193,14 @@ export class HeadlessRunner {
   tick(): Promise<void> {
     if (this.stopped || this.profile === undefined) return Promise.resolve();
     this.busy ??= this.poll()
-      .catch((err: unknown) =>
-        this.o.log(`headless runner: ${safeText((err as Error).message ?? String(err))}`),
-      )
+      .catch((err: unknown) => {
+        const msg = safeText((err as Error).message ?? String(err));
+        if (msg.startsWith('playwright-core is not installed')) {
+          if (this.notInstalledLogged) return;
+          this.notInstalledLogged = true;
+        }
+        this.o.log(`headless runner: ${msg}`);
+      })
       .finally(() => {
         this.busy = undefined;
       });

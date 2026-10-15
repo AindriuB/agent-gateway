@@ -52,7 +52,9 @@ class Launcher implements BrowserLauncher {
   /** What the page's module mirrors into session storage. */
   linkState: string | null = null;
   closes = 0;
+  launchError: Error | undefined;
   async launch(req: { profileDir: string; args: string[] }): Promise<RunnerBrowser> {
+    if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
     this.args.push(req.args);
     return {
@@ -177,6 +179,15 @@ describe('HeadlessRunner lifecycle', () => {
     await t.runner.tick();
     await t.runner.tick();
     expect(t.logs.filter((l) => l.includes('readable again'))).toHaveLength(1);
+  });
+
+  it('logs playwright-core-not-installed once across polls', async () => {
+    const t = await make();
+    t.launcher.launchError = new Error('playwright-core is not installed; use npm');
+    t.runner.start();
+    await t.runner.tick();
+    await t.runner.tick();
+    expect(t.logs.filter((l) => l.includes('playwright-core is not installed'))).toHaveLength(1);
   });
 
   it('logs a thrown fetch (TLS, refused) with its cause, once', async () => {
