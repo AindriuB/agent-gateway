@@ -258,3 +258,17 @@ From Andrew's PR review of #151 at 8482f47 (2026-10-15).
   - **Docker:** the image keeps `AGENT_GATEWAY_HEADLESS_NO_SANDBOX=1` (Amendment 2.2), and the launcher must still get `chromiumSandbox: false` there.
   route: implementer
   input: run the gateway with headlessNoSandbox false →  Chromium's command line still has --no-sandbox.
+
+## Review round 8 — findings
+Reviewed HEAD: 124e0c8 (re-review of the round 7 external fix since 5a98443). The `chromiumSandbox` part of round 7 is FIXED. The "one clear line" part is only partly met; it is covered by the first and third items below.
+
+Live result from round 7, for task 43: on this Ubuntu 26.04 host `apparmor_restrict_unprivileged_userns=1`. With the sandbox on, Chromium (Chrome for Testing 156) does not start ("No usable sandbox!"). With it off, it starts, and its cmdline has `--no-sandbox`.
+
+- [P2] gateway/src/headless/browser.ts:137: `explainLaunchError` runs its regex over Playwright's whole error message. That message includes the browser log's `<launching> <cmdline>` line, which carries `--no-sandbox` when `noSandbox` is true, so `/sandbox/i` matches every launch failure. In Docker (`AGENT_GATEWAY_HEADLESS_NO_SANDBOX=1`), any start-up failure is replaced by advice to set a setting that is already on, and the real cause is lost. Rewrite the message only when the sandbox was on (`!req.noSandbox`), and match Playwright's own markers ("Chromium sandboxing failed!", "No usable sandbox!", crbug.com/357670, crbug.com/638180) instead of any "sandbox" substring. Add a negative test: `noSandbox` true plus a non-sandbox failure keeps its own message.
+  route: implementer
+  input: `launchPersistentContext(dir, { executablePath: '/bin/false', chromiumSandbox: false })` →  the regex matches the `<launching>` line, and the operator sees only sandbox advice.
+- [P2] gateway/src/headless/browser.ts:131: `handleSIGHUP: false` leaves Chromium running after a SIGHUP. The gateway installs no SIGHUP handler (cli.ts handles only SIGINT and SIGTERM), so node dies from the signal, and Playwright's exit handler, which kills the detached browser, never runs. Chromium is left orphaned, logged in as the agent and holding the profile lock. Keep `handleSIGHUP` at Playwright's default (leave it out, or set it true) in `launchOptions`. Keep SIGINT and SIGTERM false, because cli.ts handles both. Update the test.
+  route: implementer
+  input: close the terminal running a local-mode gateway (or `kill -HUP <pid>`) →  node exits and headless Chromium keeps running against Foundry.
+- [P3] gateway/src/headless/runner.ts:228-235: the sandbox message is logged on every poll, about 240 times an hour. Log it once per run, like `notInstalledLogged`/`statusFailureLogged`, with a test of two polls giving one line. Also update the `RunnerOptions.noSandbox` doc comment at :104, which still says "Launch Chromium with `--no-sandbox`".
+  route: implementer
