@@ -160,3 +160,11 @@ Reviewed HEAD: 0fd6398 (re-review of the round 3 external fix). Both parts are F
   route: implementer
 - [P3] gateway/src/headless/config/commands.ts:14-16, :137-139: `add` calls `revokePairingsFor`, which also revokes the identity's OAuth grants and cancels its unused invites. Its help text and output mention only pairings, and print nothing when the count is zero. Make the help and output say what was revoked and cancelled (pairings, grants, invites), with counts, the way `remove` does. Revoking grants on `add` is intended: the agent user is not for humans.
   route: implementer
+
+## Review round 5 — findings
+Reviewed HEAD: fb1d8d6 (round 4 FIXED; reviewed CLEAN). Wording only.
+
+- [P3] gateway/src/headless/config/commands.ts:~157: `remove`'s output reports pairings and invites but not the OAuth grants it also revokes, while its help (:20-21) and `add`'s output both name grants. Name grants in `remove`'s output without a count, as `add` does. The store returns no grant count, and the store is outside Owns.
+  route: implementer
+- [P3] gateway/src/headless/config/commands.ts:138: "Revoked 0 pairing(s) and its OAuth grants": "its" has no antecedent. Use e.g. "that world and user's OAuth grants". Keep `add` and `remove` worded the same way, and update any test that matches this text.
+  route: implementer
