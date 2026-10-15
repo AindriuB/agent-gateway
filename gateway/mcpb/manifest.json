@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "foundry-agent-gateway",
   "display_name": "Foundry Agent Gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
   "author": {
     "name": "Andrew Bannister",
