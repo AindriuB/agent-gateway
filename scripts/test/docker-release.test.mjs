@@ -38,7 +38,7 @@ ${body}`;
 const stub = `#!/usr/bin/env bash
 echo "$(basename "$0") $*" >> "$STUB_LOG"
 case "$(basename "$0") $*" in
-  "npm run test:conformance") echo "conformance: ok (inspector 2.10.1, stdio, http)";;
+  "npm run test:conformance") echo "conformance: ok (inspector 2.10.1, stdio, http, oauth)";;
   npm\\ pack*) echo tgz > "\${@: -1}/foundry-agent-gateway-$(node -p "require('./gateway/package.json').version").tgz";;
 esac
 [ "$(basename "$0") $*" = "docker build -f gateway/Dockerfile -t foundry-agent-gateway:1.2.3 ." ] && [ -n "$FAIL_DOCKER" ] && exit 1

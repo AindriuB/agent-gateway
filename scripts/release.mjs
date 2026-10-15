@@ -5,6 +5,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +45,40 @@ if (!SEMVER.test(version)) die(`not a version: ${version}`);
 // No registry is chosen yet (GHCR or Docker Hub), so there is nowhere to push the image.
 if (pushImage) die('registry not configured; --push-image cannot push yet');
 
+// The e2e gates' environment. Same precedence as e2e/lib/config.ts: process environment first, then
+// ~/.config/agent-gateway/test.env; an empty value counts as unset. Only URLs and paths are ever printed.
+function parseEnvFile(text) {
+  const out = {};
+  for (const raw of text.split('\n')) {
+    const line = raw.trim().replace(/^export\s+/, '');
+    if (line === '' || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq < 1) continue;
+    let value = line.slice(eq + 1).trim();
+    if (value.length >= 2 && value[0] === value.at(-1) && (value[0] === '"' || value[0] === "'"))
+      value = value.slice(1, -1);
+    out[line.slice(0, eq).trim()] = value;
+  }
+  return out;
+}
+const home = homedir();
+const configDir = path.join(home, '.config/agent-gateway');
+const testEnvPath = path.join(configDir, 'test.env');
+const testEnv = existsSync(testEnvPath) ? parseEnvFile(readFileSync(testEnvPath, 'utf8')) : {};
+const setting = (key) => (process.env[key] ? process.env[key] : testEnv[key] || undefined);
+const expandHome = (p) => (p === '~' ? home : p.startsWith('~/') ? path.join(home, p.slice(2)) : p);
+const v13Url = setting('AGENT_GATEWAY_E2E_V13_URL')?.replace(/\/+$/, '') || undefined;
+const v14Url = setting('FOUNDRY_URL')?.replace(/\/+$/, '') || 'https://foundry.local';
+const v13State = expandHome(
+  setting('AGENT_GATEWAY_E2E_V13_STATE_DIR') ?? path.join(configDir, 'e2e-v13'),
+);
+if (!path.isAbsolute(v13State)) die('AGENT_GATEWAY_E2E_V13_STATE_DIR must be an absolute path');
+const v14State = process.env.AGENT_GATEWAY_E2E_STATE_DIR
+  ? expandHome(process.env.AGENT_GATEWAY_E2E_STATE_DIR)
+  : path.join(configDir, 'e2e');
+if (path.resolve(v14State) === path.resolve(v13State))
+  die(`v14 and v13 e2e state directories are the same: ${v13State}`);
+
 function run(cmd, cmdArgs, opts = {}) {
   const r = spawnSync(cmd, cmdArgs, { cwd: root, encoding: 'utf8', ...opts });
   if (r.error) die(`could not run ${cmd}: ${r.error.message}`);
@@ -66,8 +101,18 @@ if (bump.status !== 0) die('bump-version failed');
 
 // 3. Gates, in order.
 const notes = [];
-function gate(name, npmArgs, ok) {
+// Only scheme://host[:port]/path is ever printed: userinfo, query and fragment are dropped.
+function shown(u) {
+  try {
+    const x = new URL(u);
+    return `${x.protocol}//${x.host}${x.pathname}`.replace(/\/+$/, '');
+  } catch {
+    return '<unparseable url>';
+  }
+}
+function gate(name, npmArgs, ok, info) {
   console.log(`\n== gate: ${name} ==`);
+  if (info) console.log(info);
   const r = run('npm', npmArgs);
   process.stdout.write(r.stdout ?? '');
   process.stderr.write(r.stderr ?? '');
@@ -77,12 +122,24 @@ function gate(name, npmArgs, ok) {
 gate('verify', ['run', 'verify']);
 gate('test:scripts', ['run', 'test:scripts']);
 gate('test:conformance', ['run', 'test:conformance'], (out) =>
-  /^conformance: ok \(inspector [^)\s,]+, stdio, http\)$/m.test(out),
+  /^conformance: ok \(inspector [^)\s,]+, stdio, http, oauth\)$/m.test(out),
 );
-gate('e2e v14', ['run', 'test:e2e', '--', '--foundry', 'v14']);
+gate(
+  'e2e v14',
+  ['run', 'test:e2e', '--', '--foundry', 'v14'],
+  undefined,
+  `e2e v14: url ${shown(v14Url)}, state ${v14State}`,
+);
 console.log('\n== gate: e2e v13 ==');
+console.log(`e2e v13: url ${v13Url ? shown(v13Url) : 'not set'}, state ${v13State}`);
 {
-  const r = run('npm', ['run', 'test:e2e', '--', '--foundry', 'v13']);
+  const r = run('npm', ['run', 'test:e2e', '--', '--foundry', 'v13'], {
+    env: {
+      ...process.env,
+      AGENT_GATEWAY_E2E_STATE_DIR: v13State,
+      ...(v13Url ? { AGENT_GATEWAY_E2E_V13_URL: v13Url } : {}),
+    },
+  });
   process.stdout.write(r.stdout ?? '');
   process.stderr.write(r.stderr ?? '');
   if (r.status !== 0) die('gate failed: e2e v13');
@@ -206,7 +263,8 @@ if (publishNpm) {
 console.log('\nSummary:');
 console.log(`  version: ${version}`);
 console.log(`  draft release v${version} created; NOT published`);
-console.log(`  v13 e2e: ${notes.length > 0 ? 'SKIPPED (--allow-missing-v13)' : 'passed'}`);
+const v13Summary = notes.length > 0 ? 'SKIPPED (--allow-missing-v13)' : `passed (${shown(v13Url)})`;
+console.log(`  v13 e2e: ${v13Summary}`);
 console.log(`  Ask Foundry checklist: ${answered} of ${total} answered`);
 console.log('  The version bump is uncommitted in this tree; open a PR for it.');
 finish(0);

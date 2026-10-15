@@ -60,3 +60,19 @@
 - The test hang that stopped `verify` during the 0.3.0 attempt.
 - Doing the v13 setup on the Mac, which needs Andrew to type the pairing codes and consent to the seed.
 - The test.env key table in docs/testing.md outside "Testing v13 separately".
+
+Orchestrator scope note (implementation): accepted. scripts/test/docker-release.test.mjs (~:41) has its own npm stub that echoes the old conformance line `conformance: ok (inspector 2.10.1, stdio, http)`, so the new `, oauth` requirement breaks two of its tests. Add `, oauth` to that stub's echo, and change nothing else in that file. The change is forced by decision (a).
+
+## Review round 1 — findings
+Reviewed HEAD: d0a1403 (code review CLEAN; regex and v13-env fixes mutation-proven).
+
+- [P3] scripts/release.mjs:117-120: the `e2e v14: url …, state …` line prints before the `== gate: e2e v14 ==` header, while v13's prints after its own. Print each gate's line after its header, for example from `gate()`.
+  route: implementer
+- [P3] scripts/release.mjs:68-69: e2e URLs are printed as given, so a URL with userinfo (`https://user:pw@host`) would print its credentials in the e2e lines and the v13 summary. This is the same class task 96 removed. Strip any userinfo (and query) from every URL the script prints; show only scheme://host[:port]/path. Add a test with a credentialed URL in test.env and in env, asserting neither the user nor the password appears in the output.
+  route: implementer
+
+## Review round 2 — findings
+Reviewed HEAD: 8d27df2. Round 1 log order is FIXED. The credentials fix covers both gate lines but not the summary.
+
+- [P2] scripts/release.mjs:266: the summary still prints the raw v13 URL (`passed (${v13Url})`), so credentials, query and fragment leak on any run past the draft prompt. Print `shown(v13Url)` there. Change the credentialed-URL test (scripts/test/release.test.mjs ~:300) so the run reaches the summary (answer `yes`, or add a second run that does), and assert none of the user, password, query or fragment appears anywhere in stdout. It must fail on 8d27df2. Also check that no other printed line uses a raw URL.
+  route: implementer
