@@ -149,7 +149,8 @@ describe('headless agent consent goes to its owner (task 98)', () => {
     addAgent(r, 'noown', null);
     addAgent(r, 'offown', 'ghost');
     const owner = await pairModule(r.h, 'owner');
-    const mods = await Promise.all(['noown', 'offown', 'flagbot'].map((u) => pairModule(r!.h, u)));
+    const mods = [];
+    for (const u of ['noown', 'offown', 'flagbot']) mods.push(await pairModule(r.h, u));
     modules.push(owner, ...mods);
     for (const u of ['noown', 'offown', 'flagbot']) {
       const { page } = await send(r, u);
@@ -165,9 +166,10 @@ describe('headless agent consent goes to its owner (task 98)', () => {
     addAgent(r, 'bot', 'owner');
     addAgent(r, 'noown', null);
     addAgent(r, 'offown', 'ghost');
-    const mods = await Promise.all(
-      ['owner', 'bot', 'noown', 'offown', 'flagbot', 'alice'].map((u) => pairModule(r!.h, u)),
-    );
+    const mods = [];
+    for (const u of ['owner', 'bot', 'noown', 'offown', 'flagbot', 'alice']) {
+      mods.push(await pairModule(r.h, u));
+    }
     modules.push(...mods);
     r.h.store.createPairing({
       id: 'p-off',

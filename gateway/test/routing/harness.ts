@@ -80,7 +80,11 @@ export async function pairModule(
       code: h.codes.generate(),
     }),
   );
-  const welcome = (await tc.next('welcome')) as { pairingToken?: string; agentId: string };
+  const first = await tc.nextOf(['welcome', 'reject']);
+  if (first.type === 'reject') {
+    throw new Error(`pairing rejected: ${(first as { code?: string }).code ?? 'unknown'}`);
+  }
+  const welcome = first as unknown as { pairingToken?: string; agentId: string };
   return {
     tc,
     userId,
