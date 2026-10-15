@@ -76,3 +76,26 @@ it('headless flag keys match the module copies', () => {
   expect(bridge).toContain(`HEADLESS_FLAG_KEY = '${HEADLESS_FLAG_KEY}'`);
   expect(runtime).toContain(`HEADLESS_LINK_KEY = '${HEADLESS_LINK_KEY}'`);
 });
+
+describe('headless URL errors', () => {
+  it('never echo a username, password, path or query from the URL', () => {
+    for (const url of [
+      'https://agent:hunter2@foundry.example',
+      'https://foundry.example/?token=s3cret',
+      'ftp://foundry.example/s3cret',
+      'not a url s3cret',
+    ]) {
+      let message = '';
+      try {
+        loadConfig({
+          env: { ...env, AGENT_GATEWAY_HEADLESS_FOUNDRY_URL: url },
+        });
+      } catch (err) {
+        message = (err as ConfigError).message;
+      }
+      expect(message).toContain('--headless-foundry-url');
+      for (const secret of ['agent', 'hunter2', 's3cret', 'foundry.example'])
+        expect(message).not.toContain(secret);
+    }
+  });
+});

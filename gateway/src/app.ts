@@ -39,6 +39,7 @@ import { safeText, type UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 import {
   LocalUpstream,
+  headlessFingerprint,
   makeRelayConfig,
   createStandbyServer,
   RelaySecondary,
@@ -183,6 +184,12 @@ export function createApp(config: Config, deps: AppDeps): App {
   const trustProxy = config.trustProxy === true;
   const httpOn = deps.http === true || isPublic || serverMode;
   let exposureNoticesShown = false;
+  // Every Config field that changes what the primary does is compared, or is left out on purpose:
+  //  - compared: httpPort, logLevel, publicUrl, serverMode, linkHost, httpHost, trustProxy,
+  //    allowedOrigins, and the headless agent (as a digest, see headlessFingerprint);
+  //  - linkPort: the port is what finds the primary, so a different one never meets it;
+  //  - http: the app reads deps.http, not this field (the CLI maps the flag to it);
+  //  - privacyUrl, sourceUrl: only links on the consent pages; not compared (known gap).
   const relayConfig = () =>
     makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt, {
       publicUrl,
@@ -190,6 +197,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       linkHost,
       httpHost,
       trustProxy,
+      headless: headlessFingerprint(agentCfg, config.headlessNoSandbox === true),
     });
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
   // The one flag/env headless agent (task 37); all four settings are present or none.
