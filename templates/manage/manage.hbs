@@ -5,6 +5,7 @@
     <nav class="tabs">
       <button type="button" data-action="tab" data-tab="invites" {{#if isInvites}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabInvites"}}</button>
       <button type="button" data-action="tab" data-tab="pairings" {{#if isPairings}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabPairings"}}</button>
+      <button type="button" data-action="tab" data-tab="grants" {{#if isGrants}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabGrants"}}</button>
     </nav>
     {{#if notice}}
       <p class="notes tab-notice">{{notice}}</p>
@@ -47,6 +48,33 @@
           </li>
         {{/each}}
       </ul>
+    {{else if isGrants}}
+      <p class="notes">{{localize "AGENT_GATEWAY.Manage.grantsIntro"}}</p>
+      {{#if emptyGrantUsers}}
+        <p class="notes">{{localize "AGENT_GATEWAY.Manage.noGrantUsers"}}</p>
+      {{/if}}
+      <div class="grant-users">
+        {{#each grantUsers}}
+          <button type="button" data-action="selectGrantUser" data-user-id="{{id}}" {{#if selected}}class="active"{{/if}}>{{name}}</button>
+        {{/each}}
+      </div>
+      {{#if selectedUserId}}
+        {{#if emptyGrants}}
+          <p class="notes">{{localize "AGENT_GATEWAY.Manage.noUserGrants"}}</p>
+        {{/if}}
+        <ul class="manage-list">
+          {{#each grants}}
+            <li class="grant" data-grant-id="{{id}}">
+              <strong class="client">{{clientName}}</strong>
+              <span class="scopes">{{localize "AGENT_GATEWAY.Manage.scopes"}}: {{scopes}}</span>
+              <span class="created">{{localize "AGENT_GATEWAY.Manage.authorized"}}: {{created}}</span>
+              <button type="button" data-action="revokeUserGrant" data-user-id="{{../selectedUserId}}" data-grant-id="{{id}}">
+                <i class="fa-solid fa-ban"></i> {{localize "AGENT_GATEWAY.Manage.revoke"}}
+              </button>
+            </li>
+          {{/each}}
+        </ul>
+      {{/if}}
     {{else}}
       <p class="notes">{{localize "AGENT_GATEWAY.Manage.pairingsIntro"}}</p>
       {{#if emptyPairings}}

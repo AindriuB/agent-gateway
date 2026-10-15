@@ -1,4 +1,4 @@
-import type { InviteSummary, PairingSummary } from '../../link/client.js';
+import type { InviteSummary, PairingSummary, UserGrantSummary } from '../../link/client.js';
 
 export interface InviteRow {
   id: string;
@@ -21,6 +21,20 @@ export interface PairingRow {
   self: boolean;
   /** Another admin GM's pairing can only be revoked by the operator. */
   canRevoke: boolean;
+}
+
+/** One of a player's grants as an admin sees it: metadata only, never a last-used time. */
+export interface AdminGrantRow {
+  id: string;
+  clientName: string;
+  scopes: string;
+  created: string;
+}
+
+export interface GrantUserRow {
+  id: string;
+  name: string;
+  selected: boolean;
 }
 
 export interface UserChoice {
@@ -67,6 +81,32 @@ export function inviteRows(
   }));
 }
 
+/**
+ * The users whose authorized apps the admin GM may view: each paired user once, in pairing order.
+ * Another admin GM is left out (the gateway would refuse it); the sender's own row stays.
+ */
+export function grantUsers(
+  pairings: readonly PairingSummary[],
+  selected: string | undefined,
+): GrantUserRow[] {
+  const rows = pairings.slice(0, MAX_ROWS);
+  const otherAdmins = new Set(rows.filter((p) => p.admin && !p.self).map((p) => p.userId));
+  const seen = new Set<string>();
+  const out: GrantUserRow[] = [];
+  for (const p of rows) {
+    if (otherAdmins.has(p.userId) || seen.has(p.userId)) continue;
+    seen.add(p.userId);
+    out.push({
+      id: plain(p.userId, 64),
+      name: plain(p.userName || p.userId, NAME_CHARS),
+      selected: false,
+    });
+  }
+  const pick = out.find((u) => u.id === selected) ?? out[0];
+  if (pick) pick.selected = true;
+  return out;
+}
+
 export function pairingRows(pairings: readonly PairingSummary[]): PairingRow[] {
   return pairings.slice(0, MAX_ROWS).map((p) => ({
     id: String(p.id),
@@ -78,5 +118,15 @@ export function pairingRows(pairings: readonly PairingSummary[]): PairingRow[] {
     connected: p.connected,
     self: p.self,
     canRevoke: !p.admin || p.self,
+  }));
+}
+
+/** Plain strings for the template, which prints every one with `{{ }}` (escaped). */
+export function adminGrantRows(grants: readonly UserGrantSummary[]): AdminGrantRow[] {
+  return grants.slice(0, MAX_ROWS).map((g) => ({
+    id: String(g.id),
+    clientName: plain(g.clientName, NAME_CHARS),
+    scopes: g.scopes.join(', '),
+    created: when(g.createdAt),
   }));
 }

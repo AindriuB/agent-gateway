@@ -205,6 +205,15 @@
   padding: 0 0.35em;
   font-size: 0.75em;
 }
+.agent-gateway-manage .grant-users {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+.agent-gateway-manage .grant-users .active {
+  font-weight: bold;
+}
 .agent-gateway-invite-link {
   width: 100%;
 }
