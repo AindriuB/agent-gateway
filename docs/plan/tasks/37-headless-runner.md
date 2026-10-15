@@ -159,3 +159,14 @@ Reviewed HEAD: 405d55e (full-branch review after Amendment 2).
   input: delete `...(linkAgentHeadless() ? { headless: true } : {})` from runtime.ts →  the test still passes (3/3).
 - [P3, optional] gateway/src/headless/runner.ts (catch blocks around `page.fill` for the password and the invite code): Playwright 1.64 includes `fill("<value>")` in its error "Call log". The secret stays out of the operator log only because `safeText` cuts the message at 80 characters. Log a fixed message for these two fills instead.
 - [P3, optional] `HEADLESS_FLAG_KEY` is defined in both module/src/link/bridge.ts and gateway/src/headless/flag.ts, with nothing tying the two copies together. Add a test that asserts they are equal, or share the constant through protocol if that is in Owns.
+
+## Review round 2 — findings
+Reviewed HEAD: b548485 (re-review of the round 1 fix since 8e23227). All round 1 findings are FIXED.
+
+- [P2] gateway/test/headless/runner.test.ts ("a world restart ends the pause"): the test passes even when the code that ends the pause on a world restart is removed. That code is the two `this.pausedUntil = 0` resets in `poll()` in gateway/src/headless/runner.ts, one in the `!active` branch and one in the `!worldWasUp` branch. The test only checks `launches.length === 2`, and the browser relaunches whether or not the pause was cleared.
+  route: implementer
+  input: delete both resets. Then the page reports `replaced`, the world goes down, and the world comes up again (with `isLinked` false). →  the runner relaunches the browser but returns early because `now < pausedUntil`. It mints no invite and does not try to link for up to 5 minutes after the restart, which breaks Amendment 2 ("pauses until the next world start"). The test still passes. It should also check that the runner tries to link after the restart, for example that an invite was minted or a code was filled.
+  proof: in a scratch copy with both resets removed, runner.test.ts passed 14 of 14.
+- [STYLE] gateway/test/headless/settings.test.ts:1-3: the round adds a second `import ... from 'node:fs'` (for `readFileSync`) and puts it, and the local `flag.js` import, above the file's existing `node:fs` import.
+  route: implementer
+  rule: use one `node:fs` import, with node imports first, then vitest, then local imports (as in gateway/test/headless/runner.test.ts:3).
