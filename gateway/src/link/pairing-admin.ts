@@ -1,15 +1,12 @@
 import type { LinkMessage } from '@agent-gateway/protocol';
 import type { PairingRow, Store } from '../store/index.js';
-import { INVITE_MESSAGE_WINDOW_MS, MAX_INVITE_MESSAGES_PER_WINDOW } from './invite-admin.js';
+import { takeLinkAdminMessage } from './invite-admin.js';
 import type { LinkConnection, LinkRegistry } from './registry.js';
 
 /** The most pairings one `pairings` reply carries (oldest first). */
 export const MAX_LISTED_PAIRINGS = 200;
 
 type PairingRequest = Extract<LinkMessage, { type: 'listPairings' | 'revokePairing' }>;
-
-/** Request times per connection in the last window; each array is bounded by the cap. */
-const windows = new WeakMap<LinkConnection, number[]>();
 
 /** The stored row decides, read now: never the hello and never a cached value. */
 function senderIsAdmin(store: Store, conn: LinkConnection): boolean {
@@ -72,14 +69,10 @@ export function handlePairingMessage(
     return;
   }
   const at = now();
-  let hits = windows.get(conn);
-  if (!hits) windows.set(conn, (hits = []));
-  while (hits.length > 0 && hits[0]! <= at - INVITE_MESSAGE_WINDOW_MS) hits.shift();
-  if (hits.length >= MAX_INVITE_MESSAGES_PER_WINDOW) {
+  if (!takeLinkAdminMessage(conn, at)) {
     fail('RATE_LIMITED', 'too many pairing requests');
     return;
   }
-  hits.push(at);
   try {
     if (msg.type === 'revokePairing') {
       // A foreign-world, already revoked or unknown id all answer the same.

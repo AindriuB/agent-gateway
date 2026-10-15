@@ -4,6 +4,7 @@ import { getLinkClient } from '../../link/runtime.js';
 import {
   ManageError,
   MANAGE_MIN_GATEWAY_VERSION,
+  PAIRINGS_MIN_GATEWAY_VERSION,
   gatewaySupportsGrants,
   type InviteSummary,
   type PairingSummary,
@@ -73,7 +74,7 @@ const blank = (tab: Tab, unavailable: string): ManageContext => ({
 });
 
 /** Why the app cannot be used right now, or '' when it can. Sends nothing. */
-export function unavailableReason(): string {
+export function unavailableReason(tab: Tab = 'invites'): string {
   const i18n = game.i18n;
   const client = getLinkClient() as any;
   const state = client.state;
@@ -81,7 +82,8 @@ export function unavailableReason(): string {
     return i18n.localize('AGENT_GATEWAY.Manage.tooOld');
   if (state.kind !== 'connected') return i18n.localize('AGENT_GATEWAY.Manage.offline');
   if (!client.isAdmin) return i18n.localize('AGENT_GATEWAY.Manage.notAdmin');
-  if (!gatewaySupportsGrants(client.gatewayVersion, MANAGE_MIN_GATEWAY_VERSION))
+  const min = tab === 'pairings' ? PAIRINGS_MIN_GATEWAY_VERSION : MANAGE_MIN_GATEWAY_VERSION;
+  if (!gatewaySupportsGrants(client.gatewayVersion, min))
     return i18n.localize('AGENT_GATEWAY.Manage.tooOld');
   return '';
 }
@@ -98,7 +100,7 @@ function failureKey(e: unknown): string {
 /** What the window shows for a tab. The one-time invite code is never part of it. */
 export async function prepareManage(tab: Tab = 'invites'): Promise<ManageContext> {
   const i18n = game.i18n;
-  const why = unavailableReason();
+  const why = unavailableReason(tab);
   if (why) return blank(tab, why);
   const client = getLinkClient() as any;
   try {
@@ -236,7 +238,7 @@ export function createManageApp(): any {
 
     static async onRevokePairing(this: any, _event: Event, target: HTMLElement): Promise<void> {
       const id = target?.dataset?.pairingId;
-      if (!id || unavailableReason()) return;
+      if (!id || unavailableReason('pairings')) return;
       // Another admin GM's row has a disabled button; refuse here too if the attribute is forged.
       if (target.dataset.canRevoke !== 'true') return;
       if (target.dataset.self === 'true' && !(await confirmSelfRevoke())) return;

@@ -130,8 +130,10 @@ export type InviteSummary = Extract<LinkMessage, { type: 'invites' }>['invites']
 export type PairingSummary = Extract<LinkMessage, { type: 'pairings' }>['pairings'][number];
 export type InviteCreated = Extract<LinkMessage, { type: 'inviteCreated' }>;
 
-/** The first gateway version that answers the invite and pairing management messages. */
+/** The first gateway version that answers the invite messages (task 92). */
 export const MANAGE_MIN_GATEWAY_VERSION = '0.2.0';
+/** The first gateway version that answers the pairing messages; older ones close on them. */
+export const PAIRINGS_MIN_GATEWAY_VERSION = '0.3.0';
 
 /** A refused or failed management request; `code` is the gateway's error code or a local one. */
 export class ManageError extends Error {
@@ -311,7 +313,8 @@ export class LinkClient {
     )
       return Promise.reject(new ManageError('OFFLINE', 'Gateway offline'));
     if (!this.isAdmin) return Promise.reject(new ManageError('FORBIDDEN', 'Not an admin GM'));
-    if (!gatewaySupportsGrants(this.gatewayVersion, MANAGE_MIN_GATEWAY_VERSION))
+    const min = expect === 'pairings' ? PAIRINGS_MIN_GATEWAY_VERSION : MANAGE_MIN_GATEWAY_VERSION;
+    if (!gatewaySupportsGrants(this.gatewayVersion, min))
       return Promise.reject(new ManageError('TOO_OLD', 'Gateway too old for management'));
     if (this.manageRequests.size >= 4)
       return Promise.reject(new ManageError('BUSY', 'Too many pending requests'));

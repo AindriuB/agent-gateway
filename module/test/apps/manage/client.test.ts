@@ -42,7 +42,7 @@ function connected(opts: { version?: string; admin?: boolean } = {}) {
   ws.onopen?.();
   ws.recv({
     type: 'welcome',
-    gatewayVersion: opts.version ?? '0.2.0',
+    gatewayVersion: opts.version ?? '0.3.0',
     protocolVersion: PROTOCOL_VERSION,
     connectionId: 'c1',
     agentId: 'a1',
@@ -129,6 +129,23 @@ describe('management requests on the link client', () => {
     const { client } = connected();
     client.stop();
     await expect(client.listInvites()).rejects.toBeInstanceOf(ManageError);
+  });
+
+  it('sends invite messages to a 0.2.0 gateway but pairing messages only from 0.3.0', async () => {
+    const v2 = connected({ version: '0.2.0' });
+    const n = v2.ws.sent.length;
+    await expect(v2.client.listPairings()).rejects.toMatchObject({ code: 'TOO_OLD' });
+    await expect(v2.client.revokePairing('p1')).rejects.toMatchObject({ code: 'TOO_OLD' });
+    expect(v2.ws.sent).toHaveLength(n);
+    void v2.client.listInvites().catch(() => undefined);
+    expect(v2.ws.sent).toHaveLength(n + 1);
+    expect(v2.ws.sent[n]!).toMatchObject({ type: 'listInvites' });
+
+    const v3 = connected({ version: '0.3.0' });
+    const m = v3.ws.sent.length;
+    void v3.client.listPairings().catch(() => undefined);
+    expect(v3.ws.sent).toHaveLength(m + 1);
+    expect(v3.ws.sent[m]!).toMatchObject({ type: 'listPairings' });
   });
 
   it('times out and rejects pending requests on disconnect', async () => {

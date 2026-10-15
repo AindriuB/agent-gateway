@@ -31,7 +31,7 @@ function adminClient(over: object = {}): any {
   return {
     state: { kind: 'connected' },
     isAdmin: true,
-    gatewayVersion: '0.2.0',
+    gatewayVersion: '0.3.0',
     listInvites: vi.fn(async () => [invite()]),
     createInvite: vi.fn(async () => ({
       type: 'inviteCreated',
@@ -142,6 +142,41 @@ describe('the management app', () => {
       }),
     );
     expect((await slow.prepareManage()).unavailable).toBe('L:AGENT_GATEWAY.Manage.timeout');
+  });
+
+  it('gates Invites at gateway 0.2.0 and Pairings at 0.3.0', async () => {
+    const v2 = adminClient({ gatewayVersion: '0.2.0' });
+    const mod = await load(v2);
+    expect((await mod.prepareManage('invites')).unavailable).toBe('');
+    expect(v2.listInvites).toHaveBeenCalledOnce();
+    expect((await mod.prepareManage('pairings')).unavailable).toBe('L:AGENT_GATEWAY.Manage.tooOld');
+    expect(v2.listPairings).not.toHaveBeenCalled();
+    const App = mod.createManageApp();
+    await App.onRevokePairing.call({ render: vi.fn() }, new Event('x'), {
+      dataset: { pairingId: 'p1', canRevoke: 'true', self: 'false' },
+    });
+    expect(v2.revokePairing).not.toHaveBeenCalled();
+    vi.resetModules();
+    const v3 = adminClient({ gatewayVersion: '0.3.0' });
+    const mod3 = await load(v3);
+    expect((await mod3.prepareManage('invites')).unavailable).toBe('');
+    expect((await mod3.prepareManage('pairings')).unavailable).toBe('');
+    expect(v3.listPairings).toHaveBeenCalledOnce();
+  });
+
+  it('re-checks availability before creating an invite', async () => {
+    const client = adminClient({ isAdmin: false });
+    const mod = await load(client);
+    const App = mod.createManageApp();
+    const self = {
+      render: vi.fn(),
+      element: {
+        querySelector: (s: string) => ({ value: s.includes('userId') ? 'u1' : '3600000' }),
+      },
+    };
+    await App.onCreateInvite.call(self, new Event('x'), {});
+    expect(client.createInvite).not.toHaveBeenCalled();
+    expect(self.render).not.toHaveBeenCalled();
   });
 
   it('lists invites with names resolved, falling back to the id, and only players to invite', async () => {

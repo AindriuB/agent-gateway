@@ -34,6 +34,13 @@ function take(hits: number[], now: number, max: number, windowMs: number): boole
   return true;
 }
 
+/** Count one invite or pairing message against the connection's shared window. */
+export function takeLinkAdminMessage(conn: LinkConnection, now: number): boolean {
+  let w = windows.get(conn);
+  if (!w) windows.set(conn, (w = { all: [] }));
+  return take(w.all, now, MAX_INVITE_MESSAGES_PER_WINDOW, INVITE_MESSAGE_WINDOW_MS);
+}
+
 /**
  * Create windows keyed by the creating pairing id, so reconnecting does not reset them. Bounded:
  * expired windows are evicted when full, and a new key is refused while every slot is live.
@@ -126,9 +133,7 @@ export function handleInviteMessage(
     return;
   }
   const at = now();
-  let w = windows.get(conn);
-  if (!w) windows.set(conn, (w = { all: [] }));
-  if (!take(w.all, at, MAX_INVITE_MESSAGES_PER_WINDOW, INVITE_MESSAGE_WINDOW_MS)) {
+  if (!takeLinkAdminMessage(conn, at)) {
     fail('RATE_LIMITED', 'too many invite requests');
     return;
   }
