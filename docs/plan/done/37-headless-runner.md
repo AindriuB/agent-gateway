@@ -223,3 +223,15 @@ Reviewed HEAD: af7a20f. This is the full review after attempt 3, verdict CLEAN a
 - [P3] gateway/src/headless/runner.ts:113: the new `notInstalledLogged` field is declared but never read or written, so the "log the playwright-core-not-installed message once per run" item was not done. `launcher.launch()` sits outside the try block in `openSession`, so its error escapes to the catch in `tick()`, and that catch logs on every poll. Either finish it, with a test that two polls log the message once, or remove the dead field.
   route: implementer
   input: run the .mcpb bundle (no playwright-core) with headless configured while the world is up →  "headless runner: playwright-core is not installed; …" is logged every 15 s.
+
+## Review round 5 — findings (external)
+Andrew's PR review of #151 at f68405e (2026-10-15; a static review, no tests run).
+
+- [P2] gateway/src/headless/runner.ts:269: a browser crash leaves the agent offline indefinitely. The stale browser/context/page reference stops the runner from relaunching, so later polls only log errors. Detect when the browser, context or page closes or disconnects (Playwright `disconnected`/`close` events, and a closed page found while polling), clear the reference so the next poll relaunches, and log the event once. Fix the whole class: any path where the runner holds a dead handle and never recovers.
+  route: implementer
+  input: Chromium is killed (OOM, crash) while the world is up →  the runner never relaunches; every 15 s poll logs an error; the agent stays offline until the gateway restarts.
+  test: a fake launcher whose browser emits close/disconnect mid-session →  the next poll relaunches and links again. The test must fail on f68405e.
+- [P2] gateway/src/headless/runner.ts:161: a pending Chromium launch blocks shutdown and primary handoff. `stop()` waits for a `launcher.launch()` it cannot cancel, so stop, step-down and teardown can exceed the required 5 s. Bound how long `stop()` waits for an in-flight launch, and when a launch resolves after `stop()` has returned, close the late browser or context immediately and never use it. Apply the same rule to every other in-flight step `stop()` waits on (login, page navigation, the invite fill), so none of them can push stop past 5 s.
+  route: implementer
+  input: `launcher.launch()` hangs (slow disk, first-run Chromium unpacking) and `app.stop()` is called →  stop takes as long as the launch.
+  test: a fake launcher whose launch never settles, or settles after stop →  `stop()` returns in under 5 s, and a late-resolving browser is closed. The test must fail on f68405e.
