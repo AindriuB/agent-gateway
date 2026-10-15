@@ -188,3 +188,12 @@ The fix must keep the .mcpb bundle building and its tests passing (including "sh
 Prefer a fix inside Owns, such as a lazy load from gateway/src/headless/. If the only workable fix needs scripts/build-mcpb.mjs, which is outside Owns, stop and report `BLOCKED: spec change`.
 
 The other test:scripts failures (pack-module, chatgpt-plugin, build-claude-plugin) are "zip is not installed" on the host and happen on every branch. They are not this task's.
+
+## Review round 3 — findings
+Reviewed HEAD: 1ecfa4a. These come from the attempt 2 verify: the acceptance reviewer approved, and the tester passed apart from the host's missing zip.
+
+- [P2] gateway/test/headless/app.test.ts:241: only `app.stop()` has a test for stopping within 5 s. The acceptance item asks for "stops within 5 s of app.stop(), a step-down, or teardown (tests with a fake browser launcher)". The step-down and `teardown` paths (gateway/src/app.ts:374,444) share the call but have no test of their own.
+  route: implementer
+  input: remove `runner?.stop()` from the teardown or step-down path →  no test fails.
+- [P3, optional] gateway/src/headless/browser.ts:109: the .mcpb bundle ships no node_modules. A .mcpb user who configures headless therefore gets a raw "Cannot find package 'playwright-core'" logged on every 15 s poll while the world is up. Catch that error, log one fixed line saying the headless runner needs the npm or Docker install, and don't repeat it every poll.
+  route: implementer
