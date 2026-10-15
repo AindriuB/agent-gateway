@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { HEADLESS_FLAG_KEY, HEADLESS_LINK_KEY } from '../../src/headless/flag.js';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../../src/config/index.js';
+import { HEADLESS_FLAG_KEY, HEADLESS_LINK_KEY } from '../../src/headless/flag.js';
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));

@@ -254,6 +254,8 @@ describe('HeadlessRunner lifecycle', () => {
     t.foundry.active = true;
     await t.runner.tick();
     expect(t.launcher.launches).toHaveLength(2);
+    const codes = () => t.launcher.filled.filter((v) => /^[A-Z2-9]{4}(-[A-Z2-9]{4}){2}$/.test(v));
+    expect(codes()).toHaveLength(2);
   });
 
   it('stop() returns within 5 s while a status fetch never settles', async () => {
