@@ -11,7 +11,8 @@
 - gateway/src/link/registry.ts (the optional `headless` field on `LinkConnection.info` only; Amendment 1)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
-- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts; plus, per Amendment 4, replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call)
+- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts; plus, per Amendment 4, replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call; plus, per Amendment 5, `readConfigFile`'s error message in config/index.ts)
+- gateway/src/relay/config.ts (the headless field in RelayConfig, headlessFingerprint, and that field in make/parse/compare/describe only; Amendment 5)
 - gateway/src/bin/signals.ts (new; the shutdown signal wiring, Amendment 4)
 - gateway/test/bin/signals.test.ts (new)
 - gateway/package.json (`playwright-core` dependency only) and package-lock.json
@@ -349,3 +350,26 @@ Andrew's PR review of #151 at 6567378 (2026-10-15).
   route: implementer
   input: `--headless-foundry-url https://agent:hunter2@foundry.example` →  the error message contains `agent:hunter2`.
   test: the error message for that input contains neither the username nor the password.
+
+## Amendment 5 (2026-10-15)
+
+Andrew, from the review of the round 11 fix (6084d50).
+
+### Decisions
+
+1. **Owns gains `gateway/src/relay/config.ts` (the headless field in RelayConfig, headlessFingerprint, and that field in make/parse/compare/describe only).** Round 11 asked for the headless settings in the takeover comparison, and that comparison lives in this file.
+2. **The config/index.ts Owns entry widens to cover `readConfigFile`'s error message.** `readConfigFile` must not put the `JSON.parse` message into its error, because Node quotes a snippet of the file there and the file may hold `headlessPassword`. Give a fixed message, with the line and column at most. Reason: task 37 added `headlessPassword` to the 0600 config file, which made this leak possible.
+3. **Headless wins on takeover.** Suppose a newer instance's config differs from the primary's ONLY in having no headless settings (its headless field is empty), while the primary has them. That instance relays to the primary instead of taking over, so a second ordinary MCP client never stops a running agent. The other directions are unchanged:
+   - a newer instance with different non-empty headless settings still takes over;
+   - an instance with headless settings still takes over from one without.
+
+   An older instance without headless settings that connects to a headless primary should relay rather than get `RELAY_CONFIG_MISMATCH`, if that follows naturally from the change. The implementer decides and states the outcome in the PR.
+4. **Note for 43:** the docs must state the takeover rules for headless (decision 3).
+
+### Acceptance (added)
+- [ ] A config file containing `{"headlessPassword": hunter2}`, and the single-quoted variant `{'headlessPassword': 'hunter2'}`, makes `readConfigFile` throw an error whose message contains neither `hunter2` nor `assword` (test).
+- [ ] Takeover tests for all three directions:
+  - a newer instance without headless settings against a primary with them relays, and the primary's runner keeps running (it is not stopped);
+  - a newer instance with different non-empty headless settings takes over;
+  - a newer instance with headless settings takes over from a primary without them.
+- [ ] The PR states whether an older instance without headless settings connecting to a headless primary relays or gets `RELAY_CONFIG_MISMATCH`; if it relays, a test shows it.
