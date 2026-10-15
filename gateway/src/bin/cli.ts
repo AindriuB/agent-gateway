@@ -68,6 +68,14 @@ Options:
                       Cancel that user's unused invites and exit (exit 1 if there were none)
   --list-invites      List invites (id, target, kind, created, expiry, status; never the code), exit
   --list-pairings     List pairings (world, user, admin, name, origin, created, revoked), exit
+  --headless-foundry-url <url>
+                      Run one agent with no browser open (AGENT_GATEWAY_HEADLESS_FOUNDRY_URL):
+                      the gateway launches Chromium, logs into this Foundry as the agent user
+                      and pairs it itself. Needs --headless-world and --headless-user, and the
+                      password in AGENT_GATEWAY_HEADLESS_PASSWORD (or the 0600 --config file's
+                      headlessPassword); there is no password flag
+  --headless-world <id>  World id the agent joins (AGENT_GATEWAY_HEADLESS_WORLD)
+  --headless-user <id>   Foundry user id of the agent (AGENT_GATEWAY_HEADLESS_USER); an id, not a name
   --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
@@ -454,6 +462,9 @@ function main(): void {
         'source-url': { type: 'string' },
         'server-mode': { type: 'boolean' },
         'trust-proxy': { type: 'boolean' },
+        'headless-foundry-url': { type: 'string' },
+        'headless-world': { type: 'string' },
+        'headless-user': { type: 'string' },
         backup: { type: 'string' },
         invite: { type: 'boolean' },
         'revoke-pairing': { type: 'boolean' },
@@ -526,6 +537,9 @@ function main(): void {
         linkHost: values['link-host'],
         httpHost: values['http-host'],
         trustProxy: values['trust-proxy'],
+        headlessFoundryUrl: values['headless-foundry-url'],
+        headlessWorld: values['headless-world'],
+        headlessUser: values['headless-user'],
       },
       onIgnored: (m) => process.stderr.write(`${m}\n`),
     });
