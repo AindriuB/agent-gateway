@@ -83,6 +83,7 @@ done
 for _ in $(seq 1 150); do [ -e "$ready" ] && break; sleep 0.1; done
 [ -e "$ready" ] || { echo "conformance: fake module never reconnected for http" >&2; exit 1; }
 url="http://127.0.0.1:$HTTP_PORT/mcp"
+# shellcheck source=scripts/lib/inspector-retry.sh disable=SC1091
 . scripts/lib/inspector-retry.sh
 inspect_http() {
   retry_429 "$work/gateway.log" npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$url" --transport http \
