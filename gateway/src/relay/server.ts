@@ -290,10 +290,15 @@ export class RelayServer {
       // A relayed session runs on this primary's link, store and selector, so a difference in
       // `allowOrigins` is never served. A difference only in the session-neutral ports and log
       // level is served, unless the caller is strictly newer: then this primary steps down for it.
-      const newer = !!theirConfig && theirConfig.startedAt > this.opts.config.startedAt;
+      // A headless primary never steps down for a caller with no headless settings: a plain MCP
+      // client must not stop a running agent, however new it is or whatever else differs.
+      const newer =
+        !!theirConfig &&
+        theirConfig.startedAt > this.opts.config.startedAt &&
+        !(this.opts.config.headless !== '' && theirConfig.headless === '');
       const neutralOnly = !!theirConfig && sameSessionConfig(theirConfig, this.opts.config);
       if (newer || !neutralOnly) {
-        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig)}${newer ? '; stepping down for the newer instance' : ''}`;
+        const text = `relay refused: ${describeConfigDiff(this.opts.config, theirConfig, false)}${newer ? '; stepping down for the newer instance' : ''}`;
         // Keyed on the logged text, not the peer's start time: peers with the same settings but
         // different start times must not take turns defeating the dedup. Bounded; cleared when full.
         const key = `${newer ? 'STEPDOWN' : 'MISMATCH'} ${text}`;
@@ -306,11 +311,14 @@ export class RelayServer {
           config: this.opts.config,
         });
         if (newer)
-          this.stepDown(describeConfigDiff(this.opts.config, theirConfig), theirConfig!.startedAt);
+          this.stepDown(
+            describeConfigDiff(this.opts.config, theirConfig, false),
+            theirConfig!.startedAt,
+          );
         return;
       }
       this.opts.log(
-        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig)}`,
+        `relay served despite a session-neutral difference: ${describeConfigDiff(this.opts.config, theirConfig, false)}`,
       );
     }
     if (this.active >= MAX_RELAY_SESSIONS) {

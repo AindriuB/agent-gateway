@@ -127,8 +127,16 @@ export const sameConfig = (a: RelayConfig, b: RelayConfig): boolean =>
   a.trustProxy === b.trustProxy &&
   sameSessionConfig(a, b);
 
-/** Names what differs, for logs and the degraded reason. Untrusted text is sanitised. */
-export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | undefined): string {
+/**
+ * Names what differs, for logs and the degraded reason. Untrusted text is sanitised.
+ * `mineIsCaller` says which side `mine` is: a caller with no headless settings against a primary
+ * that has them is tolerated (see `sameSessionConfig`), so that difference is not reported.
+ */
+export function describeConfigDiff(
+  mine: RelayConfig,
+  theirs: RelayConfig | undefined,
+  mineIsCaller: boolean,
+): string {
   if (!theirs) return 'the other gateway did not report its configuration';
   const parts: string[] = [];
   if (mine.allowOrigins.join(',') !== theirs.allowOrigins.join(','))
@@ -157,6 +165,9 @@ export function describeConfigDiff(mine: RelayConfig, theirs: RelayConfig | unde
     parts.push(
       `trust proxy ${mine.trustProxy ? 'on' : 'off'} here vs ${theirs.trustProxy ? 'on' : 'off'} there`,
     );
-  if (mine.headless !== theirs.headless) parts.push('headless agent settings differ');
+  const caller = mineIsCaller ? mine : theirs;
+  const primary = mineIsCaller ? theirs : mine;
+  if (mine.headless !== theirs.headless && !(caller.headless === '' && primary.headless !== ''))
+    parts.push('headless agent settings differ');
   return parts.join('; ') || 'configuration differs';
 }

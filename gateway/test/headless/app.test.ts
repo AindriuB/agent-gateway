@@ -255,11 +255,20 @@ describe('stopping', () => {
     const t = await boot({ serverMode: false });
     await until(() => t.launcher.launches.length > 0, 10_000, 'launch');
     expect(t.launcher.closes).toBe(0);
-    // A newer instance with other settings (another HTTP port) makes this primary step down.
+    // A newer headless instance with other settings (another HTTP port and password) makes this
+    // primary step down; a plain one would not (see takeover.test.ts).
     let httpPort = await freePort();
     while (httpPort === t.httpPort || httpPort === t.linkPort) httpPort = await freePort();
     const newer = createApp(
-      { linkPort: t.linkPort, httpPort, logLevel: 'error' } as unknown as Config,
+      {
+        linkPort: t.linkPort,
+        httpPort,
+        logLevel: 'error',
+        headlessFoundryUrl: ORIGIN,
+        headlessWorld: W,
+        headlessUser: U,
+        headlessPassword: 'hunter3',
+      } as unknown as Config,
       {
         version: '0.0.0-test',
         dbPath: t.state.db,
@@ -267,6 +276,21 @@ describe('stopping', () => {
         stdout: new PassThrough(),
         writeStatus: () => undefined,
         http: true,
+        selector: { world: W, user: U },
+        headless: {
+          launcher: new FakeLauncher({
+            ids: { worldId: W, userId: U, origin: ORIGIN, linkPort: () => t.linkPort },
+          }),
+          runner: {
+            fetch: (async () =>
+              new Response(JSON.stringify({ active: true, world: W }), {
+                status: 200,
+              })) as typeof fetch,
+            pollMs: 3_600_000,
+            linkGraceMs: 50,
+            pairWaitMs: 5_000,
+          },
+        },
       },
     );
     apps.push(newer);

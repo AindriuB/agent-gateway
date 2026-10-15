@@ -265,7 +265,7 @@ export class RelaySecondary {
         if (r.code === 'RELAY_CONFIG_MISMATCH')
           return {
             kind: 'standby',
-            reason: `the primary gateway has different session settings (${describeConfigDiff(this.opts.config, r.config)}) and is not older than this instance, so it is left running`,
+            reason: `the primary gateway has different session settings (${describeConfigDiff(this.opts.config, r.config, true)}) and is not older than this instance, so it is left running`,
           };
         if (r.code === 'RELAY_CONFIG_STEPDOWN') {
           this.opts.log('the primary gateway has an older configuration and is stepping down');

@@ -23,6 +23,7 @@ function gateway(
   httpPort: number,
   password: string | undefined,
   lines: string[],
+  over: { logLevel?: string; allowedOrigins?: string[]; logs?: string[] } = {},
 ) {
   const launcher = new FakeLauncher({
     ids: { worldId: W, userId: U, origin: ORIGIN, linkPort: () => shared.linkPort },
@@ -30,7 +31,7 @@ function gateway(
   const config = {
     linkPort: shared.linkPort,
     httpPort,
-    logLevel: 'error',
+    logLevel: over.logLevel ?? 'error',
     ...(password === undefined
       ? {}
       : {
@@ -46,6 +47,17 @@ function gateway(
     stdin: new PassThrough(),
     stdout: new PassThrough(),
     writeStatus: (l) => void lines.push(l),
+    ...(over.allowedOrigins ? { allowedOrigins: over.allowedOrigins } : {}),
+    ...(over.logs
+      ? {
+          logger: {
+            debug: () => undefined,
+            info: (m: string) => void over.logs!.push(m),
+            warn: (m: string) => void over.logs!.push(m),
+            error: (m: string) => void over.logs!.push(m),
+          },
+        }
+      : {}),
     selector: { world: W, user: U },
     ...(password === undefined
       ? {}
@@ -126,6 +138,56 @@ describe('headless wins on takeover', () => {
     const b = gateway(shared, httpPort, undefined, bLines);
     await b.app.start();
     await sleep(1_500);
+    expect(a.launcher.launches).toHaveLength(1);
+    expect(a.launcher.closes).toBe(0);
+    expect(b.launcher.launches).toHaveLength(0);
+  }, 30_000);
+
+  it.each([
+    ['logLevel', { logLevel: 'debug' }, false],
+    ['httpPort', {}, true],
+  ])(
+    'a newer plain gateway differing only in %s is relayed and the runner keeps running',
+    async (_name, over, otherPort) => {
+      const shared = await setup();
+      const httpPort = await freePort();
+      const a = gateway(shared, httpPort, 'hunter2', []);
+      await a.app.start();
+      await until(() => a.launcher.launches.length > 0, 15_000, 'A starts its agent');
+      await sleep(10);
+      const logs: string[] = [];
+      const b = gateway(shared, otherPort ? await freePort() : httpPort, undefined, [], {
+        ...over,
+        logs,
+      });
+      await b.app.start();
+      await until(() => logs.some((l) => l.includes('relays to it')), 15_000, 'B relays');
+      expect(logs.join('\n')).not.toContain('standby');
+      await sleep(500);
+      expect(a.launcher.launches).toHaveLength(1);
+      expect(a.launcher.closes).toBe(0);
+      expect(b.launcher.launches).toHaveLength(0);
+    },
+    30_000,
+  );
+
+  it('a newer plain gateway differing in allowed origins is a standby and the runner keeps running', async () => {
+    const shared = await setup();
+    const httpPort = await freePort();
+    const a = gateway(shared, httpPort, 'hunter2', []);
+    await a.app.start();
+    await until(() => a.launcher.launches.length > 0, 15_000, 'A starts its agent');
+    await sleep(10);
+    const logs: string[] = [];
+    const b = gateway(shared, httpPort, undefined, [], {
+      allowedOrigins: ['https://other.example.com'],
+      logs,
+    });
+    await b.app.start();
+    await until(() => logs.some((l) => l.includes('is a standby')), 15_000, 'B standby');
+    expect(logs.join('\n')).toContain('different session settings');
+    expect(logs.join('\n')).not.toContain('headless agent settings differ');
+    await sleep(500);
     expect(a.launcher.launches).toHaveLength(1);
     expect(a.launcher.closes).toBe(0);
     expect(b.launcher.launches).toHaveLength(0);
