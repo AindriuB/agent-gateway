@@ -1,13 +1,13 @@
 // OAuth client for scripts/conformance.sh: registers, authorizes through the consent page and
 // exchanges the code, then prints the access token on stdout (nothing else).
-//   node oauth-flow.mjs <publicUrl> <codeFile> <world> <user>
+//   node oauth-flow.mjs <mcpUrl> <codeFile> <world> <user>
+// Starts from the MCP endpoint only: every other URL comes from the advertised discovery metadata.
 // The consent code is delivered to the fake module (task 67), which writes it to <codeFile>.
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const [base, codeFile, world, user] = process.argv.slice(2);
-const origin = new URL(base).origin;
+const [mcpUrl, codeFile, world, user] = process.argv.slice(2);
 const redirect = 'http://127.0.0.1:6274/oauth/callback';
 const fail = (msg) => {
   process.stderr.write(`oauth-flow: ${msg}\n`);
@@ -17,7 +17,37 @@ const form = (o) => new URLSearchParams(o).toString();
 const hiddenValue = (html, name) =>
   new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1] ?? fail(`page has no ${name} field`);
 
-const reg = await fetch(`${origin}/register`, {
+
+// --- discovery: 401 -> WWW-Authenticate -> protected-resource metadata -> AS metadata ---
+const probe = await fetch(mcpUrl, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+  body: '{}',
+});
+if (probe.status !== 401) fail(`unauthenticated MCP request returned ${probe.status}, want 401`);
+const challenge401 = probe.headers.get('www-authenticate') ?? fail('401 has no WWW-Authenticate');
+const prmUrl =
+  /resource_metadata="([^"]+)"/.exec(challenge401)?.[1] ??
+  fail(`WWW-Authenticate has no resource_metadata: ${challenge401}`);
+const getJson = async (url, what) => {
+  const r = await fetch(url);
+  if (r.status !== 200) fail(`${what} (${url}) returned ${r.status}`);
+  return r.json();
+};
+const prm = await getJson(prmUrl, 'protected-resource metadata');
+if (prm.resource !== mcpUrl) fail(`protected-resource "resource" is ${prm.resource}, want ${mcpUrl}`);
+const asIssuer = prm.authorization_servers?.[0] ?? fail('protected-resource metadata names no authorization server');
+const asUrl = new URL(`/.well-known/oauth-authorization-server${new URL(asIssuer).pathname.replace(/\/$/, '')}`, asIssuer);
+const meta = await getJson(asUrl, 'authorization-server metadata');
+if (meta.issuer !== asIssuer) fail(`AS issuer ${meta.issuer} does not match ${asIssuer}`);
+for (const k of ['authorization_endpoint', 'token_endpoint', 'registration_endpoint']) {
+  if (typeof meta[k] !== 'string') fail(`AS metadata lacks ${k}`);
+  new URL(meta[k]);
+}
+if (!meta.code_challenge_methods_supported?.includes('S256')) fail('AS metadata does not advertise S256');
+const origin = new URL(meta.authorization_endpoint).origin;
+
+const reg = await fetch(meta.registration_endpoint, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({
@@ -32,7 +62,7 @@ const { client_id: clientId } = await reg.json();
 const verifier = randomBytes(32).toString('base64url');
 const challenge = createHash('sha256').update(verifier).digest('base64url');
 const state = randomBytes(8).toString('hex');
-const authUrl = `${origin}/authorize?${form({
+const authUrl = `${meta.authorization_endpoint}?${form({
   response_type: 'code',
   client_id: clientId,
   redirect_uri: redirect,
@@ -40,17 +70,21 @@ const authUrl = `${origin}/authorize?${form({
   code_challenge_method: 'S256',
   scope: 'read',
   state,
-  resource: `${origin}/mcp`,
+  resource: mcpUrl,
 })}`;
 const page = await fetch(authUrl, { redirect: 'manual' });
 if (page.status !== 200) fail(`authorize returned ${page.status}`);
 const html = await page.text();
 const rid = hiddenValue(html, 'rid');
 const csrf = hiddenValue(html, 'csrf');
+const consentUrl = new URL(
+  /<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? fail('consent page has no form action'),
+  meta.authorization_endpoint,
+).href;
 const cookie = `__Host-agcsrf-${rid}=${csrf}`;
 
 const consent = (fields) =>
-  fetch(`${origin}/authorize/consent`, {
+  fetch(consentUrl, {
     method: 'POST',
     redirect: 'manual',
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin, cookie },
@@ -70,7 +104,7 @@ if (back.searchParams.get('state') !== state) fail('state did not round-trip');
 const authCode =
   back.searchParams.get('code') ?? fail(`no code (error=${back.searchParams.get('error')})`);
 
-const tok = await fetch(`${origin}/token`, {
+const tok = await fetch(meta.token_endpoint, {
   method: 'POST',
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
   body: form({
@@ -79,7 +113,7 @@ const tok = await fetch(`${origin}/token`, {
     code: authCode,
     code_verifier: verifier,
     redirect_uri: redirect,
-    resource: `${origin}/mcp`,
+    resource: mcpUrl,
   }),
 });
 if (tok.status !== 200) fail(`token returned ${tok.status}`);

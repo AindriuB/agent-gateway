@@ -120,7 +120,7 @@ static_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" \
 [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" -H 'content-type: application/json' -d '{}')" = "401" ] \
   || { echo "conformance: unauthenticated request was not 401" >&2; exit 1; }
 
-access="$(node gateway/test/conformance/oauth-flow.mjs "$public" "$work/consent-code" conf gm)" \
+access="$(node gateway/test/conformance/oauth-flow.mjs "$public/mcp" "$work/consent-code" conf gm)" \
   || { echo "conformance: oauth flow failed" >&2; exit 1; }
 [ -n "$access" ] || { echo "conformance: oauth flow returned no token" >&2; exit 1; }
 inspect_oauth() {
