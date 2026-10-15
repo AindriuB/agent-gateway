@@ -434,3 +434,11 @@ Andrew, from the full review after round 13 (484f22d).
 ### Acceptance (added)
 - [ ] Test: a headless primary (older) and a newer plain caller with different `allowOrigins`: the caller's standby reason says the primary is kept because it runs a headless agent, names `allowOrigins` as the differing setting, and does not contain "not older".
 - [ ] Test: a non-headless primary that is genuinely not older and a caller with different `allowOrigins`: the standby reason still contains "is not older than this instance, so it is left running".
+
+## Review round 14 — findings
+At HEAD 1d08ba7. Implements Amendment 7. Comes from the full review after round 13: round 13's P2 and P3 are FIXED, and that review's P3 and scope question were settled by Amendment 7.
+
+- [P3] gateway/src/relay/secondary.ts:268: a newer plain caller refused by an older headless primary is told the primary "is not older than this instance, so it is left running". Make it say the primary is kept because it runs a headless agent, naming the differing session settings (Amendment 7 decision 2). Add the two wording tests from Amendment 7.
+  route: implementer
+- [P3] gateway/src/relay/server.ts:315,321: no test pins `mineIsCaller = false` at the server.ts call sites. In the logLevel/httpPort takeover test, also capture the primary's logger and assert it contains no "headless agent settings differ". The test must fail when that argument is flipped to `true`.
+  route: implementer
