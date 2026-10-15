@@ -51,6 +51,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 ### 0c. 99 done on branch (PR pending): release script gates
 - **99: release script conformance line and v13 gate environment (branch `task/99-release-script-gates`).** `scripts/release.mjs` accepts the `, oauth` conformance line and runs the v13 e2e gate against its own URL and state dir (env or `~/.config/agent-gateway/test.env`, state dir defaulting to `e2e-v13`), refusing a state dir equal to v14's. This unblocks cutting 0.3.0. Residual: `release.mjs:77-78` expands a literal `~/` in an inherited `AGENT_GATEWAY_E2E_STATE_DIR` but `e2e/lib/config.ts:45-47` does not, so a quoted `'~/x'` makes the printed v14 dir and the same-dir check differ from what the gate uses (rare; unquoted `~` is shell-expanded). Andrew still needs the one-time v13 setup in `docs/testing.md` on the release machine.
 
+### 0d. 100 done on branch (PR #162): consent test pairing race
+- **100: headless consent tests pair sequentially (branch `task/100-consent-test-pairing-race`, archived in `docs/plan/done/`).** Fixes the macOS `verify` hang that stopped the 0.3.0 release; with 99 (#161) it unblocks cutting 0.3.0. Follow-up: `invite-admin.test.ts:109` and `pairing-admin.test.ts:152` race `gm.next(X)` against `gm.untilClosed()`, which a close would now reject; neither reaches that path today.
+
 ### 1. ChatGPT plugin
 - **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
 

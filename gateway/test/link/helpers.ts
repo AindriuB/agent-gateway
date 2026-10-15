@@ -77,9 +77,19 @@ export class TestClient {
   }
 
   async next(type?: string): Promise<LinkMessage> {
+    return this.nextOf(type ? [type] : []);
+  }
+
+  /** Next buffered message whose type is in `types` (any type if empty). Rejects once closed with no match. */
+  async nextOf(types: string[]): Promise<LinkMessage> {
     for (;;) {
-      const i = this.messages.findIndex((m) => !type || m.type === type);
+      const i = this.messages.findIndex((m) => !types.length || types.includes(m.type));
       if (i >= 0) return this.messages.splice(i, 1)[0] as LinkMessage;
+      if (this.closed) {
+        const want = types.length ? types.join('|') : 'any';
+        const buf = this.messages.map((m) => m.type).join(', ');
+        throw new Error(`TestClient.next('${want}'): socket closed; buffered: [${buf}]`);
+      }
       await new Promise<void>((r) => this.waiters.push(r));
     }
   }
