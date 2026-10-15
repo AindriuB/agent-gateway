@@ -152,3 +152,11 @@ Andrew's PR review of #153 at fa08e37 (2026-10-15).
 - [P3] gateway/src/app.ts:634: an agent named `constructor` bypasses the missing-password check. The object lookup returns an inherited function, so the runner launches with an invalid password. Use own-property checks (`Object.hasOwn`) or a `Map` for every name-keyed lookup in the headless config path (config/index.ts per-agent keys, app.ts, commands.ts). Also refuse, or safely handle, names such as `constructor`, `__proto__` and `toString` if the name rule allows them.
   - Test: an agent named `constructor` with no password is "not started" (one log line) and never launches.
   route: implementer
+
+## Review round 4 — findings
+Reviewed HEAD: 0fd6398 (re-review of the round 3 external fix). Both parts are FIXED in code with mutation proofs. One test half and one wording issue remain.
+
+- [P2] gateway/test/headless/config/add-revokes.test.ts:287-291: the test is missing round 3's second assertion, "the next connection for (w, u) is classified headless with the stored owner". After the sweep, let a connection for (W, U) pair through the app (mint an invite via the app's provider, or let the runner pair), and assert its `welcome` contains `{headless: true, ownerUserId: <stored owner>}`. It must fail when app.ts's `headlessOwner` is mutated to always return `undefined`.
+  route: implementer
+- [P3] gateway/src/headless/config/commands.ts:14-16, :137-139: `add` calls `revokePairingsFor`, which also revokes the identity's OAuth grants and cancels its unused invites. Its help text and output mention only pairings, and print nothing when the count is zero. Make the help and output say what was revoked and cancelled (pairings, grants, invites), with counts, the way `remove` does. Revoking grants on `add` is intended: the agent user is not for humans.
+  route: implementer
