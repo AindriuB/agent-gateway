@@ -26,8 +26,30 @@ const defaults: BridgeDeps = {
       : game.user,
 };
 
-/** Whether calls arriving over the link count as headless. The tool listing uses the same value. */
-export const LINK_AGENT_HEADLESS = false;
+/** Session-storage key the gateway's headless runner sets (init script) before Foundry loads. */
+export const HEADLESS_FLAG_KEY = 'agent-gateway.headless';
+
+let headlessFlag: boolean | undefined;
+
+/**
+ * Whether calls arriving over the link count as headless. Read once from the session flag the
+ * runner sets; a human's browser never has it. The tool listing uses the same value.
+ */
+export function linkAgentHeadless(): boolean {
+  if (headlessFlag === undefined) {
+    try {
+      headlessFlag = globalThis.sessionStorage?.getItem(HEADLESS_FLAG_KEY) === '1';
+    } catch {
+      headlessFlag = false;
+    }
+  }
+  return headlessFlag;
+}
+
+/** Forget the cached flag so the next read looks at session storage again (tests only). */
+export function resetHeadlessFlagForTests(): void {
+  headlessFlag = undefined;
+}
 
 /**
  * Run inbound link calls through the dispatcher as the local Foundry user. Identity comes only
@@ -46,7 +68,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       {
         tool: frame.tool,
         args: frame.args,
-        agent: { id: client.agentId ?? '', ownerUserId: user.id, headless: LINK_AGENT_HEADLESS },
+        agent: { id: client.agentId ?? '', ownerUserId: user.id, headless: linkAgentHeadless() },
         sessionId: frame.sessionId,
       },
       user,
@@ -117,7 +139,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       tool: frame.tool,
       args: frame.args,
       sessionId: frame.sessionId,
-      agent: { id: agentId, ownerUserId: user.id, headless: LINK_AGENT_HEADLESS },
+      agent: { id: agentId, ownerUserId: user.id, headless: linkAgentHeadless() },
     };
     let approvedGM = false;
     bindReplay(call, {

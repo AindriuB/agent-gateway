@@ -25,6 +25,8 @@ export const HelloMessage = z.strictObject({
     role: z.number().int(),
     isGM: z.boolean(),
   }),
+  /** Sent only by the gateway's own headless runner; informational, the gateway classifies itself. */
+  headless: z.literal(true).optional(),
   resume: z
     .strictObject({
       connectionId: z.string().min(1).max(100),

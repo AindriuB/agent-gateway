@@ -18,6 +18,10 @@ import {
   type PairingCodesOptions,
 } from './link/index.js';
 import { createLogger, type Logger } from './log.js';
+import { HeadlessInvites } from './headless/invites.js';
+import { HeadlessRunner, type BrowserLauncher, type RunnerOptions } from './headless/runner.js';
+import { findBrowser, playwrightLauncher } from './headless/browser.js';
+import { canonicalOrigin } from './link/origin.js';
 import {
   HTTP_BIND_HOST,
   HTTP_SESSION_IDLE_MS,
@@ -35,6 +39,7 @@ import { safeText, type UserSelector } from './routing/index.js';
 import { openStore, type Store } from './store/index.js';
 import {
   LocalUpstream,
+  headlessFingerprint,
   makeRelayConfig,
   createStandbyServer,
   RelaySecondary,
@@ -119,6 +124,24 @@ export interface AppDeps {
   revocationSweepMs?: number;
   /** The OAuth consent step (public mode). Defaults to auto-deny until the consent page (67). */
   oauthConsent?: ConsentStep;
+  /** The headless runner's browser, clocks and timings; tests replace them. */
+  headless?: {
+    launcher?: BrowserLauncher;
+    now?: () => number;
+    runner?: Partial<
+      Pick<
+        RunnerOptions,
+        | 'fetch'
+        | 'now'
+        | 'pollMs'
+        | 'linkGraceMs'
+        | 'pairWaitMs'
+        | 'setInterval'
+        | 'clearInterval'
+        | 'sleep'
+      >
+    >;
+  };
   /** Overrides for the HTTP limits; tests shorten them. */
   httpLimits?: Partial<{
     maxRequestBytes: number;
@@ -145,6 +168,7 @@ export function createApp(config: Config, deps: AppDeps): App {
   let stdioProxy: StdioRelayProxy | undefined;
   let codes: PairingCodes | undefined;
   let sweep: RevocationSweep | undefined;
+  let runner: HeadlessRunner | undefined;
   // One step-down transition at a time; a request that arrives during one is ignored.
   let steppingDown = false;
   let httpNoticeShown = false;
@@ -160,6 +184,12 @@ export function createApp(config: Config, deps: AppDeps): App {
   const trustProxy = config.trustProxy === true;
   const httpOn = deps.http === true || isPublic || serverMode;
   let exposureNoticesShown = false;
+  // Every Config field that changes what the primary does is compared, or is left out on purpose:
+  //  - compared: httpPort, logLevel, publicUrl, serverMode, linkHost, httpHost, trustProxy,
+  //    allowedOrigins, and the headless agent (as a digest, see headlessFingerprint);
+  //  - linkPort: the port is what finds the primary, so a different one never meets it;
+  //  - http: the app reads deps.http, not this field (the CLI maps the flag to it);
+  //  - privacyUrl, sourceUrl: only links on the consent pages; not compared (known gap).
   const relayConfig = () =>
     makeRelayConfig(deps.allowedOrigins ?? [], config.httpPort, config.logLevel, startedAt, {
       publicUrl,
@@ -167,8 +197,21 @@ export function createApp(config: Config, deps: AppDeps): App {
       linkHost,
       httpHost,
       trustProxy,
+      headless: headlessFingerprint(agentCfg, config.headlessNoSandbox === true),
     });
   const stateDir = dbPath === ':memory:' ? undefined : dirname(dbPath);
+  // The one flag/env headless agent (task 37); all four settings are present or none.
+  const agentCfg =
+    config.headlessFoundryUrl && config.headlessWorld && config.headlessUser
+      ? {
+          foundryUrl: config.headlessFoundryUrl,
+          worldId: config.headlessWorld,
+          userId: config.headlessUser,
+          password: config.headlessPassword ?? '',
+        }
+      : undefined;
+  const isConfiguredAgent = (worldId: string, userId: string): boolean =>
+    agentCfg !== undefined && worldId === agentCfg.worldId && userId === agentCfg.userId;
   // What this instance found in its way, for the one log line written once its role is final.
   let holds = `another gateway holds link port ${config.linkPort}`;
   const app: App = {
@@ -214,6 +257,8 @@ export function createApp(config: Config, deps: AppDeps): App {
       codes = undefined;
       sweep?.stop();
       sweep = undefined;
+      await runner?.stop();
+      runner = undefined;
       await httpServer?.close();
       httpServer = undefined;
       await secondary?.stop();
@@ -334,6 +379,8 @@ export function createApp(config: Config, deps: AppDeps): App {
     codes = undefined;
     sweep?.stop();
     sweep = undefined;
+    await runner?.stop();
+    runner = undefined;
     await httpServer?.close();
     httpServer = undefined;
     await relay?.close();
@@ -443,6 +490,58 @@ export function createApp(config: Config, deps: AppDeps): App {
     await secondary.start(reason);
   }
 
+  /** Primary only: warn about stray pairings for the agent identity, then start the runner. */
+  function startHeadless(
+    agent: NonNullable<typeof agentCfg>,
+    invites: HeadlessInvites,
+    registry: LinkRegistry,
+    port: number,
+  ): void {
+    const who = `${safeText(agent.worldId)}/${safeText(agent.userId)}`;
+    const origin = canonicalOrigin(new URL(agent.foundryUrl).origin);
+    for (const p of store?.listActivePairings() ?? []) {
+      if (!isConfiguredAgent(p.worldId, p.userId)) continue;
+      writeStatus(
+        p.origin === origin
+          ? `headless agent ${who} has an active pairing from its own origin ${sanitizeOrigin(p.origin ?? undefined)}; the runner reconnects with it`
+          : `warning: headless agent ${who} has an active pairing from origin ${sanitizeOrigin(p.origin ?? undefined)}, which is not the runner's; revoke it with --revoke-pairing ${agent.worldId} ${agent.userId} unless it is yours`,
+      );
+    }
+    if (!stateDir) {
+      writeStatus(
+        `headless agent ${who} needs a database file for its browser profile; runner off`,
+      );
+      return;
+    }
+    let launcher = deps.headless?.launcher;
+    if (!launcher) {
+      const found = findBrowser(stateDir);
+      if (!found) {
+        writeStatus(
+          `headless agent ${who}: no Chrome, Edge or Chromium found; install one, or put Chromium under ${join(stateDir, 'browsers')}. Runner off`,
+        );
+        return;
+      }
+      writeStatus(`headless runner browser: ${found.kind} at ${found.path}`);
+      launcher = playwrightLauncher(found.path);
+    }
+    const candidate = new HeadlessRunner({
+      agent,
+      stateDir,
+      gatewayLinkUrl: `ws://localhost:${port}`,
+      invites,
+      noSandbox: config.headlessNoSandbox,
+      launcher,
+      isLinked: () => {
+        const c = registry.get(agent.worldId, agent.userId);
+        return c !== undefined && !c.closed;
+      },
+      log: writeStatus,
+      ...deps.headless?.runner,
+    });
+    if (candidate.start()) runner = candidate;
+  }
+
   async function startPrimary(transport: Transport | undefined, retryHttp = false): Promise<void> {
     // Never start over a live primary: it would replace `link` and orphan the original.
     if (link) throw new Error('this process already holds the link');
@@ -530,6 +629,12 @@ export function createApp(config: Config, deps: AppDeps): App {
       }
       return false;
     };
+    const headlessInvites = agentCfg
+      ? new HeadlessInvites({
+          isAgentActive: isConfiguredAgent,
+          ...(deps.headless?.now ? { now: deps.headless.now } : {}),
+        })
+      : undefined;
     link = new LinkServer({
       port: config.linkPort,
       host: linkHost,
@@ -538,6 +643,13 @@ export function createApp(config: Config, deps: AppDeps): App {
       // Per-client limits in server mode need real client keys with or without a public URL.
       ...(trustProxy ? { trustProxy } : {}),
       serverMode,
+      ...(headlessInvites
+        ? {
+            inviteProvider: headlessInvites,
+            isHeadlessAgent: isConfiguredAgent,
+            log: writeStatus,
+          }
+        : {}),
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
         if (isPublic) thisCodes.issue('consumed');
@@ -607,6 +719,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       warn: writeStatus,
     });
     sweep.start();
+    if (agentCfg && headlessInvites) startHeadless(agentCfg, headlessInvites, registry, port);
     const sessionOptions = (e: EventBuffer, q: OfflineQueue) => ({
       version: deps.version,
       registry,

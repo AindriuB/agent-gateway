@@ -55,6 +55,7 @@ export type OriginRejection =
   | 'host header is not loopback'
   | 'no valid pairing code'
   | 'no valid invite'
+  | 'user is the headless agent and pairs only through the runner'
   | 'invite could not be redeemed (internal error)'
   | 'no admin GM is connected to confirm the pairing'
   | 'invite is already waiting for a GM to confirm it'
@@ -110,6 +111,13 @@ export interface LinkServerOptions {
   serverMode?: boolean;
   /** In-memory invites (task 37's headless runner); checked in both modes, before anything else. */
   inviteProvider?: MemoryInviteProvider;
+  /**
+   * Is (world, user) the configured headless agent? Decided by the operator's configuration, never
+   * by `hello.headless`. Such a user pairs only through an in-memory invite.
+   */
+  isHeadlessAgent?: (worldId: string, userId: string) => boolean;
+  /** Operator-log lines that are not a refused connection. */
+  log?: (line: string) => void;
   /** Called after a pairing code was spent on a new pairing. */
   onCodePaired?: () => void;
   /** Time a socket may stay silent before sending `hello`. */
@@ -596,6 +604,20 @@ export class LinkServer {
         userId: claim.userId,
         origin,
       });
+      if (
+        memory === 'unknown' &&
+        this.opts.isHeadlessAgent?.(claim.worldId, claim.userId) === true
+      ) {
+        // The agent user is not for humans: no shared code or operator invite pairs it.
+        this.attempts.recordFailure(client);
+        invalid(
+          'user is the headless agent and pairs only through the runner',
+          'PAIRING_INVALID',
+          'no valid invite',
+          `world ${safeText(claim.worldId)}, user ${safeText(claim.userId)}`,
+        );
+        return;
+      }
       if (memory === 'match') outcome = pairFromMemoryInvite(store, claim, onError);
       else if (memory === 'mismatch') outcome = { ok: false, reason: 'refused' };
       else if (this.opts.serverMode === true) {
@@ -695,6 +717,19 @@ export class LinkServer {
     if (c) admitted(c);
   }
 
+  /**
+   * Headless iff the configured agent's (world, user) says hello; `hello.headless` is
+   * informational, and a disagreement is logged once and ignored.
+   */
+  private classifyHeadless(hello: Extract<LinkMessage, { type: 'hello' }>): boolean {
+    const headless = this.opts.isHeadlessAgent?.(hello.world.id, hello.user.id) === true;
+    if (hello.headless === true && !headless)
+      this.opts.log?.(
+        `hello from world ${safeText(hello.world.id)}, user ${safeText(hello.user.id)} claimed to be headless but is not the configured headless agent; ignoring the claim`,
+      );
+    return headless;
+  }
+
   /** Register the connection and send its welcome; undefined (and a reject) when it cannot start. */
   private admit(
     h: PendingHandle,
@@ -714,7 +749,11 @@ export class LinkServer {
         send: (d) => ws.send(d),
         close: () => ws.close(1000, 'replaced'),
       },
-      { userName: recordedName, isGM: hello.user.isGM },
+      {
+        userName: recordedName,
+        isGM: hello.user.isGM,
+        headless: this.classifyHeadless(hello),
+      },
     );
     this.socketByConnection.set(conn, ws);
     this.opts.registry.add(conn);

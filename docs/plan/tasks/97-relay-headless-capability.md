@@ -1,0 +1,46 @@
+# 97 — Detect a relay primary too old to run a headless agent
+
+**Repo:** .
+**Depends on:** 37
+**Status:** Planned 2026-10-15. A follow-up from task 37 Amendment 7 decision 3. Start after 37 merges, because it changes the relay files 37 touches.
+**Owns:**
+- gateway/src/relay/server.ts (the capability field in the handshake replies only)
+- gateway/src/relay/upstream.ts (reading the capability from the handshake reply only)
+- gateway/src/relay/secondary.ts (the headless caller's handling of a primary without the capability only, in `acquire` and `watchStandby`)
+- gateway/src/relay/constants.ts (insertions only: the capability name)
+- gateway/test/relay/headless-capability.test.ts (new)
+
+## Goal
+A gateway from before task 37 ignores the `headless` field of `RelayConfig`. When a new gateway with
+headless settings starts and an old gateway already holds the link port with otherwise matching
+settings, the new one relays to it and its agent never starts, with no warning. The new gateway must
+detect a primary that does not understand headless settings, and must not silently relay to it.
+
+## Context
+- gateway/src/relay/constants.ts:2 `RELAY_VERSION = 1`. Both sides check it with strict equality: gateway/src/relay/server.ts:256 refuses any other value with `RELAY_PROTOCOL`, and gateway/src/relay/upstream.ts:229 fails on a reply with another value ("relay speaks a different protocol version").
+- gateway/src/relay/server.ts:247-330 `handshake`: the caller's `config` is compared with `sameConfig` / `sameSessionConfig`; the `startedAt` "newer" rule and the Amendment 6 headless exception are at :290-320. `refuse` (:199) and the ok reply (:353) are the two reply shapes.
+- gateway/src/relay/upstream.ts:186-250: the caller's hello (it already sends `config`, including `headless`) and the parsing of the reply. The ok reply today carries nothing but `{relay, ok}`.
+- gateway/src/relay/config.ts:73-95 `parseRelayConfig`: a field the peer does not send reads as off. A pre-37 primary's `parseRelayConfig` drops `headless`, so it compares the configs as equal and serves the relay.
+- gateway/src/relay/secondary.ts:240-300 `acquire`: what the caller does with each handshake outcome (`ok`, `RELAY_CONFIG_MISMATCH` → standby, `RELAY_CONFIG_STEPDOWN` → take over). `serveStandby` and `watchStandby` (:170-200) re-check the port and relay "if the holder now accepts this configuration".
+- docs/plan/done/37-headless-runner.md Amendments 5-7: the current takeover rules for headless callers and primaries.
+
+## Decisions
+- (a) **A capability flag, not a version bump.** Bumping `RELAY_VERSION` makes every old/new pair fail with `RELAY_PROTOCOL` in both directions (strict equality on both sides), which breaks old-caller/new-primary compatibility. Instead, a primary that understands headless settings adds a capability marker to both its ok and its refusal replies (e.g. `caps: ["headless"]`; name it in constants.ts). `RELAY_VERSION` stays 1. Old callers ignore the unknown reply field, so nothing changes for them.
+- (b) **What a headless caller does with an old primary. Recommendation: standby with a loud reason; do not relay, and do not try to take over.** A caller whose own `headless` field is non-empty that gets an ok reply without the capability closes that upstream and goes to standby. The reason, shown in the log and `gateway_status`, says the primary gateway is too old to run a headless agent, so this gateway's agent is not running, and to upgrade or stop the other gateway. Why not take over: an old primary sees the configs as equal and never steps down, and there is no protocol message that makes it, so a takeover would mean fighting for the port. Why not relay with a warning: the headless gateway exists to run its agent, and a log line that the operator may never see is the silent failure this task removes. Standby's existing port watch takes over once the old primary exits. Andrew confirms or picks "relay and warn" before implementation starts.
+- (c) A plain caller (empty `headless`) ignores the capability, whatever the primary's version. It relays to an old primary exactly as today.
+- (d) `watchStandby` applies the same check, so a headless standby never relays to a capability-less primary on a later attempt.
+
+## Acceptance
+- [ ] Test: a fake old primary (a relay server whose ok reply is `{relay: 1, ok: true}` with no capability, simulating pre-37) and a caller with headless settings: the caller does not attach the upstream, ends in standby, and its standby reason contains "too old" and says the headless agent is not running.
+- [ ] Test: the same headless standby, re-checking the port while the old primary still holds it, stays in standby (it does not relay on a later attempt). When the old primary releases the port, the standby takes over and becomes primary.
+- [ ] Test: a plain caller against the same fake old primary relays as today (served, not in standby).
+- [ ] Test: an old caller against a new primary (a hello with `relay: 1` and a config without `headless`) is served exactly as before, and the reply it receives still has `relay: 1` and `ok: true`.
+- [ ] Test: a new headless caller against a new primary sees the capability and relays or takes over under the 37 rules (the Amendment 5 and 6 takeover tests still pass unchanged).
+- [ ] `RELAY_VERSION` is still 1 (`grep -n "RELAY_VERSION = 1" gateway/src/relay/constants.ts`).
+- [ ] `npm run verify` passes.
+
+## Out of scope
+- Changing `RELAY_VERSION` or the strict version check.
+- The takeover rules from 37 Amendments 5 and 6.
+- A general capability negotiation for other features.
+- Docs (43; the "run the same version on one link port" note is from 37 Amendment 7).

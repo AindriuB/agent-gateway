@@ -42,6 +42,18 @@ export const ConfigSchema = z.object({
   httpHost: z.string().min(1).default('127.0.0.1'),
   /** Key clients by the right-most `X-Forwarded-For` entry when the peer is loopback. */
   trustProxy: boolish.default(false),
+  /** The single headless agent (task 37; 38 generalizes it). All four are set, or none. */
+  headlessFoundryUrl: z.string().default(''),
+  headlessWorld: z.string().default(''),
+  /** A Foundry user id, not a name. */
+  headlessUser: z.string().default(''),
+  /** Only from the environment or the 0600 config file; never a flag. */
+  headlessPassword: z.string().default(''),
+  /**
+   * Run the headless Chromium with `--no-sandbox`. Off by default; the Docker image turns it on,
+   * because Chromium's sandbox cannot start as a non-root user without extra capabilities.
+   */
+  headlessNoSandbox: boolish.default(false),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -69,6 +81,11 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_LINK_HOST: 'linkHost',
   AGENT_GATEWAY_HTTP_HOST: 'httpHost',
   AGENT_GATEWAY_TRUST_PROXY: 'trustProxy',
+  AGENT_GATEWAY_HEADLESS_FOUNDRY_URL: 'headlessFoundryUrl',
+  AGENT_GATEWAY_HEADLESS_WORLD: 'headlessWorld',
+  AGENT_GATEWAY_HEADLESS_USER: 'headlessUser',
+  AGENT_GATEWAY_HEADLESS_PASSWORD: 'headlessPassword',
+  AGENT_GATEWAY_HEADLESS_NO_SANDBOX: 'headlessNoSandbox',
 };
 
 /**
@@ -94,6 +111,30 @@ export function normalizePublicUrl(value: string): string {
   if (url.pathname !== '/' || url.search || url.hash)
     return refuse('it must be an origin only: no path, query or fragment');
   return url.origin;
+}
+
+/**
+ * The Foundry URL of the headless agent: http(s), no credentials, query or fragment. A path
+ * (a Foundry route prefix) is kept; a trailing `/` is dropped.
+ */
+export function normalizeFoundryUrl(value: string): string {
+  const refuse = (why: string): never => {
+    throw new ConfigError(
+      `Invalid --headless-foundry-url (value not shown, it may carry a secret): ${why}`,
+      2,
+    );
+  };
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return refuse('not a URL (use e.g. http://foundry.local:30000)');
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:')
+    return refuse('the scheme must be http or https');
+  if (url.username || url.password) return refuse('it must not carry credentials');
+  if (url.search || url.hash) return refuse('it must not carry a query or fragment');
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
 }
 
 const MAX_LINK_URL = 2048;
@@ -140,7 +181,9 @@ export function readConfigFile(path: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
-    throw new ConfigError(`Config file ${path} is not valid JSON: ${(err as Error).message}`);
+    // Never the parser's message: Node quotes a snippet of the file, which may hold a password.
+    if (err instanceof SyntaxError) throw new ConfigError(`Config file ${path} is not valid JSON`);
+    throw new ConfigError(`Cannot read config file ${path}: ${(err as Error).message}`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new ConfigError(`Config file ${path} must contain a JSON object`);
@@ -185,6 +228,20 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
     config.privacyUrl = normalizeLinkUrl('--privacy-url', config.privacyUrl);
   if (config.sourceUrl !== '')
     config.sourceUrl = normalizeLinkUrl('--source-url', config.sourceUrl);
+  const headless = [
+    config.headlessFoundryUrl,
+    config.headlessWorld,
+    config.headlessUser,
+    config.headlessPassword,
+  ];
+  if (headless.some((v) => v !== '')) {
+    if (headless.some((v) => v === ''))
+      throw new ConfigError(
+        'The headless agent needs --headless-foundry-url, --headless-world, --headless-user and AGENT_GATEWAY_HEADLESS_PASSWORD (or headlessPassword in the 0600 --config file) together',
+        2,
+      );
+    config.headlessFoundryUrl = normalizeFoundryUrl(config.headlessFoundryUrl);
+  }
   // Exposing a listener beyond loopback is allowed only behind a public URL (and a reverse proxy).
   for (const [flag, host] of [
     ['--link-host', config.linkHost],
