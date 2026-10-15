@@ -83,3 +83,15 @@ Reviewed HEAD: 51ea296 (re-review of the round 2 external fix since b6dc8ae). Ro
   rule: docs/conventions.md:3, Prettier (.prettierrc, printWidth 100).
 - [optional] gateway/test/conformance/oauth-flow.mjs:45: `new URL(meta[k])` throws an uncaught TypeError instead of calling `fail()`. Route it through `fail()` so a malformed endpoint gets the same clear message as the other checks.
   route: implementer
+
+## Review round 4 — findings (external)
+Andrew's PR review of #150 at 89f648d (2026-10-15).
+
+- [P3] gateway/test/conformance/oauth-flow.mjs:94: the consent step makes up its own CSRF cookie. The helper ignores `Set-Cookie`, so conformance can pass even when the server sends no cookie, and a real browser would then fail consent with 403. Read the `Set-Cookie` header from the consent page response and `fail()` unless it is present and valid:
+  - the name is `__Host-agcsrf-<rid>`;
+  - the attributes a `__Host-` cookie requires are present (`Path=/`, no `Domain`; `Secure` per the gateway's rule for its public URL, so check what the gateway actually does over http://127.0.0.1 and validate that);
+  - `HttpOnly` and `SameSite` are set if the gateway sets them.
+  Replay only the server-issued value. Fix the whole class: no request in the flow may send a header value the script invented in place of one the server issues.
+  route: implementer
+  input: the gateway stops sending the CSRF Set-Cookie →  conformance still passes today.
+  test: show it fails when the cookie is missing or renamed (a scratch mutation is fine; quote it).
