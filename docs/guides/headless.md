@@ -2,7 +2,7 @@
 
 A headless agent is a Foundry user that the gateway logs in itself, in its own Chromium, so the agent works without anyone keeping a browser tab open. The gateway starts the browser, opens your world as that user and pairs the module.
 
-Use it when the agent should be available all the time: a server-mode gateway or a world with no GM online. The agent acts with that user's Foundry permissions and the same policy, approvals and audit as any other agent.
+Use it when the agent should be available without a person at a browser, for example a world with no GM online. Read [section 3](#3-reach-the-agent-from-your-ai-client) before you plan on a server-mode gateway or Docker: today a client can reach a headless agent only on a local-mode gateway. The agent acts with that user's Foundry permissions and the same policy, approvals and audit as any other agent.
 
 Headless agents need the npm or Docker install. The `.mcpb` bundle does not support them (see [below](#the-mcpb-bundle)).
 
@@ -11,7 +11,10 @@ Headless agents need the npm or Docker install. The `.mcpb` bundle does not supp
 1. In Foundry, create a user for the agent, for example "Assistant". Do not reuse a person's account.
 2. **Give the user a password.** This is required. The gateway logs in to Foundry with it, and refuses an empty password. A Foundry user with no password can be logged into by anyone who reaches the world's `/join` page, so the gateway will not run one.
 3. Find the user's id and the world's id. The module's pairing app has a "Copy my ids" line that shows both when you are logged in as that user. The world id is also the name of the world's folder under Foundry's `Data/worlds/`.
-4. In the world, a GM turns on the world setting **Enable headless agents** (Configure Settings, then Agent Gateway). It is off until a GM turns it on. While it is off, the module refuses every call from a headless agent and tells the agent a GM must turn it on.
+4. In the world, a GM turns on the policy switches, or the agent's tool calls are refused. As a GM, open Configure Settings, then Agent Gateway, and press "Configure policies" (the "Agent policies" window). Under "Agent access", tick both **Enable player agents** and **Enable headless agents**, then press "Save policies". Both are off until a GM turns them on, and only a GM sees them.
+   - A headless agent that is a player (not a GM) needs both. "Enable player agents" covers every agent acting as a non-GM user, and the module checks it first, so with only "Enable headless agents" on, the agent is told "Player agents are turned off in this world. A GM must turn on "Enable player agents" in the Agent Gateway settings."
+   - If the agent's Foundry user is a GM, "Enable player agents" is not needed, but "Enable headless agents" still is. While it is off the agent is told "Headless agents are turned off in this world. A GM must turn on "Enable headless agents" in the Agent Gateway settings."
+   - The same window sets what the agent may do. A non-GM agent follows the "Player agents" rows of the policy matrix, so some of its calls may wait for approval from its owner or a GM.
 5. Optionally pick an owner: the id of the Foundry user whose approval prompts this agent's asks go to (`--owner`, below). The owner is a routing hint for approvals. It grants no permission. Without one, approvals follow the world policy as usual.
 
 The agent user is not for humans. Its pairing comes only from invites the gateway mints for it, and adding it as a headless agent revokes any pairing that browser already had.
@@ -91,13 +94,34 @@ What `add` and `remove` do to existing access:
 
 ## 3. Reach the agent from your AI client
 
-A headless agent is never picked by follow mode. A session started without `--user` binds to a person's browser pairing, never to a headless identity. To use the agent, bind to it explicitly with its world and user id:
+A headless agent is never picked by follow mode. A session started without `--user` binds to a person's browser pairing, never to a headless identity. To use the agent, bind to it explicitly with its world and user id. In local mode (the npm or from-source install, not server mode), start the gateway that runs the agent with `--world` and `--user` next to the `--headless-*` settings, so one command both runs the agent and binds the session to it:
 
 ```
-claude mcp add foundry-agent -- node <repo>/gateway/dist/bin/cli.js --world my-world --user AbCdEf1234567890
+AGENT_GATEWAY_HEADLESS_PASSWORD='the agent user password' \
+claude mcp add foundry-agent -- node <repo>/gateway/dist/bin/cli.js \
+  --headless-foundry-url http://localhost:30000 --headless-world my-world --headless-user AbCdEf1234567890 \
+  --world my-world --user AbCdEf1234567890
 ```
 
-**Remote OAuth clients (claude.ai, ChatGPT, Gemini) cannot use a headless agent yet.** The consent code goes only to the named user's own link connection, which for a headless agent is the gateway's own Chromium, where nobody can see it, so no consent can finish. `headless add` also revokes any earlier OAuth grants for that user. Only local stdio or HTTP sessions bound with `--world` and `--user <agent id>`, as above, can use it. Owner-routed consent for headless agents is planned as task 98; this paragraph will change when it lands.
+(Pass the password however your client passes environment variables to an MCP server; there is no password flag.)
+
+Which combinations reach a headless agent today. Each row was run against Foundry v14 with the agent logged in by the gateway's own Chromium, except the last.
+
+| Gateway               | Client                                                                                                           | Reaches the agent? | What happens                                                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local mode            | stdio, started with the `--headless-*` settings and `--world`/`--user`                                           | **Yes**            | The session reads and calls tools as the agent.                                                                                                                         |
+| Local mode            | A second stdio session started with only `--world` and `--user` (same `--link-port`)                             | **Yes**            | It relays to the first gateway, which holds the link port and the agent. Its session settings and its `--world`/`--user` must match the first gateway's.                |
+| Local mode, `--http`  | HTTP with the static bearer token, the gateway started with `--world` and `--user`                               | **Yes**            | The HTTP session is bound to the agent.                                                                                                                                 |
+| Local mode, `--http`  | HTTP with the static bearer token, the gateway started without `--world`/`--user`                                | No                 | The session follows the connected browser pairing and answers `WORLD_OFFLINE: Not connected to Foundry yet. ...`, even though the agent is connected.                   |
+| Server mode           | stdio, same settings as the primary (`--server-mode`, same `--public-url`)                                       | No                 | A server-mode gateway does not relay. The new process exits with `link port 7527 is in use; is another gateway running?` (the port is whatever `--link-port` you gave). |
+| Server mode           | stdio without `--server-mode`                                                                                    | No                 | It goes to standby: `the primary gateway has different session settings (server mode off here vs on there) and is kept because it runs a headless agent`.               |
+| Server mode           | stdio with `--world`/`--user` against a server-mode primary started without them                                 | No                 | `the primary gateway refused this instance: selector mismatch`, followed by the two selectors, the primary's being `world=(any) user=(any)`.                            |
+| Server mode in Docker | `docker exec -i <container> foundry-agent-gateway --world ... --user ...` (`docker compose exec -T gateway ...`) | No                 | The image sets server mode, so the new process exits with `link port 7420 is in use; is another gateway running?`.                                                      |
+| Server mode           | Remote OAuth clients (claude.ai, ChatGPT, Gemini)                                                                | No, not yet        | Not run: it cannot work until task 98. See below.                                                                                                                       |
+
+In server mode, and so in the Docker image, the headless agent starts, logs in and pairs (`link connected: world my-world / user ...`), but no client can reach it today. Use a local-mode gateway for a headless agent until task 98 lands. Anything not in the table has not been tried.
+
+**Remote OAuth clients (claude.ai, ChatGPT, Gemini) cannot use a headless agent yet.** The consent code goes only to the named user's own link connection, which for a headless agent is the gateway's own Chromium, where nobody can see it, so no consent can finish. `headless add` also revokes any earlier OAuth grants for that user. Owner-routed consent for headless agents is planned as task 98; this section will change when it lands.
 
 ## The browser
 
@@ -158,6 +182,8 @@ Use the npm or Docker install.
 
 ## In Docker
 
+The image runs in server mode, so a headless agent in it starts and pairs but cannot be reached by any client yet (see the table in [section 3](#3-reach-the-agent-from-your-ai-client)). The setup below does start the agent.
+
 The Compose files are not edited. Add the headless settings with an override file next to `compose.yaml`. This is `compose.headless.yaml`:
 
 ```
@@ -211,4 +237,4 @@ Only one gateway process holds the link port; the others relay to it or wait. Wh
 
 ## Commands run for this guide
 
-`headless add`, `list` and `remove`, the missing-password and no-browser log lines, and the Docker commands were run against a freshly built image on Debian's Chromium. The AppArmor profile and the AppArmor failure were not reproduced for this guide. The runner log line for a missing Foundry server, `headless runner: cannot read http://localhost:30000/api/status: fetch failed (ECONNREFUSED)`, is what you see when the Foundry URL is wrong or Foundry is down.
+`headless add`, `list` and `remove`, the missing-password and no-browser log lines, and the Docker commands were run against a locally built image on Debian's Chromium. Every row of the table in section 3 except remote OAuth was run: a local-mode gateway with a stdio client, a second relaying stdio session, and an HTTP client with the static bearer (with and without `--world`/`--user`); a server-mode gateway with `--public-url` and three kinds of stdio client; and the container with `docker exec -i`. The AppArmor profile and the AppArmor failure were not reproduced for this guide. The runner log line for a missing Foundry server, `headless runner: cannot read http://localhost:30000/api/status: fetch failed (ECONNREFUSED)`, is what you see when the Foundry URL is wrong or Foundry is down.
