@@ -170,3 +170,21 @@ Reviewed HEAD: b548485 (re-review of the round 1 fix since 8e23227). All round 1
 - [STYLE] gateway/test/headless/settings.test.ts:1-3: the round adds a second `import ... from 'node:fs'` (for `readFileSync`) and puts it, and the local `flag.js` import, above the file's existing `node:fs` import.
   route: implementer
   rule: use one `node:fs` import, with node imports first, then vitest, then local imports (as in gateway/test/headless/runner.test.ts:3).
+
+## Attempt 1 — failed
+Verify on 5f2c8c8 (2026-10-15). Reviewer: APPROVE. Tester: build and `npm test` passed (4843 of 4843). The slow suite and lint were not run.
+
+The failure is a regression from this branch. `scripts/build-mcpb.mjs`, the .mcpb bundle that inlines the gateway with esbuild, now fails:
+
+    node_modules/playwright-core/lib/coreBundle.js:44829:33: ERROR: Could not resolve "chromium-bidi/lib/cjs/bidiMapper/BidiMapper"
+    node_modules/playwright-core/lib/coreBundle.js:44830:40: ERROR: Could not resolve "chromium-bidi/lib/cjs/cdp/CdpConnection"
+
+The same script exits 0 on a branch without 37, task/40 at main plus conformance-only changes. The cause is that gateway/src/headless/browser.ts brings `playwright-core` into the gateway's import graph, so the bundle tries to inline it. `scripts/test/build-mcpb.test.mjs:83` fails in its setup hook, and its two tests are cancelled.
+
+The fix must keep the .mcpb bundle building and its tests passing (including "ships notices naming every inlined package"). Two ways to do it:
+- load `playwright-core` only when the runner actually starts, so that esbuild does not follow it;
+- or exclude it from the bundle.
+
+Prefer a fix inside Owns, such as a lazy load from gateway/src/headless/. If the only workable fix needs scripts/build-mcpb.mjs, which is outside Owns, stop and report `BLOCKED: spec change`.
+
+The other test:scripts failures (pack-module, chatgpt-plugin, build-claude-plugin) are "zip is not installed" on the host and happen on every branch. They are not this task's.
