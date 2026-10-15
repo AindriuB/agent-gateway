@@ -114,3 +114,15 @@ Reviewed HEAD: da97dbf. One round past the 3-round limit, approved by Andrew 202
   route: implementer
 - [P3] README.md:39, docs/guides/headless.md:126 and docs/security.md:126 list different re-pair causes. Use decision (e)'s full set in all three: `headless add`, `headless remove`, redeeming a new invite, a takeover, the runner losing its pairing token.
   route: implementer
+
+## Review round 5 — findings (external)
+Andrew's PR review of #160 at a68fdb5 (2026-10-15).
+
+- [P2] gateway/src/oauth/consent/index.ts:322: the owner's pairing is not validated before routed consent is accepted. After a CLI revocation (`--revoke-pairing`, replacement, `headless remove`/`add` affecting the owner), the owner's connection stays registered until the 5-second revocation sweep. In that window it can still receive an agent consent code, because delivery checks only that the connection is open and not headless. Redemption checks only the agent's pairing, so a revoked owner can obtain lasting agent access, even after disconnecting.
+  - Fix: validate the owner's pairing against the store, active and not revoked, immediately before delivering an agent consent code. Record the owner pairing id with the pending code, and validate it again at redemption (verify). If it has been revoked or replaced in between, the code fails exactly as a wrong code does, keeping the uniform response.
+  - Whole class: check every routed or deferred path in consent for the same gap. That means any place a code, CSRF state or pending request relies on a connection that could have been revoked between the store and the sweep, including the normal (non-headless) path's check of the target pairing at redemption. Fix any other instance the same way.
+  - Tests that must fail on a68fdb5:
+    - the owner's pairing is revoked in the store before the sweep runs (connection still registered) → no code is delivered;
+    - a code is delivered, then the owner's pairing is revoked before entry → entering the code fails with the same response as a wrong code, and no grant is created;
+    - the response stays uniform across these cases (the indistinguishability test still passes).
+  route: implementer
