@@ -373,3 +373,15 @@ Andrew, from the review of the round 11 fix (6084d50).
   - a newer instance with different non-empty headless settings takes over;
   - a newer instance with headless settings takes over from a primary without them.
 - [ ] The PR states whether an older instance without headless settings connecting to a headless primary relays or gets `RELAY_CONFIG_MISMATCH`; if it relays, a test shows it.
+
+## Review round 12 — findings
+At HEAD 9c20419. Implements Amendment 5. Comes from the round 11 re-review: P2 FIXED, and the P3 is left open as the first item below. Its scope questions were settled by Amendment 5.
+
+- [P3] gateway/src/config/index.ts:181: `readConfigFile` must not put the `JSON.parse` message into its error (Amendment 5 decision 2). Give a fixed message, with line and column at most.
+  - Add tests: `{"headlessPassword": hunter2}` and `{"headlessPassword": 'hunter2'}` produce an error containing neither `hunter2` nor `assword`.
+  route: implementer
+- [P2] Headless wins on takeover (Amendment 5 decision 3).
+  - Try to do it inside the comparison in gateway/src/relay/config.ts: an empty `headless` on the newer caller, against a non-empty one on the primary, counts as matching.
+  - Add tests for all three directions: newer-without vs primary-with → relays and the runner keeps running; newer-with-different → takes over; newer-with vs primary-without → takes over. Also state what an older instance without headless settings gets from a headless primary.
+  - If it needs gateway/src/relay/server.ts, which is outside Owns, stop and report `BLOCKED: spec change`.
+  route: implementer
