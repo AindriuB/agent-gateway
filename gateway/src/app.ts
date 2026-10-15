@@ -522,6 +522,7 @@ export function createApp(config: Config, deps: AppDeps): App {
       stateDir,
       gatewayLinkUrl: `ws://localhost:${port}`,
       invites,
+      noSandbox: config.headlessNoSandbox,
       launcher,
       isLinked: () => {
         const c = registry.get(agent.worldId, agent.userId);
@@ -639,9 +640,6 @@ export function createApp(config: Config, deps: AppDeps): App {
             inviteProvider: headlessInvites,
             isHeadlessAgent: isConfiguredAgent,
             log: writeStatus,
-            onReplaced: (worldId: string, userId: string, userName: string) => {
-              if (isConfiguredAgent(worldId, userId)) runner?.replaced(userName);
-            },
           }
         : {}),
       // With nothing asking for a code, a spent one would never be replaced.

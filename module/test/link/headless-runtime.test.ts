@@ -65,7 +65,8 @@ async function boot(headless: boolean) {
   const g = globalThis as any;
   g.game.user = { id: 'u1', name: 'U', role: 1, isGM: false };
   g.game.world = { id: 'w1', title: 'W' };
-  g.game.settings.get = (_ns: string, k: string) => (k === 'gatewayUrl' ? 'ws://gw-x.example/' : '');
+  g.game.settings.get = (_ns: string, k: string) =>
+    k === 'gatewayUrl' ? 'ws://gw-x.example/' : '';
   g.game.settings.set = async () => undefined;
   g.ui = { notifications: { error: vi.fn(), warn: vi.fn() } };
   g.game.i18n = { localize: (k: string) => `L:${k}` };

@@ -109,8 +109,7 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
         executablePath,
         headless: true,
         viewport: { width: 1280, height: 800 },
-        // A container runs as a non-root user without the sandbox's kernel support.
-        args: process.env.AGENT_GATEWAY_HEADLESS_NO_SANDBOX === '1' ? ['--no-sandbox'] : [],
+        args: req.args,
       });
       await context.addInitScript(req.initScript);
       const page = context.pages()[0] ?? (await context.newPage());

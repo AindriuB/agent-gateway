@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { HEADLESS_LINK_KEY } from '../../src/headless/flag.js';
 import { HeadlessInvites } from '../../src/headless/invites.js';
 import { profileDir } from '../../src/headless/profile.js';
 import {
@@ -47,9 +48,13 @@ class Launcher implements BrowserLauncher {
   launches: string[] = [];
   navigations: string[] = [];
   filled: string[] = [];
+  args: string[][] = [];
+  /** What the page's module mirrors into session storage. */
+  linkState: string | null = null;
   closes = 0;
-  async launch(req: { profileDir: string }): Promise<RunnerBrowser> {
+  async launch(req: { profileDir: string; args: string[] }): Promise<RunnerBrowser> {
     this.launches.push(req.profileDir);
+    this.args.push(req.args);
     return {
       page: {
         goto: async (u) => void this.navigations.push(u),
@@ -58,7 +63,8 @@ class Launcher implements BrowserLauncher {
         selectOption: async () => undefined,
         fill: async (_s: string, v: string) => void this.filled.push(v),
         click: async () => undefined,
-        evaluate: async () => undefined,
+        evaluate: async (script: string) =>
+          script.includes(HEADLESS_LINK_KEY) ? this.linkState : undefined,
         waitForGameReady: async () => undefined,
       },
       close: async () => void this.closes++,
@@ -66,7 +72,15 @@ class Launcher implements BrowserLauncher {
   }
 }
 
-async function make(over: { linked?: () => boolean; now?: () => number; stateDir?: string } = {}) {
+async function make(
+  over: {
+    linked?: () => boolean;
+    now?: () => number;
+    stateDir?: string;
+    fetch?: typeof fetch;
+    noSandbox?: boolean;
+  } = {},
+) {
   const foundry = await stubFoundry();
   const stateDir = over.stateDir ?? tmp();
   const launcher = new Launcher();
@@ -81,6 +95,8 @@ async function make(over: { linked?: () => boolean; now?: () => number; stateDir
     isLinked: over.linked ?? (() => true),
     log: (l) => void logs.push(l),
     ...(over.now ? { now: over.now } : {}),
+    ...(over.fetch ? { fetch: over.fetch } : {}),
+    ...(over.noSandbox !== undefined ? { noSandbox: over.noSandbox } : {}),
     sleep: async () => undefined,
     linkGraceMs: 1,
     pairWaitMs: 1,
@@ -188,36 +204,96 @@ describe('HeadlessRunner lifecycle', () => {
     expect(t.launcher.launches).toHaveLength(0);
   });
 
-  it('pauses after replaced and does not reload until 5 minutes pass', async () => {
+  it('pauses when its own page reports REPLACED, logs once, and resumes after 5 minutes', async () => {
     let clock = 0;
     let linked = true;
     const t = await make({ linked: () => linked, now: () => clock });
     t.runner.start();
     await t.runner.tick();
     linked = false;
-    t.runner.replaced('Agent');
-    expect(t.logs).toContain('agent user Agent was taken by another client; the runner is paused');
+    t.launcher.linkState = 'replaced';
+    await t.runner.tick();
+    const line = `agent user ${U} was taken by another client; the runner is paused`;
+    expect(t.logs).toContain(line);
     await t.runner.tick();
     expect(t.launcher.launches).toHaveLength(1);
     expect(t.launcher.closes).toBe(0);
+    expect(t.logs.filter((l) => l === line)).toHaveLength(1);
     clock += REPLACED_PAUSE_MS;
+    t.launcher.linkState = null;
     await t.runner.tick();
     expect(t.launcher.closes).toBe(1);
     expect(t.launcher.launches).toHaveLength(2);
   });
 
-  it('a world restart ends the pause', async () => {
-    const clock = 0;
-    let linked = true;
-    const t = await make({ linked: () => linked, now: () => clock });
+  it('neither logs nor pauses when it replaced another client (its page is connected)', async () => {
+    let linked = false;
+    const t = await make({ linked: () => linked });
+    t.launcher.linkState = 'connected';
     t.runner.start();
     await t.runner.tick();
-    linked = false;
-    t.runner.replaced('Agent');
+    await t.runner.tick();
+    expect(t.logs.join('\n')).not.toContain('taken by another client');
+    expect(t.launcher.closes).toBe(0);
+    expect(t.launcher.launches).toHaveLength(1);
+    linked = true;
+    await t.runner.tick();
+    expect(t.logs.join('\n')).not.toContain('taken by another client');
+  });
+
+  it('a world restart ends the pause', async () => {
+    const clock = 0;
+    const t = await make({ linked: () => false, now: () => clock });
+    t.runner.start();
+    await t.runner.tick();
+    t.launcher.linkState = 'replaced';
+    await t.runner.tick();
+    t.launcher.linkState = null;
     t.foundry.active = false;
     await t.runner.tick();
     t.foundry.active = true;
     await t.runner.tick();
     expect(t.launcher.launches).toHaveLength(2);
+  });
+
+  it('stop() returns within 5 s while a status fetch never settles', async () => {
+    const hung = ((_url: string, init?: RequestInit) =>
+      new Promise((_res, rej) => {
+        init?.signal?.addEventListener('abort', () => rej(new Error('aborted')));
+      })) as unknown as typeof fetch;
+    const t = await make({ fetch: hung });
+    t.runner.start();
+    const started = Date.now();
+    await t.runner.stop();
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('passes --no-sandbox to the launcher only when configured', async () => {
+    const off = await make();
+    off.runner.start();
+    await off.runner.tick();
+    expect(off.launcher.args[0]).toEqual([]);
+    const on = await make({ noSandbox: true });
+    on.runner.start();
+    await on.runner.tick();
+    expect(on.launcher.args[0]).toEqual(['--no-sandbox']);
+  });
+
+  it('logs a fixed message, not Playwright text, when typing the invite code fails', async () => {
+    const t = await make({ linked: () => false });
+    const orig = t.launcher.launch.bind(t.launcher);
+    t.launcher.launch = async (req) => {
+      const b = await orig(req);
+      b.page.fill = async (_s: string, v: string) => {
+        if (v.startsWith('ws://')) return;
+        throw new Error(`locator.fill("${v}") timed out`);
+      };
+      return b;
+    };
+    t.runner.start();
+    await t.runner.tick();
+    const log = t.logs.join('\n');
+    expect(log).toContain('could not type the invite code');
+    expect(log).not.toMatch(/[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}/);
   });
 });

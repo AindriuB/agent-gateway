@@ -1,6 +1,6 @@
 import { safeText } from '../routing/sanitize.js';
 import { canonicalOrigin } from '../link/origin.js';
-import { HEADLESS_FLAG_KEY } from './flag.js';
+import { HEADLESS_FLAG_KEY, HEADLESS_LINK_KEY } from './flag.js';
 import { ensureProfileDir } from './profile.js';
 import type { HeadlessInvites } from './invites.js';
 
@@ -58,6 +58,8 @@ export interface LaunchRequest {
   profileDir: string;
   /** JS run in every page before Foundry loads. */
   initScript: string;
+  /** Extra Chromium arguments (`--no-sandbox` when the operator's config asks for it). */
+  args: string[];
 }
 
 export interface BrowserLauncher {
@@ -78,6 +80,8 @@ export interface RunnerOptions {
   /** `ws://localhost:<port>`: where the runner's page reaches this gateway. */
   gatewayLinkUrl: string;
   invites: HeadlessInvites;
+  /** Launch Chromium with `--no-sandbox` (`headlessNoSandbox` in the config). */
+  noSandbox?: boolean;
   launcher: BrowserLauncher;
   /** Is the agent's link connected right now? */
   isLinked(): boolean;
@@ -102,6 +106,8 @@ export class HeadlessRunner {
   private browser: RunnerBrowser | undefined;
   private timer: unknown;
   private stopped = false;
+  private abort = new AbortController();
+  private replacedLogged = false;
   private failures = 0;
   private busy: Promise<void> | undefined;
   private pausedUntil = 0;
@@ -134,6 +140,7 @@ export class HeadlessRunner {
       return false;
     }
     this.stopped = false;
+    this.abort = new AbortController();
     this.timer = (this.o.setInterval ?? ((fn, ms) => setInterval(fn, ms).unref()))(
       () => void this.tick(),
       this.o.pollMs ?? STATUS_POLL_MS,
@@ -145,6 +152,7 @@ export class HeadlessRunner {
   /** Close the browser context and stop polling. The profile stays on disk. */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.abort.abort();
     if (this.timer !== undefined)
       (this.o.clearInterval ?? ((h) => clearInterval(h as NodeJS.Timeout)))(this.timer);
     this.timer = undefined;
@@ -155,12 +163,27 @@ export class HeadlessRunner {
     await this.closeBrowser();
   }
 
-  /** The agent's link was closed with `replaced`: stand down instead of fighting for the slot. */
-  replaced(userName: string): void {
-    if (this.browser === undefined || this.stopped) return;
+  /**
+   * Did another client take the agent's slot? The runner's own page says so: its module stops for
+   * good with `REPLACED` and mirrors that into session storage. Pauses (and logs once per browser).
+   */
+  private async checkReplaced(): Promise<void> {
+    const page = this.browser?.page;
+    if (!page) return;
+    let v: unknown;
+    try {
+      v = await page.evaluate(
+        `(() => { try { return sessionStorage.getItem(${JSON.stringify(HEADLESS_LINK_KEY)}); } catch { return null; } })()`,
+      );
+    } catch {
+      return;
+    }
+    if (v !== 'replaced' || this.stopped || this.browser?.page !== page) return;
     this.pausedUntil = this.now() + REPLACED_PAUSE_MS;
+    if (this.replacedLogged) return;
+    this.replacedLogged = true;
     this.o.log(
-      `agent user ${safeText(userName)} was taken by another client; the runner is paused`,
+      `agent user ${safeText(this.o.agent.userId)} was taken by another client; the runner is paused`,
     );
   }
 
@@ -180,7 +203,7 @@ export class HeadlessRunner {
   private async worldActive(): Promise<boolean | undefined> {
     try {
       const res = await (this.o.fetch ?? fetch)(`${this.o.agent.foundryUrl}/api/status`, {
-        signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+        signal: AbortSignal.any([AbortSignal.timeout(STATUS_TIMEOUT_MS), this.abort.signal]),
       });
       if (!res.ok) return undefined;
       const body = (await res.json()) as { active?: unknown; world?: unknown };
@@ -222,7 +245,10 @@ export class HeadlessRunner {
     }
     if (this.browser === undefined) {
       await this.openSession();
-    } else if (this.pausedUntil !== 0) {
+    } else {
+      if (this.pausedUntil === 0) await this.checkReplaced();
+    }
+    if (this.browser !== undefined && this.pausedUntil !== 0) {
       if (this.now() < this.pausedUntil) return;
       this.pausedUntil = 0;
       if (this.o.isLinked()) return;
@@ -235,6 +261,7 @@ export class HeadlessRunner {
   private async closeBrowser(): Promise<void> {
     const b = this.browser;
     this.browser = undefined;
+    this.replacedLogged = false;
     if (b) await b.close().catch(() => undefined);
   }
 
@@ -242,6 +269,7 @@ export class HeadlessRunner {
     const { agent } = this.o;
     const browser = await this.o.launcher.launch({
       profileDir: this.profile!,
+      args: this.o.noSandbox ? ['--no-sandbox'] : [],
       initScript: `try { sessionStorage.setItem(${JSON.stringify(HEADLESS_FLAG_KEY)}, '1'); } catch {}`,
     });
     if (this.stopped) {
@@ -255,7 +283,14 @@ export class HeadlessRunner {
       if (page.url().includes('/join')) {
         await page.waitForSelector(SELECTORS.joinUser, { timeout: 15_000 });
         await page.selectOption(SELECTORS.joinUser, { value: agent.userId });
-        if (agent.password) await page.fill(SELECTORS.joinPassword, agent.password);
+        if (agent.password) {
+          // Playwright puts the filled value in its error text: log a fixed message instead.
+          try {
+            await page.fill(SELECTORS.joinPassword, agent.password);
+          } catch {
+            throw new Error('could not type the password');
+          }
+        }
         await page.click(SELECTORS.joinButton);
       }
       await page.waitForGameReady(JOIN_TIMEOUT_MS);
@@ -294,7 +329,11 @@ export class HeadlessRunner {
       await page.evaluate(OPEN_PAIRING_SCRIPT);
       await page.waitForSelector(SELECTORS.pairingCode, { timeout: 15_000 });
       await page.fill(SELECTORS.pairingGatewayUrl, this.o.gatewayLinkUrl);
-      await page.fill(SELECTORS.pairingCode, code);
+      try {
+        await page.fill(SELECTORS.pairingCode, code);
+      } catch {
+        throw new Error('could not type the invite code');
+      }
       await page.click(SELECTORS.pairingSubmit);
     } catch (err) {
       this.o.invites.dropAgent(agent.worldId, agent.userId);

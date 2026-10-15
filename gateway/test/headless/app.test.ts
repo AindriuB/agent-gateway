@@ -31,6 +31,7 @@ async function boot(opts: {
   state?: ReturnType<typeof tempState>;
   launcher?: FakeLauncher;
   linkPort?: number;
+  noSandbox?: boolean;
 }) {
   const state = opts.state ?? tempState();
   if (!opts.state) cleanups.push(state.cleanup);
@@ -50,6 +51,7 @@ async function boot(opts: {
     headlessWorld: W,
     headlessUser: U,
     headlessPassword: 'hunter2',
+    headlessNoSandbox: opts.noSandbox ?? false,
   } as unknown as Config;
   const app = createApp(config, {
     version: '0.0.0-test',
@@ -98,6 +100,17 @@ async function boot(opts: {
   };
   return { app, state, linkPort, httpPort, lines, launcher, mcp };
 }
+
+describe('the Chromium sandbox setting', () => {
+  it.each([
+    [true, ['--no-sandbox']],
+    [false, []],
+  ])('headlessNoSandbox %s launches with args %j', async (noSandbox, args) => {
+    const t = await boot({ serverMode: false, noSandbox });
+    await until(() => t.launcher.launches.length > 0, 10_000, 'launch');
+    expect(t.launcher.launches[0]!.args).toEqual(args);
+  });
+});
 
 const text = (r: unknown): string => JSON.stringify(r);
 

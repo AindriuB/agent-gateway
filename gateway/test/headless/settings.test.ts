@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { HEADLESS_FLAG_KEY, HEADLESS_LINK_KEY } from '../../src/headless/flag.js';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +19,13 @@ const env = {
 describe('headless settings', () => {
   it('are off by default', () => {
     expect(loadConfig({ env: {} })).toMatchObject({ headlessFoundryUrl: '', headlessUser: '' });
+  });
+
+  it('headlessNoSandbox is off by default and reads AGENT_GATEWAY_HEADLESS_NO_SANDBOX', () => {
+    expect(loadConfig({ env: {} }).headlessNoSandbox).toBe(false);
+    expect(loadConfig({ env: { AGENT_GATEWAY_HEADLESS_NO_SANDBOX: '1' } }).headlessNoSandbox).toBe(
+      true,
+    );
   });
 
   it('read from the environment and normalize the URL', () => {
@@ -60,4 +69,11 @@ describe('headless settings', () => {
       }),
     ).toThrow(/credentials/);
   });
+});
+
+it('headless flag keys match the module copies', () => {
+  const bridge = readFileSync(join(__dirname, '../../../module/src/link/bridge.ts'), 'utf8');
+  const runtime = readFileSync(join(__dirname, '../../../module/src/link/runtime.ts'), 'utf8');
+  expect(bridge).toContain(`HEADLESS_FLAG_KEY = '${HEADLESS_FLAG_KEY}'`);
+  expect(runtime).toContain(`HEADLESS_LINK_KEY = '${HEADLESS_LINK_KEY}'`);
 });

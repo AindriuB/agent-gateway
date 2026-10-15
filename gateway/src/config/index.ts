@@ -49,6 +49,11 @@ export const ConfigSchema = z.object({
   headlessUser: z.string().default(''),
   /** Only from the environment or the 0600 config file; never a flag. */
   headlessPassword: z.string().default(''),
+  /**
+   * Run the headless Chromium with `--no-sandbox`. Off by default; the Docker image turns it on,
+   * because Chromium's sandbox cannot start as a non-root user without extra capabilities.
+   */
+  headlessNoSandbox: boolish.default(false),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -80,6 +85,7 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_HEADLESS_WORLD: 'headlessWorld',
   AGENT_GATEWAY_HEADLESS_USER: 'headlessUser',
   AGENT_GATEWAY_HEADLESS_PASSWORD: 'headlessPassword',
+  AGENT_GATEWAY_HEADLESS_NO_SANDBOX: 'headlessNoSandbox',
 };
 
 /**
