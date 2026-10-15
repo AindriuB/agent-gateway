@@ -152,7 +152,26 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
             timeout: ms,
           })),
       };
-      return { page: wrapped, close: () => context.close() };
+      let closed = false;
+      const listeners: (() => void)[] = [];
+      const gone = (): void => {
+        if (closed) return;
+        closed = true;
+        for (const cb of listeners.splice(0)) cb();
+      };
+      context.on('close', gone);
+      context.browser()?.on('disconnected', gone);
+      page.on('close', gone);
+      page.on('crash', gone);
+      return {
+        page: wrapped,
+        close: () => context.close(),
+        onClosed: (cb) => {
+          if (closed) cb();
+          else listeners.push(cb);
+        },
+        isClosed: () => closed || page.isClosed(),
+      };
     },
   };
 }

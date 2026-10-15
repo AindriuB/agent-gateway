@@ -14,6 +14,8 @@ export const REPLACED_PAUSE_MS = 5 * 60_000;
 export const LINK_GRACE_MS = 15_000;
 /** How long the gateway waits for the link after typing an invite. */
 export const PAIR_WAIT_MS = 30_000;
+/** How long `stop()` waits for in-flight work (a launch, a login step, a close) before moving on. */
+export const STOP_WAIT_MS = 3_000;
 const STATUS_TIMEOUT_MS = 10_000;
 const JOIN_TIMEOUT_MS = 120_000;
 
@@ -52,7 +54,26 @@ export interface RunnerPage {
 export interface RunnerBrowser {
   page: RunnerPage;
   close(): Promise<void>;
+  /** Calls `cb` once if the browser, context or page closes or disconnects on its own. */
+  onClosed?(cb: () => void): void;
+  /** True when the browser, context or page is already gone. */
+  isClosed?(): boolean;
 }
+
+/** Resolves with `p`, or with undefined after `ms` (the timer never keeps the process alive). */
+function bounded<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(undefined), ms);
+    t.unref();
+    p.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      () => (clearTimeout(t), resolve(undefined)),
+    );
+  });
+}
+
+/** Thrown inside a session step when `stop()` (or a newer session) has taken over. */
+class Abandoned extends Error {}
 
 export interface LaunchRequest {
   profileDir: string;
@@ -106,6 +127,8 @@ export class HeadlessRunner {
   private browser: RunnerBrowser | undefined;
   private timer: unknown;
   private stopped = false;
+  private gen = 0;
+  private deadLogged = false;
   private abort = new AbortController();
   private replacedLogged = false;
   private failures = 0;
@@ -154,15 +177,21 @@ export class HeadlessRunner {
   /** Close the browser context and stop polling. The profile stays on disk. */
   async stop(): Promise<void> {
     this.stopped = true;
+    this.gen++;
     this.abort.abort();
     if (this.timer !== undefined)
       (this.o.clearInterval ?? ((h) => clearInterval(h as NodeJS.Timeout)))(this.timer);
     this.timer = undefined;
     this.o.invites.dropAgent(this.o.agent.worldId, this.o.agent.userId);
-    await this.closeBrowser();
-    await this.busy?.catch(() => undefined);
+    await bounded(this.closeBrowser(), STOP_WAIT_MS);
+    const busy = this.busy;
+    if (busy) {
+      await bounded(busy, STOP_WAIT_MS);
+      // Whatever is still pending is abandoned: a late browser is closed by its own step.
+      if (this.busy === busy) this.busy = undefined;
+    }
     // A start that was in flight when stop() ran may have opened a browser since.
-    await this.closeBrowser();
+    await bounded(this.closeBrowser(), STOP_WAIT_MS);
   }
 
   /**
@@ -202,8 +231,9 @@ export class HeadlessRunner {
         this.o.log(`headless runner: ${msg}`);
       })
       .finally(() => {
-        this.busy = undefined;
+        if (this.busy === mine) this.busy = undefined;
       });
+    const mine = this.busy;
     return this.busy;
   }
 
@@ -234,6 +264,7 @@ export class HeadlessRunner {
   }
 
   private async poll(): Promise<void> {
+    this.dropDeadBrowser();
     const active = await this.worldActive();
     if (this.stopped) return;
     if (active === undefined) {
@@ -267,6 +298,7 @@ export class HeadlessRunner {
       this.pausedUntil = 0;
     }
     if (this.browser === undefined) {
+      if (this.pausedUntil !== 0 && this.now() < this.pausedUntil) return;
       await this.openSession();
     } else {
       if (this.pausedUntil === 0) await this.checkReplaced();
@@ -285,27 +317,51 @@ export class HeadlessRunner {
     const b = this.browser;
     this.browser = undefined;
     this.replacedLogged = false;
-    if (b) await b.close().catch(() => undefined);
+    if (b) await bounded(b.close(), STOP_WAIT_MS);
+  }
+
+  /** The held browser died on its own: forget it (and say so once) so the next poll relaunches. */
+  private dropDeadBrowser(b: RunnerBrowser | undefined = this.browser): void {
+    if (!b || this.browser !== b || this.stopped) return;
+    if (!b.isClosed?.()) return;
+    this.browser = undefined;
+    this.replacedLogged = false;
+    void b.close().catch(() => undefined);
+    if (this.deadLogged) return;
+    this.deadLogged = true;
+    this.o.log(
+      `headless runner: the browser for ${this.who()} closed unexpectedly; it will be relaunched`,
+    );
   }
 
   private async openSession(): Promise<void> {
     const { agent } = this.o;
+    const gen = this.gen;
     const browser = await this.o.launcher.launch({
       profileDir: this.profile!,
       args: this.o.noSandbox ? ['--no-sandbox'] : [],
       initScript: `try { sessionStorage.setItem(${JSON.stringify(HEADLESS_FLAG_KEY)}, '1'); } catch {}`,
     });
-    if (this.stopped) {
-      await browser.close().catch(() => undefined);
+    if (this.stopped || this.gen !== gen) {
+      // stop() has returned (or a newer session began) while this launch was pending: never use it.
+      void browser.close().catch(() => undefined);
       return;
     }
     this.browser = browser;
+    this.deadLogged = false;
+    browser.onClosed?.(() => this.dropDeadBrowser(browser));
     const { page } = browser;
+    const live = (): void => {
+      if (this.stopped || this.gen !== gen || this.browser !== browser) throw new Abandoned();
+    };
     try {
       await page.goto(`${agent.foundryUrl}/join`, { timeout: 60_000 });
+      live();
       if (page.url().includes('/join')) {
         await page.waitForSelector(SELECTORS.joinUser, { timeout: 15_000 });
+        live();
         await page.selectOption(SELECTORS.joinUser, { value: agent.userId });
+        live();
         if (agent.password) {
           // Playwright puts the filled value in its error text: log a fixed message instead.
           try {
@@ -313,11 +369,18 @@ export class HeadlessRunner {
           } catch {
             throw new Error('could not type the password');
           }
+          live();
         }
         await page.click(SELECTORS.joinButton);
+        live();
       }
       await page.waitForGameReady(JOIN_TIMEOUT_MS);
     } catch (err) {
+      if (err instanceof Abandoned || this.stopped || this.gen !== gen) return;
+      if (this.browser !== browser) {
+        // It died mid-join; dropDeadBrowser has already logged it.
+        return;
+      }
       this.o.log(
         `headless runner: could not join ${safeText(agent.worldId)} as ${safeText(agent.userId)}: ${safeText((err as Error).message)}`,
       );

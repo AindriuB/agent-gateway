@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HEADLESS_LINK_KEY } from '../../src/headless/flag.js';
 import { HeadlessInvites } from '../../src/headless/invites.js';
 import { profileDir } from '../../src/headless/profile.js';
@@ -11,6 +11,7 @@ import {
   REPLACED_PAUSE_MS,
   RUNNER_PATHS,
   STATUS_POLL_MS,
+  STOP_WAIT_MS,
   type BrowserLauncher,
   type RunnerBrowser,
 } from '../../src/headless/runner.js';
@@ -53,11 +54,25 @@ class Launcher implements BrowserLauncher {
   linkState: string | null = null;
   closes = 0;
   launchError: Error | undefined;
+  /** When set, launch() waits for it before returning. */
+  launchGate: Promise<void> | undefined;
+  /** Callbacks of the open browsers' onClosed, and whether each is dead. */
+  killers: (() => void)[] = [];
+  dead = false;
   async launch(req: { profileDir: string; args: string[] }): Promise<RunnerBrowser> {
     if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
     this.args.push(req.args);
+    if (this.launchGate) await this.launchGate;
+    let dead = false;
+    let onClosed: (() => void) | undefined;
+    this.killers.push(() => {
+      dead = true;
+      onClosed?.();
+    });
     return {
+      onClosed: (cb) => void (onClosed = cb),
+      isClosed: () => dead,
       page: {
         goto: async (u) => void this.navigations.push(u),
         url: () => 'http://x/game',
@@ -335,4 +350,53 @@ describe('HeadlessRunner lifecycle', () => {
     expect(log).toContain('could not type the invite code');
     expect(log).not.toMatch(/[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}/);
   });
+});
+
+describe('HeadlessRunner dead handles and bounded stop', () => {
+  it('relaunches and logs once after the browser closes on its own (event)', async () => {
+    const t = await make();
+    t.runner.start();
+    await t.runner.tick();
+    t.launcher.killers[0]!();
+    await t.runner.tick();
+    expect(t.launcher.launches).toHaveLength(2);
+    expect(t.logs.filter((l) => l.includes('closed unexpectedly'))).toHaveLength(1);
+  });
+
+  it('relaunches when a closed browser is found while polling (no event)', async () => {
+    const t = await make();
+    t.runner.start();
+    await t.runner.tick();
+    t.launcher.killers[0] = () => undefined;
+    // Mark dead without firing the callback.
+    const b = (t.runner as unknown as { browser: { isClosed: () => boolean } }).browser;
+    b.isClosed = () => true;
+    await t.runner.tick();
+    expect(t.launcher.launches).toHaveLength(2);
+    expect(t.logs.filter((l) => l.includes('closed unexpectedly'))).toHaveLength(1);
+  });
+
+  it('stop() returns within the bound while a launch never settles', async () => {
+    const t = await make();
+    t.launcher.launchGate = new Promise(() => undefined);
+    t.runner.start();
+    await vi.waitFor(() => expect(t.launcher.launches).toHaveLength(1));
+    const t0 = Date.now();
+    await t.runner.stop();
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(STOP_WAIT_MS).toBeLessThan(5_000);
+  }, 15_000);
+
+  it('closes a browser whose launch settles after stop() returned, and never uses it', async () => {
+    const t = await make();
+    let release!: () => void;
+    t.launcher.launchGate = new Promise<void>((r) => (release = r));
+    t.runner.start();
+    await vi.waitFor(() => expect(t.launcher.launches).toHaveLength(1));
+    await t.runner.stop();
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(t.launcher.closes).toBe(1);
+    expect(t.launcher.navigations).toEqual([]);
+  }, 15_000);
 });
