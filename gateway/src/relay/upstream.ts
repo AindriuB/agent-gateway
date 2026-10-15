@@ -135,7 +135,7 @@ export class LocalUpstream implements Upstream {
 }
 
 export type ConnectResult =
-  | { kind: 'ok'; upstream: SocketUpstream }
+  | { kind: 'ok'; upstream: SocketUpstream; caps: string[] }
   | {
       kind: 'refused';
       code: RelayRefusal | string;
@@ -218,6 +218,7 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
         code?: unknown;
         selector?: unknown;
         config?: unknown;
+        caps?: unknown;
       };
       try {
         reply = JSON.parse(lines[0]!) as typeof reply;
@@ -232,7 +233,10 @@ export function connectRelay(opts: ConnectOptions): Promise<ConnectResult> {
       } else if (reply.ok === true) {
         const up = new SocketUpstream(socket, splitter, lines.slice(1));
         socket.resume();
-        settle({ kind: 'ok', upstream: up });
+        const caps = Array.isArray(reply.caps)
+          ? reply.caps.filter((c): c is string => typeof c === 'string')
+          : [];
+        settle({ kind: 'ok', upstream: up, caps });
       } else {
         socket.destroy();
         const sel = reply.selector as { world?: unknown; user?: unknown } | undefined;

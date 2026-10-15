@@ -46,3 +46,38 @@ detect a primary that does not understand headless settings, and must not silent
 - The takeover rules from 37 Amendments 5 and 6.
 - A general capability negotiation for other features.
 - Docs (43; the "run the same version on one link port" note is from 37 Amendment 7).
+
+## Amendment 1 (2026-10-15)
+
+Andrew, from code review.
+
+### Decisions
+
+1. **Capabilities go only to an authenticated peer.** Decision (a)'s "both its ok and its refusal replies" narrows: the capability marker goes on the ok reply and on refusals sent after authentication succeeded (e.g. `RELAY_CONFIG_MISMATCH`, `RELAY_CONFIG_STEPDOWN`), and never on the pre-authentication refusals `RELAY_AUTH` and `RELAY_PROTOCOL`. Nothing reads caps from a refusal, so behaviour is unchanged, and an unauthenticated peer learns nothing about the primary. The Acceptance items above do not depend on caps in a refusal, so none changes; the items below pin the narrowing.
+
+### Acceptance (added)
+- [ ] Test: a hello with a wrong token gets a `RELAY_AUTH` refusal with no capability field, and a hello with `relay` other than 1 gets a `RELAY_PROTOCOL` refusal with no capability field.
+- [ ] Test: an authenticated hello refused with `RELAY_CONFIG_MISMATCH` or `RELAY_CONFIG_STEPDOWN` carries the capability, as does the ok reply.
+
+## Review round 1 — findings
+Reviewed HEAD: 79f805e (code review: no bugs; both caller paths correct; the mutation proofs pass).
+
+- [STYLE] gateway/src/relay/server.ts:10: `RELAY_CAP_HEADLESS` is imported after `RELAY_HANDSHAKE_MS`, which breaks the alphabetical order of the import list at :6-13. secondary.ts:10 already has it in order.
+  route: implementer
+- [P3] Amendment 1 acceptance: add the two tests if they are not already covered.
+  - RELAY_AUTH (wrong token) and RELAY_PROTOCOL (relay ≠ 1) refusals carry no capability field.
+  - RELAY_CONFIG_MISMATCH and RELAY_CONFIG_STEPDOWN refusals from an authenticated peer carry it, as does the ok reply.
+  Put them in gateway/test/relay/headless-capability.test.ts.
+  route: implementer
+
+## Review round 2 — findings
+Reviewed HEAD: c5a6928. Acceptance review APPROVE. Verify PASS once `npm ci` had run in the worktree (4907/4907 tests; the 3 earlier failures came from a missing node_modules).
+
+- [P3] gateway/src/relay/secondary.ts:209-212: in `watchStandby`, a too-old primary only triggers `continue` and does not set the standby reason again. So a standby that started for another reason, such as a config mismatch, keeps that stale reason after a pre-37 primary takes the port, and the operator is never told the headless agent is not running because the primary is too old. Set the "primary too old, headless agent not running" reason, logging it once, whenever `watchStandby` sees a too-old primary. Add a test: a standby that started with a mismatch, then a fake old primary on the port, ends with the too-old reason.
+  route: implementer
+
+## Review round 3 — findings
+Reviewed HEAD: a9a9163 (round 2 FIXED; the reviewer judged it CLEAN).
+
+- [P3] gateway/test/relay/headless-capability.test.ts:115-135: the new test's `RelayServer` is closed only inline (`await server.close()` at :135), not through `cleanups`, so a failed assertion leaves it listening. Register it the way the test at :168 does: `cleanups.push(() => server.close())`.
+  route: implementer
