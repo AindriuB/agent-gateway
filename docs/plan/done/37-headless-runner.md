@@ -337,3 +337,15 @@ At HEAD a5bbb0a. Implements Amendment 4. Comes from the round 9 re-review: its f
   - Show that the test fails when the SIGHUP registration is removed, and when it is replaced with `() => proc.exit(0)`.
   route: implementer
   input: `process.once('SIGHUP', () => process.exit(0))` in cli.ts →  today's tests still pass.
+
+## Review round 11 — findings (external)
+Andrew's PR review of #151 at 6567378 (2026-10-15).
+
+- [P2] gateway/src/app.ts:197: the headless settings do not trigger a primary takeover. If an ordinary gateway is already running, a newer instance configured for headless operation becomes a relay and never starts its agent, because the headless settings are missing from the configuration comparison. Add a safe representation of them to the comparison: the Foundry URL (canonical origin plus path), world, user and noSandbox. For the password, use a one-way digest kept in memory only, never logged or written anywhere, so a password change also triggers takeover. Never compare the password raw. Fix the whole class: check every config field that changes what the primary does, and either add it to the comparison or say in a comment why it is left out.
+  route: implementer
+  input: gateway A runs with no headless flags, and gateway B starts with `--headless-*` →  B relays to A and no runner starts.
+  test: B with headless settings takes over from A without them; B with identical settings still relays; changing only the password triggers takeover. The comparison value contains no password and no URL credentials. The test must fail on 6567378.
+- [P3] gateway/src/config/index.ts:122: an invalid Foundry URL can expose credentials in the logs. Validation rejects URLs that carry credentials, but its error message includes the first 80 characters of the original URL. Leave the value out of the error, or redact it: no userinfo, and no query string either. Fix the whole class: check every config and CLI validation error in the headless settings, and any nearby code this task touched, for echoed input that could carry a secret.
+  route: implementer
+  input: `--headless-foundry-url https://agent:hunter2@foundry.example` →  the error message contains `agent:hunter2`.
+  test: the error message for that input contains neither the username nor the password.
