@@ -40,3 +40,17 @@ Automate what can be automated for remote clients. Run MCP Inspector's CLI again
 ## History
 - 2026-10-13 MVP split: depends was `35, 20e`. 63 created the script with the stdio mode, the schema and name checks and the MVP A rows. 34 added the local HTTP mode and the Claude Code / Local HTTP cell.
 - 2026-10-14 re-plan: the items 63 and 34 met were deleted. Depends is `35, 67`.
+
+## Review round 1 — findings
+Reviewed HEAD: 9f86891.
+
+- [P2] scripts/conformance.sh:113-117: The "static bearer gets 401" check sends a made-up token (64 zeros) that no gateway would ever accept. It never sends the static token that actually exists.
+  route: implementer
+  input: The OAuth-mode gateway reuses the same `$db`. The HTTP-mode gateway stored its bearer there (app.ts prints "HTTP bearer token (shown once, stored hashed)"). Suppose a regression lets the public-mode gateway still honour that stored static token. The script sends `Bearer 000…0`, which matches no stored hash, so it still gets 401. The check passes, and the acceptance item "A static bearer against the OAuth-mode gateway gets 401" goes unguarded. The fix is to send `Bearer $http_token`, which the HTTP section already captured at :76.
+- [P3, optional] gateway/test/conformance/oauth-flow.mjs:63-65 with fake-module.ts:113: The consent code can be read as an empty string.
+  route: implementer
+  input: `writeFileSync(codeFile, …)` creates the file first and writes the code after. A poll that lands between those two steps sees `existsSync` true, and `readFileSync` returns `''`. Verify then submits `code=` and gets a 400, so the run fails ("consent verify returned 400"). The window is narrow. Fix: write to a temp file and rename it, or poll until the file is non-empty.
+
+Orchestrator scope notes (round 1):
+- Accepted as in scope: the intro paragraph in docs/compatibility.md:11-17, the header comment in scripts/conformance.sh:2, and the shared `serve` start line in scripts/conformance.sh:44, which passes the code file and which the OAuth mode needs.
+- Residual for task 43: docs/releasing.md:20 still quotes the old final line `conformance: ok (inspector <v>, stdio, http)`. That file is outside 40's Owns.
