@@ -2,7 +2,7 @@
 //   fake-module.ts pair <dbPath> <port> <tokenFile>   pair once, store the token
 //   fake-module.ts serve <port> <tokenFile> <readyFile> [codeFile]  stay connected, answer calls;
 //                                                     writes the consent code (task 67) to codeFile
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import WebSocket from 'ws';
 import { PROTOCOL_VERSION, TOOLS, toJsonSchema } from '@agent-gateway/protocol';
@@ -110,7 +110,10 @@ async function serveOnce(
     };
     if (m.type === 'consentCode') {
       // The user's Foundry client shows this code; the OAuth conformance flow reads it from here.
-      if (codeFile && m.code) writeFileSync(codeFile, m.code, { mode: 0o600 });
+      if (codeFile && m.code) {
+        writeFileSync(`${codeFile}.tmp`, m.code, { mode: 0o600 });
+        renameSync(`${codeFile}.tmp`, codeFile);
+      }
     } else if (m.type === 'welcome') {
       ws.send(JSON.stringify({ type: 'eventPolicy', enabled: true, retentionDays: 7 }));
       ws.send(

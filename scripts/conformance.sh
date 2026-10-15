@@ -114,7 +114,7 @@ for _ in $(seq 1 150); do [ -e "$ready" ] && break; sleep 0.1; done
 
 # a static bearer is refused on an OAuth-mode gateway
 static_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" \
-  -H "Authorization: Bearer $(printf '0%.0s' $(seq 1 64))" -H 'content-type: application/json' \
+  -H "Authorization: Bearer $http_token" -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')"
 [ "$static_status" = "401" ] || { echo "conformance: static bearer got $static_status, want 401" >&2; exit 1; }
 [ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" -H 'content-type: application/json' -d '{}')" = "401" ] \
