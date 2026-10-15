@@ -201,3 +201,17 @@ Reviewed HEAD: 515ef49 (re-review of round 2). The permission step is FIXED, wit
   route: implementer
 - [P3, optional] headless.md:112 "reads and calls tools as the agent": only `world_info` and `gateway_status` were called. Say "reads as the agent", or run one write-capable call under the policy and report it. headless.md:116: the "same settings" row used a different `--http-port`; note it or re-run it with the same port.
   route: implementer
+
+## Review round 4 — findings
+Reviewed HEAD: 79a4647 (re-review of round 3). Binding example, Docker row, follow-mode and tool-call wording are FIXED. Consistency issues remain.
+
+- [P2] docs/security.md:80 and :125: "reachable only by explicit binding … on a local-mode gateway" contradicts the next sentence and headless.md:119-120 (server mode without a public URL reached the agent over HTTP with the bearer). Rewrite both to match the table exactly.
+  route: implementer
+- [P3] README.md:39 and docs/security.md:125 say remote OAuth clients "did not [reach it] in the runs" / "were not reached in the runs", which implies an OAuth run happened. None did. Say it was not run and cannot work until task 98, as the table (headless.md:122) does.
+  route: implementer
+- [P3] docs/guides/headless.md:242: the "what was run" record is out of date. Add the two runs without a public URL (server mode over HTTP; the Docker image over HTTP), and exclude the `docker compose exec -T` form as well as remote OAuth from "every row was run".
+  route: implementer
+- [P3] docs/guides/headless.md:5: "a server-mode gateway with a public URL cannot be reached". Use the run-scoped wording from :124: "none of the combinations run reached it".
+  route: implementer
+- [P3] docs/guides/headless.md:124 (orchestrator decision, not a user decision): do not recommend "server mode without a public URL" as a deployment for headless agents. Server mode is for a public deployment, and a static bearer there is not something the docs should steer people to; 42's server-mode docs and Compose stack do not describe that setup. State the observed result as a fact in the table and prose, without recommending it, and point to task 98 for remote use.
+  route: implementer
