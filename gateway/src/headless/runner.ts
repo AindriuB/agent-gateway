@@ -109,6 +109,8 @@ export class HeadlessRunner {
   private abort = new AbortController();
   private replacedLogged = false;
   private failures = 0;
+  private statusFailureLogged = false;
+  private notInstalledLogged = false;
   private busy: Promise<void> | undefined;
   private pausedUntil = 0;
   private worldWasUp = false;
@@ -200,17 +202,29 @@ export class HeadlessRunner {
     return this.busy;
   }
 
+  private statusFailed(reason: string): undefined {
+    if (!this.stopped && !this.statusFailureLogged) {
+      this.statusFailureLogged = true;
+      this.o.log(
+        `headless runner: cannot read ${safeText(this.o.agent.foundryUrl)}/api/status: ${safeText(reason)}`,
+      );
+    }
+    return undefined;
+  }
+
   private async worldActive(): Promise<boolean | undefined> {
     try {
       const res = await (this.o.fetch ?? fetch)(`${this.o.agent.foundryUrl}/api/status`, {
         signal: AbortSignal.any([AbortSignal.timeout(STATUS_TIMEOUT_MS), this.abort.signal]),
       });
-      if (!res.ok) return undefined;
+      if (!res.ok) return this.statusFailed(`HTTP ${res.status}`);
       const body = (await res.json()) as { active?: unknown; world?: unknown };
       if (body.active !== true) return false;
       return typeof body.world !== 'string' || body.world === this.o.agent.worldId;
-    } catch {
-      return undefined;
+    } catch (err) {
+      const e = err as { message?: string; cause?: { code?: string; message?: string } };
+      const cause = e.cause?.code ?? e.cause?.message;
+      return this.statusFailed(`${e.message ?? String(err)}${cause ? ` (${cause})` : ''}`);
     }
   }
 
@@ -227,6 +241,10 @@ export class HeadlessRunner {
       return;
     }
     this.failures = 0;
+    if (this.statusFailureLogged) {
+      this.statusFailureLogged = false;
+      this.o.log('headless runner: Foundry status is readable again');
+    }
     if (!active) {
       this.worldWasUp = false;
       this.pausedUntil = 0;

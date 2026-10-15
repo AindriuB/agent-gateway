@@ -57,24 +57,39 @@ function downloaded(
   list: (p: string) => string[],
 ): string | undefined {
   const root = join(stateDir, 'browsers');
-  const rel =
+  const cft = ['Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'];
+  // Current playwright-core layouts first, then the older folder names.
+  const rels: string[][] =
     platform === 'darwin'
-      ? ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']
+      ? [
+          ['chrome-mac-arm64', ...cft],
+          ['chrome-mac-x64', ...cft],
+          ['chrome-mac', ...cft],
+          ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+        ]
       : platform === 'win32'
-        ? ['chrome-win', 'chrome.exe']
-        : ['chrome-linux', 'chrome'];
+        ? [
+            ['chrome-win64', 'chrome.exe'],
+            ['chrome-win', 'chrome.exe'],
+          ]
+        : [
+            ['chrome-linux64', 'chrome'],
+            ['chrome-linux-arm64', 'chrome'],
+            ['chrome-linux', 'chrome'],
+          ];
   let dirs: string[];
   try {
     dirs = list(root)
       .filter((d) => /^chromium-\d+$/.test(d))
-      .sort()
-      .reverse();
+      .sort((x, y) => Number(y.slice(9)) - Number(x.slice(9)));
   } catch {
     return undefined;
   }
   for (const d of dirs) {
-    const p = join(root, d, ...rel);
-    if (exists(p)) return p;
+    for (const rel of rels) {
+      const p = join(root, d, ...rel);
+      if (exists(p)) return p;
+    }
   }
   return undefined;
 }

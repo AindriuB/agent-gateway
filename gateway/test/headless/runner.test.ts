@@ -166,6 +166,32 @@ describe('HeadlessRunner lifecycle', () => {
     expect(t.launcher.closes).toBe(1);
   });
 
+  it('logs the first status failure once, and once again on recovery', async () => {
+    const t = await make();
+    t.runner.start();
+    await t.runner.tick();
+    t.foundry.fail = true;
+    for (let i = 0; i < 4; i++) await t.runner.tick();
+    expect(t.logs.filter((l) => l.includes('cannot read'))).toHaveLength(1);
+    t.foundry.fail = false;
+    await t.runner.tick();
+    await t.runner.tick();
+    expect(t.logs.filter((l) => l.includes('readable again'))).toHaveLength(1);
+  });
+
+  it('logs a thrown fetch (TLS, refused) with its cause, once', async () => {
+    const bad = (async () => {
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'CERT_HAS_EXPIRED' } });
+    }) as unknown as typeof fetch;
+    const t = await make({ fetch: bad });
+    t.runner.start();
+    await t.runner.tick();
+    await t.runner.tick();
+    const l = t.logs.filter((x) => x.includes('cannot read'));
+    expect(l).toHaveLength(1);
+    expect(l[0]).toContain('CERT_HAS_EXPIRED');
+  });
+
   it('requests and navigates to only /api/status, /join and /game', async () => {
     const t = await make();
     t.runner.start();

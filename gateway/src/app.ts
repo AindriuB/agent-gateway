@@ -514,7 +514,7 @@ export function createApp(config: Config, deps: AppDeps): App {
         );
         return;
       }
-      writeStatus(`headless runner browser: ${found.kind} at ${safeText(found.path)}`);
+      writeStatus(`headless runner browser: ${found.kind} at ${found.path}`);
       launcher = playwrightLauncher(found.path);
     }
     const candidate = new HeadlessRunner({

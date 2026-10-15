@@ -32,6 +32,35 @@ describe('findBrowser', () => {
     });
   });
 
+  it.each([
+    ['linux', '/s/browsers/chromium-1248/chrome-linux64/chrome'],
+    ['linux', '/s/browsers/chromium-1248/chrome-linux-arm64/chrome'],
+    [
+      'darwin',
+      '/s/browsers/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    ],
+    [
+      'darwin',
+      '/s/browsers/chromium-1248/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    ],
+    ['win32', '/s/browsers/chromium-1248/chrome-win64/chrome.exe'],
+  ] as const)('finds the current %s layout %s', (platform, path) => {
+    const deps = {
+      ...has(path),
+      platform,
+      list: () => ['chromium-1248', 'chromium_headless_shell-1248'],
+    };
+    expect(findBrowser('/s', deps)).toEqual({ kind: 'downloaded', path });
+  });
+
+  it('picks the highest chromium build numerically', () => {
+    const a = '/s/browsers/chromium-999/chrome-linux64/chrome';
+    const b = '/s/browsers/chromium-1248/chrome-linux64/chrome';
+    expect(
+      findBrowser('/s', { ...has(a, b), list: () => ['chromium-1248', 'chromium-999'] })?.path,
+    ).toBe(b);
+  });
+
   it('is undefined when nothing is installed', () => {
     expect(findBrowser('/s', has())).toBeUndefined();
   });
