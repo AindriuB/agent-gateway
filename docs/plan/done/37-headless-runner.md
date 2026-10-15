@@ -12,7 +12,10 @@
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
 - gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts; plus, per Amendment 4, replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call; plus, per Amendment 5, `readConfigFile`'s error message in config/index.ts)
-- gateway/src/relay/config.ts (the headless field in RelayConfig, headlessFingerprint, and that field in make/parse/compare/describe only; Amendment 5)
+- gateway/src/relay/config.ts (the headless field in RelayConfig, headlessFingerprint, and that field in make/parse/compare/describe only; Amendment 5; plus, per Amendment 6, an explicit caller/primary direction in describeConfigDiff)
+- gateway/src/relay/server.ts (the step-down decision for a headless primary and a caller without headless settings only; Amendment 6)
+- gateway/src/relay/secondary.ts (the describeConfigDiff call only, if needed for the standby reason; Amendment 6)
+- gateway/test/config/read-config-file.test.ts (new; readConfigFile error tests, Amendment 5)
 - gateway/src/bin/signals.ts (new; the shutdown signal wiring, Amendment 4)
 - gateway/test/bin/signals.test.ts (new)
 - gateway/package.json (`playwright-core` dependency only) and package-lock.json
@@ -385,3 +388,25 @@ At HEAD 9c20419. Implements Amendment 5. Comes from the round 11 re-review: P2 F
   - Add tests for all three directions: newer-without vs primary-with → relays and the runner keeps running; newer-with-different → takes over; newer-with vs primary-without → takes over. Also state what an older instance without headless settings gets from a headless primary.
   - If it needs gateway/src/relay/server.ts, which is outside Owns, stop and report `BLOCKED: spec change`.
   route: implementer
+
+## Amendment 6 (2026-10-15)
+
+Andrew, from the code review of 3a3cb1d (round 12's "headless wins" fix).
+
+### Decisions
+
+1. **A headless primary never steps down for a plain caller.** This replaces the scope of Amendment 5 decision 3. 3a3cb1d put "headless wins" inside the comparison in gateway/src/relay/config.ts, so it holds only when every other field is equal. A newer gateway without headless settings that also differs in a session-neutral setting (e.g. `logLevel`) still makes a headless primary step down and close its runner, because the step-down rule in gateway/src/relay/server.ts:293-309 lets any strictly newer caller with any difference take over. The new rule: a headless primary never steps down for a caller whose headless field is empty, whatever else differs and however new the caller is.
+   - If the session-critical settings (`sameSessionConfig`: `publicUrl`, `serverMode`, `allowOrigins`) match, the caller relays, and session-neutral differences are logged as today.
+   - If they differ, the caller is refused with `RELAY_CONFIG_MISMATCH` and goes to standby instead of taking over.
+   - Callers WITH headless settings keep the existing rules: newer and different → takes over; older and different → mismatch.
+   - A plain primary (no headless settings) keeps the existing rules unchanged.
+2. **Owns gains `gateway/src/relay/server.ts` (the step-down decision for a headless primary and a caller without headless settings only)**, and, if the standby reason needs it, the `describeConfigDiff` call in gateway/src/relay/secondary.ts.
+3. **`describeConfigDiff` (gateway/src/relay/config.ts:160) reports the headless difference only when it was not tolerated.** It must not report "headless agent settings differ" when the caller's headless field is empty and the primary's is not. It must still report it for a headless caller against a plain primary, and for two different non-empty fingerprints. Today it reports it in both server.ts (mine = primary) and secondary.ts (mine = caller); the direction (which side is the caller) must be explicit at each call site.
+4. **Owns gains `gateway/test/config/read-config-file.test.ts` (new; readConfigFile error tests, Amendment 5)**, accepted where round 12 put it.
+5. **Note for 43:** the docs must state these takeover rules (decision 1), replacing the Amendment 5 decision 3 wording.
+
+### Acceptance (added)
+- [ ] App-level tests against a headless primary: a newer plain caller differing only in `logLevel`, and one differing only in `httpPort`, each relays (the test asserts it is served, not in standby), and the primary keeps running its runner (it is not stopped).
+- [ ] App-level test: a newer plain caller differing in `allowOrigins` from a headless primary goes to standby with `RELAY_CONFIG_MISMATCH`, and the primary's runner keeps running.
+- [ ] The three-direction takeover tests from Amendment 5 still pass.
+- [ ] `describeConfigDiff` tests, in both call directions (caller = mine and primary = mine): the tolerated case (empty caller headless vs non-empty primary) has no "headless agent settings differ"; the non-tolerated cases (headless caller vs plain primary, two different non-empty fingerprints) do.
