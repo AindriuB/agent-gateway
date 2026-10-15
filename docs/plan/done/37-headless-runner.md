@@ -235,3 +235,15 @@ Andrew's PR review of #151 at f68405e (2026-10-15; a static review, no tests run
   route: implementer
   input: `launcher.launch()` hangs (slow disk, first-run Chromium unpacking) and `app.stop()` is called →  stop takes as long as the launch.
   test: a fake launcher whose launch never settles, or settles after stop →  `stop()` returns in under 5 s, and a late-resolving browser is closed. The test must fail on f68405e.
+
+## Review round 6 — findings
+Reviewed HEAD: 7d89d78 (re-review of the round 5 external fix since 588972b). Round 5 finding 1 (crash relaunch) is FIXED. Round 5 finding 2 (bounded stop) is NOT FIXED: it is listed again below as the P2.
+
+- [P2] gateway/src/headless/runner.ts:186-194: `stop()` makes three `bounded(..., STOP_WAIT_MS)` waits in a row: close the browser, then the in-flight poll, then close again. At 3 s each, two hung waits make stop take 6 s, which breaks the 5 s acceptance limit. Use one deadline under 5 s across all of `stop()`'s waits, measured from the moment stop is called; each wait gets only what is left. Add a test where both `close()` and `goto()` never settle; `stop()` must return in under 5 s. That test must fail on 7d89d78.
+  route: implementer
+  input: Chromium hangs during `page.goto('/join')`, so `close()` and `goto` both never settle, and `app.stop()` is called →  `stop()` returns after 6004 ms.
+- [P3] gateway/src/headless/runner.ts:301,306-311: the pause guard on line 301 relaunches once the pause has expired but leaves `pausedUntil` set. The block at 306-311 then sees the expired pause, closes the browser it just opened, and opens it again. Clear `pausedUntil` when the guard lets the relaunch through, so one poll launches at most once. Add a test that counts launches.
+  route: implementer
+  input: the page reports `replaced`, and the browser then dies or is closed after 3 status failures. 5 min later a poll runs with `isLinked()` still false →  openSession, closeBrowser, openSession in one poll.
+- [P3] gateway/src/headless/runner.ts:414-432: `ensureLinked` has no liveness check after its awaits, unlike `openSession` (378-383). A stop or crash mid-invite logs "headless runner: could not enter the invite: …target closed…", on top of "closed unexpectedly" after a crash. Use the same `live()` guards, so an abandoned or dead session returns quietly.
+  route: implementer
