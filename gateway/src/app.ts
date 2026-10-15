@@ -631,7 +631,10 @@ export function createApp(config: Config, deps: AppDeps): App {
     const names = new Set<string>();
     for (const row of rows) {
       names.add(row.name);
-      const password = storedPasswords[row.name];
+      // Own keys only: an agent named `constructor` must not find an inherited function.
+      const password = Object.hasOwn(storedPasswords, row.name)
+        ? storedPasswords[row.name]
+        : undefined;
       if (password === undefined) {
         if (!passwordWarned.has(row.name)) {
           passwordWarned.add(row.name);
