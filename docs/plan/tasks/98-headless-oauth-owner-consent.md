@@ -102,3 +102,15 @@ Observed: Foundry 14.369 / pf2e 8.6.0, test-world. The gateway ran `--server-mod
   route: implementer
 - [P3] README.md:39 and docs/guides/headless.md: say a grant survives a gateway restart, since the runner reconnects with its stored token, but ends when the agent re-pairs (`headless add`/`remove`, takeover, token loss), per decision (e). Check that the docs already say this; add it only where missing.
   route: implementer
+
+Orchestrator scope note (round 3): accepted. Making the docs true after the manual run needed edits beyond the Owns line qualifiers: headless.md:5 (intro), the first sentence of headless.md:124, the public-URL sentence in security.md:80, and README.md:39 beyond the closing clause (including the restart sentence round 3 asked for). Reverting them would leave the false claim "none of the combinations run reached it" in place.
+
+## Review round 4 — findings
+Reviewed HEAD: da97dbf. One round past the 3-round limit, approved by Andrew 2026-10-15. Round 2 and the round 3 results are FIXED and match the run log.
+
+- [P2] docs/guides/headless.md:122 (Client cell) and :126 (bold lead): they still say "Remote OAuth clients (claude.ai, ChatGPT, Gemini)" reach the agent, "**Yes**". Only a scripted OAuth client was run. Name the scripted OAuth client in the Client cell, keeping the table's column alignment, and reword the :126 lead so it does not say the named connectors reach the agent. Say a remote OAuth client reached it in the run, and that the connectors themselves were not run.
+  route: implementer
+- [P2] README.md:39: "the stdio and bearer clients run did not reach one". No bearer client ran with a public URL, because the bearer is off in that mode. Make it "the stdio clients run did not reach one".
+  route: implementer
+- [P3] README.md:39, docs/guides/headless.md:126 and docs/security.md:126 list different re-pair causes. Use decision (e)'s full set in all three: `headless add`, `headless remove`, redeeming a new invite, a takeover, the runner losing its pairing token.
+  route: implementer
