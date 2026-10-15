@@ -37,7 +37,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Handlebars is not installed, so the template tests check structure, not rendering.
   - `listActivePairings` scans all worlds per message, and its 200-row slice is oldest-first.
   - No test covers the BUSY path.
-  - **Known main breakage:** `gateway/test/headless/runner.test.ts:289` fails on macOS on origin/main (task 38; the log truncation hides "symlink"). A separate fix is suggested.
+  - Fixed out of loop: the macOS `runner.test.ts` failure on main (the log cap hid "symlink") was fixed in PR #157 (79600cc); `npm run verify` passes on macOS again.
 
 - **95: HTTP session eviction (merged, PR #148; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. **Gateway 0.2.0 (90 + 91 + 92 + 95; protocol 7.0.0, so the module and gateway must be upgraded together) is deployed on aindriub.app as of 2026-10-15.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
 
