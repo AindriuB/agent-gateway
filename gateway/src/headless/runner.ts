@@ -79,8 +79,8 @@ export interface LaunchRequest {
   profileDir: string;
   /** JS run in every page before Foundry loads. */
   initScript: string;
-  /** Extra Chromium arguments (`--no-sandbox` when the operator's config asks for it). */
-  args: string[];
+  /** Run Chromium without its sandbox (`headlessNoSandbox` in the config). */
+  noSandbox: boolean;
 }
 
 export interface BrowserLauncher {
@@ -344,7 +344,7 @@ export class HeadlessRunner {
     const gen = this.gen;
     const browser = await this.o.launcher.launch({
       profileDir: this.profile!,
-      args: this.o.noSandbox ? ['--no-sandbox'] : [],
+      noSandbox: this.o.noSandbox === true,
       initScript: `try { sessionStorage.setItem(${JSON.stringify(HEADLESS_FLAG_KEY)}, '1'); } catch {}`,
     });
     if (this.stopped || this.gen !== gen) {

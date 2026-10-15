@@ -49,7 +49,7 @@ class Launcher implements BrowserLauncher {
   launches: string[] = [];
   navigations: string[] = [];
   filled: string[] = [];
-  args: string[][] = [];
+  noSandbox: boolean[] = [];
   /** What the page's module mirrors into session storage. */
   linkState: string | null = null;
   closes = 0;
@@ -62,10 +62,10 @@ class Launcher implements BrowserLauncher {
   /** When set, goto() / close() never settle. */
   hangGoto = false;
   hangClose = false;
-  async launch(req: { profileDir: string; args: string[] }): Promise<RunnerBrowser> {
+  async launch(req: { profileDir: string; noSandbox: boolean }): Promise<RunnerBrowser> {
     if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
-    this.args.push(req.args);
+    this.noSandbox.push(req.noSandbox);
     if (this.launchGate) await this.launchGate;
     let dead = false;
     let onClosed: (() => void) | undefined;
@@ -366,11 +366,11 @@ describe('HeadlessRunner lifecycle', () => {
     const off = await make();
     off.runner.start();
     await off.runner.tick();
-    expect(off.launcher.args[0]).toEqual([]);
+    expect(off.launcher.noSandbox[0]).toBe(false);
     const on = await make({ noSandbox: true });
     on.runner.start();
     await on.runner.tick();
-    expect(on.launcher.args[0]).toEqual(['--no-sandbox']);
+    expect(on.launcher.noSandbox[0]).toBe(true);
   });
 
   it('logs a fixed message, not Playwright text, when typing the invite code fails', async () => {

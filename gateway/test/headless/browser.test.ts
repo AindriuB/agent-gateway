@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findBrowser } from '../../src/headless/browser.js';
+import { explainLaunchError, findBrowser, launchOptions } from '../../src/headless/browser.js';
 
 const has = (...paths: string[]) => ({
   platform: 'linux' as const,
@@ -63,5 +63,29 @@ describe('findBrowser', () => {
 
   it('is undefined when nothing is installed', () => {
     expect(findBrowser('/s', has())).toBeUndefined();
+  });
+});
+
+describe('launchOptions', () => {
+  it.each([
+    [false, true],
+    [true, false],
+  ])('noSandbox %s gives chromiumSandbox %s', (noSandbox, sandbox) => {
+    expect(launchOptions('/x/chrome', { noSandbox }).chromiumSandbox).toBe(sandbox);
+  });
+
+  it('keeps Playwright from taking over the process signals', () => {
+    const o = launchOptions('/x/chrome', { noSandbox: false });
+    expect([o.handleSIGINT, o.handleSIGTERM, o.handleSIGHUP]).toEqual([false, false, false]);
+  });
+});
+
+describe('explainLaunchError', () => {
+  it('names the cause and the setting for a sandbox failure', () => {
+    const e = explainLaunchError(
+      new Error('Failed to move to new namespace: Operation not permitted'),
+    );
+    expect(e.message).toContain('AGENT_GATEWAY_HEADLESS_NO_SANDBOX');
+    expect(e.message).not.toContain('namespace: Operation');
   });
 });

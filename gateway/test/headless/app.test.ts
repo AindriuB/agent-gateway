@@ -103,12 +103,12 @@ async function boot(opts: {
 
 describe('the Chromium sandbox setting', () => {
   it.each([
-    [true, ['--no-sandbox']],
-    [false, []],
-  ])('headlessNoSandbox %s launches with args %j', async (noSandbox, args) => {
+    [true, true],
+    [false, false],
+  ])('headlessNoSandbox %s launches with noSandbox %j', async (noSandbox, expected) => {
     const t = await boot({ serverMode: false, noSandbox });
     await until(() => t.launcher.launches.length > 0, 10_000, 'launch');
-    expect(t.launcher.launches[0]!.args).toEqual(args);
+    expect(t.launcher.launches[0]!.noSandbox).toBe(expected);
   });
 });
 
