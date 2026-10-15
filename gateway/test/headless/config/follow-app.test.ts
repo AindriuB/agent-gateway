@@ -10,12 +10,12 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { createApp, type App } from '../../src/app.js';
-import { openStore } from '../../src/store/index.js';
-import { ORIGIN } from '../link/helpers.js';
-import { TestConsent } from '../oauth/helpers.js';
-import { freePort, tempState, until } from '../relay/harness.js';
-import { FakeLauncher } from './fake-browser.js';
+import { createApp, type App } from '../../../src/app.js';
+import { openStore } from '../../../src/store/index.js';
+import { ORIGIN } from '../../link/helpers.js';
+import { TestConsent } from '../../oauth/helpers.js';
+import { freePort, tempState, until } from '../../relay/harness.js';
+import { FakeLauncher } from '../fake-browser.js';
 
 const W = 'w1';
 const U = 'agentuser0000001';
