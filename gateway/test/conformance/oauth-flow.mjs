@@ -17,7 +17,6 @@ const form = (o) => new URLSearchParams(o).toString();
 const hiddenValue = (html, name) =>
   new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1] ?? fail(`page has no ${name} field`);
 
-
 // --- discovery: 401 -> WWW-Authenticate -> protected-resource metadata -> AS metadata ---
 const probe = await fetch(mcpUrl, {
   method: 'POST',
@@ -35,16 +34,27 @@ const getJson = async (url, what) => {
   return r.json();
 };
 const prm = await getJson(prmUrl, 'protected-resource metadata');
-if (prm.resource !== mcpUrl) fail(`protected-resource "resource" is ${prm.resource}, want ${mcpUrl}`);
-const asIssuer = prm.authorization_servers?.[0] ?? fail('protected-resource metadata names no authorization server');
-const asUrl = new URL(`/.well-known/oauth-authorization-server${new URL(asIssuer).pathname.replace(/\/$/, '')}`, asIssuer);
+if (prm.resource !== mcpUrl)
+  fail(`protected-resource "resource" is ${prm.resource}, want ${mcpUrl}`);
+const asIssuer =
+  prm.authorization_servers?.[0] ??
+  fail('protected-resource metadata names no authorization server');
+const asUrl = new URL(
+  `/.well-known/oauth-authorization-server${new URL(asIssuer).pathname.replace(/\/$/, '')}`,
+  asIssuer,
+);
 const meta = await getJson(asUrl, 'authorization-server metadata');
 if (meta.issuer !== asIssuer) fail(`AS issuer ${meta.issuer} does not match ${asIssuer}`);
 for (const k of ['authorization_endpoint', 'token_endpoint', 'registration_endpoint']) {
   if (typeof meta[k] !== 'string') fail(`AS metadata lacks ${k}`);
-  new URL(meta[k]);
+  try {
+    new URL(meta[k]);
+  } catch {
+    fail(`AS metadata ${k} is not a valid URL: ${meta[k]}`);
+  }
 }
-if (!meta.code_challenge_methods_supported?.includes('S256')) fail('AS metadata does not advertise S256');
+if (!meta.code_challenge_methods_supported?.includes('S256'))
+  fail('AS metadata does not advertise S256');
 const origin = new URL(meta.authorization_endpoint).origin;
 
 const reg = await fetch(meta.registration_endpoint, {
