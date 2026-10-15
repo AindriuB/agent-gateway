@@ -155,3 +155,21 @@ Andrew, from code review.
 
 ### Follow-up
 - **Task 98** (owner-routed OAuth consent for headless agents) is filed. When it lands, it updates the headless.md and security.md lines this amendment adds (98 Decision c).
+
+## Review round 1 — findings
+Reviewed HEAD: 1c2400c (code review of the implementer's commits c117d4d..51fd326, then Amendments 1 and 2).
+
+- [P2] .github/FUNDING.yml:1 and README.md:61-64: Amendment 1 is not applied yet. Delete .github/FUNDING.yml, and remove the README "## Support the project" section with its GitHub Sponsors and Ko-fi links. Check: `git diff --stat main...HEAD -- .github/FUNDING.yml` and `grep -n -i "ko-fi\|sponsor" README.md` both return nothing.
+  route: implementer
+- [P2] docs/guides/headless.md:5 and :100, docs/guides/claude-ai.md:17, and the docs/security.md "Multi-user isolation" text: apply Amendment 2. Remove every description of an OAuth path to a headless agent. Say plainly that remote OAuth clients (claude.ai, ChatGPT, Gemini) cannot use a headless agent yet, that local stdio/HTTP sessions bound with `--world`/`--user <agent id>` can, and that task 98 is the fix.
+  route: implementer
+- [P2] README.md:39 and :43, docs/security.md:110: the testing claims are overstated. "Have not all been run" implies some remote-client manual checks were run, but none were (all unticked in docs/compatibility.md from :53). README:43's "exercised only by the automated OAuth conformance run" implies claude.ai, ChatGPT and Gemini were exercised; conformance drives the gateway's own oauth-flow.mjs and the MCP Inspector, not those clients. Say that none of the remote-client checklists has been run, and that the automated conformance run tests the gateway's OAuth server with its own client and the MCP Inspector.
+  route: implementer
+- [P3] README.md:42: "you install from source, from the npm package or from the Docker image" contradicts README.md:7 ("Pre-release: not yet published. Install from source."). State the current state: build from source, or build the Docker image locally.
+  route: implementer
+- [P3] docs/guides/headless.md:214: "headless add, list, remove (both outputs above)" refers to outputs the guide does not show. Either quote real `add` and `list` output, captured from a run with placeholder ids and no secrets, or reword the line.
+  route: implementer
+- [P3] docs/privacy.md:26: "The other public paths are the MCP endpoint and the sign-in pages" leaves out the public `/link` WebSocket (reverse-proxy.md:11) and the `/register`, `/token` and `/.well-known` endpoints. List the public paths accurately, as the reverse-proxy guide routes them.
+  route: implementer
+- [P3, optional] docs/guides/headless.md:153: quote the `.mcpb` line with its `headless runner: ` prefix, as :123 does for the sandbox line. :104 "When it starts it logs one of": say discovery happens when the first headless runner starts, not at every gateway start.
+  route: implementer
