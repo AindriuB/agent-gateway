@@ -11,7 +11,9 @@
 - gateway/src/link/registry.ts (the optional `headless` field on `LinkConnection.info` only; Amendment 1)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
-- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts)
+- gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts; plus, per Amendment 4, replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call)
+- gateway/src/bin/signals.ts (new; the shutdown signal wiring, Amendment 4)
+- gateway/test/bin/signals.test.ts (new)
 - gateway/package.json (`playwright-core` dependency only) and package-lock.json
 - protocol/src/link/messages.ts (insertion only: an optional `headless` field in `HelloMessage`)
 - module/src/link/bridge.ts (the headless flag only)
@@ -303,3 +305,22 @@ Reviewed HEAD: a89b833 (full-branch review after Amendment 3). All round 8 findi
   input: server-mode gateway, headless runner up, `kill -HUP` →  Chromium closes, the gateway keeps running, and the next poll relaunches a logged-in Chromium.
 - [P3, optional] gateway/src/headless/runner.ts:375: the `if (agent.password)` branch can never be false, because config requires `headlessPassword`. Remove the dead branch, or replace it with a comment saying the password is required by config. Task 43's docs must say an agent user needs a password.
   route: implementer
+
+## Amendment 3 live check
+
+On d94eb4e: a server-mode gateway with the headless runner linked to Foundry v14 `test-world` (sandbox off). `kill -HUP <gateway pid>` →  the gateway and its 10 Chromium descendants (11 PIDs) were gone in 0.20 s; the link and HTTP ports were free; no "closed unexpectedly" line and no relaunch in the following 8 s. PASS. Redacted log: section "Re-run on d94eb4e (SIGHUP)" in .worktrees/agent-gateway/37-manual.log (untracked).
+
+## Amendment 4 (2026-10-15)
+
+Andrew, from the code review of the round 9 fix (d94eb4e).
+
+### Decisions
+
+1. **The shutdown signal wiring moves to its own module so it can be unit-tested.** New file gateway/src/bin/signals.ts exports a small function (e.g. `installShutdownSignals(shutdown, proc = process)`) that registers `once` handlers for SIGINT, SIGTERM and SIGHUP, all calling the same `shutdown`. gateway/src/bin/cli.ts calls it instead of registering the handlers inline. No behaviour change beyond that.
+   - Reason: the round 9 test (gateway/test/bin/exposure.test.ts:77-91) checks only the exit code. A code review showed that a handler bypassing `app.stop()` (`process.once('SIGHUP', () => process.exit(0))`) still passes it, so Amendment 3's item "`app.stop()` is called once" could not be met by a real-process exit-code test. cli.ts runs `main()` on import, so the wiring cannot be unit-tested in place.
+2. **Owns widens:** gateway/src/bin/signals.ts (new) and gateway/test/bin/signals.test.ts (new); the cli.ts entry also allows replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call.
+
+### Acceptance (added)
+- [ ] gateway/test/bin/signals.test.ts, with a fake process (an EventEmitter), shows that each of SIGINT, SIGTERM and SIGHUP calls `shutdown` exactly once, and that a second signal does not call it again. The test fails if the SIGHUP registration is removed or replaced with a direct exit.
+- [ ] gateway/src/bin/cli.ts registers no SIGINT, SIGTERM or SIGHUP handler inline; it calls the signals.ts function with its `shutdown`.
+- [ ] The existing SIGHUP exit-code test in gateway/test/bin/exposure.test.ts may stay.
