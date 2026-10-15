@@ -288,3 +288,18 @@ Andrew, from the review of the round 8 fix (see "Review round 8 — findings" an
 - [ ] A test shows SIGHUP triggers the same shutdown path as SIGTERM: `app.stop()` is called once and the exit code is the same as for SIGTERM.
 - [ ] `launchOptions` sets `handleSIGINT`, `handleSIGTERM` and `handleSIGHUP` all to `false` (test).
 - [ ] Live on this host: with a server-mode gateway running and the headless runner's Chromium up, `kill -HUP <gateway pid>` makes the gateway and all its Chromium descendants exit within 5 s.
+
+## Review round 9 — findings
+Reviewed HEAD: a89b833 (full-branch review after Amendment 3). All round 8 findings are FIXED. Nothing else in the branch was found.
+
+- [P2] gateway/src/headless/browser.ts:118-133 and gateway/src/bin/cli.ts:565-566: Amendment 3 is not implemented yet.
+  - Add `process.once('SIGHUP', shutdown)` beside the SIGINT/SIGTERM handlers in cli.ts.
+  - Set `handleSIGHUP: false` in `launchOptions`, alongside SIGINT and SIGTERM.
+  - Rewrite the doc comment at browser.ts:118-123, which describes the superseded round 8 choice.
+  - Replace the test at gateway/test/headless/browser.test.ts:77-81, which asserts `'handleSIGHUP' in o` is false, with one asserting all three handlers are `false`.
+  - Add the cli test from Amendment 3: on SIGHUP, `app.stop()` is called once and the exit code matches SIGTERM's.
+  - Do the live check from Amendment 3 on this host: a server-mode gateway with the runner's Chromium up, `kill -HUP <gateway pid>` →  the gateway and every Chromium descendant exit within 5 s.
+  route: implementer
+  input: server-mode gateway, headless runner up, `kill -HUP` →  Chromium closes, the gateway keeps running, and the next poll relaunches a logged-in Chromium.
+- [P3, optional] gateway/src/headless/runner.ts:375: the `if (agent.password)` branch can never be false, because config requires `headlessPassword`. Remove the dead branch, or replace it with a comment saying the password is required by config. Task 43's docs must say an agent user needs a password.
+  route: implementer
