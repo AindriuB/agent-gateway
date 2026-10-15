@@ -25,7 +25,16 @@ describe('headless add revokes a stale browser classification', () => {
     cleanups.push(state.cleanup);
     const linkPort = await freePort();
     const multi = new MultiLauncher(state.dir, () => linkPort);
-    const g = await startGateway({ state, linkPort, agents: [], multi, sweepMs: SWEEP });
+    // The gateway holds the password for a1 but no row yet; once `add` stores it, its runner
+    // starts. The fake page types the invite but never sends it, so the test can redeem it.
+    multi.forUser(U).noPair = true;
+    const g = await startGateway({
+      state,
+      linkPort,
+      agents: [{ name: 'a1', userId: U, password: 'p1' }],
+      multi,
+      sweepMs: SWEEP,
+    });
     apps.push(g.app);
 
     // A human browser is paired and connected as (w1, ua1) before it is an agent.
@@ -69,5 +78,19 @@ describe('headless add revokes a stale browser classification', () => {
     clients.push(again);
     again.send(hello({ kind: 'pairingToken', token: 'tok' }, { worldId: W, userId: U }));
     expect(await again.next()).toMatchObject({ code: 'PAIRING_INVALID' });
+
+    // The next connection for (w, u) is classified headless with the stored owner.
+    const fake = multi.forUser(U);
+    await until(() => fake.typedCodes.length > 0, 10_000, 'runner typed an invite');
+    const agent = await TestClient.connect(linkPort, ORIGIN);
+    clients.push(agent);
+    agent.send(
+      hello({ kind: 'pairingCode', code: fake.typedCodes[0]! }, { worldId: W, userId: U }),
+    );
+    expect(await agent.next()).toMatchObject({
+      type: 'welcome',
+      headless: true,
+      ownerUserId: 'owner1',
+    });
   }, 30_000);
 });

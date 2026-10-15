@@ -11,8 +11,9 @@ export const HEADLESS_USAGE = `  headless add <name> --foundry-url <url> --world
                       password is never stored: set AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD
                       (name in capitals, - as _) or headless.<name>.password in the 0600
                       --config file, for the gateway that runs it. --owner is the Foundry user
-                      id whose approvals this agent's actions go to. Existing pairings for that world
-                      and user are revoked, so a browser already using it must pair again. A
+                      id whose approvals this agent's actions go to. Existing pairings and OAuth grants
+                      for that world and user are revoked and its unused invites cancelled, so a
+                      browser already using it must pair again. A
                       running gateway starts the agent within seconds if it already holds the password
   headless list       List stored agents (name, world, user, owner, Foundry URL), no passwords
   headless remove <name>
@@ -111,7 +112,7 @@ export function runHeadlessCommand(input: HeadlessCommandInput): number {
       case 'add': {
         const world = values.world!;
         const user = values.user!;
-        let revoked = 0;
+        let revoked: { pairings: unknown[]; cancelledInvites: number } | undefined;
         const refusal = store.transaction(() => {
           if (store.headless.get(name)) return `An agent named ${name} already exists`;
           const same = store.headless.getByIdentity(world, user);
@@ -125,7 +126,7 @@ export function runHeadlessCommand(input: HeadlessCommandInput): number {
           });
           // The identity becomes a headless agent: browsers already connected or paired as it
           // hold a stale classification, so revoke them; they re-pair and are classified afresh.
-          revoked = store.revokePairingsFor(world, user).pairings.length;
+          revoked = store.revokePairingsFor(world, user);
           return undefined;
         });
         if (refusal) {
@@ -134,9 +135,7 @@ export function runHeadlessCommand(input: HeadlessCommandInput): number {
         }
         input.out(
           `Added headless agent ${name} (world ${safeText(world)}, user ${safeText(user)}).\n` +
-            (revoked > 0
-              ? `Revoked ${revoked} existing pairing(s) for that world and user; they must pair again.\n`
-              : '') +
+            `Revoked ${revoked?.pairings.length ?? 0} pairing(s) and its OAuth grants and cancelled ${revoked?.cancelledInvites ?? 0} unused invite(s) for that world and user; a browser using it must pair again.\n` +
             `Its password is not stored. Set ${agentPasswordEnv(name)} or headless.${name}.password in the 0600 --config file for the gateway that runs it (the agent user needs a Foundry password).\n` +
             'A running gateway starts it within seconds if it already holds the password; otherwise restart that gateway.\n',
         );
