@@ -442,3 +442,13 @@ At HEAD 1d08ba7. Implements Amendment 7. Comes from the full review after round 
   route: implementer
 - [P3] gateway/src/relay/server.ts:315,321: no test pins `mineIsCaller = false` at the server.ts call sites. In the logLevel/httpPort takeover test, also capture the primary's logger and assert it contains no "headless agent settings differ". The test must fail when that argument is flipped to `true`.
   route: implementer
+
+## Review round 15 — findings
+At HEAD 26a5b68. Comes from the full review after round 14 (CLEAN): round 14's wording finding is FIXED, its test finding only partly. These are the same classes as round 5: a handle that never recovers, and an untested direction.
+
+- [P3] gateway/src/headless/runner.ts:210 and :426: `page.evaluate` has no time limit. If the page hangs, the poll never finishes, so status polling stops and the browser is never closed when the world goes down. Bound both evaluate calls, and every other awaited Playwright call in the poll path that lacks a timeout. A call that hits its bound must be treated as a dead session: drop the handle so the next poll recovers. Test with a launcher whose `evaluate` never settles: after the world goes down, the browser is closed. The test must fail on 26a5b68.
+  route: implementer
+- [P3] gateway/src/headless/browser.ts:166-171: if `addInitScript` or `newPage` throws after `launchPersistentContext` succeeded, the context is never closed, so it keeps the profile lock until the process exits. Close the context on any failure after launch, and add a test.
+  route: implementer
+- [P3] gateway/src/relay/server.ts:301,315: `mineIsCaller = false` at the refuse and step-down call sites is not pinned by any test. In "a newer gateway with headless settings takes over from one without", assert that the primary's captured `aLines` contain "headless agent settings differ". Pin the refuse site (:301) the same way. Both must fail when flipped to `true`.
+  route: implementer
