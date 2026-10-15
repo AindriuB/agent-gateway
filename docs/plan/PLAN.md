@@ -54,6 +54,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 ### 0d. 100 done on branch (PR #162): consent test pairing race
 - **100: headless consent tests pair sequentially (branch `task/100-consent-test-pairing-race`, archived in `docs/plan/done/`).** Fixes the macOS `verify` hang that stopped the 0.3.0 release; with 99 (#161) it unblocks cutting 0.3.0. Follow-up: `invite-admin.test.ts:109` and `pairing-admin.test.ts:152` race `gm.next(X)` against `gm.untilClosed()`, which a close would now reject; neither reaches that path today.
 
+### 0e. 101 done on branch (PR pending): conformance retry on the gateway 429
+- **101: conformance inspector calls retry on the per-client 429 (branch `task/101-conformance-oauth-rate-retry`, archived in `docs/plan/done/`).** Fixes release gate 3 failing on the Mac. After merge, re-run the 0.3.0 release on the Mac: that run is the proof that a retry turns a 429 into a pass, which Linux cannot show. With 99 and 100 this completes the 0.3.0 unblockers.
+
 ### 1. ChatGPT plugin
 - **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
 

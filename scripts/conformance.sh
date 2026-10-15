@@ -83,9 +83,11 @@ done
 for _ in $(seq 1 150); do [ -e "$ready" ] && break; sleep 0.1; done
 [ -e "$ready" ] || { echo "conformance: fake module never reconnected for http" >&2; exit 1; }
 url="http://127.0.0.1:$HTTP_PORT/mcp"
+# shellcheck source=scripts/lib/inspector-retry.sh disable=SC1091
+. scripts/lib/inspector-retry.sh
 inspect_http() {
-  npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$url" --transport http \
-    --header "Authorization: Bearer $http_token" "$@" 2>>"$work/gateway.log"
+  retry_429 "$work/gateway.log" npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$url" --transport http \
+    --header "Authorization: Bearer $http_token" "$@"
 }
 hlist="$(inspect_http --method tools/list)"
 grep -q '"demo-echo"' <<<"$hlist" || { echo "conformance: http tools/list missing demo-echo" >&2; exit 1; }
@@ -124,8 +126,8 @@ access="$(node gateway/test/conformance/oauth-flow.mjs "$public/mcp" "$work/cons
   || { echo "conformance: oauth flow failed" >&2; exit 1; }
 [ -n "$access" ] || { echo "conformance: oauth flow returned no token" >&2; exit 1; }
 inspect_oauth() {
-  npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$public/mcp" --transport http \
-    --header "Authorization: Bearer $access" "$@" 2>>"$work/gateway.log"
+  retry_429 "$work/gateway.log" npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$public/mcp" --transport http \
+    --header "Authorization: Bearer $access" "$@"
 }
 olist="$(inspect_oauth --method tools/list)"
 grep -q '"demo-echo"' <<<"$olist" || { echo "conformance: oauth tools/list missing demo-echo" >&2; exit 1; }
