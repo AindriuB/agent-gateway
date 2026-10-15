@@ -2,14 +2,14 @@
 
 **Repo:** .
 **Depends on:** 65, 35, 37, 38, 40, 42, 67, 68, 74, 97 (all merged)
-**Status:** MVP B wave 4, last. Amended 2026-10-14 in the MVP B re-plan: the items 65 already did are removed; the existing docs/security.md sections are edited, not created; README.md:34 is flipped at the end. Refreshed 2026-10-15 against what shipped in 37 (PR #151, Amendments 1-7), 38 (PR #153), 97 (PR #152) and 40 (PR #150), at be8ab45: every "note for 43" from those tasks and PLAN.md "Now 0a" is checked against the merged code and added below as a concrete doc item; Owns widens to `docs/releasing.md` (one line, from 40); README.md:21 is added (it still says there is no headless mode); 97 joins Depends. Line references re-checked at be8ab45.
+**Status:** MVP B wave 4, last. Amended 2026-10-14 in the MVP B re-plan: the items 65 already did are removed; the existing docs/security.md sections are edited, not created; README.md:34 is flipped at the end. Refreshed 2026-10-15 against what shipped in 37 (PR #151, Amendments 1-7), 38 (PR #153), 97 (PR #152) and 40 (PR #150), at be8ab45: every "note for 43" from those tasks and PLAN.md "Now 0a" is checked against the merged code and added below as a concrete doc item; Owns widens to `docs/releasing.md` (one line, from 40); README.md:21 is added (it still says there is no headless mode); 97 joins Depends. Line references re-checked at be8ab45. Amendment 1 (2026-10-15): the 35b docs item moves to 35b; no funding links yet.
 **Owns:**
 - README.md
 - docs/guides/** (new guides; the Claude Desktop and Claude Code guides only where they link a new guide)
 - docs/security.md (edits to existing sections, plus new sections where named below)
 - docs/privacy.md (the remote, server-mode and headless additions only)
 - docs/releasing.md (the quoted `test:conformance` final line at :20 only; 40's residual)
-- .github/FUNDING.yml (new)
+- .github/FUNDING.yml (deletion only, per Amendment 1: the branch added it and must remove it)
 
 ## Goal
 Document what MVP B adds, for someone who has never seen the project: remote clients through a public URL with OAuth, the server-mode Compose stack behind a reverse proxy, and headless agents. Update the security model and privacy statement for remote, server and headless mode. Then remove "local only" from the README, because after this task it is no longer true.
@@ -98,10 +98,9 @@ Document what MVP B adds, for someone who has never seen the project: remote cli
 - [ ] README:
   - the five-minute local quick start stays first; :21's "There is no headless mode in this release" sentence is replaced by one sentence linking docs/guides/headless.md (the rest of step 3 unchanged);
   - a short "Remote and server mode" section links the new guides, and "More" (:42-45) lists them;
-  - Ko-fi and GitHub Sponsors links are added, and `.github/FUNDING.yml` lists both.
+  - no sponsor or funding links (Amendment 1): `grep -n -i "ko-fi\|sponsor" README.md` is empty, and `.github/FUNDING.yml` does not exist on the branch (`git diff --stat main...HEAD -- .github/FUNDING.yml` is empty).
 - [ ] docs/releasing.md:20 quotes `conformance: ok (inspector <v>, stdio, http, oauth)` (`grep -n "stdio, http, oauth" docs/releasing.md` matches; nothing else in the file changes).
 - [ ] Last commit of the PR: README.md:32-36 "What this release does not do" no longer says local only. It lists only what is still missing at that point (for example, native installers, headless in the `.mcpb` bundle), and keeps the macOS-verified / Windows-untested line if still true.
-- [ ] If 35b has landed, docs/security.md and docs/privacy.md link `docs/audit-trail.md` and cover verbose mode (off by default, refused in remote and server mode). If it has not (it had not at be8ab45), this item moves with 35b.
 - [ ] Every command in the new docs was run once by the implementer, and the PR lists them. Quoted log lines and standby reasons match the source at the PR's base (`grep -F` each against gateway/src).
 
 ## Out of scope
@@ -112,8 +111,26 @@ Document what MVP B adds, for someone who has never seen the project: remote cli
 - docs/compatibility.md (40's): ticking the manual checklists, or flipping its claude.ai/ChatGPT/Gemini rows (:23-26, still "not supported in this release (MVP B)"), which follows Andrew's checklist run.
 - Any code change: making headless work in the `.mcpb` bundle, passing headless env through the compose file, the `add` duplicate check against a running gateway, the "MCP stdio server started" line in server mode, and 96's error-message redaction (96 owns gateway/src/config and gateway/src/bin messages).
 - gateway.db created 0644 (37's follow-up task).
+- Documenting 35b's gateway audit trail and verbose mode, or linking `docs/audit-trail.md` (moved to 35b by Amendment 1).
+- Ko-fi / GitHub Sponsors links and `.github/FUNDING.yml` (added when the repo goes public; Amendment 1).
 
 ## History
 - 2026-10-13 MVP split: depends was `29, 32, 33, 36, 38, 41, 20f, 35b`. 65 took the README quick start, the Claude guides, the privacy statement and the base security model.
 - 2026-10-14 re-plan: those items were removed; the existing security sections are edited in place; README.md:34 is flipped at the end.
 - 2026-10-15 refresh: the notes for 43 from 37 (Amendments 2, 3, 5, 6, 7; review rounds 7-9; attempt 2), 38 (decision g, residuals), 97 and 40 (releasing.md line) verified against be8ab45 and added; Owns gains docs/releasing.md (one line); 97 added to Depends.
+
+## Amendment 1 (2026-10-15)
+
+Andrew.
+
+### Decisions
+
+1. **The 35b docs item moves to 35b.** The acceptance item "If 35b has landed, docs/security.md and docs/privacy.md link `docs/audit-trail.md` and cover verbose mode" is removed from this task. 35b is not built and `docs/audit-trail.md` does not exist, so there is nothing to link or describe. 35b's Acceptance now carries an item to document its audit trail and verbose mode in the user docs, and its Owns gains the two files for that purpose. This task's docs must not mention the gateway audit trail or `docs/audit-trail.md`.
+2. **No funding links yet.** `.github/FUNDING.yml` (new) leaves Owns, and the README Ko-fi / GitHub Sponsors links leave scope. They will be added when the repo goes public. The branch already adds both (`.github/FUNDING.yml`, and the "support its development on GitHub Sponsors or Ko-fi" sentence in README.md), so the implementer deletes `.github/FUNDING.yml` and removes every sponsor/funding link and sentence from the branch. Owns keeps `.github/FUNDING.yml` for that deletion only.
+
+### Acceptance (changed)
+- [ ] README: no sponsor or funding links; `grep -n -i "ko-fi\|sponsor" README.md` is empty and `.github/FUNDING.yml` is not in `git diff --stat main...HEAD` (replaces "Ko-fi and GitHub Sponsors links are added, and `.github/FUNDING.yml` lists both").
+- [ ] Removed: the "If 35b has landed ..." item (now 35b's).
+
+### Follow-up
+- **Repo goes public:** add `.github/FUNDING.yml` (Ko-fi and GitHub Sponsors) and the README sponsor links. Not a task file yet; file it with the move-public work.
