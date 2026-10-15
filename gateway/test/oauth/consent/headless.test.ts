@@ -91,6 +91,48 @@ describe('headless agent consent goes to its owner (task 98)', () => {
     expect(res.headers.location).toBeUndefined();
   });
 
+  it('delivers no code when the owner pairing is revoked but the connection is still registered', async () => {
+    r = await consentRig({}, {});
+    addAgent(r, 'bot', 'owner');
+    const owner = await pairModule(r.h, 'owner');
+    const bot = await pairModule(r.h, 'bot');
+    modules.push(owner, bot);
+    r.h.store.revokePairingsFor('w1', 'owner'); // the 5 s sweep has not closed the socket yet
+    const { page } = await send(r, 'bot');
+    await settle();
+    expect(codes(owner)).toHaveLength(0);
+    const res = await postConsent(r, page, { action: 'verify', code: '00000000' });
+    expect(res.status).toBe(400);
+  });
+
+  it('fails the code, as a wrong code does, when the owner pairing is revoked after delivery', async () => {
+    r = await consentRig({}, {});
+    addAgent(r, 'bot', 'owner');
+    const owner = await pairModule(r.h, 'owner');
+    const bot = await pairModule(r.h, 'bot');
+    modules.push(owner, bot);
+    const { page } = await send(r, 'bot');
+    const { code } = (await owner.tc.next('consentCode')) as unknown as { code: string };
+    const wrong = await postConsent(r, page, { action: 'verify', code: '11111111' });
+    r.h.store.revokePairingsFor('w1', 'owner');
+    const res = await postConsent(r, page, { action: 'verify', code });
+    expect(res.status).toBe(400);
+    expect(res.headers.location).toBeUndefined();
+    const norm = (b: string) => b.replaceAll(page.rid, 'RID').replaceAll(page.csrf, 'CSRF');
+    expect(norm(res.body)).toBe(norm(wrong.body));
+    expect(r.h.store.oauth.listLiveGrants('w1', 'bot')).toHaveLength(0);
+  });
+
+  it('delivers no code to a user whose own pairing was revoked but whose socket remains', async () => {
+    r = await consentRig({}, {});
+    const alice = await pairModule(r.h, 'alice');
+    modules.push(alice);
+    r.h.store.revokePairingsFor('w1', 'alice');
+    await send(r, 'alice');
+    await settle();
+    expect(codes(alice)).toHaveLength(0);
+  });
+
   it('sends nothing for no owner, an offline owner, or the flag agent, and no code works', async () => {
     r = await consentRig({}, { flag: { worldId: 'w1', userId: 'flagbot' } });
     addAgent(r, 'noown', null);

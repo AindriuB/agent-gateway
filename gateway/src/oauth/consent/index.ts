@@ -54,6 +54,8 @@ interface Pending extends ConsentSeed {
   wrong: number;
   /** The exact pairing the code was sent over; it must still be active when the code is entered. */
   target?: { worldId: string; userId: string; pairingId: string; userName?: string };
+  /** The pairing of the connection that received the code (the owner's, for a headless agent). */
+  receiverPairingId?: string;
   chosen: Scope[];
   codeHash?: Buffer;
   codeExpiresAt: number;
@@ -265,6 +267,7 @@ export class ConsentPages {
     p.target = this.resolve(form.get('world') ?? '', form.get('user') ?? '');
     p.codeHash = undefined;
     p.codeExpiresAt = 0;
+    p.receiverPairingId = undefined;
     if (p.target) {
       const code = String(randomInt(0, 10 ** CODE_DIGITS)).padStart(CODE_DIGITS, '0');
       p.codeHash = sha(code);
@@ -322,8 +325,17 @@ export class ConsentPages {
     if (!conn || conn.closed) return;
     // Fail closed: a headless connection never receives a code, whatever the lookup said.
     if (conn.info?.headless) return;
+    // The receiving connection may outlive its revoked pairing until the sweep closes it, so
+    // check the store now; a code nobody entitled can read is never created.
+    const receiver = agent ? conn.agentId : (conn.agentId ?? t.pairingId);
+    if (!receiver || !this.o.repo.pairingActive(receiver)) {
+      p.codeHash = undefined;
+      p.codeExpiresAt = 0;
+      return;
+    }
+    p.receiverPairingId = receiver;
     // Bind to the pairing of the connection that actually receives the code (the target's own).
-    if (!agent && conn.agentId) t.pairingId = conn.agentId;
+    if (!agent) t.pairingId = receiver;
     try {
       conn.send(
         JSON.stringify({
@@ -353,7 +365,12 @@ export class ConsentPages {
     }
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
     // The exact pairing the code was sent over may have been revoked or replaced since.
-    const stillPaired = p.target !== undefined && this.o.repo.pairingActive(p.target.pairingId);
+    // So may the pairing of the connection that received it (the owner's, for a headless agent).
+    const stillPaired =
+      p.target !== undefined &&
+      p.receiverPairingId !== undefined &&
+      this.o.repo.pairingActive(p.target.pairingId) &&
+      this.o.repo.pairingActive(p.receiverPairingId);
     const ok =
       stillPaired &&
       typed.length > 0 &&
