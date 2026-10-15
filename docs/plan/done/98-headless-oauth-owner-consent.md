@@ -126,3 +126,11 @@ Andrew's PR review of #160 at a68fdb5 (2026-10-15).
     - a code is delivered, then the owner's pairing is revoked before entry → entering the code fails with the same response as a wrong code, and no grant is created;
     - the response stays uniform across these cases (the indistinguishability test still passes).
   route: implementer
+
+## Review round 6 — findings
+Reviewed HEAD: e48a3c4 (re-review of the round 5 external fix). The owner checks at delivery and at redemption are FIXED and mutation-proven. A later connection cannot swap the recorded receiver pairing.
+
+- [P2] gateway/test/oauth/consent/headless.test.ts:126 ("delivers no code to a user whose own pairing was revoked but whose socket remains") does not exercise the new normal-path delivery check. `revokePairingsFor` revokes every pairing, so `resolve()` finds no target and nothing is delivered either way. Rewrite it: the user has two pairings, and only the one the registered (live) connection uses is revoked by id, the newer one staying active, before the sweep runs. Assert no code is delivered. It must fail with the delivery store check removed (e.g. the condition changed to `if (!receiver)`).
+  route: implementer
+- [P3] gateway/src/oauth/consent/index.ts:368-378: at verify, when no code was delivered (`receiverPairingId` undefined), `stillPaired` skips its store lookups and the sha256, while a delivered code costs 2 lookups plus a sha. That is a small timing difference across targets, against decision (b)'s intent. Make the wrong-code path do the same work whatever the target: always run both pairing lookups (with a placeholder id when there is none) and the sha comparison. Keep body and status identical. A test is not required for timing, but say in the commit message what was equalised.
+  route: implementer
