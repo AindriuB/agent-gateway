@@ -16,6 +16,10 @@ the Inspector CLI `tools/list` and one `tools/call` with the access token. A
 static bearer against that gateway must get 401. The final line names the modes
 that ran, `oauth` among them.
 
+The script retries an Inspector call, up to four attempts with a 1.1 s pause,
+when the gateway answers its per-client rate limit with `too many requests`;
+any other failure fails at once.
+
 | Client         | stdio                                 | `.mcpb` | Local HTTP                            | OAuth                                 |
 | -------------- | ------------------------------------- | ------- | ------------------------------------- | ------------------------------------- |
 | Claude Desktop | MVP A                                 | MVP A   | not supported in this release (MVP B) | not supported in this release (MVP B) |

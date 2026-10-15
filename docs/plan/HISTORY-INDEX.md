@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-15 | 101 | `scripts/conformance.sh` retries inspector calls (up to 4 attempts, 1.1 s backoff) when the gateway answers its per-client 429 `too many requests`; fixes release gate 3 failing on the Mac; new `scripts/lib/inspector-retry.sh` and retry tests | `## 2026-10-15 — Conformance retry on the gateway 429 (task 101)` |
 | 2026-10-15 | 99 | Release script accepts the `, oauth` conformance line; v13 e2e gate gets its own URL and state dir (env or test.env), same-dir guard, redacted printouts; one-time v13 setup documented | `## 2026-10-15 — Release script gates (task 99)` |
 | 2026-10-15 | 100 | Headless consent tests pair sequentially (two clients raced for one single-use code, loser hung 5 s on macOS); `TestClient.next`/`nextOf` reject on a closed socket with no match; `pairModule` throws `pairing rejected: <code>`; new `test-client.test.ts` race tests | `## 2026-10-15 — Consent test pairing race (task 100)` |
 | 2026-10-15 | 98 | Consent code for a stored headless agent with an owner goes to the owner's link connection, naming the agent (`forAgent`); grant bound to the agent's pairing and ended by re-pair; uniform consent page; fail-closed against headless connections; flag/env agent unsupported | `## 2026-10-15 — Owner-routed OAuth consent for headless agents (task 98)` |
