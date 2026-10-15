@@ -50,12 +50,8 @@ describe('validation errors never echo the value', () => {
       { logLevel: 'hunter2' },
       { httpPort: 'hunter2' },
     ]) {
-      let msg = '';
-      try {
-        loadConfig({ env: {}, flags: flags as never });
-      } catch (err) {
-        msg = (err as Error).message;
-      }
+      const msg = message(() => loadConfig({ env: {}, flags: flags as never }));
+      expect(msg).not.toBe('');
       expect(msg).not.toContain('hunter2');
     }
   });
