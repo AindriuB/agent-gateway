@@ -95,3 +95,9 @@ Andrew's PR review of #150 at 89f648d (2026-10-15).
   route: implementer
   input: the gateway stops sending the CSRF Set-Cookie →  conformance still passes today.
   test: show it fails when the cookie is missing or renamed (a scratch mutation is fine; quote it).
+
+## Review round 5 — findings
+Reviewed HEAD: d52ae5b. The acceptance review of the round 4 fix gave APPROVE. Round 4 is FIXED. Mutations showing it fails were run by the implementer: no `Secure` gives "CSRF cookie lacks secure", a renamed prefix and a missing Set-Cookie both give "consent page sent no __Host-agcsrf-<rid> Set-Cookie", and each ends "conformance: oauth flow failed".
+
+- [P3] gateway/test/conformance/oauth-flow.mjs:110: the cookie check only confirms `SameSite` is present, not its value, so a gateway that switched to `SameSite=None` would still pass. Require the value the gateway issues, `Strict` (case-insensitive), and fail with a clear message otherwise. Show it fails with a scratch mutation to `SameSite=Lax` or `None` (rebuild gateway/dist, then restore) and quote that in the commit message.
+  route: implementer
