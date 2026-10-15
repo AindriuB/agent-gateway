@@ -12,7 +12,10 @@ export const CREATE_WINDOW_MS = 10 * 60_000;
 export const MIN_DELEGATED_TTL_MS = 10 * 60_000;
 /** Pairing ids whose create window is tracked at once. */
 export const MAX_TRACKED_CREATORS = 1000;
-/** All three message types together, per connection per window. */
+/**
+ * Per connection per window, shared by the three invite messages and the two
+ * pairing messages (`listPairings`, `revokePairing`).
+ */
 export const MAX_INVITE_MESSAGES_PER_WINDOW = 60;
 export const INVITE_MESSAGE_WINDOW_MS = 60_000;
 /** The most invites one `invites` reply carries (newest first). */

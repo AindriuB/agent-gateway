@@ -77,6 +77,17 @@ describe('who may manage pairings', () => {
     list(gm, 'r2');
     expect(await gm.next('error')).toMatchObject({ code: 'FORBIDDEN', requestId: 'r2' });
   });
+
+  it('refuses an admin revoked a moment ago, before the sweep closes it', async () => {
+    await boot();
+    const gm = await admin();
+    await pairWith({ worldId: 'w1', userId: 'p1' });
+    const target = idOf('w1', 'p1');
+    h!.store.revokePairingsFor('w1', 'gm1');
+    revoke(gm, target, 'r2');
+    expect(await gm.next('error')).toMatchObject({ code: 'FORBIDDEN', requestId: 'r2' });
+    expect(h!.store.getPairing(target)!.revokedAt).toBeNull();
+  });
 });
 
 describe('listPairings', () => {
@@ -165,18 +176,6 @@ describe('rate limit', () => {
     }
     list(gm, 'over');
     expect(await gm.next('error')).toMatchObject({ code: 'RATE_LIMITED', requestId: 'over' });
-  });
-
-  it('refuses an admin revoked a moment ago, before the sweep closes it', async () => {
-    await boot();
-    const gm = await admin();
-    const p = await pairWith({ worldId: 'w1', userId: 'p1' });
-    const target = idOf('w1', 'p1');
-    h!.store.revokePairingsFor('w1', 'gm1');
-    revoke(gm, target, 'r2');
-    expect(await gm.next('error')).toMatchObject({ code: 'FORBIDDEN', requestId: 'r2' });
-    expect(h!.store.getPairing(target)!.revokedAt).toBeNull();
-    void p;
   });
 
   it('counts both messages per window and recovers after it', async () => {
