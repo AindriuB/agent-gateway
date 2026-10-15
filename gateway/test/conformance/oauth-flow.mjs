@@ -55,8 +55,6 @@ for (const k of ['authorization_endpoint', 'token_endpoint', 'registration_endpo
 }
 if (!meta.code_challenge_methods_supported?.includes('S256'))
   fail('AS metadata does not advertise S256');
-const origin = new URL(meta.authorization_endpoint).origin;
-
 const reg = await fetch(meta.registration_endpoint, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -91,7 +89,26 @@ const consentUrl = new URL(
   /<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? fail('consent page has no form action'),
   meta.authorization_endpoint,
 ).href;
-const cookie = `__Host-agcsrf-${rid}=${csrf}`;
+
+// The CSRF cookie is the one the server issued with the consent page, not one made up here.
+// The gateway sets `Secure` even over http://127.0.0.1 (a browser treats loopback as secure).
+const setCookie = page.headers.getSetCookie().find((c) => c.startsWith('__Host-agcsrf-'));
+if (!setCookie) fail('consent page sent no __Host-agcsrf-<rid> Set-Cookie');
+const [pair, ...attrs] = setCookie.split(';').map((s) => s.trim());
+const eq = pair.indexOf('=');
+const cookieName = pair.slice(0, eq);
+const cookieValue = pair.slice(eq + 1);
+if (cookieName !== `__Host-agcsrf-${rid}`)
+  fail(`CSRF cookie is named ${cookieName}, want __Host-agcsrf-${rid}`);
+if (!cookieValue) fail('CSRF cookie has no value');
+const flags = attrs.map((a) => a.toLowerCase());
+for (const want of ['secure', 'httponly', 'path=/'])
+  if (!flags.includes(want)) fail(`CSRF cookie lacks ${want}: ${setCookie}`);
+if (flags.some((a) => a.startsWith('domain='))) fail(`__Host- cookie has a Domain: ${setCookie}`);
+if (!flags.some((a) => a.startsWith('samesite='))) fail(`CSRF cookie lacks SameSite: ${setCookie}`);
+const cookie = `${cookieName}=${cookieValue}`;
+// A browser sends the origin of the page it posts from.
+const origin = new URL(page.url).origin;
 
 const consent = (fields) =>
   fetch(consentUrl, {
