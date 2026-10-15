@@ -187,3 +187,17 @@ Andrew's PR review of #155 at f95072d (2026-10-15).
   - server mode with remote OAuth (not possible until task 98).
   Document them as a short table. Scope the binding command to the combinations that work, and say plainly which do not work yet. Make the README and security.md statements consistent with the table. Record in the PR which combinations were run.
   route: implementer
+
+## Review round 3 — findings
+Reviewed HEAD: 515ef49 (re-review of round 2). The permission step is FIXED, with labels, defaults and messages checked against module/src. The reachability part is not finished.
+
+- [P2] docs/guides/headless.md:100-104: the binding example puts `AGENT_GATEWAY_HEADLESS_PASSWORD='…'` in front of `claude mcp add`. That sets it only for the `mcp add` process, so the gateway Claude Code starts later never gets the password. Use `claude mcp add … -e AGENT_GATEWAY_HEADLESS_PASSWORD=… -- …` (check the flag against `claude mcp add --help` if available), and note that the value is then stored in the client's config file. Alternatively, say to export it in the shell that starts the client, or put it in the 0600 config file. Keep the note for other clients.
+  route: implementer
+- [P2] docs/guides/headless.md:5, :120, :185; docs/security.md:80, :125; README.md:39: the blanket "server mode / Docker: no client can reach it" claims go beyond the runs. Every server-mode run used `--public-url`. By source (app.ts:915, :945, :856-862), server mode WITHOUT a public URL keeps the static bearer, and HTTP sessions fall back to the primary's `--world`/`--user`. Run that case: `--server-mode` with the headless flags and `--world`/`--user`, no `--public-url`, then an HTTP client with the printed bearer. If you can, also run the Docker image without AGENT_GATEWAY_PUBLIC_URL. Add rows with the observed results, and make the prose, README and security.md say exactly what the table shows: e.g. "server mode with a public URL (as the Compose stack sets it)". Claim nothing beyond the runs.
+  route: implementer
+- [P3] docs/guides/headless.md:119 (Docker row): only `docker exec -i` was run, not `docker compose exec -T`. Mark the compose form as not run, or drop it. No container log shows the in-container agent pairing. Either re-run with the container's log captured and quote the "link connected" line, or soften the "each row was run … with the agent logged in" lead-in (:110) for that row.
+  route: implementer
+- [P3] docs/guides/headless.md:115: "the session follows the connected browser pairing" does not match the run. With no person paired, follow mode never picks a headless identity, so the session answered WORLD_OFFLINE. Reword to say that.
+  route: implementer
+- [P3, optional] headless.md:112 "reads and calls tools as the agent": only `world_info` and `gateway_status` were called. Say "reads as the agent", or run one write-capable call under the policy and report it. headless.md:116: the "same settings" row used a different `--http-port`; note it or re-run it with the same port.
+  route: implementer
