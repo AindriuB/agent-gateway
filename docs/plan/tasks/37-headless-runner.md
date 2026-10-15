@@ -8,6 +8,7 @@
 - gateway/test/headless/** (except gateway/test/headless/config/**)
 - gateway/src/headless/invites.ts (new, under headless/**: the in-memory invite provider that 68's redeem path reads)
 - gateway/src/link/server.ts (the decision (d) refusal for the agent identity only; the invite check itself is 68's)
+- gateway/src/link/registry.ts (the optional `headless` field on `LinkConnection.info` only; Amendment 1)
 - gateway/test/link/headless-*.test.ts (new)
 - gateway/src/app.ts (start and stop the runner with the primary only)
 - gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only)
@@ -17,7 +18,7 @@
 - module/src/link/toolset.ts (the headless default only)
 - module/src/link/runtime.ts (the `hello` headless field only)
 - module/test/link/headless-*.test.ts (new)
-- gateway/Dockerfile and gateway/docker/** (insertions only: Chromium and the profile volume)
+- gateway/Dockerfile and gateway/docker/** (insertions only: Chromium and the profile volume; plus, per Amendment 1, rewriting the Dockerfile header comment that says the image has no browser)
 
 ## Goal
 Let the gateway run an agent without anyone's browser open. It launches Chromium through `playwright-core` with a persistent profile, logs into Foundry as a dedicated agent user, and pairs with a code the gateway mints in-process for exactly that user, so no human copies codes. It follows the world's lifecycle by polling `/api/status` and never launches worlds. The gateway decides which connection is headless from its own configuration, never from what the browser claims.
@@ -107,3 +108,12 @@ Manual:
 - Follow-mode exclusion of headless identities (38).
 - Changing 68's invite check.
 - Docs (43).
+
+## Amendment 1 (2026-10-15)
+
+Andrew, from code review round 1 scope findings.
+
+### Decisions
+
+1. **Owns gains `gateway/src/link/registry.ts` (the optional `headless` field on `LinkConnection.info` only).** The gateway classifies a connection as headless from its configuration at hello time (decision (b)), and the connection info is where that classification is carried. Moving it anywhere else would be more awkward than a one-field addition. Nothing else in registry.ts changes.
+2. **The `gateway/Dockerfile` qualifier widens.** Besides insertions, the PR may rewrite the Dockerfile's header comment that says the image has no browser. That comment became false once Chromium was added.
