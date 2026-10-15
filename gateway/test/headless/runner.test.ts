@@ -214,6 +214,15 @@ describe('HeadlessRunner lifecycle', () => {
     expect(t.logs.filter((l) => l.includes('playwright-core is not installed'))).toHaveLength(1);
   });
 
+  it('logs the sandbox failure once across polls', async () => {
+    const t = await make();
+    t.launcher.launchError = new Error('Chromium could not start with its sandbox; set X');
+    t.runner.start();
+    await t.runner.tick();
+    await t.runner.tick();
+    expect(t.logs.filter((l) => l.includes('could not start with its sandbox'))).toHaveLength(1);
+  });
+
   it('logs a thrown fetch (TLS, refused) with its cause, once', async () => {
     const bad = (async () => {
       throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'CERT_HAS_EXPIRED' } });

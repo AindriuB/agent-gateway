@@ -101,7 +101,7 @@ export interface RunnerOptions {
   /** `ws://localhost:<port>`: where the runner's page reaches this gateway. */
   gatewayLinkUrl: string;
   invites: HeadlessInvites;
-  /** Launch Chromium with `--no-sandbox` (`headlessNoSandbox` in the config). */
+  /** Launch Chromium without its sandbox (`headlessNoSandbox` in the config). */
   noSandbox?: boolean;
   launcher: BrowserLauncher;
   /** Is the agent's link connected right now? */
@@ -134,6 +134,7 @@ export class HeadlessRunner {
   private failures = 0;
   private statusFailureLogged = false;
   private notInstalledLogged = false;
+  private sandboxLogged = false;
   private busy: Promise<void> | undefined;
   private pausedUntil = 0;
   private worldWasUp = false;
@@ -230,6 +231,10 @@ export class HeadlessRunner {
         if (msg.startsWith('playwright-core is not installed')) {
           if (this.notInstalledLogged) return;
           this.notInstalledLogged = true;
+        }
+        if (msg.startsWith('Chromium could not start with its sandbox')) {
+          if (this.sandboxLogged) return;
+          this.sandboxLogged = true;
         }
         this.o.log(`headless runner: ${msg}`);
       })

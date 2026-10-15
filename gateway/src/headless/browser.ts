@@ -118,7 +118,9 @@ export function findBrowser(stateDir: string, deps: DiscoveryDeps = {}): FoundBr
 /**
  * The options handed to `launchPersistentContext`. Playwright adds `--no-sandbox` unless
  * `chromiumSandbox: true` is passed, and installs its own SIGINT/SIGTERM/SIGHUP handlers that kill
- * the browser and exit the process; both are set explicitly so the runner's intent wins.
+ * the browser and exit the process. The sandbox is set explicitly; SIGINT and SIGTERM are left to
+ * cli.ts, which handles both. SIGHUP stays at Playwright's default (on): nothing else handles it, so
+ * without Playwright's handler a closed terminal would orphan a logged-in Chromium.
  */
 export function launchOptions(executablePath: string, req: Pick<LaunchRequest, 'noSandbox'>) {
   return {
@@ -128,14 +130,16 @@ export function launchOptions(executablePath: string, req: Pick<LaunchRequest, '
     chromiumSandbox: !req.noSandbox,
     handleSIGINT: false,
     handleSIGTERM: false,
-    handleSIGHUP: false,
   };
 }
 
 /** Sandbox start-up failures (Ubuntu AppArmor limits on user namespaces, missing setuid helper). */
-export function explainLaunchError(err: unknown): Error {
+export function explainLaunchError(err: unknown, sandboxOn: boolean): Error {
   const msg = err instanceof Error ? err.message : String(err);
-  if (/sandbox|namespace|zygote|No usable/i.test(msg))
+  if (
+    sandboxOn &&
+    /Chromium sandboxing failed!|No usable sandbox!|crbug\.com\/357670|crbug\.com\/638180/.test(msg)
+  )
     return new Error(
       'Chromium could not start with its sandbox (often Ubuntu AppArmor restricting unprivileged user namespaces, or a container); set AGENT_GATEWAY_HEADLESS_NO_SANDBOX=1 to run it unsandboxed',
     );
@@ -161,7 +165,7 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
       const context = await chromium
         .launchPersistentContext(req.profileDir, launchOptions(executablePath, req))
         .catch((err: unknown) => {
-          throw explainLaunchError(err);
+          throw explainLaunchError(err, !req.noSandbox);
         });
       await context.addInitScript(req.initScript);
       const page = context.pages()[0] ?? (await context.newPage());

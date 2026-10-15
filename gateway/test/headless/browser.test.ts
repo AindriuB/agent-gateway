@@ -74,18 +74,31 @@ describe('launchOptions', () => {
     expect(launchOptions('/x/chrome', { noSandbox }).chromiumSandbox).toBe(sandbox);
   });
 
-  it('keeps Playwright from taking over the process signals', () => {
+  it('leaves SIGINT and SIGTERM to cli.ts but keeps Playwright SIGHUP handling', () => {
     const o = launchOptions('/x/chrome', { noSandbox: false });
-    expect([o.handleSIGINT, o.handleSIGTERM, o.handleSIGHUP]).toEqual([false, false, false]);
+    expect([o.handleSIGINT, o.handleSIGTERM]).toEqual([false, false]);
+    expect('handleSIGHUP' in o).toBe(false);
   });
 });
 
 describe('explainLaunchError', () => {
-  it('names the cause and the setting for a sandbox failure', () => {
+  it('names the cause and the setting for a sandbox failure with the sandbox on', () => {
     const e = explainLaunchError(
-      new Error('Failed to move to new namespace: Operation not permitted'),
+      new Error('Chromium sandboxing failed!\nNo usable sandbox!'),
+      true,
     );
     expect(e.message).toContain('AGENT_GATEWAY_HEADLESS_NO_SANDBOX');
-    expect(e.message).not.toContain('namespace: Operation');
+  });
+
+  it('keeps its own message when the sandbox was already off', () => {
+    const m = 'spawn /bin/false ENOENT\n<launching> /bin/false --no-sandbox --headless';
+    expect(explainLaunchError(new Error(m), false).message).toBe(m);
+    expect(explainLaunchError(new Error('No usable sandbox!'), false).message).toBe(
+      'No usable sandbox!',
+    );
+  });
+
+  it('keeps a non-sandbox failure with the sandbox on', () => {
+    expect(explainLaunchError(new Error('Target closed'), true).message).toBe('Target closed');
   });
 });
