@@ -59,6 +59,9 @@ class Launcher implements BrowserLauncher {
   /** Callbacks of the open browsers' onClosed, and whether each is dead. */
   killers: (() => void)[] = [];
   dead = false;
+  /** When set, goto() / close() never settle. */
+  hangGoto = false;
+  hangClose = false;
   async launch(req: { profileDir: string; args: string[] }): Promise<RunnerBrowser> {
     if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
@@ -74,7 +77,10 @@ class Launcher implements BrowserLauncher {
       onClosed: (cb) => void (onClosed = cb),
       isClosed: () => dead,
       page: {
-        goto: async (u) => void this.navigations.push(u),
+        goto: async (u) => {
+          this.navigations.push(u);
+          if (this.hangGoto) await new Promise(() => undefined);
+        },
         url: () => 'http://x/game',
         waitForSelector: async () => undefined,
         selectOption: async () => undefined,
@@ -84,7 +90,10 @@ class Launcher implements BrowserLauncher {
           script.includes(HEADLESS_LINK_KEY) ? this.linkState : undefined,
         waitForGameReady: async () => undefined,
       },
-      close: async () => void this.closes++,
+      close: async () => {
+        this.closes++;
+        if (this.hangClose) await new Promise(() => undefined);
+      },
     };
   }
 }
@@ -278,6 +287,37 @@ describe('HeadlessRunner lifecycle', () => {
     expect(t.launcher.launches).toHaveLength(2);
   });
 
+  it('launches once per poll when a pause expires over a dead browser', async () => {
+    let clock = 0;
+    const t = await make({ linked: () => false, now: () => clock });
+    t.runner.start();
+    await t.runner.tick();
+    t.launcher.linkState = 'replaced';
+    await t.runner.tick();
+    t.launcher.killers[0]!();
+    clock += REPLACED_PAUSE_MS;
+    t.launcher.linkState = null;
+    const before = t.launcher.launches.length;
+    await t.runner.tick();
+    expect(t.launcher.launches.length - before).toBe(1);
+  });
+
+  it('is quiet when the browser dies mid-invite', async () => {
+    const t = await make({ linked: () => false });
+    const orig = t.launcher.launch.bind(t.launcher);
+    t.launcher.launch = async (req) => {
+      const b = await orig(req);
+      b.page.click = async () => {
+        t.launcher.killers[0]!();
+        throw new Error('target closed');
+      };
+      return b;
+    };
+    t.runner.start();
+    await t.runner.tick();
+    expect(t.logs.join('\n')).not.toContain('could not enter the invite');
+  });
+
   it('neither logs nor pauses when it replaced another client (its page is connected)', async () => {
     let linked = false;
     const t = await make({ linked: () => linked });
@@ -385,6 +425,17 @@ describe('HeadlessRunner dead handles and bounded stop', () => {
     await t.runner.stop();
     expect(Date.now() - t0).toBeLessThan(5_000);
     expect(STOP_WAIT_MS).toBeLessThan(5_000);
+  }, 15_000);
+
+  it('stop() returns within one 5 s deadline when close() and goto() both never settle', async () => {
+    const t = await make();
+    t.launcher.hangGoto = true;
+    t.launcher.hangClose = true;
+    t.runner.start();
+    await vi.waitFor(() => expect(t.launcher.navigations).toHaveLength(1));
+    const t0 = Date.now();
+    await t.runner.stop();
+    expect(Date.now() - t0).toBeLessThan(5_000);
   }, 15_000);
 
   it('closes a browser whose launch settles after stop() returned, and never uses it', async () => {

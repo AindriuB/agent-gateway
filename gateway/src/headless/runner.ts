@@ -183,15 +183,18 @@ export class HeadlessRunner {
       (this.o.clearInterval ?? ((h) => clearInterval(h as NodeJS.Timeout)))(this.timer);
     this.timer = undefined;
     this.o.invites.dropAgent(this.o.agent.worldId, this.o.agent.userId);
-    await bounded(this.closeBrowser(), STOP_WAIT_MS);
+    // One deadline for every wait below, measured from now: each wait gets only what is left.
+    const deadline = Date.now() + STOP_WAIT_MS;
+    const left = (): number => Math.max(0, deadline - Date.now());
+    await bounded(this.closeBrowser(), left());
     const busy = this.busy;
     if (busy) {
-      await bounded(busy, STOP_WAIT_MS);
+      await bounded(busy, left());
       // Whatever is still pending is abandoned: a late browser is closed by its own step.
       if (this.busy === busy) this.busy = undefined;
     }
     // A start that was in flight when stop() ran may have opened a browser since.
-    await bounded(this.closeBrowser(), STOP_WAIT_MS);
+    await bounded(this.closeBrowser(), left());
   }
 
   /**
@@ -299,6 +302,8 @@ export class HeadlessRunner {
     }
     if (this.browser === undefined) {
       if (this.pausedUntil !== 0 && this.now() < this.pausedUntil) return;
+      // The pause (if any) has expired: this poll launches once.
+      this.pausedUntil = 0;
       await this.openSession();
     } else {
       if (this.pausedUntil === 0) await this.checkReplaced();
@@ -402,8 +407,10 @@ export class HeadlessRunner {
   private async ensureLinked(): Promise<void> {
     const page = this.browser?.page;
     if (!page) return;
+    const gen = this.gen;
+    const live = (): boolean => !this.stopped && this.gen === gen && this.browser?.page === page;
     if (await this.waitLinked(this.o.linkGraceMs ?? LINK_GRACE_MS)) return;
-    if (this.stopped || this.browser?.page !== page) return;
+    if (!live()) return;
     const { agent } = this.o;
     const code = this.o.invites.mint(agent.worldId, agent.userId, this.origin);
     if (code === undefined) {
@@ -423,12 +430,14 @@ export class HeadlessRunner {
       await page.click(SELECTORS.pairingSubmit);
     } catch (err) {
       this.o.invites.dropAgent(agent.worldId, agent.userId);
+      // Stopped, replaced or dead mid-invite: the browser's own close is the story, not this.
+      if (!live()) return;
       this.o.log(
         `headless runner: could not enter the invite: ${safeText((err as Error).message)}`,
       );
       return;
     }
-    if (!(await this.waitLinked(this.o.pairWaitMs ?? PAIR_WAIT_MS)))
+    if (!(await this.waitLinked(this.o.pairWaitMs ?? PAIR_WAIT_MS)) && live())
       this.o.log(`headless agent ${this.who()} did not connect after the invite was entered`);
   }
 }
