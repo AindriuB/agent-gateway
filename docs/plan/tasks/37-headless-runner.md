@@ -137,3 +137,25 @@ Andrew, from the full-branch code review after Amendment 1.
 - [ ] gateway/src/link/server.ts and gateway/src/app.ts contain no `onReplaced` hook driving the runner (`grep -n onReplaced gateway/src` is empty or shows no runner wiring).
 - [ ] With the headless flag set, the module's page exposes the link state read-only, and the value never contains a token, code or nonce. Without the flag, nothing is written (`module/test/link/headless-*.test.ts`).
 - [ ] `AGENT_GATEWAY_HEADLESS_NO_SANDBOX` is a key in `ConfigSchema` and `ENV_KEYS` in gateway/src/config/index.ts, defaulting to no-sandbox in the image; `grep -n "process.env" gateway/src/headless/` finds no read of it; a config test covers the env key and its effect on the launch args passed to the fake launcher.
+
+## Review round 1 — findings
+Reviewed HEAD: 405d55e (full-branch review after Amendment 2).
+
+- [P2] gateway/src/link/server.ts:120,387, gateway/src/app.ts:642 and gateway/src/headless/runner.ts:159: the `onReplaced` hook is still in server.ts, is still wired in app.ts, and still drives `runner.replaced()`. Amendment 2 decision 1 says to remove it and to pause only when the runner's own page reports `REPLACED`.
+  route: implementer
+  input: a human who token-paired earlier as the agent user is connected. The runner's page reconnects with its stored token, and the server closes the human's socket with 1000/`replaced`. →  `onReplaced` fires for the agent identity, and the runner logs "agent user … was taken by another client; the runner is paused" and pauses, although it was the runner that replaced the human.
+- [P2] module/src/link/runtime.ts (no hook present) and gateway/src/headless/runner.ts: Amendment 2.1 asks for a read-only mirror of the link state in the page (session storage, written only when the headless flag is set), read by the runner with `page.evaluate`. Neither half exists.
+  route: implementer
+  input: another client replaces the runner's page, and its module stops with `REPLACED` →  the runner has no page signal to detect this.
+- [P2] gateway/src/headless/browser.ts:113: `AGENT_GATEWAY_HEADLESS_NO_SANDBOX` is read straight from `process.env`. It is not a key in `ConfigSchema`/`ENV_KEYS`, and no config test covers it or its effect on the launch args (Amendment 2.2).
+  route: implementer
+  input: the operator sets the key in the 0600 `--config` file →  it is ignored silently.
+- [P2] gateway/src/headless/runner.ts:153,183: `stop()` awaits the in-flight poll, and that poll's `/api/status` fetch is cancelled only by `AbortSignal.timeout(10_000)`. Tie the fetch to an AbortController that `stop()` aborts, e.g. `AbortSignal.any([timeout, stopSignal])`. Add a test with a fetch that never settles.
+  route: implementer
+  input: the Foundry host black-holes packets, and `app.stop()` is called mid-poll →  stop returns after about 10 s, against a 5 s requirement.
+  proof: a scratch runner whose fetch settles only when its signal aborts gave `stop()` = 9957 ms.
+- [P2] module/test/link/headless-flag.test.ts: the "hello carries `headless: true`" check builds `getIdentity` inside the test (`identityExtra: { headless: true }`) and never runs runtime.ts, so the production line at module/src/link/runtime.ts:122 is not tested.
+  route: implementer
+  input: delete `...(linkAgentHeadless() ? { headless: true } : {})` from runtime.ts →  the test still passes (3/3).
+- [P3, optional] gateway/src/headless/runner.ts (catch blocks around `page.fill` for the password and the invite code): Playwright 1.64 includes `fill("<value>")` in its error "Call log". The secret stays out of the operator log only because `safeText` cuts the message at 80 characters. Log a fixed message for these two fills instead.
+- [P3, optional] `HEADLESS_FLAG_KEY` is defined in both module/src/link/bridge.ts and gateway/src/headless/flag.ts, with nothing tying the two copies together. Add a test that asserts they are equal, or share the constant through protocol if that is in Owns.
