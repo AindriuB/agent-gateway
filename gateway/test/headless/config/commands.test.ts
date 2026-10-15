@@ -167,4 +167,21 @@ describe('the CLI process', () => {
     expect(r.status).toBe(2);
     expect(r.stderr).not.toContain('zzz-secret');
   });
+
+  it.each([
+    [['--password', 'zzz-secret']],
+    [['--owner', 'zzz-secret']],
+    [['--foundry-url', 'http://zzz-secret']],
+    [['headless', 'list', '--owner', 'zzz-secret']],
+    [['headless', 'remove', 'a1', '--password', 'zzz-secret']],
+  ])('refuses %j outside headless add with exit 2 and no echo', (args) => {
+    const db = freshDb();
+    const r = spawnSync(process.execPath, [cli, ...args, '--db', db], {
+      encoding: 'utf8',
+      timeout: 20_000,
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('goes with headless add');
+    expect(r.stderr).not.toContain('zzz-secret');
+  });
 });

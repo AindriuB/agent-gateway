@@ -502,6 +502,17 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
+  if (!(positionals[0] === 'headless' && positionals[1] === 'add')) {
+    // These belong to `headless add` alone; refuse them elsewhere rather than ignore them. The
+    // message names the flag, never its value.
+    const stray = (['foundry-url', 'owner', 'password'] as const).find(
+      (k) => values[k] !== undefined,
+    );
+    if (stray) {
+      process.stderr.write(`--${stray} goes with headless add\n${USAGE}`);
+      process.exit(2);
+    }
+  }
   if (positionals[0] === 'headless') {
     process.exitCode = runHeadlessCommand({
       argv: positionals.slice(1),

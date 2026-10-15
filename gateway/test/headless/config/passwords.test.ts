@@ -66,6 +66,11 @@ describe('stored agent passwords', () => {
     );
     expect(bad.message).not.toContain('secret-pw');
     expect(() => loadConfig({ configPath: file({ headless: 'x' }) })).toThrow(ConfigError);
+    for (const entry of ['secret-pw', null, ['secret-pw'], 5]) {
+      const e = thrown(() => loadConfig({ configPath: file({ headless: { a1: entry } }) }));
+      expect(e.message).toContain('headless.a1');
+      expect(e.message).not.toContain('secret-pw');
+    }
     expect(() => loadConfig({ configPath: file({ headless: { a1: { password: 5 } } }) })).toThrow(
       /headless\.a1\.password/,
     );

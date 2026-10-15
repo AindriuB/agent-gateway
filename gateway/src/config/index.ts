@@ -119,7 +119,9 @@ function agentPasswords(
       const key = `headless.${name}.password`;
       if (!AGENT_NAME.test(name))
         throw new ConfigError(`Config key headless.${name.slice(0, 40)} is not a valid agent name`);
-      const pw = (entry as { password?: unknown } | null)?.password;
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
+        throw new ConfigError(`Config key headless.${name} must be an object with a password`);
+      const pw = (entry as { password?: unknown }).password;
       if (pw === undefined) continue;
       if (typeof pw !== 'string') throw new ConfigError(`Config key ${key} must be a string`);
       if (pw === '')
