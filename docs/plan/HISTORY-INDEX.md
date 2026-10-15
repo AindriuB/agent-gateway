@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-15 | 96 | `--public-url`, `--privacy-url`, `--source-url`, `--allow-origin` and stray-positional errors no longer echo the value (flag name and reason only); other error sites audited and left; zod errors covered by a test | `## 2026-10-15 — No secrets echoed in config validation errors (task 96)` |
 | 2026-10-15 | 38 | Headless agents stored in SQLite (migration 013, no password column) with `headless add`, `list` and `remove`; passwords only from per-agent config keys or env; one runner per agent, reconciled on the sweep; welcome `headless` and `ownerUserId`; empty password stays a ConfigError (Andrew) | `## 2026-10-15 — Stored headless agents (task 38)` |
 | 2026-10-15 | 97 | A primary sends `caps: ["headless"]` in its ok reply and post-auth refusals (never RELAY_AUTH/RELAY_PROTOCOL); a headless caller whose primary lacks it goes to standby with "primary too old" instead of relaying; `RELAY_VERSION` stays 1 | `## 2026-10-15 — Relay headless capability (task 97)` |
 | 2026-10-15 | 37 | Headless runner: `playwright-core` Chromium with a persistent profile logs in as an agent user and pairs with a gateway-minted in-memory invite (exact world/user/origin); follows `/api/status`, never launches worlds; headless decided by gateway config; `--no-sandbox` default (Amendment 2); image 360 MB to 1.36 GB; unsupported in `.mcpb` | `## 2026-10-15 — Headless runner (task 37)` |
