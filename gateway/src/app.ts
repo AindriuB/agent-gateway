@@ -635,7 +635,14 @@ export function createApp(config: Config, deps: AppDeps): App {
       ...(trustProxy ? { trustProxy } : {}),
       serverMode,
       ...(headlessInvites
-        ? { inviteProvider: headlessInvites, isHeadlessAgent: isConfiguredAgent, log: writeStatus }
+        ? {
+            inviteProvider: headlessInvites,
+            isHeadlessAgent: isConfiguredAgent,
+            log: writeStatus,
+            onReplaced: (worldId: string, userId: string, userName: string) => {
+              if (isConfiguredAgent(worldId, userId)) runner?.replaced(userName);
+            },
+          }
         : {}),
       // With nothing asking for a code, a spent one would never be replaced.
       onCodePaired: () => {
@@ -647,8 +654,6 @@ export function createApp(config: Config, deps: AppDeps): App {
           writeStatus(`link connected: ${who}`);
           return;
         }
-        if (e.code === 1000 && e.reason === 'replaced' && isConfiguredAgent(e.worldId, e.userId))
-          runner?.replaced(e.userName);
         const reason = e.reason ? `, ${safeText(Array.from(e.reason).slice(0, 64).join(''))}` : '';
         writeStatus(
           `link disconnected: ${who} after ${Math.round(e.durationMs / 1000)}s (code ${e.code}${reason})`,

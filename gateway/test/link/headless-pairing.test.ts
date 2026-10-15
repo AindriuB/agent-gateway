@@ -150,3 +150,19 @@ describe('classification comes from the gateway, not from hello.headless', () =>
     expect(b.logs).toEqual([]);
   });
 });
+
+describe('a closed slot', () => {
+  it('reports when a newer connection replaced the agent', async () => {
+    const replaced: string[] = [];
+    const b = await boot(false, {
+      onReplaced: (w, u, n) => void replaced.push(`${w}/${u}/${n}`),
+    });
+    const first = await say(b.invites.mint(W, AGENT, ORIGIN)!);
+    expect(first.first).toMatchObject({ type: 'welcome' });
+    await say(b.invites.mint(W, AGENT, ORIGIN)!);
+    await first.c.untilClosed();
+    for (let i = 0; i < 100 && replaced.length === 0; i++)
+      await new Promise((r) => setTimeout(r, 20));
+    expect(replaced).toEqual([`${W}/${AGENT}/U`]);
+  });
+});

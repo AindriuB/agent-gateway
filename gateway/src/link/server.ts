@@ -70,11 +70,10 @@ export type OriginRejection =
   | 'too many pages are holding gateway connections open without pairing';
 
 export type LinkEvent =
-  | { kind: 'connected'; worldId: string; userId: string; userName: string; connectionId: string }
+  | { kind: 'connected'; worldId: string; userName: string; connectionId: string }
   | {
       kind: 'disconnected';
       worldId: string;
-      userId: string;
       userName: string;
       connectionId: string;
       code: number;
@@ -117,6 +116,8 @@ export interface LinkServerOptions {
    * by `hello.headless`. Such a user pairs only through an in-memory invite.
    */
   isHeadlessAgent?: (worldId: string, userId: string) => boolean;
+  /** An authenticated connection was closed because a newer one took its (world, user). */
+  onReplaced?: (worldId: string, userId: string, userName: string) => void;
   /** Operator-log lines that are not a refused connection. */
   log?: (line: string) => void;
   /** Called after a pairing code was spent on a new pairing. */
@@ -363,7 +364,6 @@ export class LinkServer {
       this.opts.onLinkEvent?.({
         kind: 'connected',
         worldId: c.worldId,
-        userId: c.userId,
         userName: c.info.userName,
         connectionId: c.id,
       });
@@ -383,10 +383,11 @@ export class LinkServer {
       this.vouches.release(ws);
       if (conn) {
         this.opts.registry.remove(conn);
+        if (code === 1000 && reasonBuf.toString('utf8') === 'replaced')
+          this.opts.onReplaced?.(conn.worldId, conn.userId, conn.info.userName);
         this.opts.onLinkEvent?.({
           kind: 'disconnected',
           worldId: conn.worldId,
-          userId: conn.userId,
           userName: conn.info.userName,
           connectionId: conn.id,
           code,

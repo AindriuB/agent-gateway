@@ -1,6 +1,6 @@
 # Server-mode image for the Agent Gateway. Build from the repo root:
 #   docker build -f gateway/Dockerfile -t foundry-agent-gateway:<version> .
-# No browser in this image (headless Chromium is a later task).
+# Debian Chromium is in the final stage for the headless runner (task 37).
 
 # Production dependencies only, installed from the lockfile.
 FROM node:22-slim AS deps
@@ -23,7 +23,12 @@ RUN npm ci --ignore-scripts --include-workspace-root --workspace protocol --work
  && npm run build -w gateway
 
 FROM node:22-slim
+# Chromium for the headless runner; found as the system browser at /usr/bin/chromium.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
+    AGENT_GATEWAY_HEADLESS_NO_SANDBOX=1 \
     AGENT_GATEWAY_SERVER_MODE=1 \
     AGENT_GATEWAY_DB=/data/gateway.db
 WORKDIR /app
