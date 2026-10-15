@@ -452,3 +452,13 @@ At HEAD 26a5b68. Comes from the full review after round 14 (CLEAN): round 14's w
   route: implementer
 - [P3] gateway/src/relay/server.ts:301,315: `mineIsCaller = false` at the refuse and step-down call sites is not pinned by any test. In "a newer gateway with headless settings takes over from one without", assert that the primary's captured `aLines` contain "headless agent settings differ". Pin the refuse site (:301) the same way. Both must fail when flipped to `true`.
   route: implementer
+
+## Review round 16 — findings
+At HEAD 11eecf4. Comes from the re-review of the round 15 fix: CLEAN, with all three round 15 findings fixed except the launch-path part of the first.
+
+- [P3] gateway/src/headless/runner.ts:21,459-467: round 15 introduced a regression. `PAGE_CALL_MS` (20 s) also wraps `fill` and `click`, whose own Playwright default is 30 s. So an element that never becomes ready, such as a disabled submit button or a missing input, now looks like a hung page: Chromium is closed and relaunched on every poll, and the log names the wrong cause. Wrap only the calls that have no timeout of their own (the evaluates), or set the bound above Playwright's timeouts. Restore the "could not enter the invite: …" path for real element timeouts. Test: a fill that rejects with a Playwright timeout keeps the browser and logs the element error.
+  route: implementer
+- [P3] gateway/src/headless/browser.ts:196 (`preparePage`) and runner.ts:382 (`openSession`): `launcher.launch()`, `addInitScript` and `newPage` are still unbounded in the poll path. A hang there stalls polling for good and keeps the profile lock. Bound them. On a timeout, close whatever context exists, including one that resolves late, and let the next poll retry. Test: a launch whose `newPage` never settles; the poll ends and the next poll retries.
+  route: implementer
+- [P3] gateway/src/headless/runner.ts:469: the catch in `ensureLinked` calls `invites.dropAgent` before it checks `live()`, so a page timeout arriving after stop() and start() can delete the invite the new session just minted. Check `live()` first.
+  route: implementer
