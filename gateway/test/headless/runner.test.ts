@@ -63,6 +63,8 @@ class Launcher implements BrowserLauncher {
   hangGoto = false;
   hangClose = false;
   hangEvaluate = false;
+  /** When set, fill() rejects with it. */
+  fillError: Error | undefined;
   async launch(req: { profileDir: string; noSandbox: boolean }): Promise<RunnerBrowser> {
     if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
@@ -85,7 +87,13 @@ class Launcher implements BrowserLauncher {
         url: () => 'http://x/game',
         waitForSelector: async () => undefined,
         selectOption: async () => undefined,
-        fill: async (_s: string, v: string) => void this.filled.push(v),
+        fill: async (_s: string, v: string) => {
+          if (this.fillError) {
+            await new Promise((r) => setTimeout(r, 120));
+            throw this.fillError;
+          }
+          this.filled.push(v);
+        },
         click: async () => undefined,
         evaluate: async (script: string) =>
           this.hangEvaluate
@@ -111,6 +119,7 @@ async function make(
     fetch?: typeof fetch;
     noSandbox?: boolean;
     pageCallMs?: number;
+    launchMs?: number;
   } = {},
 ) {
   const foundry = await stubFoundry();
@@ -130,6 +139,7 @@ async function make(
     ...(over.fetch ? { fetch: over.fetch } : {}),
     ...(over.noSandbox !== undefined ? { noSandbox: over.noSandbox } : {}),
     ...(over.pageCallMs ? { pageCallMs: over.pageCallMs } : {}),
+    ...(over.launchMs ? { launchMs: over.launchMs } : {}),
     sleep: async () => undefined,
     linkGraceMs: 1,
     pairWaitMs: 1,
@@ -455,6 +465,48 @@ describe('HeadlessRunner dead handles and bounded stop', () => {
     t.runner.start();
     await t.runner.tick();
     expect(t.launcher.closes).toBe(1);
+  }, 10_000);
+
+  it('a fill that rejects with a Playwright timeout keeps the browser and logs the element error', async () => {
+    const t = await make({ pageCallMs: 50, linked: () => false });
+    t.launcher.fillError = new Error('Timeout 30000ms exceeded: element is not enabled');
+    t.runner.start();
+    await t.runner.tick();
+    expect(t.launcher.closes).toBe(0);
+    expect(t.launcher.launches).toHaveLength(1);
+    const log = t.logs.join('\n');
+    expect(log).toContain('could not enter the invite: Timeout 30000ms exceeded');
+    expect(log).not.toContain('stopped responding');
+  }, 10_000);
+
+  it('a launch that never settles ends the poll, the next poll retries, and a late browser is closed', async () => {
+    const t = await make({ launchMs: 50 });
+    let release!: () => void;
+    t.launcher.launchGate = new Promise<void>((r) => (release = r));
+    t.runner.start();
+    await t.runner.tick();
+    expect(t.launcher.launches).toHaveLength(1);
+    expect(t.logs.join('\n')).toContain('did not start in time');
+    release();
+    await vi.waitFor(() => expect(t.launcher.closes).toBe(1));
+    t.launcher.launchGate = undefined;
+    await t.runner.tick();
+    expect(t.launcher.launches).toHaveLength(2);
+    expect(t.launcher.navigations).toHaveLength(1);
+  }, 10_000);
+
+  it('a page timeout arriving after stop() does not drop the invite', async () => {
+    const t = await make({ pageCallMs: 300, linked: () => false });
+    const dropped = vi.spyOn(t.invites, 'dropAgent');
+    t.launcher.hangEvaluate = true;
+    t.runner.start();
+    const tick = t.runner.tick();
+    await vi.waitFor(() => expect(t.launcher.launches).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    await t.runner.stop();
+    await tick;
+    // mint() and stop() each drop once; the late timeout must not add a third.
+    expect(dropped).toHaveBeenCalledTimes(2);
   }, 10_000);
 
   it('stop() returns within the bound while a launch never settles', async () => {

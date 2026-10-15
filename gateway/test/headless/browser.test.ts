@@ -136,4 +136,10 @@ describe('preparePage', () => {
     await expect(preparePage(c.ctx, 's')).rejects.toThrow('boom');
     expect(c.state.closed).toBe(1);
   });
+
+  it('closes the context and rejects when newPage never settles', async () => {
+    const c = ctx({ newPage: () => new Promise<string>(() => undefined) });
+    await expect(preparePage(c.ctx, 's', 30)).rejects.toThrow('did not open in time');
+    expect(c.state.closed).toBe(1);
+  });
 });

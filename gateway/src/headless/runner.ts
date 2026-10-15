@@ -19,6 +19,8 @@ export const STOP_WAIT_MS = 3_000;
 const STATUS_TIMEOUT_MS = 10_000;
 /** Longest a single page call in the poll path may take before the session counts as dead. */
 const PAGE_CALL_MS = 20_000;
+/** Longest a launch may take (it covers Chromium's start and the first page) before it is retried. */
+const LAUNCH_MS = 90_000;
 const JOIN_TIMEOUT_MS = 120_000;
 
 /** The only paths the runner itself requests. */
@@ -118,6 +120,8 @@ export interface RunnerOptions {
   linkGraceMs?: number;
   /** Bound on one page call in the poll path (tests shorten it). */
   pageCallMs?: number;
+  /** Bound on one launch (tests shorten it). */
+  launchMs?: number;
   pairWaitMs?: number;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (h: unknown) => void;
@@ -379,10 +383,29 @@ export class HeadlessRunner {
   private async openSession(): Promise<void> {
     const { agent } = this.o;
     const gen = this.gen;
-    const browser = await this.o.launcher.launch({
+    const launching = this.o.launcher.launch({
       profileDir: this.profile!,
       noSandbox: this.o.noSandbox === true,
       initScript: `try { sessionStorage.setItem(${JSON.stringify(HEADLESS_FLAG_KEY)}, '1'); } catch {}`,
+    });
+    let launchTimedOut = false;
+    // A browser that arrives after the deadline is never used: close it so it frees the profile.
+    launching.then(
+      (late) => {
+        if (launchTimedOut) void late.close().catch(() => undefined);
+      },
+      () => undefined,
+    );
+    const browser = await new Promise<RunnerBrowser>((resolve, reject) => {
+      const t = setTimeout(() => {
+        launchTimedOut = true;
+        reject(new Error('the browser did not start in time; it will be retried'));
+      }, this.o.launchMs ?? LAUNCH_MS);
+      t.unref();
+      launching.then(
+        (b) => (clearTimeout(t), resolve(b)),
+        (e: unknown) => (clearTimeout(t), reject(e as Error)),
+      );
     });
     if (this.stopped || this.gen !== gen) {
       // stop() has returned (or a newer session began) while this launch was pending: never use it.
@@ -456,20 +479,22 @@ export class HeadlessRunner {
     this.o.log(`minted an invite for headless agent ${this.who()} (redacted)`);
     try {
       await this.pageCall(() => page.evaluate(OPEN_PAIRING_SCRIPT));
-      await this.pageCall(() => page.waitForSelector(SELECTORS.pairingCode, { timeout: 15_000 }));
-      await this.pageCall(() => page.fill(SELECTORS.pairingGatewayUrl, this.o.gatewayLinkUrl));
+      await page.waitForSelector(SELECTORS.pairingCode, { timeout: 15_000 });
+      await page.fill(SELECTORS.pairingGatewayUrl, this.o.gatewayLinkUrl);
       try {
-        await this.pageCall(() => page.fill(SELECTORS.pairingCode, code));
-      } catch (err) {
-        if (err instanceof PageTimeout) throw err;
+        await page.fill(SELECTORS.pairingCode, code);
+      } catch {
         throw new Error('could not type the invite code');
       }
-      await this.pageCall(() => page.click(SELECTORS.pairingSubmit));
+      await page.click(SELECTORS.pairingSubmit);
     } catch (err) {
-      this.o.invites.dropAgent(agent.worldId, agent.userId);
-      if (err instanceof PageTimeout && live()) await this.dropHungBrowser(page);
-      // Stopped, replaced or dead mid-invite: the browser's own close is the story, not this.
+      // Stopped, replaced or dead mid-invite: the new session owns the invites now.
       if (!live()) return;
+      this.o.invites.dropAgent(agent.worldId, agent.userId);
+      if (err instanceof PageTimeout) {
+        await this.dropHungBrowser(page);
+        return;
+      }
       this.o.log(
         `headless runner: could not enter the invite: ${safeText((err as Error).message)}`,
       );

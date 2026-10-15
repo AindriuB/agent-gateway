@@ -147,6 +147,23 @@ export function explainLaunchError(err: unknown, sandboxOn: boolean): Error {
   return err instanceof Error ? err : new Error(msg);
 }
 
+/** Longest the launch steps after Chromium starts (init script, first page) may take. */
+const PREPARE_MS = 30_000;
+/** Longest Chromium may take to start. */
+const LAUNCH_MS = 60_000;
+
+/** Rejects with `message` after `ms` if `p` has not settled; the timer never keeps the process alive. */
+function withDeadline<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    t.unref();
+    p.then(
+      (v) => (clearTimeout(t), resolve(v)),
+      (e: unknown) => (clearTimeout(t), reject(e as Error)),
+    );
+  });
+}
+
 /** The slice of a Playwright context that `preparePage` uses. */
 export interface PreparableContext<P> {
   addInitScript(script: string): Promise<unknown>;
@@ -162,10 +179,17 @@ export interface PreparableContext<P> {
 export async function preparePage<P>(
   context: PreparableContext<P>,
   initScript: string,
+  timeoutMs: number = PREPARE_MS,
 ): Promise<P> {
   try {
-    await context.addInitScript(initScript);
-    return context.pages()[0] ?? (await context.newPage());
+    return await withDeadline(
+      (async () => {
+        await context.addInitScript(initScript);
+        return context.pages()[0] ?? (await context.newPage());
+      })(),
+      timeoutMs,
+      'the browser page did not open in time',
+    );
   } catch (err) {
     await context.close().catch(() => undefined);
     throw err;
@@ -188,11 +212,26 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
           );
         throw err;
       }
-      const context = await chromium
-        .launchPersistentContext(req.profileDir, launchOptions(executablePath, req))
-        .catch((err: unknown) => {
-          throw explainLaunchError(err, !req.noSandbox);
-        });
+      const launching = chromium.launchPersistentContext(
+        req.profileDir,
+        launchOptions(executablePath, req),
+      );
+      let timedOut = false;
+      // A context that arrives after the deadline would hold the profile lock: close it.
+      launching.then(
+        (late) => {
+          if (timedOut) void late.close().catch(() => undefined);
+        },
+        () => undefined,
+      );
+      const context = await withDeadline(
+        launching,
+        LAUNCH_MS,
+        'Chromium did not start in time',
+      ).catch((err: unknown) => {
+        if ((err as Error).message === 'Chromium did not start in time') timedOut = true;
+        throw explainLaunchError(err, !req.noSandbox);
+      });
       const page = await preparePage(context, req.initScript);
       const wrapped: RunnerPage = {
         goto: async (url, opts) => void (await page.goto(url, opts)),
