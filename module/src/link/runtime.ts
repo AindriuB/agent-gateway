@@ -12,6 +12,7 @@ import {
   type CredentialStore,
 } from './credential-store.js';
 import { effectiveFromSettings } from './gateway-url.js';
+import { linkAgentHeadless } from './bridge.js';
 import { postVouch } from './vouch.js';
 import {
   installToolsetAnnouncer,
@@ -117,6 +118,8 @@ export function getLinkClient(): LinkClient {
         role: Number(game.user?.role ?? 0),
         isGM: Boolean(game.user?.isGM),
       },
+      // Sent only when set: a human's module never carries the field.
+      ...(linkAgentHeadless() ? { headless: true } : {}),
     }),
     createSocket: (url) => new WebSocket(url) as any,
     notifyError: (m) => ui.notifications.error(m),

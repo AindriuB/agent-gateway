@@ -9,7 +9,7 @@ import {
   toJsonSchema,
   type AnnouncedTool,
 } from '@agent-gateway/protocol';
-import { LINK_AGENT_HEADLESS, installBridge } from '../../src/link/bridge.js';
+import { linkAgentHeadless, installBridge } from '../../src/link/bridge.js';
 import { LinkClient } from '../../src/link/client.js';
 import {
   ToolsetAnnouncer,
@@ -408,7 +408,7 @@ describe('headless', () => {
   });
 
   it('the listing and the bridge use the same headless value', () => {
-    expect(LINK_AGENT_HEADLESS).toBe(false);
+    expect(linkAgentHeadless()).toBe(false);
   });
 });
 
