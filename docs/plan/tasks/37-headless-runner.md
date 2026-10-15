@@ -197,3 +197,22 @@ Reviewed HEAD: 1ecfa4a. These come from the attempt 2 verify: the acceptance rev
   input: remove `runner?.stop()` from the teardown or step-down path →  no test fails.
 - [P3, optional] gateway/src/headless/browser.ts:109: the .mcpb bundle ships no node_modules. A .mcpb user who configures headless therefore gets a raw "Cannot find package 'playwright-core'" logged on every 15 s poll while the world is up. Catch that error, log one fixed line saying the headless runner needs the npm or Docker install, and don't repeat it every poll.
   route: implementer
+
+## Attempt 2 — failed
+Verify on 1ecfa4a. Then review round 3 (122a0f6), then a manual run against Foundry v14 test-world on 122a0f6, 2026-10-15.
+
+- Review and tests: the reviewer approved. The tester passed build, lint, `npm test` (4843), test:slow (2227) and build-mcpb (6/6). The only test:scripts failures were the host's missing zip.
+- Manual run: PASS with a workaround.
+  - The runner logged in as user "Agent" (rTiRon6VxAWKw3rP), redeemed a minted invite with no human typing a code, and linked.
+  - `world_info` bound with `--world test-world --user rTiRon6VxAWKw3rP` worked.
+  - A restart reused the stored token and minted nothing.
+  - The log (untracked) is at `.worktrees/agent-gateway/37-headless-runner/37-manual.log`.
+  - Foundry URL used: http://localhost:30000. foundry.local uses Caddy's internal CA, which neither Node fetch nor Chromium trusts on this host.
+
+Failures to fix:
+- [P1] gateway/src/headless/browser.ts, discovery of a downloaded Chromium: the code looks for `<state>/browsers/chromium-*/chrome-linux/chrome`, but playwright-core 1.64.1 installs to `chromium-1248/chrome-linux64/chrome`. The manual run worked only after a `chrome-linux -> chrome-linux64` symlink was added by hand. Match the layouts current playwright-core actually installs on Linux, macOS and Windows; the folder names have probably changed on all three. Keep accepting the older names if that costs little. Add tests for the current layout on each platform.
+- [P2] gateway/src/headless/runner.ts: while no browser is open, `/api/status` failures are never logged. With a TLS error, a wrong URL or Foundry down at startup, the operator sees nothing that explains why the agent never links. Log the first failure of a run of failures once, through `safeText`, and log once more when status recovers. Do not log on every poll.
+- [P3] gateway/src/app.ts: the "headless runner browser: …" log line cuts the executable path at 80 characters. Log the full path; a local file path is not a secret.
+- [P3, optional] Round 3 residual: the .mcpb "playwright-core is not installed" message is logged on every poll. Now that runner.ts is open again, log it once per run.
+
+Not this task (follow-ups): gateway.db is created 0644 inside the 0700 state dir. For task 43's docs: the headless Foundry URL must have a certificate that Node and Chromium trust (a public certificate, or plain http on loopback).
