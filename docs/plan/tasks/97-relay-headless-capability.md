@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Depends on:** 37
-**Status:** Planned 2026-10-15. A follow-up from task 37 Amendment 7 decision 3. Start after 37 merges, because it changes the relay files 37 touches.
+**Status:** Planned 2026-10-15. A follow-up from task 37 Amendment 7 decision 3. 37 has merged (PR #151), so it can start. Decision (b) was settled by Andrew on 2026-10-15: standby with a loud reason, no relay, no takeover attempt.
 **Owns:**
 - gateway/src/relay/server.ts (the capability field in the handshake replies only)
 - gateway/src/relay/upstream.ts (reading the capability from the handshake reply only)
@@ -26,12 +26,14 @@ detect a primary that does not understand headless settings, and must not silent
 
 ## Decisions
 - (a) **A capability flag, not a version bump.** Bumping `RELAY_VERSION` makes every old/new pair fail with `RELAY_PROTOCOL` in both directions (strict equality on both sides), which breaks old-caller/new-primary compatibility. Instead, a primary that understands headless settings adds a capability marker to both its ok and its refusal replies (e.g. `caps: ["headless"]`; name it in constants.ts). `RELAY_VERSION` stays 1. Old callers ignore the unknown reply field, so nothing changes for them.
-- (b) **What a headless caller does with an old primary. Recommendation: standby with a loud reason; do not relay, and do not try to take over.** A caller whose own `headless` field is non-empty that gets an ok reply without the capability closes that upstream and goes to standby. The reason, shown in the log and `gateway_status`, says the primary gateway is too old to run a headless agent, so this gateway's agent is not running, and to upgrade or stop the other gateway. Why not take over: an old primary sees the configs as equal and never steps down, and there is no protocol message that makes it, so a takeover would mean fighting for the port. Why not relay with a warning: the headless gateway exists to run its agent, and a log line that the operator may never see is the silent failure this task removes. Standby's existing port watch takes over once the old primary exits. Andrew confirms or picks "relay and warn" before implementation starts.
+- (b) **What a headless caller does with an old primary: standby with a loud reason; it does not relay and does not try to take over.** Decided by Andrew, 2026-10-15. A caller whose own `headless` field is non-empty that gets an ok reply without the capability closes that upstream and goes to standby. The standby reason, shown in the log and `gateway_status`, contains "primary too old, headless agent not running", and goes on to say that the gateway holding the link port does not understand headless settings and that the operator should upgrade or stop it. When the old primary exits, the existing standby port watch (`watchStandby`) takes the port and this gateway becomes primary and starts its agent, with no operator action.
+  - Why not take over: an old primary sees the configs as equal and never steps down, and there is no protocol message that makes it, so a takeover would mean fighting for the port.
+  - Why not relay with a warning: the headless gateway exists to run its agent, and a log line that the operator may never see is the silent failure this task removes.
 - (c) A plain caller (empty `headless`) ignores the capability, whatever the primary's version. It relays to an old primary exactly as today.
 - (d) `watchStandby` applies the same check, so a headless standby never relays to a capability-less primary on a later attempt.
 
 ## Acceptance
-- [ ] Test: a fake old primary (a relay server whose ok reply is `{relay: 1, ok: true}` with no capability, simulating pre-37) and a caller with headless settings: the caller does not attach the upstream, ends in standby, and its standby reason contains "too old" and says the headless agent is not running.
+- [ ] Test: a fake old primary (a relay server whose ok reply is `{relay: 1, ok: true}` with no capability, simulating pre-37) and a caller with headless settings: the caller does not attach the upstream, ends in standby, and its standby reason contains "primary too old, headless agent not running".
 - [ ] Test: the same headless standby, re-checking the port while the old primary still holds it, stays in standby (it does not relay on a later attempt). When the old primary releases the port, the standby takes over and becomes primary.
 - [ ] Test: a plain caller against the same fake old primary relays as today (served, not in standby).
 - [ ] Test: an old caller against a new primary (a hello with `relay: 1` and a config without `headless`) is served exactly as before, and the reply it receives still has `relay: 1` and `ok: true`.
