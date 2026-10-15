@@ -215,3 +215,9 @@ Reviewed HEAD: 79a4647 (re-review of round 3). Binding example, Docker row, foll
   route: implementer
 - [P3] docs/guides/headless.md:124 (orchestrator decision, not a user decision): do not recommend "server mode without a public URL" as a deployment for headless agents. Server mode is for a public deployment, and a static bearer there is not something the docs should steer people to; 42's server-mode docs and Compose stack do not describe that setup. State the observed result as a fact in the table and prose, without recommending it, and point to task 98 for remote use.
   route: implementer
+
+## Review round 5 — findings
+Reviewed HEAD: 1f69909 (round 4 FIXED; reviewed CLEAN). One extra round past the 3-round limit, approved by Andrew 2026-10-15.
+
+- [P3] README.md:39: "Local mode (stdio, or HTTP with the static bearer) reaches one" leaves out the binding condition. Local `--http` without `--world`/`--user` answered WORLD_OFFLINE (headless.md:115). Say it is bound with `--world`/`--user`, matching the table and security.md:80/:125. Wording only.
+  route: implementer
