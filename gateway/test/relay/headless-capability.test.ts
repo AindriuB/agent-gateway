@@ -161,6 +161,55 @@ describe('a primary that understands headless settings', () => {
     expect(s.currentRole).toBe('relay');
   });
 
+  async function hello(
+    at: { dir: string; path: string },
+    over: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const secret = parseSecretFile(readFileSync(join(at.dir, `relay-${PORT}.secret`), 'utf8'));
+    return new Promise((resolve, reject) => {
+      const sock = connect(at.path);
+      sock.on('error', reject);
+      sock.once('connect', () => {
+        sock.write(
+          `${JSON.stringify({ relay: RELAY_VERSION, secret: secret.secret, linkPort: PORT, config: PLAIN, selector: {}, ...over })}\n`,
+        );
+      });
+      sock.once('data', (d) => {
+        resolve(JSON.parse(d.toString().split('\n')[0]!) as Record<string, unknown>);
+        sock.destroy();
+      });
+    });
+  }
+
+  it('sends no capability in a pre-authentication refusal', async () => {
+    const at = await newPrimary(PLAIN);
+    const auth = await hello(at, { secret: 'wrong' });
+    expect(auth).toMatchObject({ ok: false, code: 'RELAY_AUTH' });
+    expect(auth).not.toHaveProperty('caps');
+    const proto = await hello(at, { relay: 2 });
+    expect(proto).toMatchObject({ ok: false, code: 'RELAY_PROTOCOL' });
+    expect(proto).not.toHaveProperty('caps');
+  });
+
+  it('sends the capability in the ok reply and in authenticated refusals', async () => {
+    const at = await newPrimary(PLAIN);
+    expect(await hello(at, {})).toMatchObject({ ok: true, caps: ['headless'] });
+    const mismatch = await hello(at, { config: makeRelayConfig(['x'], 17555, 'info', 9000) });
+    expect(mismatch).toMatchObject({
+      ok: false,
+      code: 'RELAY_CONFIG_MISMATCH',
+      caps: ['headless'],
+    });
+    const stepdown = await hello(at, {
+      config: { ...PLAIN, logLevel: 'debug', startedAt: PLAIN.startedAt + 1000 },
+    });
+    expect(stepdown).toMatchObject({
+      ok: false,
+      code: 'RELAY_CONFIG_STEPDOWN',
+      caps: ['headless'],
+    });
+  });
+
   it('keeps RELAY_VERSION at 1', () => {
     expect(RELAY_VERSION).toBe(1);
   });
