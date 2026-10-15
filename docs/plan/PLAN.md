@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 76 done in `docs/plan/done/` (excluding its README.md), 20 active in `docs/plan/tasks/` (2026-10-15).
+Inventory: 77 done in `docs/plan/done/` (excluding its README.md), 19 active in `docs/plan/tasks/` (2026-10-15).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -24,7 +24,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 - **40: MCP conformance for OAuth and the remote rows (merged, PR #150, fd701b5; archived in `docs/plan/done/`).** `scripts/conformance.sh` gains an OAuth mode (inspector 2.10.1: discovery, dynamic registration, consent, token, a call, static bearer refused). Pending Andrew: install `zip` on the host and re-run `npm run test:scripts` (9 fail and 6 cancelled on this host, the identical 20 test names that fail on main, all "zip is not installed"); run the manual checklists for claude.ai, ChatGPT, Gemini CLI and Gemini app in `docs/compatibility.md`, which are written and unticked. 43 corrected the `docs/releasing.md` conformance line to `stdio, http, oauth`.
 
 - **43: six guides (claude-ai, chatgpt, gemini-cli, gemini-app, reverse-proxy, headless) plus security, privacy, README and releasing edits (merged, PR #155, 28f95e7; archived in `docs/plan/done/`).** Pending Andrew: run the unticked client checklists in `docs/compatibility.md` (the guides say the client steps were not run). Follow-ups:
-  - **98: owner-routed OAuth consent for headless agents** (task file in `docs/plan/tasks/`). Remote OAuth clients cannot reach a headless agent yet, because the consent code goes to the agent's own headless browser; the docs say so. Review round 2 found the same limit without OAuth: a server-mode gateway with a public URL (the Compose stack) cannot reach a headless agent with any client run so far (plain stdio, `--server-mode` stdio and `docker exec` all failed); only server mode without a public URL over the static bearer worked. This raises 98's priority for anyone on the Compose stack. Needs Andrew's decision on whether the consent page may reveal that the target is headless or that its owner is online, before any work starts.
+  - **98: owner-routed OAuth consent for headless agents** is done on a branch with its PR open; see item 0b.
   - **35b owns the audit-trail docs** (Amendment 1); it is still deferred.
   - **Funding links:** none until the repo goes public (Amendment 1); add them as part of going public.
   - **Docs gap:** `docs/server-mode.md` and `gateway/docker/README.md` do not cover task 90's GM-vouched invites or `--admin`/`--gm`/`--demote`, and the docker README still says invites arrive "with task 68". Fix in a small docs task.
@@ -40,6 +40,10 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - Fixed out of loop: the macOS `runner.test.ts` failure on main (the log cap hid "symlink") was fixed in PR #157 (79600cc); `npm run verify` passes on macOS again.
 
 - **95: HTTP session eviction (merged, PR #148; archived in `docs/plan/done/`).** Fixes the ChatGPT session exhaustion (503 "too many sessions" after about 5 calls on 0.1.1): at a cap, an `initialize` evicts the requester's own LRU idle session. **Gateway 0.2.0 (90 + 91 + 92 + 95; protocol 7.0.0, so the module and gateway must be upgraded together) is deployed on aindriub.app as of 2026-10-15.** Accepted residual: a session whose only open request is its GET SSE stream can be evicted by the same principal opening a 5th session.
+
+### 0b. 98 done on branch (PR open); 94 in progress in another session
+- **98: owner-routed OAuth consent for headless agents (branch `claude/task-98`, archived in `docs/plan/done/`; PR open).** For a stored headless agent with an owner (`headless add --owner`), the OAuth consent code goes to the owner's Foundry link connection, never to the agent's own headless browser. The owner's dialog names the agent, and the grant is bound to the agent's (world, user) and pairing. This resolves the earlier finding that the Compose stack (server mode with a public URL) could not reach a headless agent: it now can, through the owner. Andrew's decisions (2026-10-15): the single flag/env agent is not supported (treated as no owner); the consent page stays uniform, with the same status and body whoever is named and whether or not they are online, so it never reveals headless, owner or online status; the grant is bound to the agent; the docs come from a real run; a grant ends when the agent re-pairs but survives a gateway restart. Not run: the claude.ai, ChatGPT and Gemini connectors themselves (a scripted OAuth client was). Follow-up: gateway/test/relay/link-reconnect.test.ts "baseline: A is primary, B takes over..." failed once with "Connection closed" and passed on every rerun; it is not in this diff.
+- **94 (GM grants view) is in progress in another session.** It touches `protocol/src/link/messages.ts`, `lang/en.json`, `module/src/apps/grants/index.ts` and `module/test/apps/grants/grants.test.ts`, as 98 does. Whichever of 94 and 98 merges second needs a merge from main first.
 
 ### 1. ChatGPT plugin
 - **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
