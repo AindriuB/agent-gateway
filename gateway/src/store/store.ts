@@ -1,6 +1,9 @@
 import { createEventRepository, type EventRepository } from '../events/repository.js';
 import { createQueueRepository, type QueueRepository } from '../offline-queue/repository.js';
-import { createHeadlessRepository, type HeadlessRepository } from '../headless/config/repository.js';
+import {
+  createHeadlessRepository,
+  type HeadlessRepository,
+} from '../headless/config/repository.js';
 import { createOAuthRepository, type OAuthRepository } from '../oauth/repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { applyMigrations } from './migrate.js';
