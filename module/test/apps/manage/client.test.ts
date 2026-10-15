@@ -177,3 +177,73 @@ describe('management requests on the link client', () => {
     await caught;
   });
 });
+
+describe('per-user grants requests on the link client', () => {
+  const grant = { id: 'g1', clientName: 'App', scopes: ['read'], createdAt: 1, lastUsedAt: null };
+
+  it('send plain messages and resolve to the grants of the asked user', async () => {
+    const { client, ws } = connected();
+    const p = client.listUserGrants('u1');
+    const sent = ws.sent.at(-1);
+    expect(Object.keys(sent).sort()).toEqual(['requestId', 'type', 'userId']);
+    expect(sent).toMatchObject({ type: 'listUserGrants', userId: 'u1' });
+    ws.recv({ type: 'userGrants', requestId: 'foreign', userId: 'u1', grants: [] });
+    ws.recv({ type: 'userGrants', requestId: sent.requestId, userId: 'u1', grants: [grant] });
+    await expect(p).resolves.toEqual([grant]);
+
+    const r = client.revokeUserGrant('u1', 'g1');
+    expect(ws.sent.at(-1)).toMatchObject({ type: 'revokeUserGrant', userId: 'u1', grantId: 'g1' });
+    ws.recv({
+      type: 'userGrants',
+      requestId: ws.sent.at(-1).requestId,
+      userId: 'u1',
+      grants: [],
+    });
+    await expect(r).resolves.toEqual([]);
+  });
+
+  it('rejects a reply that is for another user', async () => {
+    const { client, ws } = connected();
+    const p = client.listUserGrants('u1');
+    ws.recv({
+      type: 'userGrants',
+      requestId: ws.sent.at(-1).requestId,
+      userId: 'u2',
+      grants: [grant],
+    });
+    await expect(p).rejects.toMatchObject({ code: 'INTERNAL' });
+  });
+
+  it('rejects with the gateway error code', async () => {
+    const { client, ws } = connected();
+    const p = client.revokeUserGrant('u1', 'g1');
+    ws.recv({
+      type: 'error',
+      id: '',
+      requestId: ws.sent.at(-1).requestId,
+      code: 'FORBIDDEN',
+      message: 'no',
+    });
+    await expect(p).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('sends nothing to a non-admin session or to a gateway below 0.3.0', async () => {
+    const plain = connected({ admin: false });
+    const n = plain.ws.sent.length;
+    await expect(plain.client.listUserGrants('u1')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(plain.ws.sent).toHaveLength(n);
+
+    const v2 = connected({ version: '0.2.0' });
+    const m = v2.ws.sent.length;
+    await expect(v2.client.listUserGrants('u1')).rejects.toMatchObject({ code: 'TOO_OLD' });
+    await expect(v2.client.revokeUserGrant('u1', 'g1')).rejects.toMatchObject({
+      code: 'TOO_OLD',
+    });
+    expect(v2.ws.sent).toHaveLength(m);
+
+    const v3 = connected({ version: '0.3.0' });
+    const k = v3.ws.sent.length;
+    void v3.client.listUserGrants('u1').catch(() => undefined);
+    expect(v3.ws.sent).toHaveLength(k + 1);
+  });
+});

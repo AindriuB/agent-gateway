@@ -50,10 +50,7 @@ export function handleUserGrantMessage(
       .listActivePairings()
       .some(
         (p) =>
-          p.worldId === conn.worldId &&
-          p.userId === msg.userId &&
-          p.admin &&
-          p.id !== conn.agentId,
+          p.worldId === conn.worldId && p.userId === msg.userId && p.admin && p.id !== conn.agentId,
       );
     if (otherAdmin) {
       fail('FORBIDDEN', 'another admin GM cannot be managed here');

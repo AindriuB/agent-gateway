@@ -10,11 +10,14 @@ import {
   type PairingSummary,
 } from '../../link/client.js';
 import { effectiveFromSettings } from '../../link/gateway-url.js';
+import { grantRows, type GrantRow } from '../grants/model.js';
 import {
   DEFAULT_TTL_MS,
   TTL_CHOICES,
+  grantUsers,
   inviteRows,
   pairingRows,
+  type GrantUserRow,
   type InviteRow,
   type PairingRow,
   type UserChoice,
@@ -28,7 +31,7 @@ const NS = 'agent-gateway';
 
 const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-export type Tab = 'invites' | 'pairings';
+export type Tab = 'invites' | 'pairings' | 'grants';
 
 export interface ManageContext {
   /** A localized reason the app cannot be used; empty when it can. */
@@ -40,8 +43,15 @@ export interface ManageContext {
   tab: Tab;
   isInvites: boolean;
   isPairings: boolean;
+  isGrants: boolean;
   invites: InviteRow[];
   pairings: PairingRow[];
+  /** Grants tab: the users whose apps can be viewed, one marked selected. */
+  grantUsers: GrantUserRow[];
+  selectedUserId: string;
+  grants: GrantRow[];
+  emptyGrantUsers: boolean;
+  emptyGrants: boolean;
   users: UserChoice[];
   ttls: Array<{ ms: number; label: string; selected: boolean }>;
   emptyInvites: boolean;
@@ -71,8 +81,14 @@ const blank = (tab: Tab, unavailable: string, notice = '', canRetry = false): Ma
   tab,
   isInvites: tab === 'invites',
   isPairings: tab === 'pairings',
+  isGrants: tab === 'grants',
   invites: [],
   pairings: [],
+  grantUsers: [],
+  selectedUserId: '',
+  grants: [],
+  emptyGrantUsers: false,
+  emptyGrants: false,
   users: [],
   ttls: [],
   emptyInvites: false,
@@ -97,7 +113,7 @@ export function appUnavailableReason(): string {
 export function tabUnavailableReason(tab: Tab): string {
   const client = getLinkClient() as any;
   if (
-    tab === 'pairings' &&
+    (tab === 'pairings' || tab === 'grants') &&
     !gatewaySupportsGrants(client.gatewayVersion, PAIRINGS_MIN_GATEWAY_VERSION)
   )
     return game.i18n.localize('AGENT_GATEWAY.Manage.tooOld');
@@ -119,7 +135,7 @@ function failureKey(e: unknown): string {
 }
 
 /** What the window shows for a tab. The one-time invite code is never part of it. */
-export async function prepareManage(tab: Tab = 'invites'): Promise<ManageContext> {
+export async function prepareManage(tab: Tab = 'invites', userId?: string): Promise<ManageContext> {
   const i18n = game.i18n;
   const why = appUnavailableReason();
   if (why) return blank(tab, why);
@@ -140,6 +156,16 @@ export async function prepareManage(tab: Tab = 'invites'): Promise<ManageContext
         label: i18n.localize(`AGENT_GATEWAY.Manage.${t.key}`),
         selected: t.ms === DEFAULT_TTL_MS,
       }));
+    } else if (tab === 'grants') {
+      const pairings: PairingSummary[] = await client.listPairings();
+      ctx.grantUsers = grantUsers(pairings, userId);
+      ctx.emptyGrantUsers = ctx.grantUsers.length === 0;
+      const picked = ctx.grantUsers.find((u) => u.selected);
+      if (picked) {
+        ctx.selectedUserId = picked.id;
+        ctx.grants = grantRows(await client.listUserGrants(picked.id));
+        ctx.emptyGrants = ctx.grants.length === 0;
+      }
     } else {
       const pairings: PairingSummary[] = await client.listPairings();
       ctx.pairings = pairingRows(pairings);
@@ -204,6 +230,8 @@ export function createManageApp(): any {
 
   class ManageApp extends Base {
     tab: Tab = 'invites';
+    /** The user whose apps the Grants tab shows; unset means the first listed. */
+    grantUser: string | undefined;
     static DEFAULT_OPTIONS = {
       id: 'agent-gateway-manage',
       window: {
@@ -218,17 +246,39 @@ export function createManageApp(): any {
         createInvite: ManageApp.onCreateInvite,
         cancelInvite: ManageApp.onCancelInvite,
         revokePairing: ManageApp.onRevokePairing,
+        selectGrantUser: ManageApp.onSelectGrantUser,
+        revokeUserGrant: ManageApp.onRevokeUserGrant,
       },
     };
     static PARTS = { body: { template: `modules/${NS}/templates/manage/manage.hbs` } };
 
     async _prepareContext(): Promise<object> {
-      return prepareManage(this.tab);
+      return prepareManage(this.tab, this.grantUser);
+    }
+
+    static async onSelectGrantUser(this: any, _event: Event, target: HTMLElement): Promise<void> {
+      const userId = target?.dataset?.userId;
+      if (!userId) return;
+      this.grantUser = userId;
+      await this.render();
+    }
+
+    static async onRevokeUserGrant(this: any, _event: Event, target: HTMLElement): Promise<void> {
+      const userId = target?.dataset?.userId;
+      const grantId = target?.dataset?.grantId;
+      if (!userId || !grantId || unavailableReason('grants')) return;
+      try {
+        await getLinkClient().revokeUserGrant(userId, grantId);
+        ui.notifications.info(game.i18n.localize('AGENT_GATEWAY.Manage.grantRevoked'));
+      } catch (e) {
+        ui.notifications.warn(game.i18n.localize(failureKey(e)));
+      }
+      await this.render();
     }
 
     static async onTab(this: any, _event: Event, target: HTMLElement): Promise<void> {
       const tab = target?.dataset?.tab;
-      if (tab !== 'invites' && tab !== 'pairings') return;
+      if (tab !== 'invites' && tab !== 'pairings' && tab !== 'grants') return;
       this.tab = tab;
       await this.render();
     }

@@ -23,6 +23,12 @@ export interface PairingRow {
   canRevoke: boolean;
 }
 
+export interface GrantUserRow {
+  id: string;
+  name: string;
+  selected: boolean;
+}
+
 export interface UserChoice {
   id: string;
   name: string;
@@ -65,6 +71,32 @@ export function inviteRows(
     statusKey: i.status,
     canCancel: i.status === 'unused',
   }));
+}
+
+/**
+ * The users whose authorized apps the admin GM may view: each paired user once, in pairing order.
+ * Another admin GM is left out (the gateway would refuse it); the sender's own row stays.
+ */
+export function grantUsers(
+  pairings: readonly PairingSummary[],
+  selected: string | undefined,
+): GrantUserRow[] {
+  const rows = pairings.slice(0, MAX_ROWS);
+  const otherAdmins = new Set(rows.filter((p) => p.admin && !p.self).map((p) => p.userId));
+  const seen = new Set<string>();
+  const out: GrantUserRow[] = [];
+  for (const p of rows) {
+    if (otherAdmins.has(p.userId) || seen.has(p.userId)) continue;
+    seen.add(p.userId);
+    out.push({
+      id: plain(p.userId, 64),
+      name: plain(p.userName || p.userId, NAME_CHARS),
+      selected: false,
+    });
+  }
+  const pick = out.find((u) => u.id === selected) ?? out[0];
+  if (pick) pick.selected = true;
+  return out;
 }
 
 export function pairingRows(pairings: readonly PairingSummary[]): PairingRow[] {

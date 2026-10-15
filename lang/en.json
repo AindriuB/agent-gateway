@@ -310,5 +310,13 @@
   "AGENT_GATEWAY.Manage.tooOld": "This gateway is too old to manage access. Update the gateway.",
   "AGENT_GATEWAY.Manage.timeout": "The gateway did not answer in time. Try again.",
   "AGENT_GATEWAY.Manage.retry": "Try again",
-  "AGENT_GATEWAY.Manage.failed": "The gateway refused or could not complete that. Try again."
+  "AGENT_GATEWAY.Manage.failed": "The gateway refused or could not complete that. Try again.",
+  "AGENT_GATEWAY.Manage.tabGrants": "Authorized apps",
+  "AGENT_GATEWAY.Manage.grantsIntro": "This shows metadata only: each app's name, its permissions and when it was authorized. Tokens are never shown. Players are told that their GM can see this list. Revoking an app signs it out at once.",
+  "AGENT_GATEWAY.Manage.noGrantUsers": "No player has paired yet.",
+  "AGENT_GATEWAY.Manage.noUserGrants": "This player has not authorized any apps.",
+  "AGENT_GATEWAY.Manage.scopes": "Permissions",
+  "AGENT_GATEWAY.Manage.authorized": "Authorized",
+  "AGENT_GATEWAY.Manage.grantRevoked": "App revoked.",
+  "AGENT_GATEWAY.Grants.gmCanSee": "Your GM can see which apps you have authorized: their names, permissions and dates, never any tokens. Your GM can also revoke them."
 }

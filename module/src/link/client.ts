@@ -145,7 +145,10 @@ export class ManageError extends Error {
   }
 }
 
-type ManageReply = Extract<LinkMessage, { type: 'invites' | 'inviteCreated' | 'pairings' }>;
+type ManageReply = Extract<
+  LinkMessage,
+  { type: 'invites' | 'inviteCreated' | 'pairings' | 'userGrants' }
+>;
 
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
@@ -251,6 +254,8 @@ export class LinkClient {
     {
       socket: SocketLike;
       expect: ManageReply['type'];
+      /** The user a `userGrants` reply must be about. */
+      forUser?: string;
       resolve: (reply: ManageReply) => void;
       reject: (error: Error) => void;
       timer: ReturnType<typeof setTimeout>;
@@ -301,9 +306,28 @@ export class LinkClient {
     }));
     return (r as Extract<ManageReply, { type: 'pairings' }>).pairings;
   }
+  /** The authorized apps of one user in this world, as metadata only (admin GM only). */
+  async listUserGrants(userId: string): Promise<GrantSummary[]> {
+    const r = await this.manageRequest(
+      'userGrants',
+      (requestId) => ({ type: 'listUserGrants', requestId, userId }),
+      userId,
+    );
+    return (r as Extract<ManageReply, { type: 'userGrants' }>).grants;
+  }
+  /** Revoke one of that user's grants; resolves to the grants that remain. */
+  async revokeUserGrant(userId: string, grantId: string): Promise<GrantSummary[]> {
+    const r = await this.manageRequest(
+      'userGrants',
+      (requestId) => ({ type: 'revokeUserGrant', requestId, userId, grantId }),
+      userId,
+    );
+    return (r as Extract<ManageReply, { type: 'userGrants' }>).grants;
+  }
   private manageRequest(
     expect: ManageReply['type'],
     build: (requestId: string) => LinkMessage,
+    forUser?: string,
   ): Promise<ManageReply> {
     const socket = this.socket;
     if (
@@ -313,7 +337,10 @@ export class LinkClient {
     )
       return Promise.reject(new ManageError('OFFLINE', 'Gateway offline'));
     if (!this.isAdmin) return Promise.reject(new ManageError('FORBIDDEN', 'Not an admin GM'));
-    const min = expect === 'pairings' ? PAIRINGS_MIN_GATEWAY_VERSION : MANAGE_MIN_GATEWAY_VERSION;
+    const min =
+      expect === 'pairings' || expect === 'userGrants'
+        ? PAIRINGS_MIN_GATEWAY_VERSION
+        : MANAGE_MIN_GATEWAY_VERSION;
     if (!gatewaySupportsGrants(this.gatewayVersion, min))
       return Promise.reject(new ManageError('TOO_OLD', 'Gateway too old for management'));
     if (this.manageRequests.size >= 4)
@@ -324,7 +351,7 @@ export class LinkClient {
         this.manageRequests.delete(requestId);
         reject(new ManageError('TIMEOUT', 'Request timed out'));
       }, 10000);
-      this.manageRequests.set(requestId, { socket, expect, resolve, reject, timer });
+      this.manageRequests.set(requestId, { socket, expect, forUser, resolve, reject, timer });
       try {
         this.send(build(requestId));
       } catch (e) {
@@ -777,12 +804,17 @@ export class LinkClient {
       }
       case 'invites':
       case 'inviteCreated':
-      case 'pairings': {
+      case 'pairings':
+      case 'userGrants': {
         const pending = this.manageRequests.get(msg.requestId);
         if (this.socket !== origin || !pending || pending.socket !== origin) break;
         clearTimeout(pending.timer);
         this.manageRequests.delete(msg.requestId);
-        if (pending.expect === msg.type) pending.resolve(msg);
+        if (
+          pending.expect === msg.type &&
+          (msg.type !== 'userGrants' || msg.userId === pending.forUser)
+        )
+          pending.resolve(msg);
         else pending.reject(new ManageError('INTERNAL', 'Unexpected reply'));
         break;
       }
