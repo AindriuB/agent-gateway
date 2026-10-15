@@ -103,3 +103,46 @@ FINDINGS
 - [NOTE] Per-tab failures keep the nav and the `grantsIntro` header, because `blank(tab,'',notice)` keeps `isGrants` set. When a request fails, the user list is cleared until a retry. That is the same as the other tabs.
 
 SCOPE: clean. Every changed path is within Owns. module/src/apps/manage/index.ts imports `grantRows` from module/src/apps/grants/model.ts, but that file is not modified. It is a read-only dependency, not an ownership breach.
+
+## Review round 2 — findings
+
+Reviewed HEAD: c992223. Orchestrator ruling on the DRIFT: keep the Owns list unchanged. Revert the edit to module/src/apps/grants/model.ts, and build the admin row mapping inside module/src/apps/manage/** (already owned), without importing the player-side mapping. Routed to the implementer: that revert and move, plus both P3s (an admin-tab no-last-used test with a realistic fixture; remove or use the unused gateway `UserGrantSummary` type).
+
+VERDICT: FIX
+
+The only thing blocking is scope: the fix edits `module/src/apps/grants/model.ts`, and that file is not in Owns. The code itself is correct. All four round 1 items are fixed, and each new test fails when I remove the code it covers.
+
+FINDINGS
+- [DRIFT] module/src/apps/grants/model.ts:1,24,30 — The fix commit c992223 edits a file that is not in Owns. Owns lists only `module/src/apps/grants/index.ts` (notice only), and round 1 had recorded this file as a read-only dependency. The change widens `grantRows` to accept `GrantSummary | UserGrantSummary` and sets `lastUsed: 'lastUsedAt' in g ? when(g.lastUsedAt) : ''`.
+  route: orchestrator — This needs the Owns list changed. There are two options: add model.ts to Owns, or keep the admin row mapping inside `module/src/apps/manage/**`, which Owns already covers. Choosing between them is a design choice the task file did not make.
+  input: none. The change is behaviour-neutral (see the checks below). It is flagged only because the file is outside Owns.
+
+- [P3] module/test/apps/manage/grants-tab.test.ts:25 — No module test checks that the admin tab shows no last-used time. Also, the fixture's `grant()` still has `lastUsedAt: null`, a shape that the new `UserGrantSummary` type and the strict schema both reject; the `any` typing hides this.
+  route: implementer — Give the fixture a real `lastUsedAt` value, then assert that the admin row's `lastUsed` is empty and the rendered tab has no last-used span.
+  input: grantRows changed back to always `when(g.lastUsedAt)`, plus a `<span class="used">…{{lastUsed}}…</span>` added to templates/manage/manage.hbs  →  module/test/apps passes 138/138.
+  proof: I ran that mutation and no module test failed. It is unreachable today only because the gateway strips the field and the strict protocol schema rejects it, so this is P3.
+
+- [P3] gateway/src/oauth/grants/index.ts:13 — `export type UserGrantSummary` is used nowhere. `user-grants.ts` uses an inline destructuring map instead. Owns allows this file "only if a world-scoped helper is needed", and an unused type is not one.
+  route: implementer — Either annotate the map in gateway/src/link/user-grants.ts:71 with this type, or delete it.
+  input: none (dead code).
+
+- [NOTE] protocol/src/link/messages.ts:336-345 — The admin grant shape copies the `GrantsMessage` element field by field. The bounds match the player shape today, but they could drift apart later.
+
+FIXED
+- Amendment 1 (admin replies carry no `lastUsedAt`) — FIXED — gateway/src/link/user-grants.ts:71, protocol/src/link/messages.ts:331-346, module/src/link/client.ts:102. Mutation checks:
+  - Gateway passes `lastUsedAt` through (`(g) => g`): gateway/test/link/user-grants.test.ts fails 1/12 ("has only grant summary fields…").
+  - The protocol test rejects a `userGrants` grant that has `lastUsedAt: null`. The module parses every reply with `parseLinkMessage` (client.ts:698), so a reply carrying the field would be dropped and would never reach the tab.
+  - Module renders it in the admin tab: no test fails (the P3 above).
+- P2 stale-connection test for listUserGrants/revokeUserGrant — FIXED — gateway/test/link/user-grants.test.ts:190. With the guard at server.ts:543 replaced by `if (false)`, "is closed with 1008 and revokes nothing" fails.
+- P2 shared rate window with invite/pairing messages — FIXED — gateway/test/link/user-grants.test.ts:234. With `takeLinkAdminMessage` replaced by a local copy on a separate WeakMap, "shares the window with pairing and invite messages" fails.
+- P3 `p.worldId === conn.worldId` clause in the other-admin check — FIXED — gateway/test/link/user-grants.test.ts:179. With the clause removed, "does not block this world admin from the same user id" fails.
+
+Checks you asked for:
+- The player's own `grants` reply is unchanged. `GrantsMessage` (protocol/src/link/messages.ts:201-215) still has `lastUsedAt`, and gateway/src/link/grants.ts and gateway/src/oauth/server.ts are untouched on the branch. module/test/apps/grants/grants.test.ts:166-179 still asserts `lastUsed: '2023-11-14 22:15:00'`. module/test/apps and gateway/test/oauth pass, 186/186.
+- `grantRows` cannot show a last-used value in the admin tab, for three reasons:
+  - Admin grants come only from a strict-parsed `userGrants`, which has no `lastUsedAt` key, so `'lastUsedAt' in g` is false and `lastUsed` is `''`.
+  - templates/manage/manage.hbs:66-75 never prints `lastUsed`.
+  - The gateway strips the field before sending.
+- eslint is clean on the changed files.
+
+SCOPE: module/src/apps/grants/model.ts
