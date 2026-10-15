@@ -126,6 +126,27 @@ export function gatewaySupportsGrants(
   return true;
 }
 
+export type InviteSummary = Extract<LinkMessage, { type: 'invites' }>['invites'][number];
+export type PairingSummary = Extract<LinkMessage, { type: 'pairings' }>['pairings'][number];
+export type InviteCreated = Extract<LinkMessage, { type: 'inviteCreated' }>;
+
+/** The first gateway version that answers the invite messages (task 92). */
+export const MANAGE_MIN_GATEWAY_VERSION = '0.2.0';
+/** The first gateway version that answers the pairing messages; older ones close on them. */
+export const PAIRINGS_MIN_GATEWAY_VERSION = '0.3.0';
+
+/** A refused or failed management request; `code` is the gateway's error code or a local one. */
+export class ManageError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+type ManageReply = Extract<LinkMessage, { type: 'invites' | 'inviteCreated' | 'pairings' }>;
+
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 60_000;
 
@@ -222,6 +243,94 @@ export class LinkClient {
         clearTimeout(timer);
         this.grantRequests.delete(requestId);
         reject(e);
+      }
+    });
+  }
+  private readonly manageRequests = new Map<
+    string,
+    {
+      socket: SocketLike;
+      expect: ManageReply['type'];
+      resolve: (reply: ManageReply) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  private manageSequence = 0;
+  /** The invites of this world (admin GM only). */
+  async listInvites(): Promise<InviteSummary[]> {
+    const r = await this.manageRequest('invites', (requestId) => ({
+      type: 'listInvites',
+      requestId,
+    }));
+    return (r as Extract<ManageReply, { type: 'invites' }>).invites;
+  }
+  /** Mint an invite for a player. The reply is the only place the code ever appears. */
+  async createInvite(userId: string, ttlMs?: number): Promise<InviteCreated> {
+    const r = await this.manageRequest('inviteCreated', (requestId) => ({
+      type: 'createInvite',
+      requestId,
+      userId,
+      ...(ttlMs === undefined ? {} : { ttlMs }),
+    }));
+    return r as InviteCreated;
+  }
+  /** Cancel one open invite; resolves to the invites that remain. */
+  async cancelInvite(inviteId: string): Promise<InviteSummary[]> {
+    const r = await this.manageRequest('invites', (requestId) => ({
+      type: 'cancelInvite',
+      requestId,
+      inviteId,
+    }));
+    return (r as Extract<ManageReply, { type: 'invites' }>).invites;
+  }
+  /** The active pairings of this world (admin GM only). */
+  async listPairings(): Promise<PairingSummary[]> {
+    const r = await this.manageRequest('pairings', (requestId) => ({
+      type: 'listPairings',
+      requestId,
+    }));
+    return (r as Extract<ManageReply, { type: 'pairings' }>).pairings;
+  }
+  /** Revoke one pairing; resolves to the pairings that remain. */
+  async revokePairing(pairingId: string): Promise<PairingSummary[]> {
+    const r = await this.manageRequest('pairings', (requestId) => ({
+      type: 'revokePairing',
+      requestId,
+      pairingId,
+    }));
+    return (r as Extract<ManageReply, { type: 'pairings' }>).pairings;
+  }
+  private manageRequest(
+    expect: ManageReply['type'],
+    build: (requestId: string) => LinkMessage,
+  ): Promise<ManageReply> {
+    const socket = this.socket;
+    if (
+      !socket ||
+      this._state.kind !== 'connected' ||
+      (socket.readyState !== undefined && socket.readyState !== 1)
+    )
+      return Promise.reject(new ManageError('OFFLINE', 'Gateway offline'));
+    if (!this.isAdmin) return Promise.reject(new ManageError('FORBIDDEN', 'Not an admin GM'));
+    const min = expect === 'pairings' ? PAIRINGS_MIN_GATEWAY_VERSION : MANAGE_MIN_GATEWAY_VERSION;
+    if (!gatewaySupportsGrants(this.gatewayVersion, min))
+      return Promise.reject(new ManageError('TOO_OLD', 'Gateway too old for management'));
+    if (this.manageRequests.size >= 4)
+      return Promise.reject(new ManageError('BUSY', 'Too many pending requests'));
+    const requestId = `manage-${++this.manageSequence}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.manageRequests.delete(requestId);
+        reject(new ManageError('TIMEOUT', 'Request timed out'));
+      }, 10000);
+      this.manageRequests.set(requestId, { socket, expect, resolve, reject, timer });
+      try {
+        this.send(build(requestId));
+      } catch (e) {
+        clearTimeout(timer);
+        this.manageRequests.delete(requestId);
+        reject(e as Error);
       }
     });
   }
@@ -666,6 +775,26 @@ export class LinkClient {
         pending.resolve(msg.grants);
         break;
       }
+      case 'invites':
+      case 'inviteCreated':
+      case 'pairings': {
+        const pending = this.manageRequests.get(msg.requestId);
+        if (this.socket !== origin || !pending || pending.socket !== origin) break;
+        clearTimeout(pending.timer);
+        this.manageRequests.delete(msg.requestId);
+        if (pending.expect === msg.type) pending.resolve(msg);
+        else pending.reject(new ManageError('INTERNAL', 'Unexpected reply'));
+        break;
+      }
+      case 'error': {
+        // Only a refused management request carries a request id.
+        const pending = msg.requestId ? this.manageRequests.get(msg.requestId) : undefined;
+        if (this.socket !== origin || !pending || pending.socket !== origin) break;
+        clearTimeout(pending.timer);
+        this.manageRequests.delete(msg.requestId as string);
+        pending.reject(new ManageError(msg.code, msg.message));
+        break;
+      }
       case 'consentCode':
         if (this.socket !== origin || this._state.kind !== 'connected') break;
         for (const fn of this.consentListeners) fn(msg);
@@ -883,6 +1012,12 @@ export class LinkClient {
         p.reject(new Error('Gateway disconnected'));
       }
     }
+    if (s.kind !== 'connected')
+      for (const [id, p] of this.manageRequests) {
+        clearTimeout(p.timer);
+        this.manageRequests.delete(id);
+        p.reject(new ManageError('OFFLINE', 'Gateway disconnected'));
+      }
     if (s.kind !== 'connected')
       for (const [id, p] of this.purges) {
         clearTimeout(p.timer);

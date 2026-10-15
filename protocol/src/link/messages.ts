@@ -282,6 +282,38 @@ export const InvitesMessage = z.strictObject({
     .max(200),
 });
 
+/**
+ * Pairing management (task 93). An admin GM lists and revokes the pairings of its own world. No
+ * message names a world, and no reply carries a token or its hash.
+ */
+export const ListPairingsMessage = z.strictObject({
+  type: z.literal('listPairings'),
+  requestId: z.string().min(1).max(100),
+});
+export const RevokePairingMessage = z.strictObject({
+  type: z.literal('revokePairing'),
+  requestId: z.string().min(1).max(100),
+  pairingId: z.string().min(1).max(100),
+});
+export const PairingsMessage = z.strictObject({
+  type: z.literal('pairings'),
+  requestId: z.string().min(1).max(100),
+  pairings: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).max(100),
+        userId: z.string().min(1).max(64),
+        userName: z.string().max(200),
+        origin: z.string().max(300).nullable(),
+        createdAt: z.number().int().min(0),
+        admin: z.boolean(),
+        connected: z.boolean(),
+        self: z.boolean(),
+      }),
+    )
+    .max(200),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -310,6 +342,9 @@ export const LinkMessage = z.discriminatedUnion('type', [
   CancelInviteMessage,
   InviteCreatedMessage,
   InvitesMessage,
+  ListPairingsMessage,
+  RevokePairingMessage,
+  PairingsMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

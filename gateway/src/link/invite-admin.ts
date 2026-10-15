@@ -12,7 +12,10 @@ export const CREATE_WINDOW_MS = 10 * 60_000;
 export const MIN_DELEGATED_TTL_MS = 10 * 60_000;
 /** Pairing ids whose create window is tracked at once. */
 export const MAX_TRACKED_CREATORS = 1000;
-/** All three message types together, per connection per window. */
+/**
+ * Per connection per window, shared by the three invite messages and the two
+ * pairing messages (`listPairings`, `revokePairing`).
+ */
 export const MAX_INVITE_MESSAGES_PER_WINDOW = 60;
 export const INVITE_MESSAGE_WINDOW_MS = 60_000;
 /** The most invites one `invites` reply carries (newest first). */
@@ -32,6 +35,13 @@ function take(hits: number[], now: number, max: number, windowMs: number): boole
   if (hits.length >= max) return false;
   hits.push(now);
   return true;
+}
+
+/** Count one invite or pairing message against the connection's shared window. */
+export function takeLinkAdminMessage(conn: LinkConnection, now: number): boolean {
+  let w = windows.get(conn);
+  if (!w) windows.set(conn, (w = { all: [] }));
+  return take(w.all, now, MAX_INVITE_MESSAGES_PER_WINDOW, INVITE_MESSAGE_WINDOW_MS);
 }
 
 /**
@@ -126,9 +136,7 @@ export function handleInviteMessage(
     return;
   }
   const at = now();
-  let w = windows.get(conn);
-  if (!w) windows.set(conn, (w = { all: [] }));
-  if (!take(w.all, at, MAX_INVITE_MESSAGES_PER_WINDOW, INVITE_MESSAGE_WINDOW_MS)) {
+  if (!takeLinkAdminMessage(conn, at)) {
     fail('RATE_LIMITED', 'too many invite requests');
     return;
   }

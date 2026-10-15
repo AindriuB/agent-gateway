@@ -1,0 +1,72 @@
+<section class="agent-gateway-manage">
+  {{#if unavailable}}
+    <p class="notes">{{unavailable}}</p>
+  {{else}}
+    <nav class="tabs">
+      <button type="button" data-action="tab" data-tab="invites" {{#if isInvites}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabInvites"}}</button>
+      <button type="button" data-action="tab" data-tab="pairings" {{#if isPairings}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabPairings"}}</button>
+    </nav>
+    {{#if notice}}
+      <p class="notes tab-notice">{{notice}}</p>
+      {{#if canRetry}}
+        <button type="button" data-action="retry">
+          <i class="fa-solid fa-rotate-right"></i> {{localize "AGENT_GATEWAY.Manage.retry"}}
+        </button>
+      {{/if}}
+    {{else if isInvites}}
+      <p class="notes">{{localize "AGENT_GATEWAY.Manage.invitesIntro"}}</p>
+      <div class="invite-form">
+        <select name="userId">
+          {{#each users}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+        <select name="ttlMs">
+          {{#each ttls}}
+            <option value="{{ms}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+        <button type="button" data-action="createInvite">
+          <i class="fa-solid fa-plus"></i> {{localize "AGENT_GATEWAY.Manage.createInvite"}}
+        </button>
+      </div>
+      {{#if emptyInvites}}
+        <p class="notes">{{localize "AGENT_GATEWAY.Manage.noInvites"}}</p>
+      {{/if}}
+      <ul class="manage-list">
+        {{#each invites}}
+          <li class="invite" data-invite-id="{{id}}">
+            <strong class="user">{{userName}}</strong>
+            <span class="status">{{status}}</span>
+            <span class="expires">{{localize "AGENT_GATEWAY.Manage.expires"}}: {{expires}}</span>
+            {{#if canCancel}}
+              <button type="button" data-action="cancelInvite" data-invite-id="{{id}}">
+                <i class="fa-solid fa-ban"></i> {{localize "AGENT_GATEWAY.Manage.cancel"}}
+              </button>
+            {{/if}}
+          </li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p class="notes">{{localize "AGENT_GATEWAY.Manage.pairingsIntro"}}</p>
+      {{#if emptyPairings}}
+        <p class="notes">{{localize "AGENT_GATEWAY.Manage.noPairings"}}</p>
+      {{/if}}
+      <ul class="manage-list">
+        {{#each pairings}}
+          <li class="pairing" data-pairing-id="{{id}}">
+            <strong class="user">{{userName}}</strong>
+            {{#if admin}}<span class="badge">{{localize "AGENT_GATEWAY.Manage.adminBadge"}}</span>{{/if}}
+            {{#if self}}<span class="badge">{{localize "AGENT_GATEWAY.Manage.you"}}</span>{{/if}}
+            <span class="origin">{{origin}}</span>
+            <span class="created">{{created}}</span>
+            <span class="connected">{{#if connected}}{{localize "AGENT_GATEWAY.Manage.connected"}}{{else}}{{localize "AGENT_GATEWAY.Manage.notConnected"}}{{/if}}</span>
+            <button type="button" data-action="revokePairing" data-pairing-id="{{id}}" data-can-revoke="{{canRevoke}}" data-self="{{self}}" {{#unless canRevoke}}disabled{{/unless}}>
+              <i class="fa-solid fa-ban"></i> {{localize "AGENT_GATEWAY.Manage.revoke"}}
+            </button>
+          </li>
+        {{/each}}
+      </ul>
+    {{/if}}
+  {{/if}}
+</section>
