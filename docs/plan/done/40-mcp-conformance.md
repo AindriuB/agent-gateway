@@ -61,3 +61,16 @@ Verify on 3e365c2 (2026-10-15). The result was FAIL, with KIND environment. The 
 - `npm run test:scripts` failed. The pack-module, build-claude-plugin and ChatGPT plugin package suites assert that the zip succeeds, and every one gets "pack-module: zip is not installed": the host has no `zip` binary. The claude plugin `validate --strict` test also failed in one suite and was skipped in another ("claude CLI not found").
 - Reviewer: APPROVE. The "passing run in the PR" item is met by quoting the conformance line above.
 - Next: install `zip` on the host (needs sudo), then re-run `npm run test:scripts`.
+
+## Review round 2 — findings (external)
+Andrew's PR review of #150 at ce20a63 (2026-10-15; a static review, no tests run).
+
+- [P3] gateway/test/conformance/oauth-flow.mjs:20: the OAuth conformance run bypasses discovery. Hardcoded endpoints and a bearer obtained in advance let the test pass even when the discovery metadata is broken. Start from the MCP endpoint instead:
+  - an unauthenticated request must get 401 with a `WWW-Authenticate` header pointing at the protected-resource metadata;
+  - fetch that metadata, then the authorization-server metadata it names;
+  - validate the required fields (issuer, authorization_endpoint, token_endpoint, registration_endpoint, code_challenge_methods_supported including S256, and the resource matching the MCP URL);
+  - use only the advertised endpoints for registration, authorization and token exchange.
+  No URL path may be hardcoded except the MCP endpoint.
+  route: implementer
+  input: the gateway advertises a wrong token_endpoint or registration_endpoint in its metadata →  conformance still passes today.
+  test: show it fails on broken metadata (e.g. a mutated metadata route in a scratch copy, or a self-check inside the script). It must pass against the real gateway.
