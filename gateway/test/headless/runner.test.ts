@@ -291,6 +291,15 @@ describe('HeadlessRunner lifecycle', () => {
     expect(t.launcher.launches).toHaveLength(0);
   });
 
+  it('keeps the refusal reason in the log when the state path is long', async () => {
+    const stateDir = join(tmp(), 'a-state-directory-name-long-enough-to-pass-the-log-cap');
+    mkdirSync(join(stateDir, 'headless'), { recursive: true });
+    symlinkSync(tmp(), join(stateDir, 'headless', 'profiles'));
+    const t = await make({ stateDir });
+    expect(t.runner.start()).toBe(false);
+    expect(t.logs.join('\n')).toContain('symlink');
+  });
+
   it('pauses when its own page reports REPLACED, logs once, and resumes after 5 minutes', async () => {
     let clock = 0;
     let linked = true;

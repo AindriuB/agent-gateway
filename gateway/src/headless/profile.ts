@@ -23,7 +23,10 @@ export function profileDir(stateDir: string, worldId: string, userId: string): s
   return join(stateDir, 'headless', 'profiles', agentId(worldId, userId));
 }
 
-/** Why the profile path cannot be used; undefined when it was created or already safe. */
+/**
+ * Why the profile path cannot be used; undefined when it was created or already safe. The reason
+ * leads and the path trails, so a log line capped by safeText keeps the reason.
+ */
 export function ensureProfileDir(
   stateDir: string,
   worldId: string,
@@ -39,12 +42,13 @@ export function ensureProfileDir(
         if (process.platform !== 'win32') chmodSync(path, 0o700);
         st = lstatSync(path);
       }
-      if (st.isSymbolicLink()) return { ok: false, reason: `${path} is a symlink` };
-      if (!st.isDirectory()) return { ok: false, reason: `${path} is not a directory` };
+      if (st.isSymbolicLink()) return { ok: false, reason: `profile path is a symlink: ${path}` };
+      if (!st.isDirectory())
+        return { ok: false, reason: `profile path is not a directory: ${path}` };
       if (uid !== undefined && st.uid !== uid)
-        return { ok: false, reason: `${path} is not owned by the current user` };
+        return { ok: false, reason: `profile path is not owned by the current user: ${path}` };
     } catch (err) {
-      return { ok: false, reason: `${path}: ${(err as Error).message}` };
+      return { ok: false, reason: `${(err as Error).message} (${path})` };
     }
   }
   return { ok: true, dir };
