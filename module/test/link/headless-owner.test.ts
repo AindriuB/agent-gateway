@@ -78,12 +78,12 @@ async function boot(
   });
   await flush();
   let last: any;
-  const direct = async () => {
+  const direct = async (tool = 'fixture_tool') => {
     last = await (client.onCall as any)({
       type: 'call',
       id: 'call-1',
       sessionId: 's',
-      tool: 'fixture_tool',
+      tool: tool,
       args: {},
     });
     return dispatch.mock.calls.at(-1)![0].agent;
@@ -155,7 +155,7 @@ describe('headlessAgentsEnabled off', () => {
       [],
       (c, u) => stage.run({ ...c, user: u } as any, next) as Promise<DispatchResult>,
     );
-    await b.direct();
+    await b.direct('world_info');
     expect(b.lastResult()).toMatchObject({ ok: false, code: 'DENIED' });
     expect(b.lastResult().message).toContain('AGENT_GATEWAY.Policy.headlessAgentsDisabled');
     expect(next).not.toHaveBeenCalled();
