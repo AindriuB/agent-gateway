@@ -14,7 +14,8 @@
 - gateway/src/config/index.ts and gateway/src/bin/cli.ts (the single-agent headless settings only; plus, per Amendment 3, the SIGHUP shutdown handler in cli.ts; plus, per Amendment 4, replacing its inline SIGINT/SIGTERM/SIGHUP handlers with the signals.ts call; plus, per Amendment 5, `readConfigFile`'s error message in config/index.ts)
 - gateway/src/relay/config.ts (the headless field in RelayConfig, headlessFingerprint, and that field in make/parse/compare/describe only; Amendment 5; plus, per Amendment 6, an explicit caller/primary direction in describeConfigDiff)
 - gateway/src/relay/server.ts (the step-down decision for a headless primary and a caller without headless settings only; Amendment 6)
-- gateway/src/relay/secondary.ts (the describeConfigDiff call only, if needed for the standby reason; Amendment 6)
+- gateway/src/relay/secondary.ts (the describeConfigDiff call only, if needed for the standby reason; Amendment 6; plus, per Amendment 7, the `RELAY_CONFIG_MISMATCH` standby reason text)
+- gateway/test/relay/exposure-config.test.ts (the describeConfigDiff signature update and the Amendment 6 describeConfigDiff tests only; Amendment 7)
 - gateway/test/config/read-config-file.test.ts (new; readConfigFile error tests, Amendment 5)
 - gateway/src/bin/signals.ts (new; the shutdown signal wiring, Amendment 4)
 - gateway/test/bin/signals.test.ts (new)
@@ -419,3 +420,17 @@ At HEAD 9e745ed. Implements Amendment 6. Comes from the full review after Amendm
   input: a headless primary with logLevel `error`, and a newer plain gateway with logLevel `debug` →  today the primary steps down and closes its runner.
 - [P3] gateway/src/relay/config.ts:160: `describeConfigDiff` reports "headless agent settings differ" when that difference was tolerated, both in the server.ts log line and in the secondary.ts standby reason. Fix it with an explicit caller/primary direction (Amendment 6 decision 3).
   route: implementer
+
+## Amendment 7 (2026-10-15)
+
+Andrew, from the full review after round 13 (484f22d).
+
+### Decisions
+
+1. **Owns gains `gateway/test/relay/exposure-config.test.ts` (the describeConfigDiff signature update and the Amendment 6 describeConfigDiff tests only)**, accepted where round 13 put them.
+2. **The secondary.ts Owns entry widens to the standby reason text.** When a newer plain caller is refused by a headless primary with `RELAY_CONFIG_MISMATCH` (because the session settings differ, Amendment 6 decision 1), the standby reason in gateway/src/relay/secondary.ts (today's `RELAY_CONFIG_MISMATCH` branch, "... and is not older than this instance, so it is left running") must not say the primary is not older. It must say the primary is kept because it runs a headless agent, and still name the differing session settings as today. The caller can tell this case from the refusal's `config` (the primary's headless field is non-empty, its own is empty). The existing wording stays for every other `RELAY_CONFIG_MISMATCH`.
+3. **Note for 43:** document that all gateways sharing a link port should run the same version. A pre-37 primary ignores the headless field, so a new headless gateway whose other settings match relays to it, and its agent never starts. (Detection is follow-up task 97.)
+
+### Acceptance (added)
+- [ ] Test: a headless primary (older) and a newer plain caller with different `allowOrigins`: the caller's standby reason says the primary is kept because it runs a headless agent, names `allowOrigins` as the differing setting, and does not contain "not older".
+- [ ] Test: a non-headless primary that is genuinely not older and a caller with different `allowOrigins`: the standby reason still contains "is not older than this instance, so it is left running".
