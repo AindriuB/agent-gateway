@@ -410,3 +410,12 @@ Andrew, from the code review of 3a3cb1d (round 12's "headless wins" fix).
 - [ ] App-level test: a newer plain caller differing in `allowOrigins` from a headless primary goes to standby with `RELAY_CONFIG_MISMATCH`, and the primary's runner keeps running.
 - [ ] The three-direction takeover tests from Amendment 5 still pass.
 - [ ] `describeConfigDiff` tests, in both call directions (caller = mine and primary = mine): the tolerated case (empty caller headless vs non-empty primary) has no "headless agent settings differ"; the non-tolerated cases (headless caller vs plain primary, two different non-empty fingerprints) do.
+
+## Review round 13 — findings
+At HEAD 9e745ed. Implements Amendment 6. Comes from the full review after Amendment 5: its P2 was settled by Amendment 6, the P3 is listed below, and its scope question was settled by Amendment 6 decision 4.
+
+- [P2] Implement Amendment 6 decisions 1-3 in gateway/src/relay/server.ts, config.ts and secondary.ts, keeping to their Owns qualifiers. Add the acceptance tests from Amendment 6.
+  route: implementer
+  input: a headless primary with logLevel `error`, and a newer plain gateway with logLevel `debug` →  today the primary steps down and closes its runner.
+- [P3] gateway/src/relay/config.ts:160: `describeConfigDiff` reports "headless agent settings differ" when that difference was tolerated, both in the server.ts log line and in the secondary.ts standby reason. Fix it with an explicit caller/primary direction (Amendment 6 decision 3).
+  route: implementer
