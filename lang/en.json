@@ -253,6 +253,7 @@
   "AGENT_GATEWAY.ApprovalDialog.next": "Next requests",
   "AGENT_GATEWAY.Consent.title": "Agent Gateway consent code",
   "AGENT_GATEWAY.Consent.prompt": "{client} is asking to connect to Foundry as you. If that was you, type this code on its page:",
+  "AGENT_GATEWAY.Consent.promptAgent": "{client} is asking to connect to Foundry as headless agent {agent}. If you want to allow that, type this code on its page:",
   "AGENT_GATEWAY.Consent.scopes": "It will be allowed: {scopes}",
   "AGENT_GATEWAY.Consent.hint": "If you did not start this, ignore it. Nothing is shared until the code is entered.",
   "AGENT_GATEWAY.Consent.dismiss": "Close",

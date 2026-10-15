@@ -16,6 +16,8 @@ export interface ConsentRig {
 /** A public gateway with the real consent page (no test consent step). */
 export async function consentRig(
   links: { privacyUrl?: string; sourceUrl?: string } = {},
+  /** Task 98: wire the headless lookup the way app.ts does; `flag` is the flag/env agent. */
+  headless?: { flag?: { worldId: string; userId: string } },
 ): Promise<ConsentRig> {
   const h = await startServer();
   const clock = { t: 1_000_000 };
@@ -24,6 +26,19 @@ export async function consentRig(
     publicUrl: PUBLIC,
     now: () => clock.t,
     ...links,
+    ...(headless
+      ? {
+          headless: {
+            isAgent: (w: string, u: string) =>
+              (headless.flag?.worldId === w && headless.flag.userId === u) ||
+              h.store.headless.getByIdentity(w, u) !== undefined,
+            ownerOf: (w: string, u: string) =>
+              headless.flag?.worldId === w && headless.flag.userId === u
+                ? undefined
+                : (h.store.headless.getByIdentity(w, u)?.ownerUserId ?? undefined),
+          },
+        }
+      : {}),
   });
   const http = new HttpServer({
     host: '127.0.0.1',

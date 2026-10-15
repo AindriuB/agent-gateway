@@ -68,6 +68,14 @@ export interface ConsentWiring {
     ): { send(data: string): void; closed?: boolean; agentId?: string } | undefined;
   };
   failures: FailureWindows;
+  /** Headless agents (task 98): their consent codes go to the owner, never to the agent. */
+  headless?: HeadlessLookup;
+}
+
+/** Who is a headless agent, and which Foundry user owns it (`headless add --owner`). */
+export interface HeadlessLookup {
+  isAgent(worldId: string, userId: string): boolean;
+  ownerOf(worldId: string, userId: string): string | undefined;
 }
 
 export interface ConsentPagesOptions {
@@ -275,13 +283,28 @@ export class ConsentPages {
       : undefined;
   }
 
-  /** The code goes to the chosen user's own link connection and nowhere else. */
+  /**
+   * The code goes to the chosen user's own link connection and nowhere else. A headless agent's
+   * code goes to its owner's connection instead, or nowhere (no owner, owner offline, flag agent).
+   */
   private deliver(p: Pending, code: string): void {
     const t = p.target;
-    const conn = t ? this.wiring?.registry.get(t.worldId, t.userId) : undefined;
+    if (!t) return;
+    const h = this.wiring?.headless;
+    const agent = h?.isAgent(t.worldId, t.userId) === true;
+    let forAgent: { userId: string; name: string } | undefined;
+    let to = t.userId;
+    if (agent) {
+      const owner = h?.ownerOf(t.worldId, t.userId);
+      if (!owner || owner === t.userId) return;
+      to = owner;
+      const row = this.o.repo.activePairedUsers(t.worldId).find((r) => r.userId === t.userId);
+      forAgent = { userId: t.userId, name: row?.userName || t.userId };
+    }
+    const conn = this.wiring?.registry.get(t.worldId, to);
     if (!conn || conn.closed) return;
-    // Bind to the pairing of the connection that actually receives the code.
-    if (t && conn.agentId) t.pairingId = conn.agentId;
+    // Bind to the pairing of the connection that actually receives the code (the target's own).
+    if (!agent && conn.agentId) t.pairingId = conn.agentId;
     try {
       conn.send(
         JSON.stringify({
@@ -290,6 +313,7 @@ export class ConsentPages {
           clientName: p.clientName,
           scopes: p.chosen,
           expiresAt: p.codeExpiresAt,
+          ...(forAgent ? { forAgent } : {}),
         }),
       );
     } catch {

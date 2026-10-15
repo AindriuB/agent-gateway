@@ -37,7 +37,14 @@ export async function prepareGrants(): Promise<GrantsContext> {
 export function showConsentCode(m: ConsentCodeMessage): void {
   const i18n = game.i18n;
   const content =
-    `<p>${escapeHtml(i18n.format('AGENT_GATEWAY.Consent.prompt', { client: m.clientName }))}</p>` +
+    `<p>${escapeHtml(
+      m.forAgent
+        ? i18n.format('AGENT_GATEWAY.Consent.promptAgent', {
+            client: m.clientName,
+            agent: m.forAgent.name,
+          })
+        : i18n.format('AGENT_GATEWAY.Consent.prompt', { client: m.clientName }),
+    )}</p>` +
     `<p class="agent-gateway-consent-code"><strong>${escapeHtml(m.code)}</strong></p>` +
     `<p>${escapeHtml(i18n.format('AGENT_GATEWAY.Consent.scopes', { scopes: m.scopes.join(', ') }))}</p>` +
     `<p>${escapeHtml(i18n.localize('AGENT_GATEWAY.Consent.hint'))}</p>`;

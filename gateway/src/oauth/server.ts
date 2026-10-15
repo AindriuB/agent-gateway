@@ -10,6 +10,7 @@ import {
   ConsentPages,
   type ConsentSeed,
   type ConsentWiring,
+  type HeadlessLookup,
 } from './consent/index.js';
 import { SCOPES, type OAuthClient, type OAuthRepository, type Scope } from './repository.js';
 
@@ -53,6 +54,8 @@ export interface OAuthServerOptions {
   /** Footer links on the consent pages (already validated by config). */
   privacyUrl?: string;
   sourceUrl?: string;
+  /** Headless agents and their owners; their consent codes go to the owner (task 98). */
+  headless?: HeadlessLookup;
 }
 
 class OAuthError extends Error {
@@ -146,6 +149,7 @@ export class OAuthServer implements OAuthRoutes {
   private readonly repo: OAuthRepository;
   private readonly consent: ConsentStep | undefined;
   private readonly pages: ConsentPages | undefined;
+  private readonly headless: HeadlessLookup | undefined;
   private readonly now: () => number;
   private readonly maxClients: number;
   private readonly registerRate: FailureWindows;
@@ -158,6 +162,7 @@ export class OAuthServer implements OAuthRoutes {
     this.resourceMetadataUrl = `${this.issuer}/.well-known/oauth-protected-resource`;
     this.repo = o.repo;
     this.consent = o.consent;
+    this.headless = o.headless;
     this.now = o.now ?? Date.now;
     this.pages = o.consent
       ? undefined
@@ -194,7 +199,7 @@ export class OAuthServer implements OAuthRoutes {
 
   /** Called by the HTTP server: the link registry and the shared failed-attempt bucket. */
   attach(wiring: ConsentWiring): void {
-    this.pages?.attach(wiring);
+    this.pages?.attach(this.headless ? { ...wiring, headless: this.headless } : wiring);
   }
 
   /** The principal for a bearer access token, or undefined. Read per request, so revocation is immediate. */
