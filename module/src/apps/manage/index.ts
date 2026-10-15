@@ -10,13 +10,14 @@ import {
   type PairingSummary,
 } from '../../link/client.js';
 import { effectiveFromSettings } from '../../link/gateway-url.js';
-import { grantRows, type GrantRow } from '../grants/model.js';
 import {
   DEFAULT_TTL_MS,
   TTL_CHOICES,
+  adminGrantRows,
   grantUsers,
   inviteRows,
   pairingRows,
+  type AdminGrantRow,
   type GrantUserRow,
   type InviteRow,
   type PairingRow,
@@ -49,7 +50,7 @@ export interface ManageContext {
   /** Grants tab: the users whose apps can be viewed, one marked selected. */
   grantUsers: GrantUserRow[];
   selectedUserId: string;
-  grants: GrantRow[];
+  grants: AdminGrantRow[];
   emptyGrantUsers: boolean;
   emptyGrants: boolean;
   users: UserChoice[];
@@ -163,7 +164,7 @@ export async function prepareManage(tab: Tab = 'invites', userId?: string): Prom
       const picked = ctx.grantUsers.find((u) => u.selected);
       if (picked) {
         ctx.selectedUserId = picked.id;
-        ctx.grants = grantRows(await client.listUserGrants(picked.id));
+        ctx.grants = adminGrantRows(await client.listUserGrants(picked.id));
         ctx.emptyGrants = ctx.grants.length === 0;
       }
     } else {

@@ -1,4 +1,4 @@
-import type { InviteSummary, PairingSummary } from '../../link/client.js';
+import type { InviteSummary, PairingSummary, UserGrantSummary } from '../../link/client.js';
 
 export interface InviteRow {
   id: string;
@@ -21,6 +21,14 @@ export interface PairingRow {
   self: boolean;
   /** Another admin GM's pairing can only be revoked by the operator. */
   canRevoke: boolean;
+}
+
+/** One of a player's grants as an admin sees it: metadata only, never a last-used time. */
+export interface AdminGrantRow {
+  id: string;
+  clientName: string;
+  scopes: string;
+  created: string;
 }
 
 export interface GrantUserRow {
@@ -110,5 +118,15 @@ export function pairingRows(pairings: readonly PairingSummary[]): PairingRow[] {
     connected: p.connected,
     self: p.self,
     canRevoke: !p.admin || p.self,
+  }));
+}
+
+/** Plain strings for the template, which prints every one with `{{ }}` (escaped). */
+export function adminGrantRows(grants: readonly UserGrantSummary[]): AdminGrantRow[] {
+  return grants.slice(0, MAX_ROWS).map((g) => ({
+    id: String(g.id),
+    clientName: plain(g.clientName, NAME_CHARS),
+    scopes: g.scopes.join(', '),
+    created: when(g.createdAt),
   }));
 }

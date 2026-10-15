@@ -22,7 +22,6 @@ const grant = (over: object = {}) => ({
   clientName: 'Claude',
   scopes: ['read', 'write'],
   createdAt: 1_700_000_000_000,
-  lastUsedAt: null,
   ...over,
 });
 
@@ -171,6 +170,19 @@ describe('the Grants tab of the management app', () => {
     const tpl = readFileSync(resolve(root, 'templates/manage/manage.hbs'), 'utf8');
     expect(tpl).toContain('{{clientName}}');
     expect(tpl).not.toMatch(/\{\{\{|\{\{&/);
+  });
+
+  it('shows no last-used value in the rows or the rendered tab', async () => {
+    const client = adminClient();
+    const mod = await load(client);
+    const ctx = await mod.prepareManage('grants');
+    expect(Object.keys(ctx.grants[0]!).sort()).toEqual(['clientName', 'created', 'id', 'scopes']);
+    expect(JSON.stringify(ctx.grants)).not.toMatch(/last|used/i);
+    const tpl = readFileSync(resolve(root, 'templates/manage/manage.hbs'), 'utf8');
+    const grantsSection = tpl.slice(tpl.indexOf('{{#each grants}}'));
+    expect(grantsSection.slice(0, grantsSection.indexOf('{{/each}}'))).not.toMatch(
+      /lastUsed|class="used"/,
+    );
   });
 
   it('carries no token, hash or secret, and states in the header that it is metadata only', async () => {

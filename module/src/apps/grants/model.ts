@@ -1,4 +1,4 @@
-import type { GrantSummary, UserGrantSummary } from '../../link/client.js';
+import type { GrantSummary } from '../../link/client.js';
 
 export interface GrantRow {
   id: string;
@@ -21,12 +21,12 @@ const plain = (s: unknown, max: number): string =>
   [...String(s ?? '').replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '')].slice(0, max).join('');
 
 /** Plain strings for the template, which prints every one with `{{ }}` (escaped). */
-export function grantRows(grants: readonly (GrantSummary | UserGrantSummary)[]): GrantRow[] {
+export function grantRows(grants: readonly GrantSummary[]): GrantRow[] {
   return grants.slice(0, MAX_ROWS).map((g) => ({
     id: String(g.id),
     clientName: plain(g.clientName, NAME_CHARS),
     scopes: g.scopes.join(', '),
     created: when(g.createdAt),
-    lastUsed: 'lastUsedAt' in g ? when(g.lastUsedAt) : '',
+    lastUsed: when(g.lastUsedAt),
   }));
 }
