@@ -36,7 +36,7 @@ Beyond the local quick start, the gateway can be reached from the web and from o
 - [Reverse proxy](docs/guides/reverse-proxy.md): serve the gateway at a public HTTPS URL with Caddy or nginx. The gateway never does TLS itself.
 - [Server mode and Docker](docs/server-mode.md): an always-on gateway for several people, with operator invites, in a Compose stack ([steps](gateway/docker/README.md)).
 - Remote clients, signing in with OAuth: [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md) and [the Gemini app](docs/guides/gemini-app.md). Their per-release checks are in [docs/compatibility.md](docs/compatibility.md) and none of them has been run.
-- [Headless agents](docs/guides/headless.md): an agent user the gateway logs in itself, so no browser tab needs to stay open. Today only a local-mode gateway (stdio, or HTTP with the static bearer) can reach one; server mode, Docker and remote OAuth clients cannot yet.
+- [Headless agents](docs/guides/headless.md): an agent user the gateway logs in itself, so no browser tab needs to stay open. Local mode (stdio, or HTTP with the static bearer) reaches one, and so did server mode without a public URL over HTTP with the bearer; server mode with a public URL (as the Compose stack sets it) and remote OAuth clients did not in the runs.
 
 ## What this release does not do
 
