@@ -1,0 +1,149 @@
+// OAuth client for scripts/conformance.sh: registers, authorizes through the consent page and
+// exchanges the code, then prints the access token on stdout (nothing else).
+//   node oauth-flow.mjs <mcpUrl> <codeFile> <world> <user>
+// Starts from the MCP endpoint only: every other URL comes from the advertised discovery metadata.
+// The consent code is delivered to the fake module (task 67), which writes it to <codeFile>.
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const [mcpUrl, codeFile, world, user] = process.argv.slice(2);
+const redirect = 'http://127.0.0.1:6274/oauth/callback';
+const fail = (msg) => {
+  process.stderr.write(`oauth-flow: ${msg}\n`);
+  process.exit(1);
+};
+const form = (o) => new URLSearchParams(o).toString();
+const hiddenValue = (html, name) =>
+  new RegExp(`name="${name}" value="([^"]*)"`).exec(html)?.[1] ?? fail(`page has no ${name} field`);
+
+// --- discovery: 401 -> WWW-Authenticate -> protected-resource metadata -> AS metadata ---
+const probe = await fetch(mcpUrl, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+  body: '{}',
+});
+if (probe.status !== 401) fail(`unauthenticated MCP request returned ${probe.status}, want 401`);
+const challenge401 = probe.headers.get('www-authenticate') ?? fail('401 has no WWW-Authenticate');
+const prmUrl =
+  /resource_metadata="([^"]+)"/.exec(challenge401)?.[1] ??
+  fail(`WWW-Authenticate has no resource_metadata: ${challenge401}`);
+const getJson = async (url, what) => {
+  const r = await fetch(url);
+  if (r.status !== 200) fail(`${what} (${url}) returned ${r.status}`);
+  return r.json();
+};
+const prm = await getJson(prmUrl, 'protected-resource metadata');
+if (prm.resource !== mcpUrl)
+  fail(`protected-resource "resource" is ${prm.resource}, want ${mcpUrl}`);
+const asIssuer =
+  prm.authorization_servers?.[0] ??
+  fail('protected-resource metadata names no authorization server');
+const asUrl = new URL(
+  `/.well-known/oauth-authorization-server${new URL(asIssuer).pathname.replace(/\/$/, '')}`,
+  asIssuer,
+);
+const meta = await getJson(asUrl, 'authorization-server metadata');
+if (meta.issuer !== asIssuer) fail(`AS issuer ${meta.issuer} does not match ${asIssuer}`);
+for (const k of ['authorization_endpoint', 'token_endpoint', 'registration_endpoint']) {
+  if (typeof meta[k] !== 'string') fail(`AS metadata lacks ${k}`);
+  try {
+    new URL(meta[k]);
+  } catch {
+    fail(`AS metadata ${k} is not a valid URL: ${meta[k]}`);
+  }
+}
+if (!meta.code_challenge_methods_supported?.includes('S256'))
+  fail('AS metadata does not advertise S256');
+const reg = await fetch(meta.registration_endpoint, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    client_name: 'conformance',
+    redirect_uris: [redirect],
+    token_endpoint_auth_method: 'none',
+  }),
+});
+if (reg.status !== 201) fail(`register returned ${reg.status}`);
+const { client_id: clientId } = await reg.json();
+
+const verifier = randomBytes(32).toString('base64url');
+const challenge = createHash('sha256').update(verifier).digest('base64url');
+const state = randomBytes(8).toString('hex');
+const authUrl = `${meta.authorization_endpoint}?${form({
+  response_type: 'code',
+  client_id: clientId,
+  redirect_uri: redirect,
+  code_challenge: challenge,
+  code_challenge_method: 'S256',
+  scope: 'read',
+  state,
+  resource: mcpUrl,
+})}`;
+const page = await fetch(authUrl, { redirect: 'manual' });
+if (page.status !== 200) fail(`authorize returned ${page.status}`);
+const html = await page.text();
+const rid = hiddenValue(html, 'rid');
+const csrf = hiddenValue(html, 'csrf');
+const consentUrl = new URL(
+  /<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? fail('consent page has no form action'),
+  meta.authorization_endpoint,
+).href;
+
+// The CSRF cookie is the one the server issued with the consent page, not one made up here.
+// The gateway sets `Secure` even over http://127.0.0.1 (a browser treats loopback as secure).
+const setCookie = page.headers.getSetCookie().find((c) => c.startsWith('__Host-agcsrf-'));
+if (!setCookie) fail('consent page sent no __Host-agcsrf-<rid> Set-Cookie');
+const [pair, ...attrs] = setCookie.split(';').map((s) => s.trim());
+const eq = pair.indexOf('=');
+const cookieName = pair.slice(0, eq);
+const cookieValue = pair.slice(eq + 1);
+if (cookieName !== `__Host-agcsrf-${rid}`)
+  fail(`CSRF cookie is named ${cookieName}, want __Host-agcsrf-${rid}`);
+if (!cookieValue) fail('CSRF cookie has no value');
+const flags = attrs.map((a) => a.toLowerCase());
+for (const want of ['secure', 'httponly', 'path=/'])
+  if (!flags.includes(want)) fail(`CSRF cookie lacks ${want}: ${setCookie}`);
+if (flags.some((a) => a.startsWith('domain='))) fail(`__Host- cookie has a Domain: ${setCookie}`);
+if (!flags.includes('samesite=strict')) fail(`CSRF cookie lacks SameSite=Strict: ${setCookie}`);
+const cookie = `${cookieName}=${cookieValue}`;
+// A browser sends the origin of the page it posts from.
+const origin = new URL(page.url).origin;
+
+const consent = (fields) =>
+  fetch(consentUrl, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin, cookie },
+    body: form({ rid, csrf, ...fields }),
+  });
+
+const sent = await consent({ action: 'send', world, user, scope: 'read' });
+if (sent.status !== 200) fail(`consent send returned ${sent.status}`);
+for (let i = 0; i < 100 && !existsSync(codeFile); i++) await sleep(50);
+if (!existsSync(codeFile)) fail('the fake module never received the consent code');
+const code = readFileSync(codeFile, 'utf8');
+
+const verified = await consent({ action: 'verify', code });
+if (verified.status !== 302) fail(`consent verify returned ${verified.status}`);
+const back = new URL(verified.headers.get('location') ?? fail('no redirect location'));
+if (back.searchParams.get('state') !== state) fail('state did not round-trip');
+const authCode =
+  back.searchParams.get('code') ?? fail(`no code (error=${back.searchParams.get('error')})`);
+
+const tok = await fetch(meta.token_endpoint, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: form({
+    grant_type: 'authorization_code',
+    client_id: clientId,
+    code: authCode,
+    code_verifier: verifier,
+    redirect_uri: redirect,
+    resource: mcpUrl,
+  }),
+});
+if (tok.status !== 200) fail(`token returned ${tok.status}`);
+const { access_token: access } = await tok.json();
+if (!access) fail('token response has no access_token');
+process.stdout.write(access);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MCP conformance over stdio, then over local Streamable HTTP: `scripts/conformance.sh`. Needs a built tree (npm run build).
+# MCP conformance over stdio, local Streamable HTTP, then OAuth on a --public-url gateway: `scripts/conformance.sh`. Needs a built tree (npm run build).
 # Starts the gateway under the MCP Inspector CLI with a fake Foundry module attached to the
 # link, then runs tools/list and one tools/call that round-trips through the link.
 # Uses a temp HOME, a temp database and a non-default link port; ~/.foundry-agent-gateway
@@ -41,7 +41,7 @@ token="$work/token"
 ready="$work/ready"
 
 "${tsx[@]}" pair "$db" "$LINK_PORT" "$token" 2>"$work/pair.log"
-"${tsx[@]}" serve "$LINK_PORT" "$token" "$ready" 2>"$work/module.log" &
+"${tsx[@]}" serve "$LINK_PORT" "$token" "$ready" "$work/consent-code" 2>"$work/module.log" &
 module_pid=$!
 
 # The inspector hands the server only a minimal environment, so port and database go as -e.
@@ -92,5 +92,45 @@ grep -q '"demo-echo"' <<<"$hlist" || { echo "conformance: http tools/list missin
 hcall="$(inspect_http --method tools/call --tool-name demo-echo --tool-arg value=conformance)"
 grep -q 'echo:conformance' <<<"$hcall" || { echo "conformance: http tools/call did not round-trip" >&2; exit 1; }
 
+# --- OAuth mode: the gateway with --public-url; consent code goes to the fake module ---
+kill "$gateway_pid" 2>/dev/null || true; wait "$gateway_pid" 2>/dev/null || true; gateway_pid=""
+exec 3>&-
+OAUTH_PORT="${CONFORMANCE_OAUTH_PORT:-$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}"
+public="http://127.0.0.1:$OAUTH_PORT"
+rm -f "$ready" "$work/consent-code"
+mkfifo "$work/stdin-oauth"
+exec 4<>"$work/stdin-oauth"
+node gateway/dist/bin/cli.js --public-url "$public" --http-port "$OAUTH_PORT" --link-port "$LINK_PORT" --db "$db" \
+  <"$work/stdin-oauth" >/dev/null 2>"$work/gateway.log" &
+gateway_pid=$!
+for _ in $(seq 1 300); do
+  grep -q "MCP HTTP at" "$work/gateway.log" && break
+  kill -0 "$gateway_pid" 2>/dev/null || { echo "conformance: oauth gateway exited early" >&2; exit 1; }
+  sleep 0.1
+done
+grep -q "MCP HTTP at" "$work/gateway.log" || { echo "conformance: oauth gateway never started" >&2; exit 1; }
+for _ in $(seq 1 150); do [ -e "$ready" ] && break; sleep 0.1; done
+[ -e "$ready" ] || { echo "conformance: fake module never reconnected for oauth" >&2; exit 1; }
+
+# a static bearer is refused on an OAuth-mode gateway
+static_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" \
+  -H "Authorization: Bearer $http_token" -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')"
+[ "$static_status" = "401" ] || { echo "conformance: static bearer got $static_status, want 401" >&2; exit 1; }
+[ "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$public/mcp" -H 'content-type: application/json' -d '{}')" = "401" ] \
+  || { echo "conformance: unauthenticated request was not 401" >&2; exit 1; }
+
+access="$(node gateway/test/conformance/oauth-flow.mjs "$public/mcp" "$work/consent-code" conf gm)" \
+  || { echo "conformance: oauth flow failed" >&2; exit 1; }
+[ -n "$access" ] || { echo "conformance: oauth flow returned no token" >&2; exit 1; }
+inspect_oauth() {
+  npx -y "@modelcontextprotocol/inspector@$INSPECTOR_VERSION" --cli "$public/mcp" --transport http \
+    --header "Authorization: Bearer $access" "$@" 2>>"$work/gateway.log"
+}
+olist="$(inspect_oauth --method tools/list)"
+grep -q '"demo-echo"' <<<"$olist" || { echo "conformance: oauth tools/list missing demo-echo" >&2; exit 1; }
+ocall="$(inspect_oauth --method tools/call --tool-name demo-echo --tool-arg value=conformance)"
+grep -q 'echo:conformance' <<<"$ocall" || { echo "conformance: oauth tools/call did not round-trip" >&2; exit 1; }
+
 [ ! -e "$HOME/.foundry-agent-gateway" ] || { echo "conformance: default store was created" >&2; exit 1; }
-echo "conformance: ok (inspector $INSPECTOR_VERSION, stdio, http)"
+echo "conformance: ok (inspector $INSPECTOR_VERSION, stdio, http, oauth)"
