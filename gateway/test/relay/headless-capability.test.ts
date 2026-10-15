@@ -123,6 +123,7 @@ describe('a headless caller and a primary from before headless settings', () => 
       log: () => undefined,
     });
     await server.listen();
+    cleanups.push(() => server.close());
     const s = secondary(at, HEADLESS);
     const settled: [string, string][] = [];
     (s as unknown as { opts: { onSettled: (r: string, why: string) => void } }).opts.onSettled = (
