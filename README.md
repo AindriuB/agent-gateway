@@ -2,7 +2,7 @@
 
 A Foundry VTT module and MCP gateway that give an AI agent permissioned access to a running world. You bring the AI client; the product ships no model and holds no model keys. The core is free and MIT-licensed.
 
-This release is local only. See [What this release does not do](#what-this-release-does-not-do).
+It runs on your own machine, or on a server for remote clients and several people. See [What this release does not do](#what-this-release-does-not-do).
 
 > Pre-release: not yet published. Install from source.
 
@@ -18,7 +18,7 @@ This release is local only. See [What this release does not do](#what-this-relea
    ```
 
 2. **Install the module.** Run `npm run pack:module`. It writes `dist/release/agent-gateway.zip`. Unzip it into a folder named `agent-gateway` inside your Foundry Data folder, so that `<Foundry Data>/modules/agent-gateway/module.json` exists, then restart Foundry. (For development you can instead link the repository folder there; `module.json` is at the repository root and Foundry loads `dist/module/main.js`.) Then **enable it** in a Pathfinder 2e or D&D 5e world. It supports Foundry v13 and v14 (`minimum` 13, `verified` 14 in `module.json`). Tested systems are pf2e 8.6.0 and dnd5e 6.0.6 on Foundry 14.369.
-3. **Keep a Foundry browser tab open**, logged in as the user the agent should act as. The agent works through that tab and acts with that user's permissions. There is no headless mode in this release, so if the tab closes the agent is offline.
+3. **Keep a Foundry browser tab open**, logged in as the user the agent should act as. The agent works through that tab and acts with that user's permissions. To run an agent with no tab open, see [the headless guide](docs/guides/headless.md).
 4. **Start the gateway**, by one of these:
    - Run `node <repo>/gateway/dist/bin/cli.js`, where `<repo>` is your clone. In practice your AI client starts it for you; see the guides.
    - Or run `npm run pack:mcpb` and install the `dist/release/foundry-agent-gateway.mcpb` file it writes into Claude Desktop.
@@ -29,9 +29,18 @@ This release is local only. See [What this release does not do](#what-this-relea
 
 Licensed MIT.
 
+## Remote and server mode
+
+Beyond the local quick start, the gateway can be reached from the web and from other clients:
+
+- [Reverse proxy](docs/guides/reverse-proxy.md): serve the gateway at a public HTTPS URL with Caddy or nginx. The gateway never does TLS itself.
+- [Server mode and Docker](docs/server-mode.md): an always-on gateway for several people, with operator invites, in a Compose stack ([steps](gateway/docker/README.md)).
+- Remote clients, signing in with OAuth: [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md) and [the Gemini app](docs/guides/gemini-app.md). Their per-release checks are in [docs/compatibility.md](docs/compatibility.md) and none of them has been run.
+- [Headless agents](docs/guides/headless.md): an agent user the gateway logs in itself, so no browser tab needs to stay open. Local mode (stdio, or HTTP with the static bearer) reaches one when bound with `--world` and `--user`, and so did server mode without a public URL over HTTP with the bearer; none of the combinations run with a public URL (as the Compose stack sets it) reached one, and remote OAuth was not run and cannot work until task 98.
+
 ## What this release does not do
 
-This release is local only. The gateway and your AI client run on one machine, and the link accepts connections from that machine. There are no remote clients, OAuth, public URLs, ChatGPT or Gemini connectors, headless agents or Docker images yet.
+There are no native installers; the gateway is not published yet, so you build it from source or build the Docker image locally. Headless agents do not work in the `.mcpb` bundle. The gateway does no TLS and has no tunnel or share mode, so a public URL needs a reverse proxy you run. The remote-client connections (claude.ai, ChatGPT, Gemini) have not been tried with the real clients: none of the manual per-client checks in [docs/compatibility.md](docs/compatibility.md) has been run. The automated conformance run tests the gateway's OAuth server with its own client and the MCP Inspector, not with those clients.
 
 The `.mcpb` and from-source installs are verified on macOS and untested on Windows in this release.
 
@@ -43,6 +52,8 @@ The core is complete and free. Optional tool packs, from Andrew or from others, 
 
 - [Claude Desktop guide](docs/guides/claude-desktop.md)
 - [Claude Code guide](docs/guides/claude-code.md)
+- [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md), [Gemini app](docs/guides/gemini-app.md)
+- [Reverse proxy](docs/guides/reverse-proxy.md), [server mode](docs/server-mode.md) and [headless agents](docs/guides/headless.md)
 - [Security model](docs/security.md)
 - [Privacy statement](docs/privacy.md)
 - [Local development](docs/dev.md) and [conventions](docs/conventions.md)
