@@ -135,7 +135,7 @@ export function runHeadlessCommand(input: HeadlessCommandInput): number {
         }
         input.out(
           `Added headless agent ${name} (world ${safeText(world)}, user ${safeText(user)}).\n` +
-            `Revoked ${revoked?.pairings.length ?? 0} pairing(s) and its OAuth grants and cancelled ${revoked?.cancelledInvites ?? 0} unused invite(s) for that world and user; a browser using it must pair again.\n` +
+            `Revoked ${revoked?.pairings.length ?? 0} pairing(s) and that world and user's OAuth grants and cancelled ${revoked?.cancelledInvites ?? 0} unused invite(s); a browser using it must pair again.\n` +
             `Its password is not stored. Set ${agentPasswordEnv(name)} or headless.${name}.password in the 0600 --config file for the gateway that runs it (the agent user needs a Foundry password).\n` +
             'A running gateway starts it within seconds if it already holds the password; otherwise restart that gateway.\n',
         );
@@ -154,7 +154,7 @@ export function runHeadlessCommand(input: HeadlessCommandInput): number {
         }
         const dir = profileDir(dirname(input.dbPath), out.row.worldId, out.row.userId);
         input.out(
-          `Removed headless agent ${name}; revoked ${out.revoked.pairings.length} pairing(s) and cancelled ${out.revoked.cancelledInvites} unused invite(s). A running gateway stops its browser within seconds.\n` +
+          `Removed headless agent ${name}; revoked ${out.revoked.pairings.length} pairing(s) and that world and user's OAuth grants and cancelled ${out.revoked.cancelledInvites} unused invite(s). A running gateway stops its browser within seconds.\n` +
             `The browser profile was kept at ${dir}; it can be deleted once the gateway has restarted.\n`,
         );
         return 0;
