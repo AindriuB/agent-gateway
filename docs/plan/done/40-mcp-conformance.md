@@ -74,3 +74,12 @@ Andrew's PR review of #150 at ce20a63 (2026-10-15; a static review, no tests run
   route: implementer
   input: the gateway advertises a wrong token_endpoint or registration_endpoint in its metadata →  conformance still passes today.
   test: show it fails on broken metadata (e.g. a mutated metadata route in a scratch copy, or a self-check inside the script). It must pass against the real gateway.
+
+## Review round 3 — findings
+Reviewed HEAD: 51ea296 (re-review of the round 2 external fix since b6dc8ae). Round 2 is FIXED. The reviewer checked it with a scratch mutation: `token_endpoint` advertised as `/tokenx` makes the run print "oauth-flow: token returned 404" and exit 1. The real gateway prints "conformance: ok (inspector 2.10.1, stdio, http, oauth)".
+
+- [STYLE] gateway/test/conformance/oauth-flow.mjs:20,38-40,47: the fix adds a double blank line (:20) and four lines longer than 100 columns. Run `prettier --write` on the file; `prettier --check` must pass on it. (`npm run lint` does not glob .mjs, so CI will not catch this.)
+  route: implementer
+  rule: docs/conventions.md:3, Prettier (.prettierrc, printWidth 100).
+- [optional] gateway/test/conformance/oauth-flow.mjs:45: `new URL(meta[k])` throws an uncaught TypeError instead of calling `fail()`. Route it through `fail()` so a malformed endpoint gets the same clear message as the other checks.
+  route: implementer
