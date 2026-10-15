@@ -1,6 +1,6 @@
 # Privacy
 
-This statement covers the Agent Gateway module and gateway in the local release. It says what data goes where.
+This statement covers the Agent Gateway module and gateway including remote access, server mode and headless agents. It says what data goes where.
 
 ## What leaves the Foundry client
 
@@ -19,9 +19,19 @@ The gateway also writes a small per-boot secret and a socket file for the relay 
 
 Other data the module keeps stays in Foundry itself: the audit journal of agent writes is a journal in your world, and your browser keeps the pairing token and a replay guard for queued writes in localStorage.
 
+## Remote access, server mode and headless agents
+
+These are off unless you turn them on with `--public-url`, `--server-mode` or a headless agent.
+
+- **What a public gateway exposes.** `/status` shows only the version and uptime. The other public paths are `/link` (the WebSocket the Foundry module connects to), `/mcp`, the OAuth endpoints (`/.well-known/...`, `/register`, `/authorize`, `/token`) and the consent page.
+- **What the OAuth tables store** (in the same SQLite file): registered client names and redirect addresses, the hash of each authorization code and token (never the code or token itself), and grants, which hold the client, the world and Foundry user it is bound to, the scopes and the times. Expired codes and tokens and revoked grants are swept out about every 10 minutes. Client IP addresses are kept in memory only, for rate limits, and are lost on restart. The sign-in pages set one strictly necessary cookie, expiring after 15 minutes. If you operate a public gateway you are the controller of this data; see [server mode](server-mode.md#privacy-and-cookies).
+- **Invites and pairings** (server mode) store a hash of the invite, its target world and user, and its times; the pairing keeps what the base pairing keeps.
+- **The `headless_agents` table** stores, for each stored headless agent, its name, Foundry URL, world id, user id, owner user id and creation time. It does not store a password; that stays in the environment or the 0600 config file.
+- **A headless agent's profile directory** is a Chromium profile under `<state dir>/headless/profiles/`, one per world and user, mode 0700. It holds that agent user's logged-in Foundry session and the module's pairing token. It is kept until you delete it by hand, including after `headless remove`.
+
 ## The AI client
 
-The product ships no model and sends nothing to any AI vendor itself. The AI client you connect, such as Claude Desktop or Claude Code, sends tool results to its vendor, because that is how the model reads them. Whatever an agent reads from your world can leave your machine that way. The vendor's own privacy terms cover that, and this statement does not. Choose which agents to enable with that in mind. Player agents are off until a GM turns them on.
+The product ships no model and sends nothing to any AI vendor itself. The AI client you connect, such as Claude Desktop, Claude Code, claude.ai, ChatGPT or Gemini, sends tool results to its vendor, because that is how the model reads them. Whatever an agent reads from your world can leave your machine that way. The vendor's own privacy terms cover that, and this statement does not. Choose which agents to enable with that in mind. Player agents are off until a GM turns them on.
 
 ## Tool packs
 

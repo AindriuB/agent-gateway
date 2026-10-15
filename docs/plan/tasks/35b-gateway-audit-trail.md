@@ -7,6 +7,8 @@
 - gateway/src/audit/**
 - gateway/test/audit/**
 - docs/audit-trail.md
+- docs/security.md (a new audit-trail section and links to `docs/audit-trail.md` only; added by 43 Amendment 1)
+- docs/privacy.md (the audit-trail and verbose-mode additions only; added by 43 Amendment 1)
 - gateway/src/store/migrations/NNN-audit-trail.ts (new file; next free number at merge)
 - gateway/src/store/migrations/index.ts (insertions only: one import, one array entry)
 - gateway/src/mcp/session.ts (insertions only: an optional `audit` and `client` option, and one record call at each return point of the call handler; no change to existing logic, messages or order)
@@ -69,6 +71,7 @@ storage. That rule matters most in server mode, where the gateway operator may n
 - [ ] Terminal-safe CLI: `gateway/test/audit/cli.test.ts` seeds entries whose `tool`, `session_id`, `user_id`, `world_id` and `client_id` contain ESC `[2J`, `\r`, `\n`, U+2028 and a 200-character string. It runs the built CLI and asserts stdout has no byte in `\x00-\x09\x0b-\x1f\x7f-\x9f` and no U+2028 or U+2029, has exactly one `\n` per entry, and caps every field at 80 characters, as `safeText` does. `--since`, `--session`, `--user` and `--limit` filter as documented.
 - [ ] Verbose mode: with it on, a stdio session stores `args_json` (capped at 4 KiB, marked when truncated) and an OAuth session stores none. Startup with verbose plus `--public-url` exits non-zero with a message naming both options, and the same holds with `--server-mode` if 36 has landed. The default config has verbose off (a test asserts it).
 - [ ] `docs/audit-trail.md` covers what is recorded and never recorded, the "not a security boundary, not authoritative; see the module audit (19)" statement, the brute-force caveat on `args_hash`, the hash-chain limits (tail truncation, anchor rewrite), retention and the cap, CLI usage, and the verbose-mode privacy trade-off with why it is refused in remote and server mode.
+- [ ] User docs (moved here from 43 by 43 Amendment 1, 2026-10-15): docs/security.md and docs/privacy.md link `docs/audit-trail.md`; docs/privacy.md says what `audit_entries` stores (metadata only by default; `args_json` only in verbose mode, never results) and its retention; both describe verbose mode as off by default and refused with `--public-url` or `--server-mode`. `grep -n "audit-trail.md" docs/security.md docs/privacy.md` matches in both files.
 - [ ] The diff to `gateway/src/mcp/session.ts`, `gateway/src/link/server.ts`, `gateway/src/http/**`, `gateway/src/oauth/**`, `gateway/src/app.ts` and `gateway/src/bin/cli.ts` adds lines only. `git diff --stat` and `git diff` for those paths show no removed lines, other than a line that has to be split to add an argument, which the PR names. `gateway/test/mcp/**`, `gateway/test/routing/**`, `gateway/test/link/**` and `gateway/test/http/**` pass unchanged.
 - [ ] `npm run verify` passes.
 
@@ -78,6 +81,6 @@ storage. That rule matters most in server mode, where the gateway operator may n
 - Storing results, document content or remote IP addresses, in any mode.
 - JSON or CSV export from the CLI.
 - The consent page, grant listing and in-Foundry revocation UI (36); this task only records the events.
-- Carrying the trail into `docs/security.md` and `docs/privacy.md` (43 links to `docs/audit-trail.md`).
+- Rewriting other sections of `docs/security.md` and `docs/privacy.md` (43's); this task only adds the audit-trail and verbose-mode text and links.
 - Policy enforcement or rate limiting based on the trail (module, 13 and 14; self-protection limit, 34).
 - Any change to binding, routing, refusal messages or error codes.
