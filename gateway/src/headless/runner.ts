@@ -17,6 +17,8 @@ export const PAIR_WAIT_MS = 30_000;
 /** How long `stop()` waits for in-flight work (a launch, a login step, a close) before moving on. */
 export const STOP_WAIT_MS = 3_000;
 const STATUS_TIMEOUT_MS = 10_000;
+/** Longest a single page call in the poll path may take before the session counts as dead. */
+const PAGE_CALL_MS = 20_000;
 const JOIN_TIMEOUT_MS = 120_000;
 
 /** The only paths the runner itself requests. */
@@ -72,6 +74,9 @@ function bounded<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
   });
 }
 
+/** A page call hit its bound: the page is hung, so the session is dead. */
+class PageTimeout extends Error {}
+
 /** Thrown inside a session step when `stop()` (or a newer session) has taken over. */
 class Abandoned extends Error {}
 
@@ -111,6 +116,8 @@ export interface RunnerOptions {
   now?: () => number;
   pollMs?: number;
   linkGraceMs?: number;
+  /** Bound on one page call in the poll path (tests shorten it). */
+  pageCallMs?: number;
   pairWaitMs?: number;
   setInterval?: (fn: () => void, ms: number) => unknown;
   clearInterval?: (h: unknown) => void;
@@ -207,10 +214,13 @@ export class HeadlessRunner {
     if (!page) return;
     let v: unknown;
     try {
-      v = await page.evaluate(
-        `(() => { try { return sessionStorage.getItem(${JSON.stringify(HEADLESS_LINK_KEY)}); } catch { return null; } })()`,
+      v = await this.pageCall(() =>
+        page.evaluate(
+          `(() => { try { return sessionStorage.getItem(${JSON.stringify(HEADLESS_LINK_KEY)}); } catch { return null; } })()`,
+        ),
       );
-    } catch {
+    } catch (err) {
+      if (err instanceof PageTimeout) await this.dropHungBrowser(page);
       return;
     }
     if (v !== 'replaced' || this.stopped || this.browser?.page !== page) return;
@@ -220,6 +230,28 @@ export class HeadlessRunner {
     this.o.log(
       `agent user ${safeText(this.o.agent.userId)} was taken by another client; the runner is paused`,
     );
+  }
+
+  /** Bound one page call; a hung page rejects with `PageTimeout`. */
+  private pageCall<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(
+        () => reject(new PageTimeout('page call timed out')),
+        this.o.pageCallMs ?? PAGE_CALL_MS,
+      );
+      t.unref();
+      fn().then(
+        (v) => (clearTimeout(t), resolve(v)),
+        (e: unknown) => (clearTimeout(t), reject(e as Error)),
+      );
+    });
+  }
+
+  /** A hung page is a dead session: drop the handle (closing it) so the next poll recovers. */
+  private async dropHungBrowser(page: RunnerPage): Promise<void> {
+    if (this.browser?.page !== page || this.stopped) return;
+    this.o.log('headless runner: the browser page stopped responding; closing it');
+    await this.closeBrowser();
   }
 
   /** One poll, run to completion; overlapping calls share the running one. */
@@ -423,17 +455,19 @@ export class HeadlessRunner {
     }
     this.o.log(`minted an invite for headless agent ${this.who()} (redacted)`);
     try {
-      await page.evaluate(OPEN_PAIRING_SCRIPT);
-      await page.waitForSelector(SELECTORS.pairingCode, { timeout: 15_000 });
-      await page.fill(SELECTORS.pairingGatewayUrl, this.o.gatewayLinkUrl);
+      await this.pageCall(() => page.evaluate(OPEN_PAIRING_SCRIPT));
+      await this.pageCall(() => page.waitForSelector(SELECTORS.pairingCode, { timeout: 15_000 }));
+      await this.pageCall(() => page.fill(SELECTORS.pairingGatewayUrl, this.o.gatewayLinkUrl));
       try {
-        await page.fill(SELECTORS.pairingCode, code);
-      } catch {
+        await this.pageCall(() => page.fill(SELECTORS.pairingCode, code));
+      } catch (err) {
+        if (err instanceof PageTimeout) throw err;
         throw new Error('could not type the invite code');
       }
-      await page.click(SELECTORS.pairingSubmit);
+      await this.pageCall(() => page.click(SELECTORS.pairingSubmit));
     } catch (err) {
       this.o.invites.dropAgent(agent.worldId, agent.userId);
+      if (err instanceof PageTimeout && live()) await this.dropHungBrowser(page);
       // Stopped, replaced or dead mid-invite: the browser's own close is the story, not this.
       if (!live()) return;
       this.o.log(

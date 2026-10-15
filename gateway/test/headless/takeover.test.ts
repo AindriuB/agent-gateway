@@ -107,6 +107,16 @@ describe('headless settings in the takeover comparison', () => {
     const b = gateway(shared, httpPort, 'hunter2', []);
     await b.app.start();
     await until(() => b.launcher.launches.length > 0, 15_000, 'B starts its agent');
+    // The primary names the headless difference in both texts: the refusal log (server.ts refuse
+    // site) and the step-down reason; each passes mineIsCaller=false.
+    expect(aLines.some((l) => /^relay refused: .*headless agent settings differ/.test(l))).toBe(
+      true,
+    );
+    await until(
+      () => aLines.some((l) => /^stepping down: .*headless agent settings differ/.test(l)),
+      10_000,
+      'A reports why it stepped down',
+    );
   }, 30_000);
 
   it('a newer gateway with identical headless settings still relays', async () => {

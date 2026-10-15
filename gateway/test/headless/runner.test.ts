@@ -62,6 +62,7 @@ class Launcher implements BrowserLauncher {
   /** When set, goto() / close() never settle. */
   hangGoto = false;
   hangClose = false;
+  hangEvaluate = false;
   async launch(req: { profileDir: string; noSandbox: boolean }): Promise<RunnerBrowser> {
     if (this.launchError) throw this.launchError;
     this.launches.push(req.profileDir);
@@ -87,7 +88,11 @@ class Launcher implements BrowserLauncher {
         fill: async (_s: string, v: string) => void this.filled.push(v),
         click: async () => undefined,
         evaluate: async (script: string) =>
-          script.includes(HEADLESS_LINK_KEY) ? this.linkState : undefined,
+          this.hangEvaluate
+            ? new Promise(() => undefined)
+            : script.includes(HEADLESS_LINK_KEY)
+              ? this.linkState
+              : undefined,
         waitForGameReady: async () => undefined,
       },
       close: async () => {
@@ -105,6 +110,7 @@ async function make(
     stateDir?: string;
     fetch?: typeof fetch;
     noSandbox?: boolean;
+    pageCallMs?: number;
   } = {},
 ) {
   const foundry = await stubFoundry();
@@ -123,6 +129,7 @@ async function make(
     ...(over.now ? { now: over.now } : {}),
     ...(over.fetch ? { fetch: over.fetch } : {}),
     ...(over.noSandbox !== undefined ? { noSandbox: over.noSandbox } : {}),
+    ...(over.pageCallMs ? { pageCallMs: over.pageCallMs } : {}),
     sleep: async () => undefined,
     linkGraceMs: 1,
     pairWaitMs: 1,
@@ -424,6 +431,31 @@ describe('HeadlessRunner dead handles and bounded stop', () => {
     expect(t.launcher.launches).toHaveLength(2);
     expect(t.logs.filter((l) => l.includes('closed unexpectedly'))).toHaveLength(1);
   });
+
+  it('a page whose evaluate never settles is dropped, and the browser closes when the world goes down', async () => {
+    const t = await make({ pageCallMs: 50 });
+    t.runner.start();
+    await t.runner.tick();
+    t.launcher.hangEvaluate = true;
+    await t.runner.tick();
+    expect(t.launcher.closes).toBe(1);
+    expect(t.logs.join('\n')).toContain('stopped responding');
+    // The next poll recovers with a new browser; then the world goes down.
+    t.launcher.hangEvaluate = true;
+    await t.runner.tick();
+    expect(t.launcher.launches).toHaveLength(2);
+    t.foundry.active = false;
+    await t.runner.tick();
+    expect(t.launcher.closes).toBe(2);
+  }, 10_000);
+
+  it('a hung evaluate while entering the invite drops the browser', async () => {
+    const t = await make({ pageCallMs: 50, linked: () => false });
+    t.launcher.hangEvaluate = true;
+    t.runner.start();
+    await t.runner.tick();
+    expect(t.launcher.closes).toBe(1);
+  }, 10_000);
 
   it('stop() returns within the bound while a launch never settles', async () => {
     const t = await make();

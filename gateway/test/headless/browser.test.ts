@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { explainLaunchError, findBrowser, launchOptions } from '../../src/headless/browser.js';
+import {
+  explainLaunchError,
+  findBrowser,
+  launchOptions,
+  preparePage,
+} from '../../src/headless/browser.js';
 
 const has = (...paths: string[]) => ({
   platform: 'linux' as const,
@@ -99,5 +104,36 @@ describe('explainLaunchError', () => {
 
   it('keeps a non-sandbox failure with the sandbox on', () => {
     expect(explainLaunchError(new Error('Target closed'), true).message).toBe('Target closed');
+  });
+});
+
+describe('preparePage', () => {
+  const ctx = (over: Partial<Parameters<typeof preparePage>[0]>) => {
+    const state = { closed: 0 };
+    return {
+      state,
+      ctx: {
+        addInitScript: async () => undefined,
+        pages: () => [] as string[],
+        newPage: async () => 'page',
+        close: async () => void state.closed++,
+        ...over,
+      },
+    };
+  };
+
+  it('returns the first page without closing', async () => {
+    const c = ctx({ pages: () => ['p0'] });
+    expect(await preparePage(c.ctx, 's')).toBe('p0');
+    expect(c.state.closed).toBe(0);
+  });
+
+  it.each([
+    ['addInitScript', { addInitScript: async () => Promise.reject(new Error('boom')) }],
+    ['newPage', { newPage: async () => Promise.reject(new Error('boom')) }],
+  ])('closes the context when %s throws', async (_n, over) => {
+    const c = ctx(over);
+    await expect(preparePage(c.ctx, 's')).rejects.toThrow('boom');
+    expect(c.state.closed).toBe(1);
   });
 });

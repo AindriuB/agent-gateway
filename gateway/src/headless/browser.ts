@@ -147,6 +147,31 @@ export function explainLaunchError(err: unknown, sandboxOn: boolean): Error {
   return err instanceof Error ? err : new Error(msg);
 }
 
+/** The slice of a Playwright context that `preparePage` uses. */
+export interface PreparableContext<P> {
+  addInitScript(script: string): Promise<unknown>;
+  pages(): P[];
+  newPage(): Promise<P>;
+  close(): Promise<void>;
+}
+
+/**
+ * Install the init script and pick the page. A failure after the launch closes the context, or it
+ * would keep the profile lock until the process exits.
+ */
+export async function preparePage<P>(
+  context: PreparableContext<P>,
+  initScript: string,
+): Promise<P> {
+  try {
+    await context.addInitScript(initScript);
+    return context.pages()[0] ?? (await context.newPage());
+  } catch (err) {
+    await context.close().catch(() => undefined);
+    throw err;
+  }
+}
+
 /** The real launcher: Chromium through `playwright-core`, one persistent context per profile dir. */
 export function playwrightLauncher(executablePath: string): BrowserLauncher {
   return {
@@ -168,8 +193,7 @@ export function playwrightLauncher(executablePath: string): BrowserLauncher {
         .catch((err: unknown) => {
           throw explainLaunchError(err, !req.noSandbox);
         });
-      await context.addInitScript(req.initScript);
-      const page = context.pages()[0] ?? (await context.newPage());
+      const page = await preparePage(context, req.initScript);
       const wrapped: RunnerPage = {
         goto: async (url, opts) => void (await page.goto(url, opts)),
         url: () => page.url(),
