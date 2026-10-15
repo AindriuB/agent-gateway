@@ -54,3 +54,10 @@ Reviewed HEAD: 9f86891.
 Orchestrator scope notes (round 1):
 - Accepted as in scope: the intro paragraph in docs/compatibility.md:11-17, the header comment in scripts/conformance.sh:2, and the shared `serve` start line in scripts/conformance.sh:44, which passes the code file and which the OAuth mode needs.
 - Residual for task 43: docs/releasing.md:20 still quotes the old final line `conformance: ok (inspector <v>, stdio, http)`. That file is outside 40's Owns.
+
+## Attempt 1 — failed
+Verify on 3e365c2 (2026-10-15). The result was FAIL, with KIND environment. The failure is not in the branch, so this does not need another fanout.
+- These passed: build, vitest (4776 tests), slow (2227 tests), and `npm run test:conformance` ("conformance: ok (inspector 2.10.1, stdio, http, oauth)", 9 s).
+- `npm run test:scripts` failed. The pack-module, build-claude-plugin and ChatGPT plugin package suites assert that the zip succeeds, and every one gets "pack-module: zip is not installed": the host has no `zip` binary. The claude plugin `validate --strict` test also failed in one suite and was skipped in another ("claude CLI not found").
+- Reviewer: APPROVE. The "passing run in the PR" item is met by quoting the conformance line above.
+- Next: install `zip` on the host (needs sudo), then re-run `npm run test:scripts`.
