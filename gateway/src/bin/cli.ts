@@ -564,6 +564,7 @@ function main(): void {
   const shutdown = () => void app.stop().finally(() => process.exit(0));
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+  process.once('SIGHUP', shutdown);
   // A server-mode gateway runs in a container or service whose stdin may be closed.
   if (!config.serverMode) process.stdin.once('end', shutdown);
   app.start().catch((err: unknown) =>

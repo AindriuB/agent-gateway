@@ -118,9 +118,9 @@ export function findBrowser(stateDir: string, deps: DiscoveryDeps = {}): FoundBr
 /**
  * The options handed to `launchPersistentContext`. Playwright adds `--no-sandbox` unless
  * `chromiumSandbox: true` is passed, and installs its own SIGINT/SIGTERM/SIGHUP handlers that kill
- * the browser and exit the process. The sandbox is set explicitly; SIGINT and SIGTERM are left to
- * cli.ts, which handles both. SIGHUP stays at Playwright's default (on): nothing else handles it, so
- * without Playwright's handler a closed terminal would orphan a logged-in Chromium.
+ * the browser and exit the process. The sandbox is set explicitly; all three signal handlers are
+ * turned off because cli.ts handles SIGINT, SIGTERM and SIGHUP with a graceful `app.stop()`, which
+ * closes the browser. Only the gateway decides what a signal does.
  */
 export function launchOptions(executablePath: string, req: Pick<LaunchRequest, 'noSandbox'>) {
   return {
@@ -130,6 +130,7 @@ export function launchOptions(executablePath: string, req: Pick<LaunchRequest, '
     chromiumSandbox: !req.noSandbox,
     handleSIGINT: false,
     handleSIGTERM: false,
+    handleSIGHUP: false,
   };
 }
 

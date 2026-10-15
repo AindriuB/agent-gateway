@@ -372,15 +372,14 @@ export class HeadlessRunner {
         live();
         await page.selectOption(SELECTORS.joinUser, { value: agent.userId });
         live();
-        if (agent.password) {
-          // Playwright puts the filled value in its error text: log a fixed message instead.
-          try {
-            await page.fill(SELECTORS.joinPassword, agent.password);
-          } catch {
-            throw new Error('could not type the password');
-          }
-          live();
+        // Config requires headlessPassword, so the password is always set.
+        // Playwright puts the filled value in its error text: log a fixed message instead.
+        try {
+          await page.fill(SELECTORS.joinPassword, agent.password);
+        } catch {
+          throw new Error('could not type the password');
         }
+        live();
         await page.click(SELECTORS.joinButton);
         live();
       }

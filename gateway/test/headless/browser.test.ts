@@ -74,10 +74,9 @@ describe('launchOptions', () => {
     expect(launchOptions('/x/chrome', { noSandbox }).chromiumSandbox).toBe(sandbox);
   });
 
-  it('leaves SIGINT and SIGTERM to cli.ts but keeps Playwright SIGHUP handling', () => {
+  it('leaves SIGINT, SIGTERM and SIGHUP to cli.ts', () => {
     const o = launchOptions('/x/chrome', { noSandbox: false });
-    expect([o.handleSIGINT, o.handleSIGTERM]).toEqual([false, false]);
-    expect('handleSIGHUP' in o).toBe(false);
+    expect([o.handleSIGINT, o.handleSIGTERM, o.handleSIGHUP]).toEqual([false, false, false]);
   });
 });
 
