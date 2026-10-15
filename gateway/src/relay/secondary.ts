@@ -7,6 +7,7 @@ import { clearClaim, readClaim } from './claim.js';
 import {
   RELAY_BACKOFF_CAP_MS,
   RELAY_BACKOFF_START_MS,
+  RELAY_CAP_HEADLESS,
   RELAY_CLAIM_SLACK_MS,
   RELAY_CONNECT_ATTEMPTS,
   RELAY_TAKEOVER_DEADLINE_MS,
@@ -48,6 +49,9 @@ export interface SecondaryOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+const TOO_OLD =
+  'primary too old, headless agent not running: the gateway holding the link port does not understand headless settings; upgrade or stop it';
+
 const describe = (s: UserSelector | undefined) =>
   `world=${safeText(s?.world || '(any)')} user=${safeText(s?.user || '(any)')}`;
 
@@ -70,6 +74,7 @@ export class RelaySecondary {
   /** A demoted primary has a live client session to keep, so it never settles for degraded. */
   private demoted = false;
   private watching = false;
+  private standbyReason = '';
 
   constructor(private readonly opts: SecondaryOptions) {
     this.proxy = opts.proxy ?? new StdioRelayProxy(opts.input, opts.output, opts.log);
@@ -168,6 +173,7 @@ export class RelaySecondary {
 
   private async serveStandby(reason: string): Promise<void> {
     this.role = 'standby';
+    this.standbyReason = reason;
     this.opts.log(`standby: ${reason}`);
     await this.serveLocal((this.opts.createStandby ?? this.opts.createDegraded)(reason));
     this.opts.onSettled?.('standby', reason);
@@ -202,6 +208,11 @@ export class RelaySecondary {
         void b.close();
         if (this.stopped) return;
         const r = await connectRelay(this.opts);
+        if (r.kind === 'ok' && this.tooOld(r.caps)) {
+          r.upstream.close();
+          await this.refreshStandby(TOO_OLD);
+          continue;
+        }
         if (r.kind === 'ok') {
           this.role = 'relay';
           await this.leaveStandby(r.upstream);
@@ -212,6 +223,17 @@ export class RelaySecondary {
     } finally {
       this.watching = false;
     }
+  }
+
+  /** The standby's reason went stale (the port holder changed): serve and report the new one, once. */
+  private async refreshStandby(reason: string): Promise<void> {
+    if (this.stopped || this.role !== 'standby' || this.standbyReason === reason) return;
+    this.standbyReason = reason;
+    this.opts.log(`standby: ${reason}`);
+    const old = this.local;
+    await this.serveLocal((this.opts.createStandby ?? this.opts.createDegraded)(reason));
+    await old?.close();
+    this.opts.onSettled?.('standby', reason);
   }
 
   private async leaveStandby(next: Upstream): Promise<void> {
@@ -249,6 +271,10 @@ export class RelaySecondary {
         void b.close();
       }
       const r = await connectRelay(this.opts);
+      if (r.kind === 'ok' && this.tooOld(r.caps)) {
+        r.upstream.close();
+        return { kind: 'standby', reason: TOO_OLD };
+      }
       if (r.kind === 'ok') {
         this.role = 'relay';
         return {
@@ -301,6 +327,11 @@ export class RelaySecondary {
     }
     const reason = `could not relay to the gateway holding link port ${this.opts.linkPort} after ${RELAY_CONNECT_ATTEMPTS} attempts: ${last}`;
     return this.blocked(reason);
+  }
+
+  /** A caller with headless settings must not relay to a primary that would ignore them. */
+  private tooOld(caps: readonly string[]): boolean {
+    return this.opts.config.headless !== '' && !caps.includes(RELAY_CAP_HEADLESS);
   }
 
   /** A primary is handing the link port to another instance right now: leave the bind to it. */

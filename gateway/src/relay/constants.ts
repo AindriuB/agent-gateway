@@ -1,5 +1,7 @@
 /** Relay wire version, sent as `relay` in every handshake line. */
 export const RELAY_VERSION = 1;
+/** Capability a primary advertises (`caps`) when it understands `RelayConfig.headless`. */
+export const RELAY_CAP_HEADLESS = 'headless';
 /** The primary must receive a secondary's handshake line within this long. */
 export const RELAY_HANDSHAKE_MS = 2000;
 /** Longest single line (one JSON-RPC message) either end accepts. */

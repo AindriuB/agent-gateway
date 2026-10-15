@@ -6,6 +6,7 @@ import {
   MAX_RELAY_HANDSHAKE_BYTES,
   MAX_RELAY_LINE_BYTES,
   MAX_RELAY_SESSIONS,
+  RELAY_CAP_HEADLESS,
   RELAY_HANDSHAKE_MS,
   RELAY_VERSION,
   STEPDOWN_GRACE_MS,
@@ -196,7 +197,10 @@ export class RelayServer {
   }
 
   private refuse(socket: Socket, code: RelayRefusal, extra: object = {}): void {
-    socket.end(`${JSON.stringify({ relay: RELAY_VERSION, ok: false, code, ...extra })}\n`);
+    // Capabilities are only told to an authenticated peer.
+    const caps =
+      code === 'RELAY_AUTH' || code === 'RELAY_PROTOCOL' ? {} : { caps: [RELAY_CAP_HEADLESS] };
+    socket.end(`${JSON.stringify({ relay: RELAY_VERSION, ok: false, code, ...caps, ...extra })}\n`);
     // A peer that never closes its side must not hold a pre-auth slot.
     const grace = setTimeout(() => socket.destroy(), REFUSAL_GRACE_MS);
     grace.unref();
@@ -350,7 +354,9 @@ export class RelayServer {
       this.opts.log(`relay session ${n} closed`);
     };
     socket.once('close', end);
-    socket.write(`${JSON.stringify({ relay: RELAY_VERSION, ok: true })}\n`);
+    socket.write(
+      `${JSON.stringify({ relay: RELAY_VERSION, ok: true, caps: [RELAY_CAP_HEADLESS] })}\n`,
+    );
     this.opts.log(`relay session ${n} opened`);
     server.connect(transport).then(
       () => socket.resume(),
