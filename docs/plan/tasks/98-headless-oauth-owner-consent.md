@@ -81,3 +81,12 @@ Reviewed HEAD: 6353732 (code review CLEAN on the focus points; the agent-pairing
   route: implementer
 - [P3, optional] gateway/src/oauth/consent/index.ts:300-302: when the target is an agent with an owner, a second `activePairedUsers(world)` query fetches the agent's name, and `.find` returns the OLDEST pairing while resolve uses the newest (`.at(-1)`). Reuse the row resolve already found: one fewer query, and the dialog names the agent's current pairing.
   route: implementer
+
+Orchestrator scope note (round 1): accepted. gateway/test/app/public.test.ts:189 gains an insertion-only app-level test. That file is outside Owns, but round 1 asked for a test through `createApp` with the real ConsentPages, and it can only live there. Mutation-proven: removing the app.ts wiring fails it.
+
+## Review round 2 — findings
+Reviewed HEAD: d23ea5e. Round 1 is FIXED: wiring test, Binding bullet, fail-closed guard and newest-pairing name, each mutation-proven.
+
+- [P3] README.md:39: "a stored agent added with `--owner`, which approves the consent code in its own Foundry window" says the agent approves in its own window. It is the OWNER who receives and approves the code in the owner's Foundry window (decision c; headless.md section 3). Reword it.
+  route: implementer
+- Pending the orchestrator's manual run (decision d): the "RESULT PENDING" row in headless.md section 3, the "every row was run" lead-ins at :108 and :242, and security.md:80's "lists each combination that was run" / "none of the combinations run [with a public URL] reached it". These get updated from the run's observed result in a later round, not now.
