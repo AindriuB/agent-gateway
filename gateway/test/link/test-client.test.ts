@@ -21,7 +21,8 @@ describe('TestClient fail-fast on a lost pairing race', () => {
   const clients: TestClient[] = [];
   afterEach(async () => {
     clients.splice(0).forEach((c) => c.ws.terminate());
-    await h?.server.close?.();
+    await h?.server.close();
+    h?.store.close();
     h = undefined;
   });
 
@@ -34,7 +35,12 @@ describe('TestClient fail-fast on a lost pairing race', () => {
     a.send(hello({ kind: 'pairingCode', code }, { userId: 'a' }));
     await a.next('welcome');
     b.send(hello({ kind: 'pairingCode', code }, { userId: 'b' }));
-    const err = await within(b.next('welcome').then(() => null, (e: Error) => e));
+    const err = await within(
+      b.next('welcome').then(
+        () => null,
+        (e: Error) => e,
+      ),
+    );
     expect(err?.message).toMatch(/closed/);
     expect(err?.message).toMatch(/reject/);
   });
