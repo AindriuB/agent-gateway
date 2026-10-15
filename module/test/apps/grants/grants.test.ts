@@ -233,6 +233,28 @@ describe('the grants app', () => {
     expect(content).not.toContain('<img');
   });
 
+  it('names the headless agent in the prompt, escaped, and keeps the plain prompt without it', async () => {
+    const prompt = vi.fn(async () => undefined);
+    const mod = await load({});
+    (globalThis as any).foundry.applications.api.DialogV2 = { prompt };
+    const m = {
+      type: 'consentCode',
+      code: '12345678',
+      clientName: 'C',
+      scopes: ['read'],
+      expiresAt: 1,
+    } as const;
+    mod.showConsentCode({ ...m, forAgent: { userId: 'a1', name: '<b>Bot</b>' } });
+    const withAgent = (prompt.mock.calls[0] as any)[0].content as string;
+    expect(withAgent).toContain('AGENT_GATEWAY.Consent.promptAgent');
+    expect(withAgent).not.toContain('<b>');
+    expect(withAgent).toContain('&#60;b&#62;Bot');
+    mod.showConsentCode({ ...m });
+    const plain = (prompt.mock.calls[1] as any)[0].content as string;
+    expect(plain).toContain('AGENT_GATEWAY.Consent.prompt:');
+    expect(plain).not.toContain('promptAgent');
+  });
+
   it('has every string it uses in lang/en.json', () => {
     const lang = JSON.parse(readFileSync(resolve(__dirname, '../../../../lang/en.json'), 'utf8'));
     const flat = (o: any, p = ''): string[] =>

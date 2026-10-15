@@ -5,6 +5,7 @@ import { loadOrCreateToken } from '../../src/http/index.js';
 import { openStore } from '../../src/store/index.js';
 import { ORIGIN, TestClient, hello } from '../link/helpers.js';
 import { freePort, tempState, until } from '../relay/harness.js';
+import { openConsent, postConsent, type ConsentRig } from '../oauth/consent/rig.js';
 
 const PUBLIC = 'https://gw.example.com';
 
@@ -68,6 +69,7 @@ describe('a public gateway', () => {
     };
     const pairingNotices = () => out.split('\n').filter((l) => l.includes('"logger":"pairing"'));
     return {
+      db: state.db,
       linkPort,
       httpPort,
       stdin,
@@ -182,5 +184,31 @@ describe('a public gateway', () => {
     initialize(t.stdin);
     await new Promise((res) => setTimeout(res, 200));
     expect(t.out()).toBe('');
+  });
+
+  it("sends a headless agent's consent code to its owner, through the real consent pages (task 98)", async () => {
+    const t = await boot();
+    const owner = await t.pair(t.codeOf(t.codeLines()[0]!), 'owner');
+    await owner.next('welcome');
+    await until(() => t.codeLines().length === 2, 1000, 'a new code line');
+    const bot = await t.pair(t.codeOf(t.codeLines()[1]!), 'bot');
+    await bot.next('welcome');
+    // The agent row appears after pairing; the lookup reads the store when the code is sent.
+    const store = openStore(t.db);
+    store.headless.add({
+      name: 'bot',
+      foundryUrl: 'http://localhost:30000',
+      worldId: 'w1',
+      userId: 'bot',
+      ownerUserId: 'owner',
+    });
+    store.close();
+    const rig = { port: t.httpPort } as ConsentRig;
+    const page = await openConsent(rig);
+    await postConsent(rig, page, { action: 'send', world: 'w1', user: 'bot', scope: 'read' });
+    const frame = (await owner.next('consentCode')) as { forAgent?: { userId: string } };
+    expect(frame.forAgent?.userId).toBe('bot');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(bot.messages.filter((m) => m.type === 'consentCode')).toHaveLength(0);
   });
 });

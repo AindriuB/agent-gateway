@@ -920,6 +920,7 @@ export function createApp(config: Config, deps: AppDeps): App {
             ...(config.privacyUrl ? { privacyUrl: config.privacyUrl } : {}),
             ...(config.sourceUrl ? { sourceUrl: config.sourceUrl } : {}),
             ...(deps.oauthConsent ? { consent: deps.oauthConsent } : {}),
+            headless: { isAgent: isActiveAgent, ownerOf: headlessOwner },
           })
         : undefined;
       const lim = deps.httpLimits ?? {};

@@ -220,6 +220,8 @@ export const ConsentCodeMessage = z.strictObject({
   clientName: z.string().max(200),
   scopes: z.array(GrantScope).max(4),
   expiresAt: z.number().int().min(0),
+  /** Set when the code is for a headless agent and goes to its owner (task 98). */
+  forAgent: z.strictObject({ userId: z.string().max(200), name: z.string().max(200) }).optional(),
 });
 
 /** Sent to a pending server-mode redeemer: post a whispered, flagged chat message carrying this nonce. */

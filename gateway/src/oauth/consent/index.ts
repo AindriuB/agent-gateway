@@ -53,7 +53,9 @@ interface Pending extends ConsentSeed {
   sends: number;
   wrong: number;
   /** The exact pairing the code was sent over; it must still be active when the code is entered. */
-  target?: { worldId: string; userId: string; pairingId: string };
+  target?: { worldId: string; userId: string; pairingId: string; userName?: string };
+  /** The pairing of the connection that received the code (the owner's, for a headless agent). */
+  receiverPairingId?: string;
   chosen: Scope[];
   codeHash?: Buffer;
   codeExpiresAt: number;
@@ -65,9 +67,24 @@ export interface ConsentWiring {
     get(
       worldId: string,
       userId: string,
-    ): { send(data: string): void; closed?: boolean; agentId?: string } | undefined;
+    ):
+      | {
+          send(data: string): void;
+          closed?: boolean;
+          agentId?: string;
+          info?: { headless?: boolean };
+        }
+      | undefined;
   };
   failures: FailureWindows;
+  /** Headless agents (task 98): their consent codes go to the owner, never to the agent. */
+  headless?: HeadlessLookup;
+}
+
+/** Who is a headless agent, and which Foundry user owns it (`headless add --owner`). */
+export interface HeadlessLookup {
+  isAgent(worldId: string, userId: string): boolean;
+  ownerOf(worldId: string, userId: string): string | undefined;
 }
 
 export interface ConsentPagesOptions {
@@ -96,6 +113,10 @@ function send(
 
 /** The origin of the request's registered (already exact-matched) redirect URI. */
 const originOf = (p: { redirectUri: string }): string => new URL(p.redirectUri).origin;
+
+/** Placeholder id for lookups when nothing was delivered; matches no pairing. */
+const NO_PAIRING = 'no-pairing';
+const NO_HASH = sha(NO_PAIRING);
 
 /** The consent page: world, Foundry user and scopes, then a one-time code shown only in that user's client. */
 export class ConsentPages {
@@ -250,6 +271,7 @@ export class ConsentPages {
     p.target = this.resolve(form.get('world') ?? '', form.get('user') ?? '');
     p.codeHash = undefined;
     p.codeExpiresAt = 0;
+    p.receiverPairingId = undefined;
     if (p.target) {
       const code = String(randomInt(0, 10 ** CODE_DIGITS)).padStart(CODE_DIGITS, '0');
       p.codeHash = sha(code);
@@ -268,20 +290,56 @@ export class ConsentPages {
     const paired = this.o.repo.activePairedUsers(w);
     // Newest pairing of that user wins when a user holds more than one.
     const byId = paired.filter((r) => r.userId === u).at(-1);
-    if (byId) return { worldId: w, userId: byId.userId, pairingId: byId.pairingId };
+    if (byId)
+      return {
+        worldId: w,
+        userId: byId.userId,
+        pairingId: byId.pairingId,
+        userName: byId.userName,
+      };
     const named = paired.filter((r) => r.userName !== '' && r.userName === u);
     return named.length === 1 && named[0]
-      ? { worldId: w, userId: named[0].userId, pairingId: named[0].pairingId }
+      ? {
+          worldId: w,
+          userId: named[0].userId,
+          pairingId: named[0].pairingId,
+          userName: named[0].userName,
+        }
       : undefined;
   }
 
-  /** The code goes to the chosen user's own link connection and nowhere else. */
+  /**
+   * The code goes to the chosen user's own link connection and nowhere else. A headless agent's
+   * code goes to its owner's connection instead, or nowhere (no owner, owner offline, flag agent).
+   */
   private deliver(p: Pending, code: string): void {
     const t = p.target;
-    const conn = t ? this.wiring?.registry.get(t.worldId, t.userId) : undefined;
+    if (!t) return;
+    const h = this.wiring?.headless;
+    const agent = h?.isAgent(t.worldId, t.userId) === true;
+    let forAgent: { userId: string; name: string } | undefined;
+    let to = t.userId;
+    if (agent) {
+      const owner = h?.ownerOf(t.worldId, t.userId);
+      if (!owner || owner === t.userId) return;
+      to = owner;
+      forAgent = { userId: t.userId, name: t.userName || t.userId };
+    }
+    const conn = this.wiring?.registry.get(t.worldId, to);
     if (!conn || conn.closed) return;
-    // Bind to the pairing of the connection that actually receives the code.
-    if (t && conn.agentId) t.pairingId = conn.agentId;
+    // Fail closed: a headless connection never receives a code, whatever the lookup said.
+    if (conn.info?.headless) return;
+    // The receiving connection may outlive its revoked pairing until the sweep closes it, so
+    // check the store now; a code nobody entitled can read is never created.
+    const receiver = agent ? conn.agentId : (conn.agentId ?? t.pairingId);
+    if (!receiver || !this.o.repo.pairingActive(receiver)) {
+      p.codeHash = undefined;
+      p.codeExpiresAt = 0;
+      return;
+    }
+    p.receiverPairingId = receiver;
+    // Bind to the pairing of the connection that actually receives the code (the target's own).
+    if (!agent) t.pairingId = receiver;
     try {
       conn.send(
         JSON.stringify({
@@ -290,6 +348,7 @@ export class ConsentPages {
           clientName: p.clientName,
           scopes: p.chosen,
           expiresAt: p.codeExpiresAt,
+          ...(forAgent ? { forAgent } : {}),
         }),
       );
     } catch {
@@ -310,15 +369,22 @@ export class ConsentPages {
     }
     const typed = (form.get('code') ?? '').replace(/[\s-]/g, '');
     // The exact pairing the code was sent over may have been revoked or replaced since.
-    const stillPaired = p.target !== undefined && this.o.repo.pairingActive(p.target.pairingId);
+    // So may the pairing of the connection that received it (the owner's, for a headless agent).
+    // Every lookup and the hash comparison run whatever the target, with placeholders where
+    // nothing was delivered, so a wrong code costs the same for every kind of target.
+    const targetPaired = this.o.repo.pairingActive(p.target?.pairingId ?? NO_PAIRING);
+    const receiverPaired = this.o.repo.pairingActive(p.receiverPairingId ?? NO_PAIRING);
+    const hashMatches = sameBytes(sha(typed), p.codeHash ?? NO_HASH);
     const ok =
-      stillPaired &&
+      targetPaired &&
+      receiverPaired &&
+      p.receiverPairingId !== undefined &&
+      hashMatches &&
       typed.length > 0 &&
       typed.length <= 32 &&
       p.codeHash !== undefined &&
       p.target !== undefined &&
-      p.codeExpiresAt > this.o.now() &&
-      sameBytes(sha(typed), p.codeHash);
+      p.codeExpiresAt > this.o.now();
     if (!ok || !p.target) {
       p.wrong++;
       this.failures.record(client);

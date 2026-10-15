@@ -99,6 +99,25 @@ describe('parseLinkMessage', () => {
   });
 });
 
+describe('consentCode forAgent (task 98)', () => {
+  const base = {
+    type: 'consentCode',
+    code: '12345678',
+    clientName: 'C',
+    scopes: ['read'],
+    expiresAt: 1,
+  };
+  it('parses with and without the agent field, and rejects unknown extras', () => {
+    expect(parseLinkMessage(JSON.stringify(base)).ok).toBe(true);
+    const withAgent = { ...base, forAgent: { userId: 'a1', name: 'Bot' } };
+    expect(parseLinkMessage(JSON.stringify(withAgent))).toEqual({ ok: true, message: withAgent });
+    expect(parseLinkMessage(JSON.stringify({ ...base, extra: 1 })).ok).toBe(false);
+    expect(
+      parseLinkMessage(JSON.stringify({ ...base, forAgent: { userId: 'a1', name: 'B', x: 1 } })).ok,
+    ).toBe(false);
+  });
+});
+
 describe('error codes', () => {
   it('includes the required set', () => {
     for (const c of [
