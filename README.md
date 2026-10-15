@@ -2,7 +2,7 @@
 
 A Foundry VTT module and MCP gateway that give an AI agent permissioned access to a running world. You bring the AI client; the product ships no model and holds no model keys. The core is free and MIT-licensed.
 
-This release is local only. See [What this release does not do](#what-this-release-does-not-do).
+It runs on your own machine, or on a server for remote clients and several people. See [What this release does not do](#what-this-release-does-not-do).
 
 > Pre-release: not yet published. Install from source.
 
@@ -40,7 +40,7 @@ Beyond the local quick start, the gateway can be reached from the web and from o
 
 ## What this release does not do
 
-This release is local only. The gateway and your AI client run on one machine, and the link accepts connections from that machine. There are no remote clients, OAuth, public URLs, ChatGPT or Gemini connectors, headless agents or Docker images yet.
+There are no native installers; you install from source, from the npm package or from the Docker image. Headless agents do not work in the `.mcpb` bundle. The gateway does no TLS and has no tunnel or share mode, so a public URL needs a reverse proxy you run. The remote-client connections (claude.ai, ChatGPT, Gemini) have been exercised only by the automated OAuth conformance run; the manual per-client checks in [docs/compatibility.md](docs/compatibility.md) have not all been run.
 
 The `.mcpb` and from-source installs are verified on macOS and untested on Windows in this release.
 
