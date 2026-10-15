@@ -104,7 +104,9 @@ export function findBrowser(stateDir: string, deps: DiscoveryDeps = {}): FoundBr
 export function playwrightLauncher(executablePath: string): BrowserLauncher {
   return {
     async launch(req: LaunchRequest): Promise<RunnerBrowser> {
-      const { chromium } = await import('playwright-core');
+      // A non-literal specifier keeps esbuild (the .mcpb bundle) from inlining playwright-core.
+      const specifier = 'playwright-core';
+      const { chromium } = (await import(specifier)) as typeof import('playwright-core');
       const context = await chromium.launchPersistentContext(req.profileDir, {
         executablePath,
         headless: true,
