@@ -105,7 +105,7 @@ const flags = attrs.map((a) => a.toLowerCase());
 for (const want of ['secure', 'httponly', 'path=/'])
   if (!flags.includes(want)) fail(`CSRF cookie lacks ${want}: ${setCookie}`);
 if (flags.some((a) => a.startsWith('domain='))) fail(`__Host- cookie has a Domain: ${setCookie}`);
-if (!flags.some((a) => a.startsWith('samesite='))) fail(`CSRF cookie lacks SameSite: ${setCookie}`);
+if (!flags.includes('samesite=strict')) fail(`CSRF cookie lacks SameSite=Strict: ${setCookie}`);
 const cookie = `${cookieName}=${cookieValue}`;
 // A browser sends the origin of the page it posts from.
 const origin = new URL(page.url).origin;
