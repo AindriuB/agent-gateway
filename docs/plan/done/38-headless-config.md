@@ -121,3 +121,50 @@ Defaults. Follow them unless the PR shows a reason not to.
 - `gateway.db` created 0644 and the shared "playwright-core is not installed" constant (37's other follow-ups, not this task's).
 - A GM-facing agents app (18).
 - Docs (43).
+
+## Review round 1 — findings
+Reviewed HEAD: 37ce211.
+
+- [P2] gateway/test/routing/headless-follow.test.ts:47-60: the follow-mode tests do not test app.ts's wiring. `open()` builds its own `knownIdentitiesFor(selector.user, …, (_w,u) => u === AGENT)`, so nothing guards app.ts:858-870 or the OAuth selector argument at app.ts:939-943. Add app-level tests against `createApp`:
+  - `deps.selector` in follow mode with a connected headless agent: it is not bound;
+  - an OAuth `principal.selector` naming an offline agent: it still binds.
+  route: implementer
+  input: replace app.ts's `isActiveAgent` argument with `() => false` →  every test still passes.
+- [P3] gateway/src/bin/cli.ts:470-472: `--foundry-url`, `--owner` and `--password` are global parseArgs options, and nothing refuses them outside `headless add`. Refuse them anywhere else (exit 2 with a message), following the `operatorCommandOf` pattern at cli.ts:262-266 ("--ttl and --origin go with --invite"). The message must never echo the value.
+  route: implementer
+  input: `foundry-agent-gateway --password hunter2` →  the server starts and ignores the flag; before, it exited 2 "Unknown option". The same applies to `headless list --owner x`.
+- [P3] gateway/src/config/index.ts:123: a `headless.<name>` entry that is not an object is silently treated as "no password". Refuse it with a ConfigError that names the key, never the value.
+  route: implementer
+  input: config file `{"headless": {"a1": "pw"}}` →  no error; a1 just never starts.
+
+## Review round 2 — findings
+Reviewed HEAD: 2c6e2ab. All round 1 findings are FIXED (mutation-proven).
+
+- [P3] gateway/test/headless/follow-app.test.ts is a new file outside Owns. Move it to gateway/test/headless/config/follow-app.test.ts, which Owns already covers, and adjust only the relative imports. Content otherwise unchanged; both tests must still pass.
+  route: implementer
+
+## Review round 3 — findings (external)
+Andrew's PR review of #153 at fa08e37 (2026-10-15).
+
+- [P2] gateway/src/headless/config/commands.ts:113: adding an agent leaves existing connections with a stale classification. A browser already connected as that (world, user) keeps its old `headless` status and approval owner, so it can bypass the headless-disabled policy and get requests attributed wrongly. When an identity becomes a headless agent, revoke the affected connections (and existing pairings) so they re-pair and are classified afresh. Revoking is consistent with 37 decision (d): the agent user is not for humans. Apply the same rule wherever classification can change at runtime: `add`, the owner changing on re-add, and `remove` if it is not already covered. A running gateway must close the affected live connection within one revocation sweep.
+  - Test: a connected non-headless client for (w, u), then `headless add` for (w, u) →  within one sweep that connection is closed and its pairing revoked, and the next connection for (w, u) is classified headless with the stored owner. The test must fail on fa08e37.
+  route: implementer
+- [P3] gateway/src/app.ts:634: an agent named `constructor` bypasses the missing-password check. The object lookup returns an inherited function, so the runner launches with an invalid password. Use own-property checks (`Object.hasOwn`) or a `Map` for every name-keyed lookup in the headless config path (config/index.ts per-agent keys, app.ts, commands.ts). Also refuse, or safely handle, names such as `constructor`, `__proto__` and `toString` if the name rule allows them.
+  - Test: an agent named `constructor` with no password is "not started" (one log line) and never launches.
+  route: implementer
+
+## Review round 4 — findings
+Reviewed HEAD: 0fd6398 (re-review of the round 3 external fix). Both parts are FIXED in code with mutation proofs. One test half and one wording issue remain.
+
+- [P2] gateway/test/headless/config/add-revokes.test.ts:287-291: the test is missing round 3's second assertion, "the next connection for (w, u) is classified headless with the stored owner". After the sweep, let a connection for (W, U) pair through the app (mint an invite via the app's provider, or let the runner pair), and assert its `welcome` contains `{headless: true, ownerUserId: <stored owner>}`. It must fail when app.ts's `headlessOwner` is mutated to always return `undefined`.
+  route: implementer
+- [P3] gateway/src/headless/config/commands.ts:14-16, :137-139: `add` calls `revokePairingsFor`, which also revokes the identity's OAuth grants and cancels its unused invites. Its help text and output mention only pairings, and print nothing when the count is zero. Make the help and output say what was revoked and cancelled (pairings, grants, invites), with counts, the way `remove` does. Revoking grants on `add` is intended: the agent user is not for humans.
+  route: implementer
+
+## Review round 5 — findings
+Reviewed HEAD: fb1d8d6 (round 4 FIXED; reviewed CLEAN). Wording only.
+
+- [P3] gateway/src/headless/config/commands.ts:~157: `remove`'s output reports pairings and invites but not the OAuth grants it also revokes, while its help (:20-21) and `add`'s output both name grants. Name grants in `remove`'s output without a count, as `add` does. The store returns no grant count, and the store is outside Owns.
+  route: implementer
+- [P3] gateway/src/headless/config/commands.ts:138: "Revoked 0 pairing(s) and its OAuth grants": "its" has no antecedent. Use e.g. "that world and user's OAuth grants". Keep `add` and `remove` worded the same way, and update any test that matches this text.
+  route: implementer

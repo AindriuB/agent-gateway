@@ -10,6 +10,7 @@ import m009 from './009-gateway-settings.js';
 import m010 from './010-oauth.js';
 import m011 from './011-invites.js';
 import m012 from './012-admin-pairings.js';
+import m013 from './013-headless-agents.js';
 
 /**
  * Ordered, insertion-only registry. Each task adds one static import and one
@@ -28,4 +29,5 @@ export const MIGRATIONS: readonly string[] = [
   m010,
   m011,
   m012,
+  m013,
 ];

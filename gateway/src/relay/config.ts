@@ -21,9 +21,12 @@ export interface RelayConfig {
   httpHost: string;
   trustProxy: boolean;
   /**
-   * `''` when no headless agent is configured, else a one-way digest of its Foundry URL, world,
-   * user, sandbox flag and password. Session-affecting: only the primary runs the agent, so a
-   * gateway with different headless settings must take over, not relay. Never the raw values.
+   * `''` when no headless agent is configured and this process holds no stored agent's password,
+   * else a one-way digest of the flag/env agent's Foundry URL, world, user, sandbox flag and
+   * password, and of the stored agents' names and passwords this process holds (the stored rows
+   * themselves are shared through the state dir, so they are not part of it). Session-affecting:
+   * only the primary runs the agents, so a gateway with different headless settings must take
+   * over, not relay. Never the raw values.
    */
   headless: string;
 }
@@ -36,12 +39,25 @@ export interface RelayConfig {
 export function headlessFingerprint(
   agent: { foundryUrl: string; worldId: string; userId: string; password: string } | undefined,
   noSandbox: boolean,
+  stored: readonly { name: string; password: string }[] = [],
 ): string {
-  if (!agent) return '';
-  const pw = scryptSync(agent.password, 'agent-gateway/headless/relay-config', 32).toString('hex');
-  return createHash('sha256')
-    .update(JSON.stringify([agent.foundryUrl, agent.worldId, agent.userId, noSandbox, pw]))
-    .digest('hex');
+  if (!agent && stored.length === 0) return '';
+  const scrypt = (pw: string): string =>
+    scryptSync(pw, 'agent-gateway/headless/relay-config', 32).toString('hex');
+  const base: unknown[] = agent
+    ? [agent.foundryUrl, agent.worldId, agent.userId, noSandbox, scrypt(agent.password)]
+    : [null, null, null, noSandbox, null];
+  // With no stored passwords the input is exactly the single-agent form, so the digest is unchanged.
+  const parts =
+    stored.length === 0
+      ? base
+      : [
+          ...base,
+          [...stored]
+            .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+            .map((s) => [s.name, scrypt(s.password)]),
+        ];
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 
 export const makeRelayConfig = (

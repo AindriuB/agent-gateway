@@ -54,6 +54,12 @@ export const ConfigSchema = z.object({
    * because Chromium's sandbox cannot start as a non-root user without extra capabilities.
    */
   headlessNoSandbox: boolish.default(false),
+  /**
+   * Passwords of the stored headless agents (task 38), by agent name. From
+   * `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD` or `headless.<name>.password` in the 0600 config file;
+   * never a flag. An agent without an entry is not started. Never an empty string.
+   */
+  headlessAgentPasswords: z.record(z.string(), z.string()).default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -87,6 +93,56 @@ const ENV_KEYS: Record<string, keyof Config> = {
   AGENT_GATEWAY_HEADLESS_PASSWORD: 'headlessPassword',
   AGENT_GATEWAY_HEADLESS_NO_SANDBOX: 'headlessNoSandbox',
 };
+
+const AGENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const AGENT_ENV = /^AGENT_GATEWAY_HEADLESS_([A-Z0-9_]+)_PASSWORD$/;
+
+/** The env variable that holds a stored agent's password. */
+export const agentPasswordEnv = (name: string): string =>
+  `AGENT_GATEWAY_HEADLESS_${name.toUpperCase().replaceAll('-', '_')}_PASSWORD`;
+
+/**
+ * The stored agents' passwords: the file's nested `headless.<name>.password`, then env. A key that
+ * is present but empty is refused (the agent user needs a Foundry password); messages name the
+ * key and never a value.
+ */
+function agentPasswords(
+  file: Record<string, unknown>,
+  env: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const section = file.headless;
+  if (section !== undefined) {
+    if (typeof section !== 'object' || section === null || Array.isArray(section))
+      throw new ConfigError('Config key headless must be an object of agent names');
+    for (const [name, entry] of Object.entries(section)) {
+      const key = `headless.${name}.password`;
+      if (!AGENT_NAME.test(name))
+        throw new ConfigError(`Config key headless.${name.slice(0, 40)} is not a valid agent name`);
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
+        throw new ConfigError(`Config key headless.${name} must be an object with a password`);
+      const pw = (entry as { password?: unknown }).password;
+      if (pw === undefined) continue;
+      if (typeof pw !== 'string') throw new ConfigError(`Config key ${key} must be a string`);
+      if (pw === '')
+        throw new ConfigError(
+          `Config key ${key} is empty; the agent user needs a Foundry password`,
+        );
+      out[name] = pw;
+    }
+  }
+  for (const [envKey, value] of Object.entries(env)) {
+    const m = AGENT_ENV.exec(envKey);
+    // The flag/env agent's own AGENT_GATEWAY_HEADLESS_PASSWORD has no name part and never matches.
+    if (!m || value === undefined) continue;
+    const name = m[1]!.toLowerCase().replaceAll('_', '-');
+    if (!AGENT_NAME.test(name)) continue;
+    if (value === '')
+      throw new ConfigError(`${envKey} is set but empty; the agent user needs a Foundry password`);
+    out[name] = value;
+  }
+  return out;
+}
 
 /**
  * The public URL as a bare origin: `https:` only (`http:` on a loopback host for local testing),
@@ -218,6 +274,8 @@ export function loadConfig(input: LoadConfigInput = {}): Config {
   for (const [k, v] of Object.entries(input.flags ?? {})) {
     if (v !== undefined) merged[k] = v;
   }
+  merged.headlessAgentPasswords = agentPasswords(merged, env);
+  delete merged.headless;
   const result = ConfigSchema.safeParse(merged);
   if (!result.success) {
     throw new ConfigError(`Invalid configuration: ${z.prettifyError(result.error)}`);

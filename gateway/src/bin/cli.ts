@@ -12,6 +12,7 @@ import { INVITE_TTL_MS, createInvite, parseTtl } from '../link/invites.js';
 import { safeText } from '../routing/sanitize.js';
 import { openStore, type Store } from '../store/index.js';
 import { MIGRATIONS } from '../store/migrations/index.js';
+import { HEADLESS_USAGE, runHeadlessCommand } from '../headless/config/commands.js';
 import { reportStartFailure } from './start-failure.js';
 import { installShutdownSignals } from './signals.js';
 
@@ -77,7 +78,7 @@ Options:
                       headlessPassword); there is no password flag
   --headless-world <id>  World id the agent joins (AGENT_GATEWAY_HEADLESS_WORLD)
   --headless-user <id>   Foundry user id of the agent (AGENT_GATEWAY_HEADLESS_USER); an id, not a name
-  --world <id>        Bind the MCP session to this Foundry world
+${HEADLESS_USAGE}  --world <id>        Bind the MCP session to this Foundry world
   --user <name>       Bind the MCP session to this Foundry user (name or id)
   --allow-origin <o>  Optional: only this browser origin may reach the link (repeatable;
                       default: any http(s) origin, with a pairing code or its own token)
@@ -466,6 +467,9 @@ function main(): void {
         'headless-foundry-url': { type: 'string' },
         'headless-world': { type: 'string' },
         'headless-user': { type: 'string' },
+        'foundry-url': { type: 'string' },
+        owner: { type: 'string' },
+        password: { type: 'string' },
         backup: { type: 'string' },
         invite: { type: 'boolean' },
         'revoke-pairing': { type: 'boolean' },
@@ -496,6 +500,48 @@ function main(): void {
   }
   if (values.help) {
     process.stdout.write(USAGE);
+    return;
+  }
+  if (!(positionals[0] === 'headless' && positionals[1] === 'add')) {
+    // These belong to `headless add` alone; refuse them elsewhere rather than ignore them. The
+    // message names the flag, never its value.
+    const stray = (['foundry-url', 'owner', 'password'] as const).find(
+      (k) => values[k] !== undefined,
+    );
+    if (stray) {
+      process.stderr.write(`--${stray} goes with headless add\n${USAGE}`);
+      process.exit(2);
+    }
+  }
+  if (positionals[0] === 'headless') {
+    process.exitCode = runHeadlessCommand({
+      argv: positionals.slice(1),
+      values,
+      dbPath: values.db ?? process.env.AGENT_GATEWAY_DB ?? defaultDbPath(),
+      schemaProblem,
+      // Only `add` asks: the flag/env agent is what this invocation's flags, env and file say.
+      flagAgent: () => {
+        try {
+          const c = loadConfig({
+            configPath: values.config,
+            flags: {
+              headlessFoundryUrl: values['headless-foundry-url'],
+              headlessWorld: values['headless-world'],
+              headlessUser: values['headless-user'],
+            },
+          });
+          return c.headlessWorld && c.headlessUser
+            ? { worldId: c.headlessWorld, userId: c.headlessUser }
+            : undefined;
+        } catch (err) {
+          if (!(err instanceof ConfigError)) throw err;
+          process.stderr.write(`${err.message}\n`);
+          return process.exit(err.exitCode);
+        }
+      },
+      out: (l) => void process.stdout.write(l),
+      err: (l) => void process.stderr.write(l.endsWith('\n') ? l : `${l}\n`),
+    });
     return;
   }
   const operatorCommand = operatorCommandOf(values, positionals);

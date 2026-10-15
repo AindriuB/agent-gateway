@@ -116,6 +116,12 @@ export interface LinkServerOptions {
    * by `hello.headless`. Such a user pairs only through an in-memory invite.
    */
   isHeadlessAgent?: (worldId: string, userId: string) => boolean;
+  /**
+   * The Foundry user id that approvals for the configured headless agent should reach (task 38),
+   * read from the operator's stored configuration. Sent in `welcome` only to a connection that
+   * `isHeadlessAgent` classified, never to a browser connection.
+   */
+  headlessOwner?: (worldId: string, userId: string) => string | undefined;
   /** Operator-log lines that are not a refused connection. */
   log?: (line: string) => void;
   /** Called after a pairing code was spent on a new pairing. */
@@ -740,6 +746,7 @@ export class LinkServer {
   ): LinkConnection | undefined {
     const { hello, ws, send, reject } = h;
     const connectionId = randomUUID();
+    const headless = this.classifyHeadless(hello);
     const conn = new LinkConnection(
       connectionId,
       agentId,
@@ -752,7 +759,7 @@ export class LinkServer {
       {
         userName: recordedName,
         isGM: hello.user.isGM,
-        headless: this.classifyHeadless(hello),
+        headless,
       },
     );
     this.socketByConnection.set(conn, ws);
@@ -772,6 +779,12 @@ export class LinkServer {
       agentId,
       ...(issuedToken ? { pairingToken: issuedToken } : {}),
       ...(admin === undefined ? {} : { admin }),
+      ...(headless
+        ? {
+            headless: true as const,
+            ...ownerField(this.opts.headlessOwner?.(hello.world.id, hello.user.id)),
+          }
+        : {}),
     });
     return conn;
   }
@@ -920,3 +933,6 @@ export class LinkServer {
     if (c) p.handle.admitted(c);
   }
 }
+
+const ownerField = (owner: string | undefined): { ownerUserId?: string } =>
+  owner !== undefined && owner !== '' ? { ownerUserId: owner } : {};
