@@ -39,6 +39,7 @@ import {
 import { handleGrantMessage } from './grants.js';
 import { handleInviteMessage } from './invite-admin.js';
 import { handlePairingMessage } from './pairing-admin.js';
+import { handleUserGrantMessage } from './user-grants.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -535,6 +536,15 @@ export class LinkServer {
             break;
           }
           handlePairingMessage(conn, msg, this.opts.store, this.opts.registry, send, this.opts.now);
+          break;
+        case 'listUserGrants':
+        case 'revokeUserGrant':
+          // A replaced connection must not manage grants for the user any more.
+          if (this.opts.registry.get(conn.worldId, conn.userId) !== conn || conn.closed) {
+            ws.close(1008, 'stale user grants connection');
+            break;
+          }
+          handleUserGrantMessage(conn, msg, this.opts.store, send, this.opts.now);
           break;
         case 'attest':
           // A replaced connection must not vouch for anyone any more.
