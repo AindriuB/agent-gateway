@@ -8,6 +8,7 @@ import {
   registerWorldGatewayUrlHooks,
 } from './gateway-url-guard.js';
 import { registerGrantsMenu } from '../apps/grants/index.js';
+import { registerManageMenu } from '../apps/manage/index.js';
 import { registerPolicySettings } from '../policy/store.js';
 import { registerRateLimitSettings } from '../ratelimit/store.js';
 declare const game: any;
@@ -80,6 +81,7 @@ settingRegistrars.push(registerPolicyMenu);
 settingRegistrars.push(registerOfflineEventSettings);
 settingRegistrars.push(registerGrantsMenu);
 settingRegistrars.push(registerDefaultGatewayUrl);
+settingRegistrars.push(registerManageMenu);
 
 export function registerSettings(): void {
   for (const register of settingRegistrars) {
