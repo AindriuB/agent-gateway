@@ -16,8 +16,9 @@
 - protocol/src/link/messages.ts (insertion only: an optional `headless` field in `HelloMessage`)
 - module/src/link/bridge.ts (the headless flag only)
 - module/src/link/toolset.ts (the headless default only)
-- module/src/link/runtime.ts (the `hello` headless field only)
+- module/src/link/runtime.ts (the `hello` headless field only; plus, per Amendment 2, the read-only page-visible link status when the headless flag is set)
 - module/test/link/headless-*.test.ts (new)
+- module/test/link/toolset.test.ts (the rename from LINK_AGENT_HEADLESS to linkAgentHeadless() only; Amendment 2)
 - gateway/Dockerfile and gateway/docker/** (insertions only: Chromium and the profile volume; plus, per Amendment 1, rewriting the Dockerfile header comment that says the image has no browser)
 
 ## Goal
@@ -117,3 +118,22 @@ Andrew, from code review round 1 scope findings.
 
 1. **Owns gains `gateway/src/link/registry.ts` (the optional `headless` field on `LinkConnection.info` only).** The gateway classifies a connection as headless from its configuration at hello time (decision (b)), and the connection info is where that classification is carried. Moving it anywhere else would be more awkward than a one-field addition. Nothing else in registry.ts changes.
 2. **The `gateway/Dockerfile` qualifier widens.** Besides insertions, the PR may rewrite the Dockerfile's header comment that says the image has no browser. That comment became false once Chromium was added.
+
+## Amendment 2 (2026-10-15)
+
+Andrew, from the full-branch code review after Amendment 1.
+
+### Decisions
+
+1. **The replaced pause of decision (d) is detected in the page, not on the server.** The gateway cannot tell which socket was the runner's without trusting `hello.headless`, which decision (b) keeps informational. The server-side `onReplaced` hook (gateway/src/link/server.ts, wired in gateway/src/app.ts) fires for any replaced connection of the agent identity, including when the runner itself did the replacing, which gave a false pause and log line. So:
+   - The runner pauses (`REPLACED_PAUSE_MS`, 5 min, or until the next world start) and logs "agent user <name> was taken by another client; the runner is paused" only when its own page's module reports `REPLACED` (module/src/link/client.ts stops for good on close 1000/`replaced` and sets state `disconnected`/`REPLACED`). The runner observes that state from its page.
+   - The `onReplaced` hook must not drive the pause. Remove it from server.ts and its wiring from app.ts; it is outside server.ts's Owns qualifier (decision (d) refusal only).
+   - Observing page state uses a small read-only hook in **module/src/link/runtime.ts**: when the headless session flag is set, it mirrors the link client's state (`onState`) into a page-readable value (a session-storage key such as `agent-gateway.headless.link`) that the runner reads with `page.evaluate`. Without the flag it writes nothing. It never carries a token, code or nonce. Owns for runtime.ts widens to cover this.
+2. **Chromium sandbox in Docker goes through config.** The image keeps running Chromium with `--no-sandbox` by default, because Chromium's sandbox cannot normally start as a non-root user in Docker without extra capabilities or a seccomp profile. The setting `AGENT_GATEWAY_HEADLESS_NO_SANDBOX` goes through `ConfigSchema`/`ENV_KEYS` in gateway/src/config/index.ts like every other setting, and is not read straight from `process.env` in gateway/src/headless/browser.ts. The default is a recorded, security-relevant decision. **Note for 43:** the docs must explain the `--no-sandbox` default, why it exists in Docker, and how an operator with the capabilities or a seccomp profile turns the sandbox back on.
+3. **Owns gains `module/test/link/toolset.test.ts` (the rename from LINK_AGENT_HEADLESS to linkAgentHeadless() only).** Forced by decision (f), which turns the constant into a function.
+
+### Acceptance (added)
+- [ ] When the runner replaces another client (e.g. a human token-paired as the agent user), the runner logs no "taken by another client" line and does not pause. When another client replaces the runner's page (its module reports `REPLACED`), the runner logs that line once and pauses until the next world start or `REPLACED_PAUSE_MS` (tests with the fake browser launcher and a page whose link state can be set).
+- [ ] gateway/src/link/server.ts and gateway/src/app.ts contain no `onReplaced` hook driving the runner (`grep -n onReplaced gateway/src` is empty or shows no runner wiring).
+- [ ] With the headless flag set, the module's page exposes the link state read-only, and the value never contains a token, code or nonce. Without the flag, nothing is written (`module/test/link/headless-*.test.ts`).
+- [ ] `AGENT_GATEWAY_HEADLESS_NO_SANDBOX` is a key in `ConfigSchema` and `ENV_KEYS` in gateway/src/config/index.ts, defaulting to no-sandbox in the image; `grep -n "process.env" gateway/src/headless/` finds no read of it; a config test covers the env key and its effect on the launch args passed to the fake launcher.
