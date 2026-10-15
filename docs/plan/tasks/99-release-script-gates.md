@@ -62,3 +62,11 @@
 - The test.env key table in docs/testing.md outside "Testing v13 separately".
 
 Orchestrator scope note (implementation): accepted. scripts/test/docker-release.test.mjs (~:41) has its own npm stub that echoes the old conformance line `conformance: ok (inspector 2.10.1, stdio, http)`, so the new `, oauth` requirement breaks two of its tests. Add `, oauth` to that stub's echo, and change nothing else in that file. The change is forced by decision (a).
+
+## Review round 1 — findings
+Reviewed HEAD: d0a1403 (code review CLEAN; regex and v13-env fixes mutation-proven).
+
+- [P3] scripts/release.mjs:117-120: the `e2e v14: url …, state …` line prints before the `== gate: e2e v14 ==` header, while v13's prints after its own. Print each gate's line after its header, for example from `gate()`.
+  route: implementer
+- [P3] scripts/release.mjs:68-69: e2e URLs are printed as given, so a URL with userinfo (`https://user:pw@host`) would print its credentials in the e2e lines and the v13 summary. This is the same class task 96 removed. Strip any userinfo (and query) from every URL the script prints; show only scheme://host[:port]/path. Add a test with a credentialed URL in test.env and in env, asserting neither the user nor the password appears in the output.
+  route: implementer
