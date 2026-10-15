@@ -61,3 +61,49 @@ binding and gated by the store's admin flag. Non-admin users never see the app.
 ## Notes for the scribe
 - User docs: a GM guide for the management app, covering inviting a player, the vouch prompt in chat, and revoking.
 - docs/architecture.md: the link management messages and the admin authz model.
+
+## Amendment 1 (Andrew, 2026-10-15)
+
+1. Split version gate. The Invites tab needs gateway 0.2.0 or later (task 92's messages shipped in 0.2.0). The Pairings tab needs gateway 0.3.0 or later; below that it shows the localized "update the gateway" state and never sends `listPairings` or `revokePairing`, because a 0.2.0 gateway closes the link (1008) on an unknown message. Tasks 93 and 94 ship as 0.3.0. Test both tabs against a 0.2.0 and a 0.3.0 welcome version.
+2. Shared rate limit. Invite and pairing messages share 92's single 60-per-minute window per connection, as the acceptance says. Owns widens to export the window (or a shared limiter) from gateway/src/link/invite-admin.ts; no behaviour change there. Test: 60 `listInvites` then one `listPairings` in the same minute gives RATE_LIMITED.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 279e290. Both P2s are settled by Amendment 1. Routed to the implementer: Amendment 1 items 1–2, plus the two P3s (a test for the `revokedAt` guard in `senderIsAdmin`; a test for the per-action re-check in `onCreateInvite`). The NOTEs are not adopted.
+
+VERDICT: FIX
+
+FINDINGS (most severe first)
+- [P2] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/agent-a6c8266ebdbb0e87b/module/src/link/client.ts:134 — `MANAGE_MIN_GATEWAY_VERSION = '0.2.0'` treats the released 0.2.0 gateway as supporting `listPairings` and `revokePairing`, but 0.2.0 shipped without them.
+  route: orchestrator — the fix needs a version number that is not decided yet: the next release, whether 0.2.1 or 0.3.0. It also means choosing between one gate for both tabs and a split gate, since Invites (task 92) already works on 0.2.0. The task does not make either choice.
+  input: a module built from this branch connected to the deployed 0.2.0 gateway (aindriub.app). The admin GM opens Manage access and clicks the Pairings tab. The client sends `{type:'listPairings',…}`, and the 0.2.0 server's strict parse fails. It runs `ws.close(1008, 'invalid')` (origin/main gateway/src/link/server.ts:414-416).  →  The GM's whole link drops, along with any tool calls in flight. The app then shows "offline" instead of the localized "too old" state. Every later click on the Pairings tab drops the link again.
+
+- [P2] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/agent-a6c8266ebdbb0e87b/gateway/src/link/pairing-admin.ts:12 — the rate limit is a second WeakMap window of the same size, so the 92 limit does not count these messages. One connection gets 60 invite messages plus 60 pairing messages per minute, not 60 in total.
+  route: orchestrator — Acceptance says "The rate limit from 92 counts these messages too". The doc comment on `MAX_INVITE_MESSAGES_PER_WINDOW` in invite-admin.ts says "All three message types together". A shared count needs an export from gateway/src/link/invite-admin.ts, which is outside Owns. Otherwise the acceptance line has to be amended.
+  input: one admin connection sends 60 `listInvites` and then 60 `listPairings` within one minute.  →  All 120 are answered. The spec says the 61st should get RATE_LIMITED. The test (gateway/test/link/pairing-admin.test.ts "counts both messages per window") only counts the two pairing messages against each other.
+  My judgement: the security impact is small. These are admin-only, per connection and synchronous, and each list is an O(active pairings) scan. Recording a separate same-size window as a Decision is acceptable and the cheapest way to resolve this. The other way is to extend Owns to export the 92 window.
+
+- [P3] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/agent-a6c8266ebdbb0e87b/gateway/src/link/pairing-admin.ts:19 — no test covers the `row.revokedAt === null` guard in `senderIsAdmin`. It is the only thing that stops a just-revoked admin from acting during the window of up to 5 s before the sweep closes its socket. The server's stale-connection check still passes during that window.
+  route: implementer
+  input: a test where the admin revokes its own pairing, then sends `revokePairing` for a player before the sweep runs. It should get FORBIDDEN.
+  proof: I deleted `row.revokedAt === null &&` in a copy of the branch. pairing-admin.test.ts still passed 10/10.
+
+- [P3] /Users/Andrew/workspace/foundry-modules/agent-gateway/.claude/worktrees/agent-a6c8266ebdbb0e87b/module/src/apps/manage/index.ts:207 — no test covers the per-action re-check in `onCreateInvite` (`if (unavailableReason()) return;`). The test "shows the not-admin state and sends nothing" checks only cancel and revoke.
+  route: implementer
+  input: call `onCreateInvite` with `isAdmin: false` and a valid player, and assert that `createInvite` is not called.
+  proof: I removed the re-check. test/apps/manage still passed 17/17. The re-check in `client.manageRequest` and the gateway check still refuse the request, so the only gap is the test.
+
+- [NOTE] gateway/src/link/pairing-admin.ts:99 — the `target.admin ||` clause is redundant with `otherAdmin`, because pairing replaces earlier rows (invites.ts:117 `revokeActiveFor`). Removing it leaves every test green (I ran this mutation). It is harmless defence in depth.
+- [NOTE] module/test/apps/manage/manage.test.ts "keeps hostile names as plain text" — the "render" step uses the test's own escape function in place of Handlebars, so that part proves nothing. Handlebars is not installed in node_modules. What does guard the template is the structural assertion `not.toMatch(/\{\{\{|\{\{&/)` together with the context check that `userName` is passed through as raw text: I checked that a `{{{userName}}}` template would fail it. I consider that an adequate proxy, but it is weaker than the acceptance wording "renders".
+- [NOTE] module/src/link/client.ts:768 — no test covers the `pending.expect === msg.type` check. A reply only reaches it if the gateway echoes a request id under the wrong reply type, so this is not a real defect.
+- [NOTE] pairing-admin.ts:33 — `listActivePairings()` loads every world's active pairings and then filters, on every message. That is bounded by the operator-issued pairing count and the 60/min limit. The 200-row slice is oldest first, so in a world with more than 200 pairings the newest cannot be revoked from the UI. That is unlikely in practice.
+
+Checked and sound:
+- **Gateway scoping.** World scoping uses the binding only, and the protocol test rejects a `worldId` field. Admin status is read from the store row on every message, and a demoted admin is refused (tested). Probing a foreign-world id, an unknown id or an already-revoked id gets the same `INVALID_ARGS` with "no such pairing" (tested). Revoking another admin returns FORBIDDEN and changes nothing.
+- **Self-revoke.** It goes through `revokePairingsFor` in one transaction (pairings, the GM's own OAuth grants, invites for that user), then sends the reply on the still-open socket. The sweep closes it, and the following re-render gets FORBIDDEN and shows the not-admin state. Acceptance specifies this behaviour.
+- **Module code handling.** The invite code goes only into the DialogV2 content and the copy closure. It is never in the context, `console`, notifications or settings (tested).
+- **Escaping.** Every template tag is `{{…}}`, and the dialog content is escaped.
+- **Reply routing.** Request ids are `manage-N`, never reset, and checked against the live socket and the request's own socket. An error with an unknown or grants request id is ignored. Pending requests are rejected as OFFLINE on disconnect. A reply cannot resolve another request.
+- **Gateway mutation results.** I mutated the cross-world check, the admin guard, the sender admin flag, the world filter, the rate limit, `own`, `self` and `connected`, one at a time. Each mutation failed a test.
+
+SCOPE: clean
