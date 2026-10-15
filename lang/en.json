@@ -309,5 +309,6 @@
   "AGENT_GATEWAY.Manage.offline": "Connect to the gateway first, then open this window again.",
   "AGENT_GATEWAY.Manage.tooOld": "This gateway is too old to manage access. Update the gateway.",
   "AGENT_GATEWAY.Manage.timeout": "The gateway did not answer in time. Try again.",
+  "AGENT_GATEWAY.Manage.retry": "Try again",
   "AGENT_GATEWAY.Manage.failed": "The gateway refused or could not complete that. Try again."
 }

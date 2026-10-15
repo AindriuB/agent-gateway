@@ -33,6 +33,10 @@ export type Tab = 'invites' | 'pairings';
 export interface ManageContext {
   /** A localized reason the app cannot be used; empty when it can. */
   unavailable: string;
+  /** A localized failure of this tab alone; the tab nav stays and the notice shows in its panel. */
+  notice: string;
+  /** Whether the notice offers a retry. */
+  canRetry: boolean;
   tab: Tab;
   isInvites: boolean;
   isPairings: boolean;
@@ -60,8 +64,10 @@ export function playerChoices(): UserChoice[] {
     .map((u) => ({ id: String(u.id), name: String(u.name ?? u.id) }));
 }
 
-const blank = (tab: Tab, unavailable: string): ManageContext => ({
+const blank = (tab: Tab, unavailable: string, notice = '', canRetry = false): ManageContext => ({
   unavailable,
+  notice,
+  canRetry,
   tab,
   isInvites: tab === 'invites',
   isPairings: tab === 'pairings',
@@ -73,8 +79,8 @@ const blank = (tab: Tab, unavailable: string): ManageContext => ({
   emptyPairings: false,
 });
 
-/** Why the app cannot be used right now, or '' when it can. Sends nothing. */
-export function unavailableReason(tab: Tab = 'invites'): string {
+/** Why the whole app cannot be used right now, or '' when it can. Sends nothing. */
+export function appUnavailableReason(): string {
   const i18n = game.i18n;
   const client = getLinkClient() as any;
   const state = client.state;
@@ -82,10 +88,25 @@ export function unavailableReason(tab: Tab = 'invites'): string {
     return i18n.localize('AGENT_GATEWAY.Manage.tooOld');
   if (state.kind !== 'connected') return i18n.localize('AGENT_GATEWAY.Manage.offline');
   if (!client.isAdmin) return i18n.localize('AGENT_GATEWAY.Manage.notAdmin');
-  const min = tab === 'pairings' ? PAIRINGS_MIN_GATEWAY_VERSION : MANAGE_MIN_GATEWAY_VERSION;
-  if (!gatewaySupportsGrants(client.gatewayVersion, min))
+  if (!gatewaySupportsGrants(client.gatewayVersion, MANAGE_MIN_GATEWAY_VERSION))
     return i18n.localize('AGENT_GATEWAY.Manage.tooOld');
   return '';
+}
+
+/** Why this tab alone cannot be used (a gateway too old for it), or ''. Sends nothing. */
+export function tabUnavailableReason(tab: Tab): string {
+  const client = getLinkClient() as any;
+  if (
+    tab === 'pairings' &&
+    !gatewaySupportsGrants(client.gatewayVersion, PAIRINGS_MIN_GATEWAY_VERSION)
+  )
+    return game.i18n.localize('AGENT_GATEWAY.Manage.tooOld');
+  return '';
+}
+
+/** Why the tab's action cannot run right now, or '' when it can. Sends nothing. */
+export function unavailableReason(tab: Tab = 'invites'): string {
+  return appUnavailableReason() || tabUnavailableReason(tab);
 }
 
 function failureKey(e: unknown): string {
@@ -100,8 +121,10 @@ function failureKey(e: unknown): string {
 /** What the window shows for a tab. The one-time invite code is never part of it. */
 export async function prepareManage(tab: Tab = 'invites'): Promise<ManageContext> {
   const i18n = game.i18n;
-  const why = unavailableReason(tab);
+  const why = appUnavailableReason();
   if (why) return blank(tab, why);
+  const tabWhy = tabUnavailableReason(tab);
+  if (tabWhy) return blank(tab, '', tabWhy);
   const client = getLinkClient() as any;
   try {
     const ctx = blank(tab, '');
@@ -124,7 +147,10 @@ export async function prepareManage(tab: Tab = 'invites'): Promise<ManageContext
     }
     return ctx;
   } catch (e) {
-    return blank(tab, i18n.localize(failureKey(e)));
+    const key = failureKey(e);
+    // Offline is a whole-app state; every other failure belongs to this tab.
+    if (key === 'AGENT_GATEWAY.Manage.offline') return blank(tab, i18n.localize(key));
+    return blank(tab, '', i18n.localize(key), key === 'AGENT_GATEWAY.Manage.timeout');
   }
 }
 
@@ -188,6 +214,7 @@ export function createManageApp(): any {
       position: { width: 640 },
       actions: {
         tab: ManageApp.onTab,
+        retry: ManageApp.onRetry,
         createInvite: ManageApp.onCreateInvite,
         cancelInvite: ManageApp.onCancelInvite,
         revokePairing: ManageApp.onRevokePairing,
@@ -203,6 +230,10 @@ export function createManageApp(): any {
       const tab = target?.dataset?.tab;
       if (tab !== 'invites' && tab !== 'pairings') return;
       this.tab = tab;
+      await this.render();
+    }
+
+    static async onRetry(this: any): Promise<void> {
       await this.render();
     }
 

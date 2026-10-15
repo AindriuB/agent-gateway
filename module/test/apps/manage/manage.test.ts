@@ -141,7 +141,7 @@ describe('the management app', () => {
         }),
       }),
     );
-    expect((await slow.prepareManage()).unavailable).toBe('L:AGENT_GATEWAY.Manage.timeout');
+    expect((await slow.prepareManage()).notice).toBe('L:AGENT_GATEWAY.Manage.timeout');
   });
 
   it('gates Invites at gateway 0.2.0 and Pairings at 0.3.0', async () => {
@@ -149,7 +149,7 @@ describe('the management app', () => {
     const mod = await load(v2);
     expect((await mod.prepareManage('invites')).unavailable).toBe('');
     expect(v2.listInvites).toHaveBeenCalledOnce();
-    expect((await mod.prepareManage('pairings')).unavailable).toBe('L:AGENT_GATEWAY.Manage.tooOld');
+    expect((await mod.prepareManage('pairings')).notice).toBe('L:AGENT_GATEWAY.Manage.tooOld');
     expect(v2.listPairings).not.toHaveBeenCalled();
     const App = mod.createManageApp();
     await App.onRevokePairing.call({ render: vi.fn() }, new Event('x'), {
@@ -335,5 +335,69 @@ describe('the management app', () => {
     const content: string = (prompt.mock.calls[0]![0] as any).content;
     expect(content).not.toContain('<b>');
     expect(content).toContain('&#60;b&#62;');
+  });
+
+  it('keeps the tab nav when Pairings is too old on 0.2.0, and Invites still works', async () => {
+    const client = adminClient({ gatewayVersion: '0.2.0' });
+    const mod = await load(client);
+    const pairings = await mod.prepareManage('pairings');
+    expect(pairings.unavailable).toBe('');
+    expect(pairings.notice).toBe('L:AGENT_GATEWAY.Manage.tooOld');
+    expect(pairings.canRetry).toBe(false);
+    // The template shows the nav whenever `unavailable` is empty, and the notice below it.
+    const tpl = readFileSync(resolve(root, 'templates/manage/manage.hbs'), 'utf8');
+    const elseAt = tpl.indexOf('{{else}}');
+    expect(tpl.indexOf('{{#if unavailable}}')).toBeLessThan(elseAt);
+    expect(tpl.indexOf('<nav class="tabs">')).toBeGreaterThan(elseAt);
+    expect(tpl.indexOf('{{notice}}')).toBeGreaterThan(tpl.indexOf('</nav>'));
+    // Switching tab through the nav's action lists invites.
+    const App = mod.createManageApp();
+    const self = { tab: 'pairings', render: vi.fn() };
+    await App.onTab.call(self, new Event('x'), { dataset: { tab: 'invites' } });
+    expect(self.tab).toBe('invites');
+    const invites = await mod.prepareManage(self.tab as any);
+    expect(invites.notice).toBe('');
+    expect(invites.invites).toHaveLength(1);
+  });
+
+  it('keeps the nav on a TIMEOUT and retry re-requests', async () => {
+    const { ManageError } = await import('../../../src/link/client.js');
+    let fail = true;
+    const listInvites = vi.fn(async () => {
+      if (fail) throw new ManageError('TIMEOUT', 'x');
+      return [invite()];
+    });
+    const mod = await load(adminClient({ listInvites }));
+    const ctx = await mod.prepareManage('invites');
+    expect(ctx.unavailable).toBe('');
+    expect(ctx.notice).toBe('L:AGENT_GATEWAY.Manage.timeout');
+    expect(ctx.canRetry).toBe(true);
+    const tpl = readFileSync(resolve(root, 'templates/manage/manage.hbs'), 'utf8');
+    expect(tpl).toContain('data-action="retry"');
+    expect(tpl).toContain('"AGENT_GATEWAY.Manage.retry"');
+    fail = false;
+    const App = mod.createManageApp();
+    const self: any = { tab: 'invites' };
+    self.render = vi.fn(async () => {
+      self.last = await mod.prepareManage(self.tab);
+    });
+    await App.onRetry.call(self);
+    expect(listInvites).toHaveBeenCalledTimes(2);
+    expect(self.last.notice).toBe('');
+    expect(self.last.invites).toHaveLength(1);
+  });
+
+  it('shows BUSY inside the tab, without a retry', async () => {
+    const { ManageError } = await import('../../../src/link/client.js');
+    const mod = await load(
+      adminClient({
+        listPairings: vi.fn(async () => {
+          throw new ManageError('BUSY', 'x');
+        }),
+      }),
+    );
+    const ctx = await mod.prepareManage('pairings');
+    expect(ctx.unavailable).toBe('');
+    expect(ctx.notice).toBe('L:AGENT_GATEWAY.Manage.failed');
   });
 });

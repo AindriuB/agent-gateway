@@ -6,7 +6,14 @@
       <button type="button" data-action="tab" data-tab="invites" {{#if isInvites}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabInvites"}}</button>
       <button type="button" data-action="tab" data-tab="pairings" {{#if isPairings}}class="active"{{/if}}>{{localize "AGENT_GATEWAY.Manage.tabPairings"}}</button>
     </nav>
-    {{#if isInvites}}
+    {{#if notice}}
+      <p class="notes tab-notice">{{notice}}</p>
+      {{#if canRetry}}
+        <button type="button" data-action="retry">
+          <i class="fa-solid fa-rotate-right"></i> {{localize "AGENT_GATEWAY.Manage.retry"}}
+        </button>
+      {{/if}}
+    {{else if isInvites}}
       <p class="notes">{{localize "AGENT_GATEWAY.Manage.invitesIntro"}}</p>
       <div class="invite-form">
         <select name="userId">
