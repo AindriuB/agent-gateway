@@ -263,7 +263,7 @@ if (publishNpm) {
 console.log('\nSummary:');
 console.log(`  version: ${version}`);
 console.log(`  draft release v${version} created; NOT published`);
-const v13Summary = notes.length > 0 ? 'SKIPPED (--allow-missing-v13)' : `passed (${v13Url})`;
+const v13Summary = notes.length > 0 ? 'SKIPPED (--allow-missing-v13)' : `passed (${shown(v13Url)})`;
 console.log(`  v13 e2e: ${v13Summary}`);
 console.log(`  Ask Foundry checklist: ${answered} of ${total} answered`);
 console.log('  The version bump is uncommitted in this tree; open a PR for it.');

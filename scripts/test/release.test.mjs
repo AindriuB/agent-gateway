@@ -294,15 +294,17 @@ describe('release e2e environment', () => {
 
   it('never prints URL credentials, from test.env or the environment', () => {
     writeTestEnv(
-      'AGENT_GATEWAY_E2E_V13_URL=https://bob:hunter2@foundry13.local:30013/x?token=qq\n',
+      'AGENT_GATEWAY_E2E_V13_URL=https://bob:hunter2@foundry13.local:30013/x?token=qq#frag\n',
     );
     const r = release(['1.0.0'], {
-      input: 'no\n',
-      env: { FOUNDRY_URL: 'https://alice:swordfish@foundry.local/?k=v' },
+      input: 'yes\n',
+      env: { FOUNDRY_URL: 'https://alice:swordfish@foundry.local/?k=v#frag' },
     });
     assert.equal(r.status, 0, r.stderr);
     const out = r.stdout + r.stderr;
-    assert.doesNotMatch(out, /bob|hunter2|alice|swordfish|token|qq|k=v/);
+    assert.match(out, /Summary:/);
+    assert.match(out, /v13 e2e: passed \(https:\/\/foundry13\.local:30013\/x\)/);
+    assert.doesNotMatch(out, /bob|hunter2|alice|swordfish|token|qq|k=v|frag/);
     assert.match(out, /e2e v13: url https:\/\/foundry13\.local:30013\/x, state /);
     assert.match(out, /e2e v14: url https:\/\/foundry\.local, state /);
   });
