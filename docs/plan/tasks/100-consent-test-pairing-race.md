@@ -42,3 +42,13 @@ The two headless consent tests pair their modules one at a time, so they no long
 - Other tests in headless.test.ts, and other test files that call `next()`. If a caller breaks under the new `next`, report it; do not edit its file.
 - The release script and its docs (task 99: `scripts/release.mjs`, `scripts/test/release.test.mjs`, `docs/releasing.md`, `docs/testing.md`).
 - Re-running the 0.3.0 release, or vitest timeout settings.
+
+## Review round 1 — findings
+
+Reviewed HEAD: aa84eab.
+
+- [STYLE] gateway/test/link/test-client.test.ts:37: the line is not formatted to Prettier's standard, so `npm run lint` fails on this file. Prettier wants `within(b.next('welcome').then(() => null, (e: Error) => e))` split over several lines. Run `npx prettier --write` on the file.
+  route: implementer
+- [STYLE] gateway/test/link/test-client.test.ts:22-26: the `afterEach` does not match its neighbours' cleanup. It never closes the SQLite store, and it calls `server.close?.()` where the neighbours call `server.close()`. Follow gateway/test/link/server.test.ts:17-21 and gateway/test/link/public.test.ts:9-13: `clients.splice(0)...terminate(); await h?.server.close(); h?.store.close(); h = undefined;`.
+  route: implementer
+- [NOTE] (no code change) gateway/test/link/invite-admin.test.ts:109 and gateway/test/link/pairing-admin.test.ts:152 race `gm.next(X)` against `gm.untilClosed()`. Under the new `next`, a close would reject the race rather than resolve it. Neither test reaches that path today, and both pass. Report it in the PR under the "check existing callers" Decision. Do not edit those files.
