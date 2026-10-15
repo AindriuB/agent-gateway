@@ -121,3 +121,18 @@ Defaults. Follow them unless the PR shows a reason not to.
 - `gateway.db` created 0644 and the shared "playwright-core is not installed" constant (37's other follow-ups, not this task's).
 - A GM-facing agents app (18).
 - Docs (43).
+
+## Review round 1 — findings
+Reviewed HEAD: 37ce211.
+
+- [P2] gateway/test/routing/headless-follow.test.ts:47-60: the follow-mode tests do not test app.ts's wiring. `open()` builds its own `knownIdentitiesFor(selector.user, …, (_w,u) => u === AGENT)`, so nothing guards app.ts:858-870 or the OAuth selector argument at app.ts:939-943. Add app-level tests against `createApp`:
+  - `deps.selector` in follow mode with a connected headless agent: it is not bound;
+  - an OAuth `principal.selector` naming an offline agent: it still binds.
+  route: implementer
+  input: replace app.ts's `isActiveAgent` argument with `() => false` →  every test still passes.
+- [P3] gateway/src/bin/cli.ts:470-472: `--foundry-url`, `--owner` and `--password` are global parseArgs options, and nothing refuses them outside `headless add`. Refuse them anywhere else (exit 2 with a message), following the `operatorCommandOf` pattern at cli.ts:262-266 ("--ttl and --origin go with --invite"). The message must never echo the value.
+  route: implementer
+  input: `foundry-agent-gateway --password hunter2` →  the server starts and ignores the flag; before, it exited 2 "Unknown option". The same applies to `headless list --owner x`.
+- [P3] gateway/src/config/index.ts:123: a `headless.<name>` entry that is not an object is silently treated as "no password". Refuse it with a ConfigError that names the key, never the value.
+  route: implementer
+  input: config file `{"headless": {"a1": "pw"}}` →  no error; a1 just never starts.
