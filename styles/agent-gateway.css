@@ -171,6 +171,44 @@
   text-align: center;
 }
 
+/* Access management app (task 93). */
+.agent-gateway-manage .tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+.agent-gateway-manage .tabs .active {
+  font-weight: bold;
+}
+.agent-gateway-manage .invite-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.agent-gateway-manage .manage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-gateway-manage .manage-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border-light-tertiary, #8884);
+}
+.agent-gateway-manage .badge {
+  border: 1px solid currentColor;
+  border-radius: 0.2em;
+  padding: 0 0.35em;
+  font-size: 0.75em;
+}
+.agent-gateway-invite-link {
+  width: 100%;
+}
+
 /* Link state on the current user's Players-list row (task 87). */
 .agent-gateway-indicator {
   display: block;
