@@ -26,6 +26,23 @@ declare const ui: any;
 
 const NS = 'agent-gateway';
 
+/** Session-storage key the headless runner reads (with `page.evaluate`) to see the link's state. */
+export const HEADLESS_LINK_KEY = 'agent-gateway.headless.link';
+
+/** Mirrors the link state into session storage for the runner. Never carries a token, code or nonce. */
+function mirrorHeadlessState(c: LinkClient): void {
+  const write = (s: LinkClient['state']): void => {
+    try {
+      const v = s.kind === 'disconnected' && s.reason === 'REPLACED' ? 'replaced' : s.kind;
+      globalThis.sessionStorage?.setItem(HEADLESS_LINK_KEY, v);
+    } catch {
+      // Storage blocked: the runner sees no signal.
+    }
+  };
+  write(c.state);
+  c.onState(write);
+}
+
 let client: LinkClient | null = null;
 let store: CredentialStore | null = null;
 
@@ -48,6 +65,7 @@ const owner = (owner?: TokenOwner): Omit<CredentialOwner, 'url'> => ({
   userId: owner?.userId ?? String(game.user?.id ?? ''),
 });
 let announcer: ToolsetAnnouncer | null = null;
+let mirrored = false;
 
 /**
  * The old `pairingToken` string is not tied to any gateway, so it is never sent: clear it
@@ -126,6 +144,10 @@ export function getLinkClient(): LinkClient {
     notifyWarn: (k) => ui.notifications.warn(game.i18n.localize(k)),
     postVouch,
   });
+  if (!mirrored && linkAgentHeadless()) {
+    mirrored = true;
+    mirrorHeadlessState(client);
+  }
   announcer ??= installToolsetAnnouncer(client, {
     isGM: () => Boolean(game.user?.isGM),
     isCategoryDenied: policyDenies(liveInputs, () => Boolean(game.user?.isGM)),
