@@ -60,3 +60,5 @@
 - The test hang that stopped `verify` during the 0.3.0 attempt.
 - Doing the v13 setup on the Mac, which needs Andrew to type the pairing codes and consent to the seed.
 - The test.env key table in docs/testing.md outside "Testing v13 separately".
+
+Orchestrator scope note (implementation): accepted. scripts/test/docker-release.test.mjs (~:41) has its own npm stub that echoes the old conformance line `conformance: ok (inspector 2.10.1, stdio, http)`, so the new `, oauth` requirement breaks two of its tests. Add `, oauth` to that stub's echo, and change nothing else in that file. The change is forced by decision (a).
