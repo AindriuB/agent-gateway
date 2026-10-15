@@ -69,3 +69,15 @@ Let a remote OAuth client (claude.ai, ChatGPT, Gemini) be granted access to a he
 - Changing `revokePairingsFor`, or making grants survive re-pairing, `headless add` or `remove` (decision (e)).
 - The ask-owner approval routing itself (38) and the grants management view (94).
 - Any other part of 43's docs, and docs/compatibility.md's manual checklists.
+
+## Review round 1 — findings
+Reviewed HEAD: 6353732 (code review CLEAN on the focus points; the agent-pairing binding is mutation-proven).
+
+- [P3] gateway/src/app.ts:923: no test covers the production wiring of the headless lookup. rig.ts builds its own `isActiveAgent`/`headlessOwner`, and the app-level OAuth tests use TestConsent, which skips ConsentPages. Deleting `headless: { isAgent: isActiveAgent, ownerOf: headlessOwner }` leaves the suite green while codes go to the agent's own browser again. Add an app-level test through `createApp` with the real ConsentPages and a stored agent with an owner: the code reaches the owner's link connection, not the agent's. It must fail with that line removed.
+  route: implementer
+- [P3] docs/security.md:125 ("Binding."): the rewrite went beyond the closing remote-OAuth sentence Owns allows, and the new wording ("None of the local-mode or bearer combinations run with a public URL") describes runs that never happened. Restore the rest of the bullet to its text on main, and change only the closing remote-OAuth sentence.
+  route: implementer
+- [P3] gateway/src/oauth/consent/index.ts:294 (with app.ts:240-251), orchestrator decision (fail closed): if the headless lookup fails (e.g. `storedRow` returns undefined while the store is closing), delivery fails open and sends the code to the stored agent's own connection. Never send a `consentCode` frame to a connection whose `info.headless` is set (registry.ts:42), whatever the lookup says. Add a test for that guard.
+  route: implementer
+- [P3, optional] gateway/src/oauth/consent/index.ts:300-302: when the target is an agent with an owner, a second `activePairedUsers(world)` query fetches the agent's name, and `.find` returns the OLDEST pairing while resolve uses the newest (`.at(-1)`). Reuse the row resolve already found: one fewer query, and the dialog names the agent's current pairing.
+  route: implementer
