@@ -23,7 +23,7 @@ Other data the module keeps stays in Foundry itself: the audit journal of agent 
 
 These are off unless you turn them on with `--public-url`, `--server-mode` or a headless agent.
 
-- **What a public gateway exposes.** `/status` shows only the version and uptime. The other public paths are the MCP endpoint and the sign-in pages for OAuth clients.
+- **What a public gateway exposes.** `/status` shows only the version and uptime. The other public paths are `/link` (the WebSocket the Foundry module connects to), `/mcp`, the OAuth endpoints (`/.well-known/...`, `/register`, `/authorize`, `/token`) and the consent page.
 - **What the OAuth tables store** (in the same SQLite file): registered client names and redirect addresses, the hash of each authorization code and token (never the code or token itself), and grants, which hold the client, the world and Foundry user it is bound to, the scopes and the times. Expired codes and tokens and revoked grants are swept out about every 10 minutes. Client IP addresses are kept in memory only, for rate limits, and are lost on restart. The sign-in pages set one strictly necessary cookie, expiring after 15 minutes. If you operate a public gateway you are the controller of this data; see [server mode](server-mode.md#privacy-and-cookies).
 - **Invites and pairings** (server mode) store a hash of the invite, its target world and user, and its times; the pairing keeps what the base pairing keeps.
 - **The `headless_agents` table** stores, for each stored headless agent, its name, Foundry URL, world id, user id, owner user id and creation time. It does not store a password; that stays in the environment or the 0600 config file.

@@ -35,12 +35,12 @@ Beyond the local quick start, the gateway can be reached from the web and from o
 
 - [Reverse proxy](docs/guides/reverse-proxy.md): serve the gateway at a public HTTPS URL with Caddy or nginx. The gateway never does TLS itself.
 - [Server mode and Docker](docs/server-mode.md): an always-on gateway for several people, with operator invites, in a Compose stack ([steps](gateway/docker/README.md)).
-- Remote clients, signing in with OAuth: [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md) and [the Gemini app](docs/guides/gemini-app.md). Their per-release checks are in [docs/compatibility.md](docs/compatibility.md) and have not all been run.
+- Remote clients, signing in with OAuth: [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md) and [the Gemini app](docs/guides/gemini-app.md). Their per-release checks are in [docs/compatibility.md](docs/compatibility.md) and none of them has been run.
 - [Headless agents](docs/guides/headless.md): an agent user the gateway logs in itself, so no browser tab needs to stay open.
 
 ## What this release does not do
 
-There are no native installers; you install from source, from the npm package or from the Docker image. Headless agents do not work in the `.mcpb` bundle. The gateway does no TLS and has no tunnel or share mode, so a public URL needs a reverse proxy you run. The remote-client connections (claude.ai, ChatGPT, Gemini) have been exercised only by the automated OAuth conformance run; the manual per-client checks in [docs/compatibility.md](docs/compatibility.md) have not all been run.
+There are no native installers; the gateway is not published yet, so you build it from source or build the Docker image locally. Headless agents do not work in the `.mcpb` bundle. The gateway does no TLS and has no tunnel or share mode, so a public URL needs a reverse proxy you run. The remote-client connections (claude.ai, ChatGPT, Gemini) have not been tried with the real clients: none of the manual per-client checks in [docs/compatibility.md](docs/compatibility.md) has been run. The automated conformance run tests the gateway's OAuth server with its own client and the MCP Inspector, not with those clients.
 
 The `.mcpb` and from-source installs are verified on macOS and untested on Windows in this release.
 
@@ -58,7 +58,3 @@ The core is complete and free. Optional tool packs, from Andrew or from others, 
 - [Privacy statement](docs/privacy.md)
 - [Local development](docs/dev.md) and [conventions](docs/conventions.md)
 - [Design](docs/plan/specs/2026-10-09-agent-gateway.md)
-
-## Support the project
-
-The core is free and stays free. If it is useful to you, you can support its development on [GitHub Sponsors](https://github.com/sponsors/AindriuB) or [Ko-fi](https://ko-fi.com/AindriuB).

@@ -14,7 +14,7 @@ claude.ai runs in Anthropic's cloud, so it cannot reach a gateway on your own ma
 
    Check it: `curl https://gateway.example.com/status` returns the version and uptime and nothing else.
 
-2. **Pair the Foundry user.** Keep a Foundry tab open as the user the agent should act as, or give the agent its own headless user ([headless.md](headless.md)). In Foundry open Configure Settings, then Agent Gateway, then Pair with gateway. Set the gateway URL to `wss://gateway.example.com/link`. With a public URL the code is printed only in the gateway's own log (never in chat, never through the AI client), so read it there. In server mode the operator makes a single-use invite instead; see [server-mode.md](../server-mode.md#pairing).
+2. **Pair the Foundry user.** Keep a Foundry tab open as the user the agent should act as. In Foundry open Configure Settings, then Agent Gateway, then Pair with gateway. Set the gateway URL to `wss://gateway.example.com/link`. With a public URL the code is printed only in the gateway's own log (never in chat, never through the AI client), so read it there. In server mode the operator makes a single-use invite instead; see [server-mode.md](../server-mode.md#pairing).
 
 ## Add the connector
 

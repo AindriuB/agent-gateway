@@ -2,7 +2,7 @@
 
 A headless agent is a Foundry user that the gateway logs in itself, in its own Chromium, so the agent works without anyone keeping a browser tab open. The gateway starts the browser, opens your world as that user and pairs the module.
 
-Use it when the agent should be available all the time: a server-mode gateway, a remote client such as claude.ai, or a world with no GM online. The agent acts with that user's Foundry permissions and the same policy, approvals and audit as any other agent.
+Use it when the agent should be available all the time: a server-mode gateway or a world with no GM online. The agent acts with that user's Foundry permissions and the same policy, approvals and audit as any other agent.
 
 Headless agents need the npm or Docker install. The `.mcpb` bundle does not support them (see [below](#the-mcpb-bundle)).
 
@@ -97,11 +97,11 @@ A headless agent is never picked by follow mode. A session started without `--us
 claude mcp add foundry-agent -- node <repo>/gateway/dist/bin/cli.js --world my-world --user AbCdEf1234567890
 ```
 
-A remote client reaches it through an OAuth grant that names it: on the consent page enter the world id and the agent's user, as in the [claude.ai guide](claude-ai.md).
+**Remote OAuth clients (claude.ai, ChatGPT, Gemini) cannot use a headless agent yet.** The consent code goes only to the named user's own link connection, which for a headless agent is the gateway's own Chromium, where nobody can see it, so no consent can finish. `headless add` also revokes any earlier OAuth grants for that user. Only local stdio or HTTP sessions bound with `--world` and `--user <agent id>`, as above, can use it. Owner-routed consent for headless agents is planned as task 98; this paragraph will change when it lands.
 
 ## The browser
 
-The gateway looks for a browser in this order: system Chrome, then Edge, then Chromium, then a Chromium it finds under `<state dir>/browsers/` (the state dir is the folder holding `gateway.db`, `~/.foundry-agent-gateway` by default). When it starts it logs one of:
+The gateway looks for a browser in this order: system Chrome, then Edge, then Chromium, then a Chromium it finds under `<state dir>/browsers/` (the state dir is the folder holding `gateway.db`, `~/.foundry-agent-gateway` by default). When the first headless runner starts, the gateway looks and logs one of:
 
 ```
 headless runner browser: chromium at /usr/bin/chromium
@@ -148,10 +148,10 @@ There are two fixes.
 
 ## The .mcpb bundle
 
-Headless agents are not supported in the `.mcpb` bundle, because `playwright-core` is not bundled. If you configure one anyway the runner logs, once:
+Headless agents are not supported in the `.mcpb` bundle, because `playwright-core` is not bundled. If you configure one anyway the runner logs, once, with its `headless runner: ` prefix:
 
 ```
-playwright-core is not installed; the headless runner needs the npm or Docker install, not the .mcpb bundle
+headless runner: playwright-core is not installed; the headless runner needs the npm or Docker install, not the .mcpb bundle
 ```
 
 Use the npm or Docker install.
@@ -211,4 +211,4 @@ Only one gateway process holds the link port; the others relay to it or wait. Wh
 
 ## Commands run for this guide
 
-`headless add`, `list`, `remove` (both outputs above), the missing-password and no-browser log lines, and the Docker commands were run against a freshly built image on Debian's Chromium. The AppArmor profile and the AppArmor failure were not reproduced for this guide. The runner log line for a missing Foundry server, `headless runner: cannot read http://localhost:30000/api/status: fetch failed (ECONNREFUSED)`, is what you see when the Foundry URL is wrong or Foundry is down.
+`headless add`, `list` and `remove`, the missing-password and no-browser log lines, and the Docker commands were run against a freshly built image on Debian's Chromium. The AppArmor profile and the AppArmor failure were not reproduced for this guide. The runner log line for a missing Foundry server, `headless runner: cannot read http://localhost:30000/api/status: fetch failed (ECONNREFUSED)`, is what you see when the Foundry URL is wrong or Foundry is down.
