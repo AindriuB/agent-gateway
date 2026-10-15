@@ -204,7 +204,7 @@ export function createManageApp(): any {
       await this.render();
     }
 
-    static async onCreateInvite(this: any, _event: Event, _target: HTMLElement): Promise<void> {
+    static async onCreateInvite(this: any): Promise<void> {
       if (unavailableReason()) return;
       const root: HTMLElement | undefined = this.element;
       const userId = (root?.querySelector?.('[name="userId"]') as any)?.value;

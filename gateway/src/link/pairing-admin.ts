@@ -63,8 +63,10 @@ export function handlePairingMessage(
   send: (m: LinkMessage) => void,
   now: () => number = Date.now,
 ): void {
-  const fail = (code: 'FORBIDDEN' | 'INVALID_ARGS' | 'RATE_LIMITED' | 'INTERNAL', message: string) =>
-    send({ type: 'error', id: '', requestId: msg.requestId, code, message });
+  const fail = (
+    code: 'FORBIDDEN' | 'INVALID_ARGS' | 'RATE_LIMITED' | 'INTERNAL',
+    message: string,
+  ) => send({ type: 'error', id: '', requestId: msg.requestId, code, message });
   if (!senderIsAdmin(store, conn)) {
     fail('FORBIDDEN', 'not an admin GM');
     return;

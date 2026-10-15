@@ -150,7 +150,11 @@ describe('management requests on the link client', () => {
     const rid = ws.sent.at(-1).requestId;
     const other = new FakeSocket();
     // A late frame from a socket that is not the live one must not settle the request.
-    (client as any).handle(other, JSON.stringify({ type: 'invites', requestId: rid, invites: [] }), 'ws://gw');
+    (client as any).handle(
+      other,
+      JSON.stringify({ type: 'invites', requestId: rid, invites: [] }),
+      'ws://gw',
+    );
     const caught = expect(p).rejects.toMatchObject({ code: 'TIMEOUT' });
     await vi.advanceTimersByTimeAsync(10_001);
     await caught;

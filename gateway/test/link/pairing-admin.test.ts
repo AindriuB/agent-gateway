@@ -45,7 +45,8 @@ const revoke = (c: TestClient, pairingId: string, requestId = 'r1') =>
 const idOf = (world: string, user: string) =>
   h!.store.listActivePairings().find((p) => p.worldId === world && p.userId === user)!.id;
 type Pairings = Extract<LinkMessage, { type: 'pairings' }>['pairings'];
-const rows = (m: LinkMessage): Pairings => (m as Extract<LinkMessage, { type: 'pairings' }>).pairings;
+const rows = (m: LinkMessage): Pairings =>
+  (m as Extract<LinkMessage, { type: 'pairings' }>).pairings;
 
 describe('who may manage pairings', () => {
   it('refuses a non-admin whose hello says isGM, changing nothing', async () => {

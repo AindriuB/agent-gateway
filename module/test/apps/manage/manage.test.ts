@@ -281,7 +281,8 @@ describe('the management app', () => {
     expect(ctx.pairings[0]!.userName).toBe(evil);
     // Render the template's value tags the way Handlebars does: HTML-escaped.
     const tpl = readFileSync(resolve(root, 'templates/manage/manage.hbs'), 'utf8');
-    const esc = (s: string) => s.replace(/[&<>"'`=]/g, (c) => `&#x${c.charCodeAt(0).toString(16)};`);
+    const esc = (s: string) =>
+      s.replace(/[&<>"'`=]/g, (c) => `&#x${c.charCodeAt(0).toString(16)};`);
     const html = tpl.replace(/\{\{(userName|origin)\}\}/g, (_m, k) =>
       esc((ctx.pairings[0] as any)[k]),
     );
