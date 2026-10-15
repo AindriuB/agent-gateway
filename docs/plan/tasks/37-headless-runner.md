@@ -216,3 +216,10 @@ Failures to fix:
 - [P3, optional] Round 3 residual: the .mcpb "playwright-core is not installed" message is logged on every poll. Now that runner.ts is open again, log it once per run.
 
 Not this task (follow-ups): gateway.db is created 0644 inside the 0700 state dir. For task 43's docs: the headless Foundry URL must have a certificate that Node and Chromium trust (a public certificate, or plain http on loopback).
+
+## Review round 4 — findings
+Reviewed HEAD: af7a20f. This is the full review after attempt 3, verdict CLEAN apart from this item. Attempt 3 reported the attempt 2 optional P3 as done, but it is not.
+
+- [P3] gateway/src/headless/runner.ts:113: the new `notInstalledLogged` field is declared but never read or written, so the "log the playwright-core-not-installed message once per run" item was not done. `launcher.launch()` sits outside the try block in `openSession`, so its error escapes to the catch in `tick()`, and that catch logs on every poll. Either finish it, with a test that two polls log the message once, or remove the dead field.
+  route: implementer
+  input: run the .mcpb bundle (no playwright-core) with headless configured while the world is up →  "headless runner: playwright-core is not installed; …" is logged every 15 s.
