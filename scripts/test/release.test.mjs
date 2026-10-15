@@ -40,6 +40,9 @@ ${body}`;
 const stubNpm = `#!/usr/bin/env bash
 echo "npm $*" >> "$STUB_LOG"
 case "$*" in
+  "run test:e2e"*) echo "env $*: STATE_DIR=\${AGENT_GATEWAY_E2E_STATE_DIR:--} V13_URL=\${AGENT_GATEWAY_E2E_V13_URL:--}" >> "$STUB_LOG";;
+esac
+case "$*" in
   "run verify"|"run test:scripts"|"run test:e2e -- --foundry v14") [ "$FAIL_GATE" = "$*" ] && exit 1; exit 0;;
   "run test:conformance")
     [ "$FAIL_GATE" = "$*" ] && exit 1
@@ -101,7 +104,7 @@ beforeEach(() => {
 });
 
 const git = (...a) => spawnSync('git', a, { cwd: root, encoding: 'utf8' });
-const OK = 'conformance: ok (inspector 2.10.1, stdio, http)';
+const OK = 'conformance: ok (inspector 2.10.1, stdio, http, oauth)';
 function release(args, { input = '', env = {} } = {}) {
   return spawnSync('node', [path.join(repo, 'scripts/release.mjs'), ...args, '--root', root], {
     cwd: root,
@@ -157,6 +160,16 @@ describe('release gates', () => {
     assert.doesNotMatch(calls(), /gh release/);
   });
 
+  it('aborts when conformance did not run the oauth mode', () => {
+    const r = release(['1.0.0', '--allow-missing-v13'], {
+      input: 'yes\n',
+      env: { CONFORMANCE_OUT: 'conformance: ok (inspector 2.10.1, stdio, http)' },
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /gate failed: test:conformance/);
+    assert.doesNotMatch(calls(), /gh release/);
+  });
+
   it('aborts on a v13 SKIP unless --allow-missing-v13, and prints it then', () => {
     const env = { V13_SKIP: '1' };
     const a = release(['1.0.0'], { input: 'yes\n', env });
@@ -197,6 +210,103 @@ describe('release gates', () => {
       'npm run test:e2e -- --foundry v14',
       'npm run test:e2e -- --foundry v13',
     ]);
+  });
+});
+
+describe('release e2e environment', () => {
+  const home = () => path.join(tmp, 'home');
+  const writeTestEnv = (text) => {
+    mkdirSync(path.join(home(), '.config/agent-gateway'), { recursive: true });
+    writeFileSync(path.join(home(), '.config/agent-gateway/test.env'), text);
+  };
+  const envLine = (v) =>
+    calls()
+      .split('\n')
+      .find((l) => l.startsWith(`env run test:e2e -- --foundry ${v}:`));
+  beforeEach(() => rmSync(path.join(home(), '.config'), { recursive: true, force: true }));
+
+  it('accepts the oauth conformance line and runs both e2e gates', () => {
+    const r = release(['1.0.0'], { input: 'no\n' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(calls(), /--foundry v14/);
+    assert.match(calls(), /--foundry v13/);
+  });
+
+  it('gives v13 its own state dir and the URL from test.env, leaving v14 alone', () => {
+    writeTestEnv('AGENT_GATEWAY_E2E_V13_URL=https://foundry13.local/\n');
+    const r = release(['1.0.0'], { input: 'no\n' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(
+      envLine('v13'),
+      new RegExp(
+        `STATE_DIR=${home()}/.config/agent-gateway/e2e-v13 V13_URL=https://foundry13.local$`,
+      ),
+    );
+    assert.match(envLine('v14'), /STATE_DIR=-/);
+  });
+
+  it('prefers the environment over test.env for the v13 state dir', () => {
+    writeTestEnv('AGENT_GATEWAY_E2E_V13_STATE_DIR=/from/testenv\n');
+    const dir = path.join(tmp, 'v13');
+    const r = release(['1.0.0'], { input: 'no\n', env: { AGENT_GATEWAY_E2E_V13_STATE_DIR: dir } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(envLine('v13'), new RegExp(`STATE_DIR=${dir} `));
+  });
+
+  it('stops before any gate when the state directories are the same', () => {
+    const dir = path.join(tmp, 'same');
+    const r = release(['1.0.0'], {
+      input: 'no\n',
+      env: { AGENT_GATEWAY_E2E_STATE_DIR: dir, AGENT_GATEWAY_E2E_V13_STATE_DIR: dir },
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /state directories are the same/);
+    assert.doesNotMatch(calls(), /npm run test:e2e/);
+  });
+
+  it('rejects a relative v13 state dir', () => {
+    const r = release(['1.0.0'], { env: { AGENT_GATEWAY_E2E_V13_STATE_DIR: 'rel/dir' } });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /AGENT_GATEWAY_E2E_V13_STATE_DIR must be an absolute path/);
+    assert.equal(calls(), '');
+  });
+
+  it('prints each gate URL and state dir and never a password', () => {
+    writeTestEnv('AGENT_GATEWAY_E2E_V13_URL=https://foundry13.local\nFOUNDRY_GM_PASSWORD=sekret\n');
+    const r = release(['1.0.0'], { input: 'no\n' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(
+      r.stdout.includes(
+        `e2e v14: url https://foundry.local, state ${home()}/.config/agent-gateway/e2e\n`,
+      ),
+    );
+    assert.ok(
+      r.stdout.includes(
+        `e2e v13: url https://foundry13.local, state ${home()}/.config/agent-gateway/e2e-v13\n`,
+      ),
+    );
+    assert.doesNotMatch(r.stdout + r.stderr, /sekret/);
+    assert.ok(
+      r.stdout.indexOf('== gate: e2e v14 ==') < r.stdout.indexOf('e2e v14: url'),
+      'v14 line follows its header',
+    );
+  });
+
+  it('never prints URL credentials, from test.env or the environment', () => {
+    writeTestEnv(
+      'AGENT_GATEWAY_E2E_V13_URL=https://bob:hunter2@foundry13.local:30013/x?token=qq#frag\n',
+    );
+    const r = release(['1.0.0'], {
+      input: 'yes\n',
+      env: { FOUNDRY_URL: 'https://alice:swordfish@foundry.local/?k=v#frag' },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const out = r.stdout + r.stderr;
+    assert.match(out, /Summary:/);
+    assert.match(out, /v13 e2e: passed \(https:\/\/foundry13\.local:30013\/x\)/);
+    assert.doesNotMatch(out, /bob|hunter2|alice|swordfish|token|qq|k=v|frag/);
+    assert.match(out, /e2e v13: url https:\/\/foundry13\.local:30013\/x, state /);
+    assert.match(out, /e2e v14: url https:\/\/foundry\.local, state /);
   });
 });
 

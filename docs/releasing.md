@@ -19,7 +19,11 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
    (which already runs the script tests), `npm run test:scripts` (run again as its own gate), `npm run test:conformance` (must print
    `conformance: ok (inspector <v>, stdio, http, oauth)`), `npm run test:e2e -- --foundry v14`,
    `npm run test:e2e -- --foundry v13`. A v13 `SKIP:` line counts as absent and aborts unless
-   `--allow-missing-v13` is passed; the summary then says so.
+   `--allow-missing-v13` is passed; the summary then says so. The v13 gate uses
+   `AGENT_GATEWAY_E2E_V13_URL` and `AGENT_GATEWAY_E2E_V13_STATE_DIR` (default
+   `~/.config/agent-gateway/e2e-v13`), read from the environment or `~/.config/agent-gateway/test.env`,
+   so v13 never reuses v14's pairings. The script prints each e2e gate's URL and state directory, and
+   stops if the two state directories are the same.
 4. Builds `agent-gateway.zip`, `foundry-agent-gateway-<version>.tgz` and
    `foundry-agent-gateway.mcpb` into `dist/release/` and prints each SHA-256.
 5. Builds and tags the server-mode image locally as `foundry-agent-gateway:<version>` with
