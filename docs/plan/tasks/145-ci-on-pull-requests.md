@@ -53,7 +53,7 @@ building and pushing the GHCR image exactly as today.
       pushes are never cancelled:
       ```yaml
       concurrency:
-        group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+        group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
         cancel-in-progress: ${{ github.event_name == 'pull_request' }}
       ```
 - [ ] ci-workflow.test.mjs is updated to assert the new trigger set, the forbidden triggers, the
@@ -62,7 +62,7 @@ building and pushing the GHCR image exactly as today.
       :158-163), the two bans `assert.doesNotMatch(wf, /^\s*concurrency:/m)` and
       `assert.doesNotMatch(wf, /cancel-in-progress:/)` are replaced by assertions that `concurrency:`
       occurs exactly once in the file, at column 0; that the `group:` value is exactly
-      `${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}`; and that
+      `${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}`; and that
       `cancel-in-progress:` occurs exactly once with the exact value
       `${{ github.event_name == 'pull_request' }}` (so a literal `true` fails the test). The two
       timeout assertions in that test are unchanged.
