@@ -180,12 +180,12 @@ describe('ci.yml hygiene', () => {
     assert.equal(wf.match(/^concurrency:$/gm).length, 1);
     assert.equal(
       top('concurrency').trimEnd(),
-      '  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}\n' +
+      '  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}\n' +
         "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
     );
     const groups = [...wf.matchAll(/^ {2}group: (.*)$/gm)].map((m) => m[1]);
     assert.deepEqual(groups, [
-      '${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}',
+      '${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}',
     ]);
     const cancels = [...wf.matchAll(/cancel-in-progress:(.*)$/gm)].map((m) => m[1].trim());
     assert.deepEqual(cancels, ["${{ github.event_name == 'pull_request' }}"]);
