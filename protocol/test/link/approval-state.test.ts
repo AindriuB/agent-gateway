@@ -27,9 +27,9 @@ describe('approvalState frame', () => {
     expect(ok(t({ id: 'a'.repeat(64), state: 'pending' }))).toBe(true);
   });
   it('refuses an over-long list', () => {
-    expect(ok(t({ ids: Array.from({ length: MAX_APPROVAL_STATE_IDS + 1 }, (_, i) => `i${i}`) }))).toBe(
-      false,
-    );
+    expect(
+      ok(t({ ids: Array.from({ length: MAX_APPROVAL_STATE_IDS + 1 }, (_, i) => `i${i}`) })),
+    ).toBe(false);
   });
   it('refuses mixed or incomplete forms and extra keys', () => {
     expect(ok(t({}))).toBe(false);
