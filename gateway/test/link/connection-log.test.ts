@@ -7,7 +7,7 @@ import { createApp, type App } from '../../src/app.js';
 import { freePort, tempState } from '../relay/harness.js';
 import { until } from '../routing/harness.js';
 import { ORIGIN, TestClient, hello, startServer, type Harness } from './helpers.js';
-import { HEARTBEAT_INTERVAL_MS } from '../../src/link/index.js';
+import { HEARTBEAT_INTERVAL_MS, MAX_MISSED_PONGS } from '../../src/link/index.js';
 import { vi } from 'vitest';
 
 let h: Harness | undefined;
@@ -95,7 +95,7 @@ describe('onLinkEvent', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const { tc } = await pair();
     // Stay silent: no pongs.
-    for (let i = 0; i < 4; i++) vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
+    for (let i = 0; i < MAX_MISSED_PONGS + 1; i++) vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);
     await tc.untilClosed();
     vi.useRealTimers();
     await until(() => events.length === 2);
