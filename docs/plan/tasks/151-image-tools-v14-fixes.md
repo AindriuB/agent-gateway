@@ -111,3 +111,8 @@ Second, `image_view` and `image_assign` read the deprecated `Scene#background`. 
 - Changing the upload quota, the naming scheme, the tool's argument schema or its description.
 - A socket or relay so players can ask a GM to create folders.
 - Migrating other deprecated v14 getters elsewhere in the module.
+
+## Review round 1 — findings
+
+1. **[P3] The player's FORBIDDEN error names the wrong folder.** module/src/tools/_upload-dirs.ts:37-40 names the first level that fails to browse. The message must name the caller's own folder, `agent-gateway/uploads/<userId>` (levels[2]), whichever level is missing, as the Acceptance item says. Add a unit test in which every level is missing.
+2. **[NOTE, do it] Merge repeated triggers.** module/src/tools/_upload-dirs.ts:78-84 queues one full run per trigger. Merge triggers that arrive while a run is in progress or queued into at most one queued follow-up run. Runs stay serialised. Add a unit test: N triggers during a run cause one follow-up run.
