@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { parseImageUploadText } from '@agent-gateway/protocol/tools';
 import type { CallResult } from '../lib/gateway.js';
 import { loadContext } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
@@ -83,11 +84,16 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
     if (grantSkipReason) ctx.skip(grantSkipReason);
   };
   const upload = async (who: UserSession, extra: Record<string, unknown>): Promise<CallResult> => {
-    const r = await settle(
+    let r = await settle(
       who,
       await who.gateway.call('image_upload', { data: PNG_B64, mime: 'image/png', ...extra }),
     );
-    if (!r.isError && typeof r.structured?.path === 'string') uploaded.push(r.structured.path);
+    // After a long approval wait only the result text survives: recover the details from it.
+    const parsed = parseImageUploadText(r.text);
+    if (!r.isError && parsed) {
+      r = { ...r, structured: { ...parsed, ...r.structured } };
+      uploaded.push(parsed.path);
+    }
     return r;
   };
 

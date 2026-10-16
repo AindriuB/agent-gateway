@@ -5,6 +5,7 @@ import {
   imageUpload,
   IMAGE_UPLOAD_MAX_BASE64,
   IMAGE_UPLOAD_MAX_BYTES,
+  parseImageUploadText,
   toJsonSchema,
 } from '../../src/tools/index.js';
 
@@ -36,5 +37,23 @@ describe('image_upload definition', () => {
     expect(
       imageUpload.input.safeParse({ ...ok, data: 'A'.repeat(IMAGE_UPLOAD_MAX_BASE64 + 1) }).success,
     ).toBe(false);
+  });
+});
+
+describe('parseImageUploadText', () => {
+  const sha = 'a'.repeat(64);
+  const head = `Uploaded agent-gateway/uploads/u1/ab12-12.png (12 bytes, image/png, sha256 ${sha})`;
+  it('recovers path, size, hash and updated documents', () => {
+    expect(parseImageUploadText(`${head}\nUpdated: Actor.a, Scene.s\nSet portrait.`)).toEqual({
+      path: 'agent-gateway/uploads/u1/ab12-12.png',
+      bytes: 12,
+      mime: 'image/png',
+      sha256: sha,
+      updated: ['Actor.a', 'Scene.s'],
+    });
+  });
+  it('handles a file with no targets and rejects other text', () => {
+    expect(parseImageUploadText(`${head}\nThe file is stored.`)?.updated).toEqual([]);
+    expect(parseImageUploadText('FORBIDDEN: nope')).toBeNull();
   });
 });

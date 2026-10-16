@@ -81,12 +81,14 @@ async function resolveScene(uuid: string): Promise<any> {
   return scene;
 }
 
-function firstLevelId(scene: any): string {
+/** The v14 Level that holds the background (also the Undo snapshot target). */
+function backgroundLevel(scene: any): any {
   const levels = scene.levels;
   const list: any[] = Array.isArray(levels?.contents) ? levels.contents : levels ? [...levels] : [];
-  const id = list[0]?.id ?? list[0]?._id;
-  if (typeof id !== 'string' || !id) return invalid('The Scene has no level to update');
-  return id;
+  const level = scene.initialLevel ?? levels?.get?.('defaultLevel0000') ?? list[0];
+  if (typeof level?.id !== 'string' || typeof level.uuid !== 'string')
+    return invalid('The Scene has no level to update');
+  return level;
 }
 
 // Quota check and upload for one user must not interleave (this browser only).
@@ -164,7 +166,10 @@ export const imageUploadHandler = defineWriteHandler({
     const actor = args.actorUuid ? await resolveActor(user, args.actorUuid) : undefined;
     const scene = args.sceneUuid ? await resolveScene(args.sceneUuid) : undefined;
     if (actor) await ctx.snapshot(actor.uuid);
-    if (scene) await ctx.snapshot(scene.uuid);
+    // v14 keeps the background on a Level, and Undo drops embedded collections from a Scene
+    // snapshot, so the Level itself is snapshotted there; v13 snapshots the Scene.
+    const level = scene && foundryGeneration() >= 14 ? backgroundLevel(scene) : undefined;
+    if (scene) await ctx.snapshot(level ? level.uuid : scene.uuid);
 
     const sha256 = sha256Bytes(bytes);
     const fp = resolveFilePicker();
@@ -187,10 +192,10 @@ export const imageUploadHandler = defineWriteHandler({
       );
     }
     if (scene) {
-      if (foundryGeneration() >= 14)
+      if (level)
         await scene.updateEmbeddedDocuments(
           'Level',
-          [{ _id: firstLevelId(scene), 'background.src': path }],
+          [{ _id: level.id, 'background.src': path }],
           ctx.callOptions,
         );
       else await scene.update({ 'background.src': path }, ctx.callOptions);
@@ -204,7 +209,9 @@ export const imageUploadHandler = defineWriteHandler({
       ? `Set ${applied.join('; ')}. Undo restores the previous image fields but does not delete the uploaded file.`
       : 'The file is stored; Undo does not delete the uploaded file.';
     return {
-      text: `${head}\n${tail}`,
+      text: [head, updated.length ? `Updated: ${updated.join(', ')}` : '', tail]
+        .filter(Boolean)
+        .join('\n'),
       structured: { path, mime: args.mime, bytes: bytes.length, sha256, updated },
     };
   },

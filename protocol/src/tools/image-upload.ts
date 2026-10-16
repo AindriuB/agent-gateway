@@ -37,3 +37,32 @@ export const imageUpload = defineTool({
     updated: z.array(z.string().max(300)).max(4).describe('Documents updated with the path'),
   }),
 });
+
+export interface ImageUploadSummary {
+  path: string;
+  bytes: number;
+  mime: string;
+  sha256: string;
+  updated: string[];
+}
+
+/**
+ * Recover the upload details from the result text. The handler's first line is
+ * `Uploaded <path> (<n> bytes, <mime>, sha256 <hex>)` and an optional second line is
+ * `Updated: <uuid>, <uuid>`. Used when only the text survives, e.g. after a long approval wait.
+ */
+export function parseImageUploadText(text: string): ImageUploadSummary | null {
+  const lines = text.split('\n');
+  const m = /^Uploaded (\S+) \((\d+) bytes, (image\/[a-z]+), sha256 ([0-9a-f]{64})\)$/.exec(
+    lines[0] ?? '',
+  );
+  if (!m) return null;
+  const u = /^Updated: (.+)$/.exec(lines[1] ?? '');
+  return {
+    path: m[1]!,
+    bytes: Number(m[2]),
+    mime: m[3]!,
+    sha256: m[4]!,
+    updated: u ? u[1]!.split(', ') : [],
+  };
+}

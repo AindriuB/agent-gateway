@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { parseImageUploadText } from '@agent-gateway/protocol';
 import { imageUploadHandler } from '../../../src/tools/image-upload.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
@@ -114,6 +115,7 @@ describe('image_upload storage', () => {
     expect(s.sha256).toBe(createHash('sha256').update(PNG).digest('hex'));
     expect(s.bytes).toBe(12);
     expect(r.text.split('\n')[0]).toContain(s.sha256);
+    expect(parseImageUploadText(r.text)).toMatchObject({ path: s.path, sha256: s.sha256 });
     expect(r.text).toContain('does not delete the uploaded file');
     expect(r.text).not.toContain(b64(PNG));
     expect(uploads[0].dir).toBe('agent-gateway/uploads/p1');
@@ -241,7 +243,7 @@ describe('image_upload permissions', () => {
 describe('image_upload scene background', () => {
   it('v14 updates the first Level, snapshots the Scene and passes callOptions', async () => {
     const scene = doc('Scene.s', 'Scene', {
-      levels: { contents: [{ id: 'defaultLevel0000' }] },
+      levels: { contents: [{ id: 'defaultLevel0000', uuid: 'Scene.s.Level.defaultLevel0000' }] },
       updateEmbeddedDocuments: vi.fn(async () => []),
     });
     const r = await call(args({ sceneUuid: 'Scene.s', setBackground: true }), 'gm');
@@ -251,7 +253,8 @@ describe('image_upload scene background', () => {
       [{ _id: 'defaultLevel0000', 'background.src': r.structured.path }],
       { agentGateway: { callId: 'c1' } },
     );
-    expect(snapshot).toHaveBeenCalledWith('Scene.s');
+    expect(snapshot).toHaveBeenCalledWith('Scene.s.Level.defaultLevel0000');
+    expect(snapshot).not.toHaveBeenCalledWith('Scene.s');
   });
   it('v13 updates background.src directly', async () => {
     (globalThis as any).game.release.generation = 13;
@@ -261,5 +264,6 @@ describe('image_upload scene background', () => {
       { 'background.src': r.structured.path },
       { agentGateway: { callId: 'c1' } },
     );
+    expect(snapshot).toHaveBeenCalledWith('Scene.s');
   });
 });
