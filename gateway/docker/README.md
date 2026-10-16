@@ -112,14 +112,16 @@ explanation, including why a player invite needs a GM online, is in
    `docker compose exec gateway <cli> --invite <world id> <user id> --admin --origin https://<foundry host>`
    and send the printed invite privately. It works once and expires after 1 hour. The GM pastes it
    into the pairing window.
-2. **Players.** The admin GM invites them from Manage access. You can also run
+2. **Players.** The admin GM invites them from Manage access (Configure Settings, then Agent Gateway, then Manage access). You can also run
    `docker compose exec gateway <cli> --invite <world id> <user id>`. A player invite completes only
-   while an admin GM is in the world with Agent Gateway connected; otherwise the player sees "No GM
-   is online".
+   while an admin GM is in the world with Agent Gateway connected; otherwise the
+   invite is refused unused and the player is told to ask their GM to open the world with Agent
+   Gateway connected, then paste the invite again.
 3. **Extra GM accounts.** For a dedicated GM user such as a "ChatGPT" GM, use `--invite ... --gm
 --origin ...`. It pairs directly and is not admin.
 
-Re-pairing a lost device needs a new invite, which replaces the old pairing.
+Re-pairing a lost device needs a new invite, which replaces the old pairing. A GM re-pairs with a
+new `--admin` or `--gm` invite, because a plain invite for a GM user is refused.
 
 - `docker compose exec gateway <cli> --demote <world> <user>` clears a GM's admin flag.
 - `docker compose exec gateway <cli> --revoke-pairing <world> <user>` removes someone and
