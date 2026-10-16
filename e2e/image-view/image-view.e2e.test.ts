@@ -448,9 +448,13 @@ describe.skipIf(!enabled)('image_view', () => {
       );
       // A Scene whose background is the uploaded PNG: v14 reads the Level the tools use
       // (initialLevel, then defaultLevel0000, then the first Level), v13 scene.background.src.
-      bgScene = await createDoc(
-        `async ([name, src]) => {
-          const scene = await Scene.create({ name });
+      // Create first so the uuid is recorded for afterAll; only then set the background.
+      bgScene = await createDoc(`async (d) => (await Scene.create(d)).uuid`, {
+        name: 'agent-gateway e2e view background scene (temporary)',
+      });
+      await evalGm<void>(
+        `async ([uuid, src]) => {
+          const scene = await fromUuid(uuid);
           if (game.release.generation >= 14) {
             const levels = scene.levels.contents;
             const level =
@@ -462,9 +466,8 @@ describe.skipIf(!enabled)('image_view', () => {
           } else {
             await scene.update({ 'background.src': src });
           }
-          return scene.uuid;
         }`,
-        ['agent-gateway e2e view background scene (temporary)', probePath],
+        [bgScene, probePath],
       );
     },
     humanTimeout(1) + RECONNECT_MS,
