@@ -16,12 +16,23 @@
 - module/test/stubs/** (insertion only)
 - e2e/image-assign/** (new)
 - e2e/vitest.e2e.config.ts (insert one `image-assign/**/*.e2e.test.ts` line in the e2e-live include list only)
+- module/src/audit/undo-classes.ts (insertion only: one `'Level'` entry in `UNDO_EMBEDDED`, nothing in `UNDO_CLASSES`; added by Amendment 2)
+- module/test/audit/undo-levels.test.ts (new; added by Amendment 2. No test file covers undo-classes.ts directly today; this follows the `undo-combat.test.ts` (48) and `undo-regions.test.ts` (51) naming)
 
 Overlap: only the insertion-only shared files above, also inserted into by 53 and 123. No other
 open task owns module/src/ops/context.ts or module/test/ops/context.test.ts; task 48 cites
 context.ts:16-21 (the destructive classification) read-only, and that cite moves if this
 task's insertion lands above it, so insert after the `character_build` rule (after line 21). Uses
 protocol/src/images/** and module/src/tools/_image.ts (owned by 120) without editing them.
+
+Overlap on module/src/audit/undo-classes.ts (Amendment 2): no task in 102-114 owns it or
+module/test/audit/** (112 lists audit/undo as out of scope). Open, queued tasks that do:
+44 owns all of module/src/audit/** and module/test/audit/**; 48 inserts `Combat` and
+`Combatant`; 51 inserts `Region` and `RegionBehavior` into `UNDO_EMBEDDED`; 47 cites
+undo-classes.ts:5-33 read-only. All four are queued ("do not start"), so none is in flight
+today. If any starts before this task merges, this task is the one that waits or rebases. Append
+`'Level'` as the last `UNDO_EMBEDDED` entry (after `'Card'`); 48 and 51 then rebase onto a
+one-line insertion, and 47's cite becomes 5-34.
 
 ## Goal
 Let an agent find an image that already exists in Foundry's `data` files and set it as an Actor
@@ -58,6 +69,10 @@ may act on any.
   Unit tests cover a player without `FILES_BROWSE`, a player on a non-owned Actor, a player on another user's token, and a player sending `scene_background` and `tile`.
 - [ ] One `set` call is one approval and one audit entry, showing `path`, `target` and `uuid`. The update is snapshotted with `callOptions`, and Undo restores the previous value. A unit test covers Undo for each target.
 - [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_IMAGE=1`): a GM lists a directory and sets a temporary scene background and tile texture; a player sets the portrait and token art of an Actor they own; a player is refused on another user's Actor. Temporary documents are removed by exact UUID. Native execution needs the repository owner's per-run approval.
+- [ ] (Amendment 2) `UNDO_EMBEDDED` in module/src/audit/undo-classes.ts contains `'Level'`; the diff to that file is that one inserted line and nothing else. `undoClasses('Scene.S.Level.L')` returns `{ root: 'Scene', own: 'Level' }`.
+- [ ] (Amendment 2) module/test/audit/undo-levels.test.ts: a `scene_background` `set` on v14 (the background lives on `Scene.<id>.Level.<id>`, updated through `updateEmbeddedDocuments('Level', ...)`) produces an audit target for the Level that is undoable, with the prior value snapshotted; running Undo on that entry restores the Level's `background.src` to the value it had before the `set`.
+- [ ] (Amendment 2) Every other class's undo behaviour is unchanged: the existing module/test/audit/** tests pass unmodified, and no file under module/test/audit/ other than the new undo-levels.test.ts appears in the diff.
+- [ ] (Amendment 2) The native e2e in e2e/image-assign/** asserts, on v14, that Undo of the GM's `scene_background` `set` restores the Level's previous `background.src`. It is written in this task but still not run without the repository owner's per-run approval.
 - [ ] `npm run verify` passes
 
 ## Out of scope
@@ -66,6 +81,7 @@ may act on any.
 - Creating, moving or deleting files or directories
 - Any other change to module/src/ops/context.ts (no edits to existing rules, `prepareContext`, `withPreparation` or `effectiveCategory`), or to module/src/ops/dispatch.ts
 - Editing protocol/test/tools/tool-count.test.ts, protocol/src/images/** or module/src/tools/_image.ts (120; stop and report if a helper is missing)
+- (Amendment 2) Any other change under module/src/audit/** or module/test/audit/** (44 owns them): no other class added to `UNDO_CLASSES` or `UNDO_EMBEDDED` (`Combat`/`Combatant` are 48's, `Region`/`RegionBehavior` are 51's), and no edits to undo.ts, undo-restoration.ts, stage.ts or witness.ts. If restoring a Level needs more than the one-line insertion, stop and report.
 
 ## Amendment 1 (owner, 2026-10-16, from external PR review)
 
@@ -81,3 +97,25 @@ rewritten to the real `handler.prepare` mechanism.
 Reason, finding 2: browsing the Data root had no valid input (`normalizeDataPath` rejects `''`,
 and Foundry names the root `''`). Task 120 Amendment 1 adds `normalizeDataDir`; `list`'s default
 `dir` and `set`'s parent-directory check now use it.
+
+## Amendment 2 (owner, 2026-10-16)
+
+Decision: Undo must restore a v14 scene background. On v14 the background lives on the embedded
+Level document (`Scene.<id>.Level.<id>`), updated through `updateEmbeddedDocuments('Level', ...)`.
+module/src/audit/undo-classes.ts lists no `Level` in `UNDO_CLASSES` or `UNDO_EMBEDDED`, so
+`undoClasses()` returns null for that uuid and Undo of the change most likely does nothing.
+Change: Owns gains an insertion-only edit to undo-classes.ts (`'Level'` in `UNDO_EMBEDDED`; the
+root `Scene` is already in `UNDO_CLASSES`) and the new module/test/audit/undo-levels.test.ts.
+Acceptance gains the Level undo unit test, the unchanged-behaviour check for every other class,
+and the v14 Undo assertion in the native e2e (still not run without owner approval). Overlap with
+44, 47, 48 and 51 is recorded under Owns.
+
+### Accepted residuals (owner, 2026-10-16; review should not flag these)
+
+- (a) A parent directory with more than 200 entries cannot be confirmed. `browseImages` caps at
+  200 (task 120), so `set` of a file in such a directory returns `INVALID_ARGS` with
+  "directory too large to confirm".
+- (b) The e2e suite creates the temporary Scene and Tile through the GM page, because
+  `document_create` does not support those types.
+- (c) `set` reads the value back after the update and fails if Foundry did not store the path.
+  This is the deliberate guard against the v14 `scene.update` no-op, not redundant code.
