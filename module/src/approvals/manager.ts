@@ -454,14 +454,17 @@ export class ApprovalManager {
   private findOpenFor(ctx: OpContext): ApprovalRecord | undefined {
     for (const r of this.records.values()) {
       if (r.status !== 'pending' || r.replay || !this.bindsTo(r, ctx)) continue;
-      // A call that is still waiting on a live link is a second, separate call: it gets its own.
-      const w = this.waiters.get(r.id);
-      if (!w || w.finished || w.orphaned) return r;
+      // Only a call cut off by a link drop can be rejoined; on a live link an identical call is
+      // a second, separate call and gets its own record.
+      if (this.waiters.get(r.id)?.orphaned) return r;
     }
     return undefined;
   }
 
-  /** The link dropped: calls waiting now have lost their caller, and a retry may take over. */
+  /**
+   * The link dropped: every call waiting on a record, including one that already returned the id,
+   * has lost its caller, and a retry of the same call may take over.
+   */
   linkDropped(): void {
     for (const w of this.waiters.values()) w.orphaned = true;
   }

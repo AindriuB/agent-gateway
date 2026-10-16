@@ -69,7 +69,8 @@ describe('heartbeat', () => {
 
   it('counts any inbound frame as liveness, not only a pong', async () => {
     const c = await fakeTimerClient();
-    // Five silent intervals, then a non-pong frame, then five more: past the bound without it.
+    // Three rounds of MAX_MISSED_PONGS - 1 silent intervals, each ended by a non-pong frame: far
+    // past the bound overall, so the link survives only if that frame counts as liveness.
     for (let round = 0; round < 3; round++) {
       for (let i = 0; i < MAX_MISSED_PONGS - 1; i++) {
         vi.advanceTimersByTime(HEARTBEAT_INTERVAL_MS);

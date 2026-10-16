@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, expect, it, vi } from 'vitest';
 import { APPROVAL_CONFIG } from '../../src/approvals/config.js';
+import { getApprovalManager, startApprovals } from '../../src/approvals/live.js';
 import { agentOf, pendingId, pipeline, settle, world } from './rig.js';
+
+vi.mock('../../src/link/runtime.js', async (orig) => ({
+  ...(await orig<object>()),
+  getLinkClient: () => linkClient,
+}));
+let linkClient: any = {};
 
 const WAIT = APPROVAL_CONFIG.APPROVAL_WAIT_MS;
 
@@ -131,5 +139,56 @@ describe('two live calls', () => {
     void call('write_thing', { id: 'a' });
     await settle();
     expect(p1.manager.listPending()).toHaveLength(2);
+  });
+});
+
+describe('no drop, no join', () => {
+  it('after the wait ran out, the same call again on a live link gets its own record', async () => {
+    const { hub, p1, call } = setup();
+    const first = call('write_thing', { id: 'a' });
+    await hub.advance(WAIT);
+    const id = pendingId(await first);
+    void call('write_thing', { id: 'a' });
+    await settle();
+    const ids = p1.manager.listPending().map((r) => r.id);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(id);
+  });
+
+  it('after the wait ran out and a drop, the same call joins the record', async () => {
+    const { hub, p1, call } = setup();
+    const first = call('write_thing', { id: 'a' });
+    await hub.advance(WAIT);
+    const id = pendingId(await first);
+    p1.manager.linkDropped();
+    void call('write_thing', { id: 'a' });
+    await settle();
+    expect(p1.manager.listPending().map((r) => r.id)).toEqual([id]);
+  });
+});
+
+describe('startApprovals', () => {
+  it('tells the manager once when the link goes from connected to disconnected', () => {
+    let listener: (s: { kind: string }) => void = () => {};
+    linkClient = { onState: (fn: typeof listener) => (listener = fn) };
+    (globalThis as any).game = {
+      user: { id: 'p1', isGM: false },
+      users: { get: () => undefined, contents: [] },
+      socket: { on: vi.fn(), emit: vi.fn() },
+    };
+    (globalThis as any).Hooks = { on: vi.fn(), callAll: vi.fn() };
+    try {
+      startApprovals();
+      const dropped = vi.spyOn(getApprovalManager(), 'linkDropped');
+      listener({ kind: 'connected' });
+      expect(dropped).not.toHaveBeenCalled();
+      listener({ kind: 'disconnected' });
+      expect(dropped).toHaveBeenCalledTimes(1);
+      listener({ kind: 'disconnected' });
+      expect(dropped).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (globalThis as any).game;
+      delete (globalThis as any).Hooks;
+    }
   });
 });
