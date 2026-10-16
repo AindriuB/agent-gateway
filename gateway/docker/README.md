@@ -17,15 +17,15 @@ Caddy gets a TLS certificate for your domain and proxies to the gateway, which s
 
 ```
 cd gateway/docker
-cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION picks the ghcr.io image
+cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION: ghcr.io image
 docker compose pull
 docker compose up -d
 docker compose ps         # both services should be running; gateway "healthy"
 curl https://<domain>/status
 ```
 
-To build from source instead of pulling, run `docker compose up -d --build`. Use it for any version that has no
-published image.
+To build from source instead of pulling, run `docker compose up -d --build`. Use it for any
+version that has no published image.
 
 `/status` shows only the version and uptime.
 
