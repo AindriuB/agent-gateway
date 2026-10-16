@@ -20,8 +20,11 @@ The 0.4.0 release is cut from the public repo after this task, not by it. Record
   filter does not touch them. Only the Ascend **mark** (SVG path data) goes.
 - These scripts contain the personal strings they hunt for, which is why they live in the private
   companion and never in the public tree.
-- Q9 — Decided (owner, 2026-10-16): the freeze commit is cut only after 146 and the open playtest
-  tasks 109-114 have merged (147's freeze precondition), so no task branch needs porting by patch.
+- Q9 — Decided (owner, 2026-10-16; amended by Amendment 7): the freeze commit is cut only after
+  146 plus 109, 110, 111, 113 and 114 have merged (147's freeze precondition). Going public does
+  NOT wait for 112 (persist pending approvals, decided as option A): it lands in the public repo
+  after it goes public. If its branch exists at freeze time, it is marked "port" rather than
+  blocking, and it is ported by bundle per Amendment 4's procedure (step 1).
 - Q10 — Decided (owner, 2026-10-16): rewritten history maps the author and committer NAME to
   `AindriuB` and the email to `3417729+AindriuB@users.noreply.github.com`. GitHub's own merge
   committer (`GitHub <noreply@github.com>`) is left as is. LICENSE keeps the legal name.
@@ -177,12 +180,13 @@ swap it in under the existing repo name and restore the releases.
 - [ ] RUNBOOK.md gives the cut-over as numbered steps, each marked **OWNER** or **SCRIPT**, in
       this order. Steps 1-10 are all reversible and nothing in them is visible outside the
       owner's account; step 11 is the single publish gate; steps 12-13 publish (Amendment 1):
-      1. OWNER: declare the freeze SHA only once 147's freeze precondition holds (146 and 109,
-         111, 112, 113, 114 merged); stop merging to main. SCRIPT: print
+      1. OWNER: declare the freeze SHA only once 147's freeze precondition holds (146 plus 109,
+         110, 111, 113 and 114 merged); stop merging to main. SCRIPT: print
          `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
          `git branch -r --no-merged origin/main`, and exit non-zero if any open PR or unmerged
-         branch names task 146 or 109-114. OWNER: mark each remaining open PR or branch
-         "abandon" or "port". Before any PR is closed or any branch deleted, every branch to port goes into a
+         branch names task 146, 109, 110, 111, 113 or 114. An open PR or unmerged branch for
+         112 does not fail the check; the script lists it pre-marked "port" (Amendment 7).
+         OWNER: mark each remaining open PR or branch "abandon" or "port". Before any PR is closed or any branch deleted, every branch to port goes into a
          self-contained `<backup-dir>/open-branches.bundle` outside the checkout
          (`git bundle create` with no `^` exclusions, then `git bundle verify`), and the bundle
          is restored into a scratch repository (`git -C <scratch> fetch <bundle>
@@ -447,3 +451,14 @@ swap it in under the existing repo name and restore the releases.
   `ko_fi: aindriub`, and README links `https://github.com/sponsors/AindriuB`. Context updated;
   both are in the self-test's must-not-match list. Q13 still refers to the old FUNDING.yml in
   history (c117d4d to 5f8ed04), kept as is.
+
+### Amendment 7 (owner decision, Andrew, 2026-10-16)
+
+- Going public does NOT wait for homelab task 112 (persist pending approvals, now decided as
+  option A). The Q9 freeze precondition changes from "146 and 109-114" to "146 plus 109, 110,
+  111, 113 and 114" in the Q9 decision and in runbook step 1, including its script check, which
+  no longer fails on a 112 PR or branch. Supersedes the Q9 line of Amendment 5.
+- 112 lands in the public repo after it goes public. If its branch exists at freeze time, it is
+  marked "port" rather than blocking, and it is ported by bundle per Amendment 4's procedure in
+  step 1 (verified `open-branches.bundle`, PASS per branch before anything is closed or deleted,
+  re-applied onto the rewritten main by cherry-pick or `git rebase --rebase-merges`).
