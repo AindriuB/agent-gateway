@@ -362,6 +362,27 @@ export const UserGrantsMessage = z.strictObject({
     .max(200),
 });
 
+/**
+ * Approval state mirror (task 112, protocol 7.2.0), module to gateway. Either one transition of an
+ * approval the module created this page session (`id` + `state`), or the list of ids still pending,
+ * sent once after each `welcome` (`ids`). The gateway takes the owner from the connection.
+ */
+export const MAX_APPROVAL_STATE_IDS = 256;
+export const ApprovalStateMessage = z
+  .strictObject({
+    type: z.literal('approvalState'),
+    id: z.string().min(1).max(64).optional(),
+    state: z.enum(['pending', 'approved', 'denied', 'expired']).optional(),
+    ids: z.array(z.string().min(1).max(64)).max(MAX_APPROVAL_STATE_IDS).optional(),
+  })
+  .refine(
+    (r) =>
+      r.ids !== undefined
+        ? r.id === undefined && r.state === undefined
+        : r.id !== undefined && r.state !== undefined,
+    { message: 'approvalState is either a transition (id, state) or a list (ids)' },
+  );
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -396,6 +417,7 @@ export const LinkMessage = z.discriminatedUnion('type', [
   ListUserGrantsMessage,
   RevokeUserGrantMessage,
   UserGrantsMessage,
+  ApprovalStateMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

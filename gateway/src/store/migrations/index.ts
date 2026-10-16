@@ -10,6 +10,7 @@ import m009 from './009-gateway-settings.js';
 import m010 from './010-oauth.js';
 import m011 from './011-invites.js';
 import m012 from './012-admin-pairings.js';
+import m014 from './014-approval-alias.js';
 import m013 from './013-headless-agents.js';
 
 /**
@@ -30,4 +31,5 @@ export const MIGRATIONS: readonly string[] = [
   m011,
   m012,
   m013,
+  m014,
 ];

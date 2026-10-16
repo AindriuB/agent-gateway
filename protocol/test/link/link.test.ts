@@ -139,7 +139,7 @@ describe('error codes', () => {
 
 describe('checkCompat', () => {
   it('accepts identical and minor/patch differences', () => {
-    expect(PROTOCOL_VERSION).toBe('7.1.0');
+    expect(PROTOCOL_VERSION).toBe('7.2.0');
     expect(checkCompat(PROTOCOL_VERSION, '7.0.0')).toEqual({ ok: true });
     expect(checkCompat(PROTOCOL_VERSION, '7.5.3')).toEqual({ ok: true });
   });
@@ -257,7 +257,7 @@ describe('protocol6 queued replay boundaries', () => {
       { type: 'queuedStatus', id: call.id, status: 'pending', text: 'waiting' },
     ])
       expect(parseLinkMessage(JSON.stringify(frame)).ok).toBe(true);
-    expect(PROTOCOL_VERSION).toBe('7.1.0');
+    expect(PROTOCOL_VERSION).toBe('7.2.0');
     expect(checkCompat(PROTOCOL_VERSION, '6.0.0').ok).toBe(false);
   });
   it.each([
