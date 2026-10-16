@@ -3,9 +3,11 @@ export const MAX_FAILED_AUTH_PER_CLIENT = 10;
 export const FAILED_AUTH_WINDOW_MS = 60_000;
 export const PUBLIC_CLIENT_RPS = 10;
 /** Outer flood bound per client key (IP or /64): room for several principals behind one egress IP. */
-export const MAX_HTTP_SESSIONS_PER_CLIENT = 16;
+export const MAX_HTTP_SESSIONS_PER_CLIENT = 32;
 /** Sessions one principal (a grant, or the local token) may hold; the oldest idle one is evicted. */
-export const MAX_HTTP_SESSIONS_PER_PRINCIPAL = 4;
+export const MAX_HTTP_SESSIONS_PER_PRINCIPAL = 16;
+/** Per principal, at most one eviction line at info level in this window; the rest go to debug. */
+export const EVICTION_LOG_WINDOW_MS = 600_000;
 /** Credential-free /mcp requests (OAuth discovery) allowed per client key per window. */
 export const MAX_DISCOVERY_PER_CLIENT = 120;
 export const DISCOVERY_WINDOW_MS = 60_000;
