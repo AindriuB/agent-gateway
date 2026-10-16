@@ -182,7 +182,6 @@ function openStream(
         resolve({ status: res.statusCode ?? 0, close: () => req.destroy() });
       },
     );
-    req.on('error', () => undefined);
     req.on('error', reject);
     req.end();
   });
@@ -239,10 +238,14 @@ describe('HTTP session churn from one OAuth principal', () => {
     const s: Reply[] = [];
     for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
       s.push(await init(port, 'a', '1.1.1.1'));
-    // s[0] is the oldest-idle, but has a call in flight, so s[1] goes instead.
+    // s[0] ends up least recent but has a call in flight, so s[1] goes instead.
     gate.hold = true;
     const busy = call(port, 'a', '1.1.1.1', s[0]!.sid!);
     await until(() => gate.held.length === 1, 3000);
+    gate.hold = false;
+    // Request start refreshed s[0]; touch the rest so s[0] is least recent while still in flight.
+    for (let i = 1; i < s.length; i++)
+      expect((await call(port, 'a', '1.1.1.1', s[i]!.sid!)).status).toBe(200);
     expect((await init(port, 'a', '1.1.1.1')).status).toBe(200);
     expect(lines).toHaveLength(1);
     release(mod!);
