@@ -1,12 +1,8 @@
 # Architecture
 
 The shape of the system: what the pieces are, what talks to what, and where the
-boundaries are. `explorer` and `architect` read this before inferring
-structure from the filesystem, so keeping it honest saves every session a
-search.
-
-Keep it to the parts that are stable. Anything that changes weekly belongs in a
-repo's own `PROJECT.md` (the agent guide that `CLAUDE.md` and `AGENTS.md` point to), not here.
+boundaries are. It covers only the parts that are stable; anything that changes
+weekly belongs in the code or the per-feature docs.
 
 ## Components
 
@@ -57,43 +53,6 @@ SQLite, opened and migrated by `gateway/src/store/` (`store.ts`, `migrate.ts`). 
 
 A new browser pairs with a one-time code (`gateway/src/link/pairing-codes.ts`): `XXXX-XXXX` from an unambiguous alphabet, valid 10 minutes, self-refreshing, and shown in the not-connected errors and `gateway_status`. Entering it in the module's pairing app approves that browser's origin, which is stored on the pairing (migration 007); later reconnects with the token are accepted only from that origin (task 70). Failed codes are limited to 10 per 60 s across origins (`gateway/src/link/code-attempts.ts`), and the number of connections that have not yet sent `hello` is capped at 16. Role is whatever Foundry reports in `hello` (`isGM`), never a setting. A session without `--user` follows the connected pairing, re-binding on a switch with a 30 s grace (task 71, `gateway/src/routing/binding.ts`).
 
-## Repository topology
-
-A workspace root spans several repositories that a single `git clone` does not
-obtain. Say which they are, which are deliberately untracked here and why, and
-give the exact commands that assemble a working setup from scratch — including
-which remotes are SSH and which are HTTPS, rather than assuming one everywhere.
-
-`.claude/` is untracked on purpose: it holds the worktree scripts installed from
-the agent-kit repo, whose single clone lives outside every project it serves and
-is refreshed with `git -C <kit> pull`. The roles themselves are not here at all —
-`agents/` and `commands/` are symlinked into `~/.claude`, shared by every
-project. Tracking any of it here would fork the harness away from that upstream.
-Sibling project directories
-are likewise untracked — each is its own repository with its own remote, a plain
-directory this repo's `.gitignore` excludes, not a submodule and not a nested
-tracked tree. Git has no record of them at all from this repo's side, so nothing
-about cloning this repo alone tells you they exist.
-
-<!--
-| Repo | Role | Tracked here? |
-|---|---|---|
-| ... | ... | ... |
--->
-
-<!--
-```
-git clone <workspace-repo> <dir> && cd <dir>
-git clone <project-repo-1>
-git clone <project-repo-2>
-git clone git@github.com:AindriuB/workspace.git .claude && .claude/install.sh
-```
--->
-
-If a repo has been renamed, say so and say what older `HISTORY.md` entries call
-it — otherwise every entry written before the rename reads as a fourth repo that
-does not exist.
-
 ## How they talk
 
 The MCP client calls the gateway (stdio, relay or HTTP). The gateway routes each tool call to the paired module over the link, and the module replies. The module dials out to the gateway, never the reverse. Link messages are defined in `protocol/src/link/messages.ts`; the module's side is `module/src/link/client.ts`. Tool schemas and event types live in `protocol/src/tools` and `protocol/src/events`.
@@ -124,10 +83,6 @@ With `--public-url`, OAuth 2.1 is the only way to authenticate to `/mcp` (`gatew
 ## Docker image and Compose stack (task 42)
 
 `gateway/Dockerfile` builds the server-mode image (about 375 MB), running as `node` with a 0700 `/data` volume that holds the store and `/data/backups`. `gateway/docker/compose.yaml` runs the gateway and Caddy; Caddy uses `network_mode: service:gateway`, so it shares the gateway's network namespace and reaches it on loopback, and only ports 80 and 443 are published. Caddy terminates TLS and proxies `/link` and `/mcp`. If the gateway auto-restarts, Caddy can be left in a dead namespace. `scripts/release.mjs` builds the image locally; steps are in `gateway/docker/README.md` and `docs/server-mode.md`.
-
-## Planned (MVP B)
-
-Not built yet; `docs/plan/PLAN.md` has the order. A headless runner that logs in as an agent user so a world needs no open GM tab (tasks 37, 38). Migration 012 is reserved for headless agents.
 
 ## Decisions worth knowing
 

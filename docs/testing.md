@@ -34,7 +34,7 @@ Foundry user names are matched against the join screen exactly first, then case-
 ## Commands
 
 1. `npm run test:e2e:setup` (once per user, repeat if a pairing is lost). For each user it starts a gateway on the e2e port, opens a headed window whose title and red banner show the user name and the pairing code, joins the world, sets the client `gatewayUrl` to `ws://localhost:<port>`, opens the pairing app, and waits for a human to type the code. The harness never types the code. It confirms each pairing with `world_info`, prints `paired <user>`, and exits 0 when everyone is paired. Add `--player2` to pair the second player too (used by the multi-user suites).
-2. `npm run test:e2e:seed` creates the `ag-test-*` fixtures as the GM. **This writes to the world.** Run it only with the world owner's consent (Andrew), once; running it again leaves exactly one of each fixture. It prints per-type flagged and unflagged counts before and after, and records the blind roll total and the fixture UUIDs in the state directory.
+2. `npm run test:e2e:seed` creates the `ag-test-*` fixtures as the GM. **This writes to the world.** Run it only with the world owner's consent, once; running it again leaves exactly one of each fixture. It prints per-type flagged and unflagged counts before and after, and records the blind roll total and the fixture UUIDs in the state directory.
 3. `npm run test:e2e [-- --foundry v14|v13]` runs unattended: local state checks (under 5 s), then reconnects each user with the stored token (a stale token fails within 45 s of the start: opening both users' sessions, including the gateway start, browser launch, join and connection wait, runs inside one shared 43 s deadline, and cleanup after a failure is bounded to 2 s), checks the fixtures, runs the read suites sequentially and writes the summary. Failure messages say `run npm run test:e2e:setup` or `run npm run test:e2e:seed`.
 4. `npm run test:e2e:clean` deletes only documents flagged `flags['agent-gateway'].fixture` and restores the world to its pre-seed state. It prints per-type counts before and after: flagged goes to 0, unflagged is unchanged.
 
@@ -81,7 +81,7 @@ One-time setup on a release machine, for the v13 test bed at `https://foundry13.
 
 1. Add `AGENT_GATEWAY_E2E_V13_URL=https://foundry13.local` to `~/.config/agent-gateway/test.env`.
 2. Pair the GM: `FOUNDRY_URL=https://foundry13.local AGENT_GATEWAY_E2E_STATE_DIR=~/.config/agent-gateway/e2e-v13 npm run test:e2e:setup -- --only dev-gm`. Pairing codes are typed by a human, never by an agent.
-3. Seed with the same two variables (`npm run test:e2e:seed`), with Andrew's consent.
+3. Seed with the same two variables (`npm run test:e2e:seed`), with the world owner's consent.
 4. Pair the players with the same two variables, using `--only <user>` and `--player2` and the world's exact user names.
 5. Run `AGENT_GATEWAY_E2E_STATE_DIR=~/.config/agent-gateway/e2e-v13 npm run test:e2e -- --foundry v13`.
 6. `scripts/release.mjs` sets the state directory for the v13 gate itself, so no shell exports are needed at release time.
@@ -112,7 +112,7 @@ Before creating fixtures, check the installed and loaded module manifest
 includes `documentTypes.JournalEntryPage.audit` and the native allowed subtype
 includes `agent-gateway.audit`. A JavaScript route cannot repair server-loaded
 metadata. Metadata changes, service restarts and configuration writes require
-specific approval; Andrew performs admin world relaunches. Do not silently
+specific approval; the operator performs admin world relaunches. Do not silently
 replace or adopt an untrusted audit journal.
 
 Read-only preflight must prove the controlled user is the designated active
@@ -441,7 +441,7 @@ Combined publication candidate `23a4f573fa1c11b6d9761a531b4e799ee86a3a76` passed
 
 Automated logins and world writes are gated in auto mode. Approve or allow-list by command:
 
-- Needs Andrew's approval each time (human in the loop): `npm run test:e2e:setup` (headed browsers, a human types the code), `npm run test:e2e:seed` and `npm run test:e2e:clean` (writes to the world).
+- Needs a human approver's sign-off each time (human in the loop): `npm run test:e2e:setup` (headed browsers, a human types the code), `npm run test:e2e:seed` and `npm run test:e2e:clean` (writes to the world).
 - Allow rule once the above has been done: `npm run test:e2e` and `npm run test:e2e -- --foundry v13`. It logs in with stored profiles, spawns `node gateway/dist/bin/cli.js` as a child, launches Chrome with a profile under `~/.config/agent-gateway/e2e/`, and makes read-only tool calls. It writes nothing to the world.
 - Also needed: read and write under `~/.config/agent-gateway/e2e/`, read of `~/.config/agent-gateway/test.env`, a listener on `127.0.0.1:7429`, and outbound access to `FOUNDRY_URL`.
 - Run unattended: `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, `npx tsc -p e2e/tsconfig.json --noEmit`, `npx eslint e2e`.
