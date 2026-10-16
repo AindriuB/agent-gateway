@@ -160,6 +160,7 @@ describe('session listeners on the shared emitters', () => {
   });
 
   it('emits no MaxListenersExceededWarning with MAX_HTTP_SESSIONS_PUBLIC sessions open', async () => {
+    // Long idle window: stops the background sweeper (every idleMs/2) closing early sessions while all 256 are still opening.
     const { port, toolsets, buf, registry } = await setup(MAX_HTTP_SESSIONS_PUBLIC, 3_600_000);
     const warnings: string[] = [];
     const onWarning = (w: Error) => warnings.push(w.name);

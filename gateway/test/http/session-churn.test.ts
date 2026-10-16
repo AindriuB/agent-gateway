@@ -190,7 +190,8 @@ function openStream(
   });
 }
 
-// Pins today's behaviour for task 110 (spike). It changes nothing in src/.
+// Pins the session caps and eviction behaviour after task 111: oldest-idle sessions
+// are evicted once a cap is reached, and one principal cannot exhaust the pool.
 describe('HTTP session churn from one OAuth principal', () => {
   it('twenty initializes with no DELETE give exactly four evictions, oldest-idle first', async () => {
     const { port, lines, debugLines } = await setup();
