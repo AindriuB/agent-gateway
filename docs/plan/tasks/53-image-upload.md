@@ -242,3 +242,14 @@ Acceptance (Amendment 2):
   acceptance item and Amendment 1 C stands
 - Deleting uploaded files from code
 - Task 121's e2e (its own Amendment 3)
+
+## Review round 1 — findings
+
+Reviewed HEAD: a982023e9d42403409ac21afbe2b56c95b1f33c4
+
+- [STYLE] module/test/events/native-serialization-probe.mts:7 — Commit 8efe35e reformats this file, which is outside 53's Owns. It only rewraps one `assert.rejects(...)` call and was not needed for verify (the root `lint` runs `prettier --check` on `**/*.ts` only).
+  route: orchestrator → decided: revert the hunk (restores scope; no spec change). Implementer reverts it.
+- [P3] module/src/tools/image-upload.ts:121-125 — The quota check (browse then sum) and the upload are not atomic, so two concurrent approved uploads from one user can both pass.
+  route: implementer — serialise uploads per user inside the handler; the 64 MiB rule is unchanged.
+  input: user at 64 MiB − 300 KiB; two concurrent 512 KiB `image_upload` calls, both approved → both pass, total ends ~724 KiB over quota.
+- [NOTE] e2e beforeAll/afterAll: if the world never stored `core.permissions`, the snapshot may be `{}` or defaults; the native run must confirm the key and read-back (already in Amendment 2).
