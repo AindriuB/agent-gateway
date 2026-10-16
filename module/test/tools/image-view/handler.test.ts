@@ -183,7 +183,12 @@ describe('image_view handler: visibility', () => {
 
 describe('image_view handler: probing', () => {
   it('answers a missing uuid and an unviewable document identically', async () => {
-    const { fetchMock } = install(player, { docs: { 'Actor.hidden': doc({ limited: false }) } });
+    const { fetchMock } = install(player, {
+      docs: {
+        'Actor.hidden': doc({ limited: false }),
+        'Scene.wrongtype': doc({ documentName: 'Scene', limited: true }),
+      },
+    });
     const a = await run({ source: 'actor_portrait', uuid: 'Actor.hidden' }, player);
     const b = await run({ source: 'actor_portrait', uuid: 'Actor.missing' }, player);
     const c = await run({ source: 'actor_portrait', uuid: 'Scene.wrongtype' }, player);
