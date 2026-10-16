@@ -11,6 +11,10 @@ The gateway's existing OAuth grants, Foundry permissions and approval controls
 still govern tool use. World data returned to ChatGPT is processed by the AI
 service; connect only the Foundry user and scopes you intend to use.
 
+## Status
+
+As of 2026-10-16, a plugin made at chatgpt.com/plugins surfaced only in Codex and not in ChatGPT chat. Work mode was not separately verified, so whether a plugin can work there is unverified. A developer-mode custom connector (no plugin) works on a live ChatGPT account. ChatGPT chat users should follow the [ChatGPT guide](guides/chatgpt.md), which leads with the connector. This package remains for Codex, where its use was reported working. Live ChatGPT acceptance (install, read, approved write) was not met by a plugin and is superseded by the connector route, which is the supported route either way.
+
 ## Build and inspect
 
 From the repository root, with Node.js 22.13+ and the `zip` and `unzip` command-line tools:
@@ -60,18 +64,18 @@ first and update it rather than creating duplicates. If an upload result is
 uncertain, inspect the account before retrying.
 
 Saving the package does not sign the user in to the gateway. Open the resulting
-plugin in the host and enable/install it. For the documented ChatGPT plugin
-quickstart, switch from Chat to Work, start a new Work chat and select the plugin
-with `@`. Use its supported connection action to start OAuth. If that host does not offer a supported
-installation or OAuth flow, retain the ZIP and report that exact blocker rather
-than substituting a static token or claiming success. The save route above is
-available in Codex's plugin-creator integration; successful use in ChatGPT must
-be verified separately. No host build number has yet been recorded for live
-acceptance.
+plugin in Codex and enable/install it, then use its supported connection action
+to start OAuth. If the host does not offer a supported installation or OAuth
+flow, retain the ZIP and report that exact blocker rather than substituting a
+static token or claiming success. The save route above is available in Codex's
+plugin-creator integration. In ChatGPT chat the plugin did not surface on
+2026-10-16 (see Status); use the [connector guide](guides/chatgpt.md) there.
+No host build number has been recorded.
 
 In the gateway consent flow, select the intended world and Foundry user and
-request `read` for inspection. The user completes the consent code shown in their
-paired Foundry session. Add `write` only for user-requested changes; `destructive`
+request `read` for inspection (untick `write` for read-only, since `write` starts
+ticked when requested). The user completes the consent code shown in their
+paired Foundry session. Keep `write` only for user-requested changes; `destructive`
 and `code` are not needed for the acceptance check. Keep the paired Foundry
 session available. Credentials and codes stay in the supported host and Foundry
 interfaces, never in this package or an agent transcript.
@@ -92,8 +96,10 @@ and 40; this document records package-specific steps and evidence only.
 **Reported by Andrew:** the gateway works, and Codex registered and used a live
 OAuth grant. Installing the plugin through ChatGPT settings exposed its skill
 but no Foundry MCP tools in a Chat-mode conversation. This is evidence about
-those observed surfaces; it does not establish that the plugin is Codex-only or
-that OAuth grants are shared between hosts.
+those observed surfaces. On 2026-10-16 the plugin surfaced only in Codex and not
+in ChatGPT chat; Work mode was not separately verified, so it is not ruled out
+and remains unverified. The finding does not establish that OAuth grants are
+shared between hosts. The connector is the supported ChatGPT route either way.
 
 **Documented:** the [plugin quickstart](https://developers.openai.com/plugins/quickstart)
 tests installed plugins in a new Work chat after switching from Chat and selecting
@@ -116,14 +122,15 @@ discovery rather than explicit auth configuration. Its inventory has no `.app.js
 rejects server extension fields. No verified registered-connection ID has been
 identified, so none should be invented or copied from documentation examples.
 
-**Next checks / inference:** first test the existing installation in Work and
-inspect its connection and tool discovery. If the connection is absent or cannot
-authenticate, investigate the registered-connection route and the documented
+**Next checks / inference (optional; the connector is the supported route
+regardless):** testing the existing installation in Work is unverified and
+would show whether it surfaces there. If the connection is absent or cannot
+authenticate, one could investigate the registered-connection route and the documented
 explicit OAuth declaration. An explicit OAuth declaration is a documented configuration improvement,
 not a proven fix of the Chat-mode symptom. Adding it requires a reviewed
 package/validator/test change and a new private release. No such package or live
-plugin change has been made by this diagnosis. Work OAuth, read, approved write
-and revocation acceptance remain untested.
+plugin change has been made by this diagnosis. Plugin acceptance in Work (OAuth, read,
+approved write and revocation) remains untested.
 
 ## Verification record
 
@@ -137,8 +144,8 @@ As of 2026-10-14:
 | Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                       |
 | Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
 | Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
-| ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work OAuth and host/build capture remain pending.                                                                |
-| Tool discovery and read      | Codex OAuth use reported by Andrew; ChatGPT Work tool discovery and read remain pending.                                                                                                       |
+| ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work mode was not verified; host/build not captured.                                                             |
+| Tool discovery and read      | Codex OAuth use reported by Andrew. ChatGPT chat: plugin did not surface (2026-10-16); Work mode unverified. Use the connector guide.                                                          |
 | Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
 | Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
 
@@ -148,8 +155,9 @@ Plugin ID: `plugins_6acfb1accddc8191939dfe027ef9ef5c`; release ID:
 updates; saving it does not prove installation, OAuth or tool access.
 
 Record redacted outcomes and the host/build used when completing the pending
-checks. Do not store tool payloads, tokens or codes as evidence. The task remains
-incomplete until its live acceptance and full repository verification pass.
+checks. Do not store tool payloads, tokens or codes as evidence. Live
+ChatGPT acceptance of the plugin is superseded by the connector route (see
+Status); the package remains for Codex.
 
 ## Self-hosting and updates
 
