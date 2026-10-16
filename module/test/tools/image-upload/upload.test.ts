@@ -151,6 +151,29 @@ describe('image_upload storage', () => {
     const shown = redactedArgs(imageUpload, a) as any;
     expect((await call(a)).structured.sha256).toBe(shown.data.sha256);
   });
+  it('serialises one user: two concurrent 512 KiB uploads, room for one, give one success', async () => {
+    // Usage is 64 MiB minus 600 KiB, so exactly one more 512 KiB file fits.
+    existing = [...Array(126).fill('x/bb-524288.png'), 'x/aa-434176.png'];
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    fp.browse = vi.fn(async () => {
+      await tick();
+      return { files: [...existing] };
+    });
+    fp.upload = vi.fn(async (_s: string, dir: string, file: File) => {
+      await tick();
+      existing.push(`${dir}/${file.name}`);
+      return { status: 'success', path: `${dir}/${file.name}` };
+    });
+    const big = Buffer.concat([PNG, Buffer.alloc(524288 - PNG.length)]);
+    const a = args({ data: b64(big) });
+    const results = await Promise.all([call(a), call(a)]);
+    expect(results.filter((r) => !r.error)).toHaveLength(1);
+    const refused = results.filter((r) => r.error);
+    expect(refused).toHaveLength(1);
+    expect(refused[0].error.code).toBe('INVALID_ARGS');
+    expect(refused[0].error.message).toContain('quota');
+    expect(fp.upload).toHaveBeenCalledTimes(1);
+  });
   it('fails when Foundry reports a failed upload', async () => {
     for (const bad of [false, undefined, {}]) {
       fp.upload.mockResolvedValueOnce(bad);

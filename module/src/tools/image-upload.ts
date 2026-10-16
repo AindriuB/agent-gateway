@@ -89,6 +89,53 @@ function firstLevelId(scene: any): string {
   return id;
 }
 
+// Quota check and upload for one user must not interleave (this browser only).
+const locks = new Map<string, Promise<unknown>>();
+function withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  const run = (locks.get(userId) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.catch(() => {});
+  locks.set(userId, tail);
+  void tail.then(() => {
+    if (locks.get(userId) === tail) locks.delete(userId);
+  });
+  return run;
+}
+
+async function storeFile(
+  fp: any,
+  userId: string,
+  bytes: Uint8Array,
+  mime: keyof typeof EXTENSION,
+): Promise<string> {
+  const dir = await ensureDirectories(fp, userId);
+  if ((await usedBytes(fp, dir)) + bytes.length > IMAGE_UPLOAD_USER_QUOTA_BYTES)
+    invalid(
+      `The per-user upload quota of ${IMAGE_UPLOAD_USER_QUOTA_BYTES} bytes would be exceeded`,
+    );
+
+  const name = serverName(bytes.length, mime);
+  const path = `${dir}/${name}`;
+  if (!normalizeDataPath(path).ok) invalid('Generated path is invalid');
+  const file = new globalThis.File([bytes], name, { type: mime });
+  let stored: any;
+  try {
+    stored = await fp.upload('data', dir, file, {}, { notify: false });
+  } catch (error) {
+    if (error instanceof WriteError) throw error;
+    invalid(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (stored?.status !== 'success' || typeof stored.path !== 'string')
+    invalid('Foundry refused or failed the upload');
+  let storedPath = '';
+  try {
+    storedPath = decodeURIComponent(stored.path);
+  } catch {
+    /* leaves the mismatch below to refuse */
+  }
+  if (storedPath !== path) invalid('Foundry stored the file at an unexpected path');
+  return path;
+}
+
 export const imageUploadHandler = defineWriteHandler({
   targets: () => [],
   async run(ctx) {
@@ -121,32 +168,9 @@ export const imageUploadHandler = defineWriteHandler({
 
     const sha256 = sha256Bytes(bytes);
     const fp = resolveFilePicker();
-    const dir = await ensureDirectories(fp, user.id);
-    if ((await usedBytes(fp, dir)) + bytes.length > IMAGE_UPLOAD_USER_QUOTA_BYTES)
-      invalid(
-        `The per-user upload quota of ${IMAGE_UPLOAD_USER_QUOTA_BYTES} bytes would be exceeded`,
-      );
-
-    const name = serverName(bytes.length, args.mime);
-    const path = `${dir}/${name}`;
-    if (!normalizeDataPath(path).ok) invalid('Generated path is invalid');
-    const file = new globalThis.File([bytes], name, { type: args.mime });
-    let stored: any;
-    try {
-      stored = await fp.upload('data', dir, file, {}, { notify: false });
-    } catch (error) {
-      if (error instanceof WriteError) throw error;
-      invalid(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (stored?.status !== 'success' || typeof stored.path !== 'string')
-      invalid('Foundry refused or failed the upload');
-    let storedPath = '';
-    try {
-      storedPath = decodeURIComponent(stored.path);
-    } catch {
-      /* leaves the mismatch below to refuse */
-    }
-    if (storedPath !== path) invalid('Foundry stored the file at an unexpected path');
+    const path = await withUserLock(String(user.id), () =>
+      storeFile(fp, String(user.id), bytes, args.mime),
+    );
 
     const updated: string[] = [];
     const applied: string[] = [];
