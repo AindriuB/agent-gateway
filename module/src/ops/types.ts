@@ -1,4 +1,4 @@
-import type { ToolCategory } from '@agent-gateway/protocol';
+import type { ResultImage, ToolCategory } from '@agent-gateway/protocol';
 import type { ApprovalRequest } from '../policy/types.js';
 
 export interface OpUser {
@@ -36,6 +36,8 @@ export interface OpContext {
 export interface OpResult {
   text: string;
   structured: Record<string, unknown>;
+  /** At most one image, carried to the MCP client; never logged or audited. */
+  images?: ResultImage[];
 }
 
 export class OpAdmissionError extends Error {

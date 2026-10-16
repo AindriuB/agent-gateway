@@ -1,15 +1,17 @@
 import {
+  MAX_FRAME_BYTES,
   PROTOCOL_VERSION,
   parseLinkMessage,
   type ErrorCode,
   type LinkMessage,
+  type ResultImage,
 } from '@agent-gateway/protocol/link';
 
 export type HelloMessage = Extract<LinkMessage, { type: 'hello' }>;
 export type CallMessage = Extract<LinkMessage, { type: 'call' }>;
 
 export type CallResult =
-  | { ok: true; text: string; structured?: unknown }
+  | { ok: true; text: string; structured?: unknown; images?: ResultImage[] }
   | { ok: false; code: ErrorCode; message: string };
 export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResult;
 
@@ -925,13 +927,24 @@ export class LinkClient {
     try {
       const res = await this.onCall(call);
       if (res.ok) {
-        reply({
+        const frame: LinkMessage = {
           type: 'result',
           id: call.id,
           ok: true,
           text: res.text,
           ...(res.structured !== undefined ? { structured: res.structured } : {}),
-        });
+          ...(res.images && res.images.length > 0 ? { images: res.images } : {}),
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(frame)).length;
+        // An oversize frame would close the whole link, so refuse this one call instead.
+        if (frame.type === 'result' && frame.images && bytes > MAX_FRAME_BYTES) {
+          reply({
+            type: 'error',
+            id: call.id,
+            code: 'INVALID_ARGS',
+            message: `Result frame is ${bytes} bytes, over the ${MAX_FRAME_BYTES}-byte limit`,
+          });
+        } else reply(frame);
       } else {
         reply({ type: 'error', id: call.id, code: res.code, message: res.message });
       }

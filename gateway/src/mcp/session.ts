@@ -7,7 +7,12 @@ import { isDeepStrictEqual } from 'node:util';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TOOLS, toJsonSchema, type ToolDefinition } from '@agent-gateway/protocol/tools';
-import { validateArgs, type AnnouncedTool, type ErrorCode } from '@agent-gateway/protocol';
+import {
+  sniffImage,
+  validateArgs,
+  type AnnouncedTool,
+  type ErrorCode,
+} from '@agent-gateway/protocol';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/index.js';
 import { subscribe } from './session-hub.js';
 import {
@@ -522,6 +527,27 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         res.structured !== null && typeof res.structured === 'object'
           ? (res.structured as Record<string, unknown>)
           : undefined;
+      if (res.images && res.images.length > 0) {
+        // Re-check what the module sent: the bytes must be the image type they claim.
+        for (const img of res.images) {
+          if (sniffImage(Buffer.from(img.data, 'base64')) !== img.mimeType) {
+            return failure('INTERNAL', 'Tool returned an image that failed verification');
+          }
+        }
+        // structuredContent stays: every announced tool has an outputSchema, and SDK clients
+        // reject a result that lacks structured content for one. It never carries the base64.
+        return {
+          content: [
+            { type: 'text' as const, text: res.text },
+            ...res.images.map((i) => ({
+              type: 'image' as const,
+              data: i.data,
+              mimeType: i.mimeType,
+            })),
+          ],
+          ...(structured ? { structuredContent: structured } : {}),
+        };
+      }
       return {
         content: [{ type: 'text' as const, text: res.text }],
         ...(structured ? { structuredContent: structured } : {}),
