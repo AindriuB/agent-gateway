@@ -385,8 +385,9 @@ export const ApprovalStateMessage = z
 
 /**
  * The reply to the module's post-hello `approvalState` list (task 112, protocol 7.2.0), gateway to
- * module: which of the listed approval ids this connection now owns. The module keeps those, and
- * withdraws every mirrored record that is not listed.
+ * module: which of the listed approval ids this connection now owns (`ids`), and which it holds no
+ * row for (`unknown`). The module keeps both, and withdraws only listed ids that appear in neither;
+ * records created after the list was sent are untouched.
  */
 export const ApprovalOwnershipMessage = z.strictObject({
   type: z.literal('approvalOwnership'),

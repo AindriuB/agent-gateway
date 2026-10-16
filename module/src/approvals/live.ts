@@ -91,7 +91,7 @@ export function wireApprovalLink(
 ): void {
   const moved = () =>
     notify(
-      "Agent Gateway: this tab's link was closed; its pending approvals were moved to the gateway and will be asked again where you are connected.",
+      "Agent Gateway: this tab's link was closed, so its pending approvals here were cancelled. Requests the gateway stored will be asked again where you are connected.",
     );
   m.onApprovalState((msg) => void link.sendApprovalState?.(msg));
   let wasConnected = false;
