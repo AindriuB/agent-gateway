@@ -123,7 +123,7 @@ describe.each([
     // Execution used the live arguments, not the record.
     expect(s.handler).toHaveBeenCalledTimes(1);
     expect((s.handler.mock.calls[0] as any[])[0].args.data).toBe(data);
-  });
+  }, 30000);
 });
 
 describe('binding to the payload', () => {

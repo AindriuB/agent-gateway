@@ -38,6 +38,7 @@ let snapshot: any;
 const doc = (uuid: string, kind: string, extra: any = {}) => {
   const d: any = {
     uuid,
+    id: uuid.split('.').pop(),
     documentName: kind,
     owners: new Set(['p1']),
     testUserPermission: (u: any) => u.isGM || d.owners.has(u.id),
@@ -317,4 +318,56 @@ describe('image_upload folder allowlist', () => {
       expect((await call(args(extra), who)).error).toBeUndefined();
     },
   );
+});
+
+describe('image_upload target Actor must be a top-level world Actor', () => {
+  it.each(['gm', 'p1'])(
+    '%s: a synthetic token Actor uuid is refused before any upload',
+    async (who) => {
+      const parent = { documentName: 'Token', uuid: 'Scene.S.Token.K' };
+      const uuid = 'Scene.S.Token.K.Actor.A';
+      doc(uuid, 'Actor', { id: 'A', parent, isToken: true });
+      const r = await call(args({ actorUuid: uuid, setPortrait: true }), who);
+      expect(r.error?.code).toBe('FORBIDDEN');
+      expect(fp.upload).not.toHaveBeenCalled();
+    },
+  );
+  it('a world Actor with id matching its uuid still works', async () => {
+    doc('Actor.A', 'Actor', { id: 'A' });
+    expect((await call(args({ actorUuid: 'Actor.A', setPortrait: true }))).error).toBeUndefined();
+  });
+});
+
+describe('image_upload v14 Level selection', () => {
+  const lv = (id: string) => ({ id, uuid: `Scene.s.Level.${id}` });
+  const run = async (levels: any[], extra: any = {}) => {
+    const byId = new Map(levels.map((l) => [l.id, l]));
+    const scene = doc('Scene.s', 'Scene', {
+      levels: Object.assign(byId, { contents: levels }),
+      updateEmbeddedDocuments: vi.fn(async () => []),
+      ...extra,
+    });
+    const r = await call(args({ sceneUuid: 'Scene.s', setBackground: true }), 'gm');
+    expect(r.error).toBeUndefined();
+    return scene;
+  };
+  const expectLevel = (scene: any, id: string) => {
+    expect(snapshot).toHaveBeenCalledWith(`Scene.s.Level.${id}`);
+    expect(scene.updateEmbeddedDocuments).toHaveBeenCalledWith(
+      'Level',
+      [expect.objectContaining({ _id: id })],
+      expect.anything(),
+    );
+  };
+  it('prefers initialLevel even when it is not the first Level', async () => {
+    const [a, b] = [lv('A'), lv('B')];
+    expectLevel(await run([a, b], { initialLevel: b }), 'B');
+  });
+  it('without initialLevel prefers defaultLevel0000 over the first Level', async () => {
+    const levels = [lv('A'), lv('defaultLevel0000')];
+    expectLevel(await run(levels), 'defaultLevel0000');
+  });
+  it('with neither, uses the first Level', async () => {
+    expectLevel(await run([lv('A'), lv('B')]), 'A');
+  });
 });

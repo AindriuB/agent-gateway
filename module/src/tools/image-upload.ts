@@ -69,6 +69,10 @@ async function resolveActor(user: any, uuid: string): Promise<any> {
     actor?.documentName !== 'Actor' ||
     actor.pack ||
     actor.uuid !== uuid ||
+    // Only top-level world Actors: a token's synthetic Actor would borrow its base Actor's folder.
+    actor.parent ||
+    actor.isToken === true ||
+    uuid !== `Actor.${actor.id}` ||
     isAuditDocument(actor) ||
     (!user.isGM && !owns(actor, user)) ||
     !folderAllowed(actor, user.isGM === true)
