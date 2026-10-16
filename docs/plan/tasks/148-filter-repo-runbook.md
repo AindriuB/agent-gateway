@@ -193,17 +193,40 @@ swap it in under the existing repo name and restore the releases.
          (`git log --branches --not origin/main --oneline`), and stashes (`git stash list`, read
          only).
       2. Preserve: commit uncommitted changes to a `wip/<name>` branch in that worktree; export
-         every unpushed branch and every existing stash entry as patches
-         (`git format-patch origin/main..<branch> -o <backup-dir>/<branch>/`,
-         `git stash show -p stash@{N} > <backup-dir>/stash-N.patch`) to a folder outside the
-         checkout; list the folder and confirm it is non-empty for each item in the inventory.
+         every unpushed branch as patches
+         (`git format-patch origin/main..<branch> -o <backup-dir>/<branch>/`) to a folder outside
+         the checkout. Stashes are **not** exported with `git stash show -p` (by default it drops
+         untracked files and binary content; Amendment 3). Instead, for each entry N, without
+         touching the stash stack: `git branch wip/stash-N stash@{N}` (the stash commit, whose
+         parents are the base `^1`, the index `^2` and, when present, the untracked-files commit
+         `^3`, so all three trees travel with it), plus `git branch wip/stash-N-untracked
+         stash@{N}^3` when `git rev-parse -q --verify stash@{N}^3` succeeds. Then write one
+         self-contained bundle outside the checkout:
+         `git bundle create <backup-dir>/stashes.bundle <every wip/stash-* branch>` (no `^`
+         exclusions), and `git bundle verify` it. The runbook never runs `git stash` push, pop,
+         apply, drop or show -p.
+      2a. Verify the backup before it counts as complete; any mismatch stops the migration for
+         that machine. List the folder and confirm it is non-empty for each item in the
+         inventory. Then restore the bundle into a scratch repository outside the checkout
+         (`git init <scratch> && git -C <scratch> fetch <backup-dir>/stashes.bundle
+         'refs/heads/*:refs/heads/*'`) and, for every stash N and every tree that exists on the
+         original (`stash@{N}`, `stash@{N}^2`, `stash@{N}^3`), compare the original's
+         `git rev-parse <rev>^{tree}` with the scratch copy's `wip/stash-N`, `wip/stash-N^2`,
+         `wip/stash-N^3` tree ids, and diff `git ls-tree -r --full-tree` output (mode, blob hash,
+         path) between the two, so untracked and binary files are covered by content hash. A
+         tree present on one side and absent on the other is a failure. The step prints one
+         PASS/FAIL line per stash and per tree, and the old checkout is not renamed, reset or
+         removed until every line is PASS.
       3. Replace: fresh `git clone https://github.com/AindriuB/agent-gateway` into a new directory
          (preferred), or, only once step 2 is confirmed, `git fetch` the new remote and
          `git reset --hard origin/main` in the main checkout after removing each old worktree with
          `git worktree remove` and deleting its pre-rewrite branch. The old checkout directory is
          kept (renamed) until Andrew deletes it.
       4. Run 147's `link.sh` in the new checkout and in each new worktree; re-apply preserved work
-         with `git am`/`git apply` onto the new main, excluding internal paths.
+         with `git am`/`git apply` onto the new main, excluding internal paths. Stash work is
+         re-applied from the bundle's `wip/stash-N` branches (tracked changes via
+         `git diff wip/stash-N^1 wip/stash-N`, untracked files via
+         `git restore --source=wip/stash-N^3 -- <paths>`), never via `git stash apply`.
 - [ ] RUNBOOK.md has a rollback section (Amendment 1):
       - Before the publish gate (steps 1-10): delete the new private AindriuB/agent-gateway,
         rename the archive back to AindriuB/agent-gateway, and re-point the GHCR package's Actions
@@ -271,3 +294,17 @@ swap it in under the existing repo name and restore the releases.
   the run, resolving the source through `git rev-parse --git-dir`; `verify.sh` takes a required
   `--commit-map <path>` (optional `--ref-map`) used for both the step 2 and step 10 runs, and
   fails clearly when the map is missing, empty or malformed.
+
+### Amendment 3 (from external PR review, 2026-10-16)
+
+- [P2] Step 14's preserve step exported stashes with `git stash show -p`, which by default
+  covers only tracked changes. A stash holding untracked files produced a non-empty patch that
+  passed the "folder non-empty" check, yet restoring it dropped the untracked files, and deleting
+  the old checkout would then lose them. Stashes are now preserved version-independently as
+  `wip/stash-N` branches at `stash@{N}` (carrying the `^2` index and `^3` untracked parents),
+  plus `wip/stash-N-untracked` at `stash@{N}^3` when present, written to a self-contained
+  `git bundle` outside the checkout; the stash stack is never touched (no `git stash` push, pop,
+  apply, drop or show -p). A new step 2a restores the bundle into a scratch repository and
+  compares tree ids and `git ls-tree -r` listings (mode, blob hash, path) against the original
+  `stash@{N}`, `^2` and `^3` trees, covering untracked and binary files; any mismatch fails the
+  backup and blocks step 3. Step 4 re-applies stash work from those branches.
