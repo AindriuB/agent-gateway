@@ -115,3 +115,10 @@ in at build time.
 - Hosted Claude marketplace name — Decided (owner, 2026-10-16): keep `aindriub-dl`; renaming
   would break existing `/plugin marketplace add` installs.
 - Placeholder gateway host — Decided (owner, 2026-10-16): `gateway.example.invalid`.
+
+## Review round 1 — findings
+
+Reviewed HEAD: d2fd61b7c3c729047932a90fd636af9a98286557
+
+- [P2] docs/claude-plugin.md:63 — still says "Not yet verified, pending a live Claude Code run by Andrew"; the task Context lists this line (:51 at plan time) under "'Andrew' wording". route: implementer — neutral wording, e.g. "pending a live Claude Code run". input: `git grep -n -i andrew HEAD -- docs/claude-plugin.md` → one hit.
+- [P3] scripts/build-claude-plugin.mjs:53-67 — a `--gateway-url` already ending in `/mcp` is accepted and `/mcp` appended again (`https://gw.example.org/mcp/mcp`, exit 0); the ChatGPT build rejects it via validate(). route: implementer — reject a gateway URL whose path ends in `/mcp` (value not echoed), with a test.
