@@ -74,6 +74,10 @@ export class ApprovalManager {
   /** Ids of records created in this page session (never loaded from storage, never a replay). */
   private mirrored = new Set<string>();
   private stateSink?: (msg: ApprovalStateReport) => void;
+  /** True while the gateway link is down after having been up (see `holdWhile`). */
+  private holdGate?: () => boolean;
+  /** Answers given while the link was down, waiting to be applied once it is back. */
+  private held = new Map<string, { resolver: string; o: ResolveOptions }>();
 
   constructor(
     private env: ApprovalEnv,
@@ -205,6 +209,7 @@ export class ApprovalManager {
         if (waiter) replayOf(waiter.ctx)?.report('expired', 'Queued approval expired');
         waiter?.finish(this.pendingResult(r.id));
         this.waiters.delete(r.id);
+        this.held.delete(r.id);
         this.announceResolved(r);
       }
     }
@@ -531,9 +536,11 @@ export class ApprovalManager {
     resolver: string,
     o: ResolveOptions,
     bind?: { tool: unknown; argsHash: unknown; agentId: unknown; userId: unknown },
+    release = false,
   ): boolean {
     this.expireDue();
     if (r.status !== 'pending') return false;
+    if (!release && this.held.has(r.id)) return false;
     const who = this.eligible(r, resolver);
     if (!who) return false;
     if (
@@ -566,6 +573,13 @@ export class ApprovalManager {
     const waiter = this.waiters.get(r.id);
     // Only a call that is waiting in this page session can be run; nothing is run from storage.
     if (o.decision === 'approve' && !waiter) return false;
+    // The gateway holds its copy of this approval until it hears from us. While the link is down
+    // an answer is kept, not applied: nothing runs and nothing is reported until the link is back,
+    // so the gateway never re-asks a call that already ran.
+    if (!release && this.mirrored.has(r.id) && !r.replay && this.holdGate?.()) {
+      this.held.set(r.id, { resolver, o });
+      return true;
+    }
     r.resolvedBy = who.name;
     r.resolvedAt = this.env.now();
     if (o.decision === 'deny') {
@@ -594,6 +608,7 @@ export class ApprovalManager {
         );
       }
       this.waiters.delete(r.id);
+      this.mirrorState(r); // reported before the handler can start
       void this.executeApproved(r, waiter!.ctx, waiter!.next).then((res) => waiter!.finish(res));
     }
     this.persist();
@@ -606,7 +621,48 @@ export class ApprovalManager {
     this.stateSink = sink;
   }
 
-  /** This session's records still pending, newest first, for the list sent after each welcome. */
+  /** Hold answers while `gate()` says the link is down (set by the live wiring). */
+  holdWhile(gate: (() => boolean) | undefined): void {
+    this.holdGate = gate;
+  }
+
+  /** The link is back: apply every held answer, reporting each to the gateway before it runs. */
+  releaseHeld(): void {
+    const held = [...this.held];
+    this.held.clear();
+    for (const [id, h] of held) {
+      const r = this.records.get(id);
+      if (r) this.applyResolution(r, h.resolver, h.o, undefined, true);
+    }
+  }
+
+  /**
+   * Another tab took over the link. The gateway's row is now the only copy of each approval this
+   * tab created, so withdraw them here and stop offering them. Returns how many were withdrawn.
+   */
+  withdrawPending(): number {
+    const now = this.env.now();
+    let n = 0;
+    for (const r of this.records.values()) {
+      if (r.status !== 'pending' || !this.mirrored.has(r.id)) continue;
+      this.mirrored.delete(r.id);
+      this.held.delete(r.id);
+      r.status = 'expired';
+      r.resolvedAt = now;
+      this.waiters.get(r.id)?.finish(this.pendingResult(r.id));
+      this.waiters.delete(r.id);
+      this.announceResolved(r);
+      n++;
+    }
+    if (n) this.persist();
+    return n;
+  }
+
+  /**
+   * This session's records still pending (held answers included, so the gateway does not requeue
+   * them), newest first, for the list sent after each welcome. At most MAX_APPROVAL_STATE_IDS
+   * (the frame's cap): older ones are left out and the gateway asks for them again.
+   */
   pendingApprovalIds(): string[] {
     this.expireDue();
     return [...this.records.values()]
@@ -616,7 +672,8 @@ export class ApprovalManager {
       .map((r) => r.id);
   }
 
-  private announceResolved(r: ApprovalRecord): void {
+  /** Tell the gateway about a transition of one of this session's own records, once. */
+  private mirrorState(r: ApprovalRecord): void {
     if (this.mirrored.delete(r.id) && r.status !== 'pending') {
       try {
         this.stateSink?.({ id: r.id, state: r.status });
@@ -624,6 +681,10 @@ export class ApprovalManager {
         // Mirroring is best effort and must never break the approval flow.
       }
     }
+  }
+
+  private announceResolved(r: ApprovalRecord): void {
+    this.mirrorState(r);
     this.env.callHook(HOOK_RESOLVED, {
       id: r.id,
       status: r.status,

@@ -60,6 +60,81 @@ describe('approvalState transitions from the manager', () => {
   });
 });
 
+describe('holding answers while the link is down (amendment 4)', () => {
+  it('holds an approval until the link is back, reports it first, then runs once', async () => {
+    const hub = world();
+    const p1 = hub.client('p1');
+    const { call, handler } = pipeline(p1);
+    const order: string[] = [];
+    p1.manager.onApprovalState((m: any) => order.push(`report:${m.state}`));
+    handler.mockImplementation(async () => {
+      order.push('run');
+      return { text: 'ran', structured: {} };
+    });
+    let down = false;
+    p1.manager.holdWhile(() => down);
+    const done = call('write_thing', { id: 'a' });
+    await settle();
+    const id = p1.manager.listPending()[0]!.id;
+    down = true;
+    expect(p1.manager.resolveApproval(id, { decision: 'approve' })).toBe(true);
+    await settle();
+    expect(handler).not.toHaveBeenCalled();
+    expect(order).toEqual([]);
+    // Still pending, and still in the list the gateway is sent so it does not requeue it.
+    expect(p1.manager.pendingApprovalIds()).toEqual([id]);
+    down = false;
+    p1.manager.releaseHeld();
+    expect(await done).toMatchObject({ text: 'ran' });
+    expect(order).toEqual(['report:approved', 'run']);
+    p1.manager.releaseHeld();
+    await settle();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a denial and reports it on reconnect without running anything', async () => {
+    const hub = world();
+    const p1 = hub.client('p1');
+    const { call, handler } = pipeline(p1);
+    const seen = collect(p1);
+    let down = false;
+    p1.manager.holdWhile(() => down);
+    const done = call('write_thing', { id: 'd' });
+    await settle();
+    const id = p1.manager.listPending()[0]!.id;
+    down = true;
+    p1.manager.resolveApproval(id, { decision: 'deny', reason: 'no' });
+    await settle();
+    expect(seen).toEqual([]);
+    down = false;
+    p1.manager.releaseHeld();
+    expect(await done).toMatchObject({ error: { code: 'DENIED' } });
+    expect(seen).toEqual([{ id, state: 'denied' }]);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('withdraws pending records when another tab takes the link, reporting nothing', async () => {
+    const hub = world();
+    const p1 = hub.client('p1');
+    const gm = hub.client('gm');
+    const { call, handler } = pipeline(p1, 'gm');
+    const seen = collect(p1);
+    const done = call('write_thing', { id: 'w' });
+    await settle();
+    const id = p1.manager.ownRecords()[0]!.id;
+    expect(gm.manager.listPending()).toHaveLength(1);
+    expect(p1.manager.withdrawPending()).toBe(1);
+    expect(await done).toMatchObject({ structured: { status: 'pending_approval' } });
+    expect(p1.manager.pendingApprovalIds()).toEqual([]);
+    expect(gm.manager.listPending()).toEqual([]);
+    expect(gm.manager.resolveApproval(id, { decision: 'approve' })).toBe(false);
+    expect(p1.manager.resolveApproval(id, { decision: 'approve' })).toBe(false);
+    await settle();
+    expect(handler).not.toHaveBeenCalled();
+    expect(seen).toEqual([]);
+  });
+});
+
 describe('the link client gate', () => {
   class FakeSocket implements SocketLike {
     onopen: SocketLike['onopen'] = null;

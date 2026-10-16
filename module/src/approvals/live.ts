@@ -77,11 +77,22 @@ export function startApprovals(): void {
   });
   m.onApprovalState((msg) => getLinkClient().sendApprovalState?.(msg));
   let wasConnected = false;
+  let everConnected = false;
+  // Approvals given while the link is down wait for it: the gateway must hear of them first.
+  m.holdWhile(() => everConnected && !wasConnected);
   getLinkClient().onState?.((s) => {
     const now = s.kind === 'connected';
+    if (s.kind === 'disconnected' && s.reason === 'REPLACED' && m.withdrawPending() > 0) {
+      (globalThis as any).ui?.notifications?.warn?.(
+        'Agent Gateway: your pending approvals moved to another tab on this account.',
+      );
+    }
     if (now && !wasConnected) {
+      everConnected = true;
+      wasConnected = true;
       m.representAll();
       getLinkClient().sendApprovalState?.({ ids: m.pendingApprovalIds() });
+      m.releaseHeld();
     }
     if (!now && wasConnected) m.linkDropped();
     wasConnected = now;
