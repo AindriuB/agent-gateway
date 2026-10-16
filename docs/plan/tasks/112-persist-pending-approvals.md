@@ -1,7 +1,7 @@
 # 112 — Keep pending approvals when the requesting player logs out or reloads
 
 **Repo:** .
-**Depends on:** 109
+**Depends on:** 109, 117
 **Status:** Ready after 109 merges. Decisions recorded below (2026-10-16). Owns follows the
 architect pass of 2026-10-16, plus the server.ts dispatch, the version gate and the module send
 method that the new frame implies.
