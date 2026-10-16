@@ -34,3 +34,15 @@ unticked; `read` and `write` stay ticked when they were requested.
   the footer and the styles.
 - Changing which scopes a client may request, or the default `read` scope in the metadata.
 - The wording about unticking scopes in docs/guides/*.md (task 113).
+
+## Attempt 1 — failed
+
+Reviewer: REQUEST CHANGES on acceptance item 2 ("the page still renders and posts (test)").
+gateway/test/oauth/consent/scope-defaults.test.ts:27-28 only checks the static HTML for a
+`<form method="post" …>` and a `type="submit"`; nothing posts the form. For a destructive+code
+request, posting the defaults sends no scope, so gateway/src/oauth/consent/index.ts:258-266
+re-renders with "Choose at least one permission." That path is untested.
+Fix: drive the real consent route (the `postConsent` helper in consent.test.ts). Post the defaults
+for a destructive+code request and assert the "Choose at least one permission." page comes back;
+then post with `scope: 'destructive'` and assert it reaches the code page. Add these to
+scope-defaults.test.ts only; do not edit consent.test.ts.
