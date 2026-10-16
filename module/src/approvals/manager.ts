@@ -2,6 +2,7 @@ import { actionCategory, effectiveCategory } from '../ops/context.js';
 import { isOpError, replayOf, type DispatchResult, type OpContext } from '../ops/types.js';
 import type { ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
+import { redactedArgs } from '../ops/redact.js';
 import { callHash } from './canonical.js';
 import { APPROVAL_CONFIG as CFG } from './config.js';
 import type {
@@ -281,13 +282,21 @@ export class ApprovalManager {
     return level === 'gm' || (level === 'owner' && approver === 'owner');
   }
 
+  /** Arguments as shown, stored and hashed: declared payload fields reduced to size and SHA-256. */
+  private reviewArgs(ctx: OpContext): unknown {
+    return redactedArgs(
+      this.opts.tools?.find((d) => d.name === ctx.tool) ?? toolRegistry.info(ctx.tool),
+      ctx.args,
+    );
+  }
+
   private bindsTo(r: ApprovalRecord, ctx: OpContext): boolean {
     return (
       r.tool === ctx.tool &&
       r.agentId === ctx.agent.id &&
       r.requesterId === ctx.user.id &&
       r.sessionId === ctx.sessionId &&
-      r.argsHash === callHash(ctx.tool, ctx.args) &&
+      r.argsHash === callHash(ctx.tool, this.reviewArgs(ctx)) &&
       r.category ===
         effectiveCategory(
           ctx,
@@ -373,7 +382,8 @@ export class ApprovalManager {
     if (!approval) return next();
     this.ensureLoaded();
     this.expireDue();
-    const hash = callHash(ctx.tool, ctx.args);
+    const reviewed = this.reviewArgs(ctx);
+    const hash = callHash(ctx.tool, reviewed);
 
     // A session grant is only as good as today's policy: a call the policy now denies is refused,
     // and one it now sends to a GM needs a grant a GM gave.
@@ -415,7 +425,7 @@ export class ApprovalManager {
       sessionId: ctx.sessionId,
       requesterId: ctx.user.id,
       tool: ctx.tool,
-      args: ctx.args,
+      args: reviewed,
       argsHash: hash,
       category,
       approver: approval.approver,

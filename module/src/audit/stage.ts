@@ -1,6 +1,7 @@
 import { effectiveCategory } from '../ops/context.js';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
+import { redactedArgs } from '../ops/redact.js';
 import { fromUuidCompat } from '../compat/index.js';
 import type { Stage } from '../ops/stages.js';
 import { isOpError, type DispatchResult, type OpContext } from '../ops/types.js';
@@ -311,7 +312,7 @@ async function record(
   callId: string,
 ): Promise<void> {
   try {
-    const args = boundedJson(ctx.args);
+    const args = boundedJson(redactedArgs(toolRegistry.info(ctx.tool), ctx.args));
     const cat = (
       category === 'destructive' || category === 'code' ? category : 'write'
     ) as AuditCategory;

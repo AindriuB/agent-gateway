@@ -138,6 +138,7 @@ describe('validateArgs', () => {
     inventory: { actorUuid: 'Actor.example' },
     conditions: { actorUuid: 'Actor.example' },
     character_build: { actorUuid: 'Actor.example' },
+    image_assign: { action: 'list' },
     macro_run: { macroUuid: 'Macro.example' },
     script_run: { source: 'return 1;' },
     table_roll: { tableUuid: 'RollTable.example' },
@@ -172,6 +173,7 @@ describe('validateArgs', () => {
     chat_post: { content: 'Hello' },
     roll_formula: { formula: '1d6' },
     journal_write: { journalUuid: 'JournalEntry.example', title: 'Test', markdown: 'Hello' },
+    image_upload: { data: 'iVBORw0KGgo=', mime: 'image/png' },
   };
   it.each(TOOLS.map((t) => [t.name, t] as const))('agrees with zod for %s', (name, tool) => {
     const value = examples[name];

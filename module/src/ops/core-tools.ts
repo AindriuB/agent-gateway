@@ -11,6 +11,7 @@ export function coreEntry(tool: ToolDefinition, handler: OpHandler): RegistryEnt
     description: tool.description,
     ...toJsonSchema(tool),
     origin: 'core',
+    ...(tool.redactArgs ? { redactArgs: tool.redactArgs } : {}),
     parseArgs(args) {
       const parsed = tool.input.safeParse(args);
       return parsed.success

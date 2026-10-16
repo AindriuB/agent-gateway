@@ -19,6 +19,8 @@ export interface ToolDefinition<
   readonly output: O;
   /** `false`: the gateway lists this tool without an MCP `outputSchema` (it returns no `structuredContent`). */
   readonly mcpOutputSchema?: false;
+  /** Top-level base64 argument fields shown only as size and SHA-256 in approvals and audit. */
+  readonly redactArgs?: readonly string[];
 }
 
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(

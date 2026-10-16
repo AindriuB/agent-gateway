@@ -4,6 +4,7 @@ import { actionPerformHandler } from './action-perform.js';
 import { inventoryHandler } from './inventory.js';
 import { conditionsHandler } from './conditions.js';
 import { characterBuildHandler } from './character-build.js';
+import { imageAssignHandler } from './image-assign.js';
 import { macroRunHandler } from './macro-run.js';
 import { scriptRunHandler } from './script-run.js';
 import { tableRollHandler } from './table-roll.js';
@@ -13,6 +14,7 @@ import { tokenManageHandler } from './token-manage.js';
 import { combatManageHandler } from './combat-manage.js';
 import { sceneControlHandler } from './scene-control.js';
 import { documentCreateHandler } from './document-create.js';
+import { imageUploadHandler } from './image-upload.js';
 import { documentUpdateHandler } from './document-update.js';
 import { documentDeleteHandler } from './document-delete.js';
 import { compendiumImportHandler } from './compendium-import.js';
@@ -41,6 +43,7 @@ export const HANDLERS: Record<string, OpHandler> = {
   inventory: inventoryHandler,
   conditions: conditionsHandler,
   character_build: characterBuildHandler,
+  image_assign: imageAssignHandler,
   macro_run: macroRunHandler,
   script_run: scriptRunHandler,
   table_roll: tableRollHandler,
@@ -68,4 +71,5 @@ export const HANDLERS: Record<string, OpHandler> = {
   document_update: documentUpdateHandler,
   document_delete: documentDeleteHandler,
   compendium_import: compendiumImportHandler,
+  image_upload: imageUploadHandler,
 };

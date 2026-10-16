@@ -20,6 +20,7 @@ export function actionCategory(tool: string, args: unknown, base: string, core =
     (args as { changes?: unknown } | null)?.changes !== undefined
   )
     return 'write';
+  if (core && base === 'read' && tool === 'image_assign' && action === 'set') return 'write';
   return core &&
     base === 'write' &&
     ((tool === 'token_manage' && action === 'remove') ||
