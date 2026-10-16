@@ -63,7 +63,7 @@ describe('claude plugin files', () => {
     assert.deepEqual(Object.keys(mcp.mcpServers), ['agent-gateway']);
     assert.deepEqual(mcp.mcpServers['agent-gateway'], {
       type: 'http',
-      url: '${AGENT_GATEWAY_URL:-https://gw.aindriub.app}/mcp',
+      url: '${AGENT_GATEWAY_URL:-https://gateway.example.invalid}/mcp',
     });
     const text = readFileSync(mcpPath, 'utf8');
     for (const key of ['headers', 'oauth', 'env', 'clientId', 'client_id', 'client_secret']) {

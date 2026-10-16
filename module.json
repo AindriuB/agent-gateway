@@ -4,7 +4,7 @@
   "description": "Permissioned access to a running world for AI agents over MCP.",
   "version": "0.3.0",
   "compatibility": { "minimum": "13", "verified": "14" },
-  "authors": [{ "name": "Andrew Bannister" }],
+  "authors": [{ "name": "AindriuB" }],
   "license": "MIT",
   "socket": true,
   "documentTypes": { "JournalEntryPage": { "audit": {} } },
@@ -12,6 +12,9 @@
   "styles": ["styles/agent-gateway.css"],
   "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],
   "url": "https://github.com/AindriuB/agent-gateway",
+  "bugs": "https://github.com/AindriuB/agent-gateway/issues",
+  "readme": "https://github.com/AindriuB/agent-gateway#readme",
+  "changelog": "https://github.com/AindriuB/agent-gateway/blob/main/CHANGELOG.md",
   "manifest": "https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json",
   "download": "https://github.com/AindriuB/agent-gateway/releases/download/v0.3.0/agent-gateway.zip"
 }

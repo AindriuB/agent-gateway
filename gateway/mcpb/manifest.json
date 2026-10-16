@@ -5,7 +5,7 @@
   "version": "0.3.0",
   "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
   "author": {
-    "name": "Andrew Bannister",
+    "name": "AindriuB",
     "url": "https://github.com/AindriuB/agent-gateway"
   },
   "repository": {

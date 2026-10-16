@@ -59,6 +59,14 @@ describe('build-claude-plugin argument checks', () => {
     ['query', ['--base-url', 'https://x.test/?a=1']],
     ['fragment', ['--base-url', 'https://x.test/#f']],
     ['not a url', ['--base-url', 'not a url']],
+    ['gateway no value', ['--base-url', 'https://x.test', '--gateway-url']],
+    ['gateway http', ['--base-url', 'https://x.test', '--gateway-url', 'http://gw.test']],
+    [
+      'gateway credentials',
+      ['--base-url', 'https://x.test', '--gateway-url', 'https://u:p@gw.test'],
+    ],
+    ['gateway mcp path', ['--base-url', 'https://x.test', '--gateway-url', 'https://gw.test/mcp']],
+    ['gateway query', ['--base-url', 'https://x.test', '--gateway-url', 'https://gw.test/?a=1']],
   ]) {
     it(`rejects ${label} and writes nothing`, () => {
       const root = fresh(`bad-${label.replace(/ /g, '-')}`);
@@ -66,7 +74,9 @@ describe('build-claude-plugin argument checks', () => {
       assert.equal(r.status, 1);
       assert.match(
         r.stderr,
-        label === 'missing' || label === 'no value' ? /usage:/ : /build-claude-plugin/,
+        label === 'missing' || label === 'no value' || label === 'gateway no value'
+          ? /usage:/
+          : /build-claude-plugin/,
       );
       assert.equal(r.stdout, '');
       assert.ok(!existsSync(path.join(root, 'dist/release/claude')));
@@ -152,6 +162,44 @@ describe('build-claude-plugin refusals', () => {
   });
 });
 
+describe('build-claude-plugin --gateway-url', () => {
+  const mcpIn = (root, zip) => {
+    const x = path.join(root, 'x');
+    mkdirSync(x, { recursive: true });
+    assert.equal(spawnSync('unzip', ['-q', '-o', zip, '-d', x]).status, 0);
+    return readFileSync(path.join(x, 'foundry-gateway/.mcp.json'), 'utf8');
+  };
+  const zipOf = (root) => {
+    const version = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+    return path.join(root, `dist/release/claude/plugins/foundry-gateway-${version}.zip`);
+  };
+
+  it('bakes <gateway-url>/mcp into the zipped .mcp.json without touching the source', () => {
+    const root = fresh('gateway');
+    const src = path.join(root, 'plugins/claude/foundry-gateway/.mcp.json');
+    const bytes = readFileSync(src);
+    const r = build(root, '--base-url', BASE, '--gateway-url', 'https://gw.example.org/');
+    assert.equal(r.status, 0, r.stderr);
+    const text = mcpIn(root, zipOf(root));
+    assert.equal(JSON.parse(text).mcpServers['agent-gateway'].url, 'https://gw.example.org/mcp');
+    assert.ok(!text.includes('${'));
+    assert.deepEqual(readFileSync(src), bytes);
+    const market = JSON.parse(
+      readFileSync(path.join(root, 'dist/release/claude/marketplace.json'), 'utf8'),
+    );
+    assert.equal(market.name, 'aindriub-dl');
+  });
+
+  it('keeps the repo placeholder when the flag is absent', () => {
+    const root = fresh('gateway-absent');
+    assert.equal(build(root, '--base-url', BASE).status, 0);
+    assert.equal(
+      JSON.parse(mcpIn(root, zipOf(root))).mcpServers['agent-gateway'].url,
+      '${AGENT_GATEWAY_URL:-https://gateway.example.invalid}/mcp',
+    );
+  });
+});
+
 describe('build-claude-plugin output', () => {
   let root;
   let out;
@@ -212,7 +260,8 @@ describe('build-claude-plugin output', () => {
 
   it('marketplace.json points at the zip with its sha256 and has no version', () => {
     assert.equal(market.name, 'aindriub-dl');
-    assert.ok(market.owner.name);
+    assert.equal(market.owner.name, 'AindriuB');
+    assert.match(market.description, /^Hosted marketplace/);
     assert.equal(market.plugins.length, 1);
     const [p] = market.plugins;
     assert.equal(p.name, 'foundry-gateway');

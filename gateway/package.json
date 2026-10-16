@@ -3,6 +3,10 @@
   "version": "0.3.0",
   "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
   "license": "MIT",
+  "author": "AindriuB",
+  "bugs": {
+    "url": "https://github.com/AindriuB/agent-gateway/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AindriuB/agent-gateway.git",
