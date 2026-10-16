@@ -90,3 +90,22 @@ satisfies the dependency), and the 401 reference in the follow-up note is correc
 server.ts:330-334. Reason: B fixes the client-visible breakage 110 measured (404s after
 evictions, 429 on DELETE) without weakening the per-client rate limit for every authenticated
 client, which C would.
+
+## Orchestrator note (2026-10-16): Owns extended
+
+The implementer stopped at two files outside Owns. Both are mechanical consequences of Amendment 1 and are added to Owns:
+- gateway/test/mcp/session-listeners.test.ts:128 — asserts `sessionCount <= 4` after 50 opens for one principal. Change only that assertion to use MAX_HTTP_SESSIONS_PER_PRINCIPAL.
+- gateway/src/app.ts (where HttpServer is constructed, about :969) — wire the new optional `logDebug` option to the logger's debug channel, so suppressed eviction lines go to debug instead of being dropped. One option line only.
+Also: grep README.md and docs/ for the old "4 per principal" or "16 per client" figures and list any hits in the report. Don't edit docs; the scribe updates them at record time.
+
+## Amendment 2 (2026-10-16, decided by Andrew)
+
+Code review found that the global public cap, MAX_HTTP_SESSIONS_PUBLIC = 64 (gateway/src/config/index.ts:329), now fits only 4 principals at the new per-principal cap of 16. A global-cap victim is picked only from the requesting principal's own sessions, so a fifth principal's first initialize gets 503. Andrew chose to raise MAX_HTTP_SESSIONS_PUBLIC to 256: 16 principals at full quota, as before, about 7.7 MB at ~30 KB per session. Owns adds gateway/src/config/index.ts (that constant and its comment at :328 only) and any test asserting the old 64. Acceptance adds: a test showing a fifth principal at full quota is admitted, and the global cap still holds at 256.
+
+## Review round 1 — findings
+
+Reviewed HEAD: the branch head after the orchestrator-note commit.
+
+- [P3] gateway/test/http/session-churn.test.ts — the 10-minute eviction-log window isn't tested. Mutating server.ts `if (last === undefined || t - last >= EVICTION_LOG_WINDOW_MS)` to `if (last === undefined)` leaves every test passing. Advance the clock past EVICTION_LOG_WINDOW_MS and assert a second info line. route: implementer
+- [P3] gateway/test/http/public.test.ts:232 — `maxSessions: 64 → 80` is unnecessary (at most 49 sessions open). Revert it, or set it to the new production value if Amendment 2 makes that natural. route: implementer
+- [P3] gateway/test/http/session-eviction.test.ts:233, 311, 326, 337 — the added `setup({ maxSessions: 64 })` repeats the default; use plain `setup()` unless Amendment 2 changes the default. public.test.ts:251 and session-eviction.test.ts:236 still say "a fifth is refused" and name a principal `fifth`, when it is now the third. route: implementer

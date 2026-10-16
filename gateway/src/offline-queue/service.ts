@@ -95,6 +95,11 @@ export class OfflineQueue {
     const core = TOOLS.find((t) => t.name === name);
     if (!core && TOOL_NAME_PATTERN.test(name))
       throw new LinkCallError('FORBIDDEN', 'Unknown canonical core tool');
+    if (core?.redactArgs?.length)
+      throw new LinkCallError(
+        'WORLD_OFFLINE',
+        `${name} carries file data and is not held while the world is offline. Nothing was stored or run. Retry once the user has the world open with Agent Gateway connected.`,
+      );
     if (
       core &&
       (core.handledBy !== 'module' ||

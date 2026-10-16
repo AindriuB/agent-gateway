@@ -61,21 +61,66 @@ by a request id, for sign-in only and not for tracking; it expires after 15 minu
 
 ## Pairing
 
-In server mode nobody pairs without an operator invite, and the gateway prints no shared pairing
-code. Ask the person for their world id and user id: the pairing app in the module has a "Copy my
-ids" line for this. Then run, inside the gateway container (for example
-`docker compose exec gateway ...`):
+In server mode nobody pairs without an invite, and the gateway prints no shared pairing code.
+Pairing is per browser: a pairing made on another computer does not carry over, and a browser that
+has none shows "This browser is not paired for this user" in the pairing window.
+
+### Onboarding order
+
+1. The operator mints an admin invite for the first GM, inside the gateway container (for example
+   `docker compose exec gateway ...`):
+   `foundry-agent-gateway --invite <world> <gm user> --admin --origin <origin>`. Only the operator
+   can make an admin invite. It needs `--origin`, and it is valid for 1 hour unless `--ttl` says
+   otherwise (24 hours at most). The GM pastes it into the pairing window and pairs directly.
+2. The admin GM invites players from Manage access (Configure Settings, then Agent Gateway, then
+   Manage access). The operator can also mint a plain player invite with
+   `--invite <world> <user>`.
+3. A player pastes the invite into the pairing window in their own browser.
+
+A plain player invite completes only while an admin GM is in the world with Agent Gateway
+connected, because that GM vouches for the player. With no such GM the gateway refuses the invite
+without using it, and the pairing window says: "Your GM could not confirm this pairing, so the
+invite was not used. Ask your GM to open this world with Agent Gateway connected, then paste the
+invite again. If you are the GM, ask the gateway operator for a GM invite." The player can paste
+the same invite again once an admin GM is connected. (If the last admin GM leaves at the very
+moment of pairing, the player may instead see "No GM is online".)
+
+Pair the Foundry user first, then sign in the AI client: the consent page asks for a code from
+that user's own Foundry client, and it needs the pairing to exist.
+
+### Operator commands
+
+Run these inside the gateway container.
 
 - `foundry-agent-gateway --invite <world> <user> [--ttl 30m|12h|7d] [--origin <origin>]` prints a
-  single-use code once. It expires in 24 hours unless `--ttl` says otherwise (7 days at most).
-  Send it privately; the gateway never logs or shows it again. A wrong world or user id spends it.
-- `--list-invites` and `--list-pairings` show what exists and print no code or token.
+  single-use player invite once. It expires in 24 hours unless `--ttl` says otherwise (7 days at
+  most). Send it privately; the gateway never logs or shows it again. A wrong world or user id
+  spends it.
+- `--invite <world> <user> --admin` makes an admin GM invite, as above.
+- `--invite <world> <user> --gm` makes an invite for an additional GM user account, for example a
+  dedicated "ChatGPT" GM. It pairs directly, skips the GM vouch and is not admin. Use it only for
+  GM user accounts, never for players. It has the same `--origin` requirement and short lifetime
+  as `--admin`.
+- `--demote <world> <user>` clears the admin flag on that user's pairing and exits with status 1
+  if the user was not an admin. The pairing, its grants and invites stay, and a running gateway
+  stops accepting that GM's vouches at once.
+- `--list-invites` and `--list-pairings` show what exists, including who is admin and which
+  invites are GM invites, and print no code or token.
 - `--cancel-invite <world> <user>` cancels the unused invites for that target.
 - `--revoke-pairing <world> <user>` revokes the pairing, that user's OAuth grants and tokens, and
   their unused invites. A live connection is closed within about 5 seconds.
 
-A new invite for someone who is already paired replaces the old pairing and revokes its grants and
-tokens, so use one for a new device or a lost token. Failed invites are rate limited. Refusals are
-logged at most 20 per minute, followed by a count of the suppressed ones.
+Redeeming a player invite for someone who is already paired replaces the old pairing and revokes
+its grants and tokens, so use a new invite for a new device or a lost token. A GM user is
+different: a plain invite for a GM user is refused, and an invite made from Manage access is spent
+unused if that user holds an admin pairing. An admin GM re-pairs with a new `--admin` invite; other
+GM accounts re-pair with `--gm`. Do not give `--gm` to the only admin GM: it downgrades them, no
+admin is then live, and every player invite fails with the unconfirmed message until an admin GM
+is paired again. Failed invites are rate limited. Refusals are logged at most 20 per minute,
+followed by a count of the suppressed ones.
+
+The operator needs a person's world id and user id only for invites the operator mints (admin, GM,
+headless agents). The pairing window has a "Copy my ids" button for this, inside the details block
+"For the gateway operator: your ids". A player does not need it, because their GM invites them.
 
 Steps, backup and restore: [gateway/docker/README.md](../gateway/docker/README.md).

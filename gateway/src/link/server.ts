@@ -43,7 +43,11 @@ import { handleUserGrantMessage } from './user-grants.js';
 import { LinkCallError, LinkConnection, type LinkRegistry } from './registry.js';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
-export const MAX_MISSED_PONGS = 2;
+/**
+ * Unanswered pings tolerated before the link is closed: the 9th tick, 135 s after the first ping
+ * went unanswered, terminates it. A browser tab can stall for about two minutes and still recover.
+ */
+export const MAX_MISSED_PONGS = 8;
 /** Sockets that have upgraded but not yet sent `hello`; the next upgrade gets a 503. */
 export const MAX_PENDING_HANDSHAKES = 16;
 /** Within the global cap, so one page cannot starve every other origin's reconnects. */
@@ -449,9 +453,10 @@ export class LinkServer {
         this.handshake(msg, origin, send, reject, ws, client, admitted);
         return;
       }
+      // Any inbound frame proves the peer is alive, not only an app-level pong.
+      missed = 0;
       switch (msg.type) {
         case 'pong':
-          missed = 0;
           break;
         case 'ping':
           send({ type: 'pong' });

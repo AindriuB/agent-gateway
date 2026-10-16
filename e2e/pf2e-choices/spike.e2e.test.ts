@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadContext } from '../lib/context.js';
 import { openUserSession, type UserSession } from '../lib/session.js';
 
-// Task 49 spike (design gate, "Spike first"). NOT part of the normal run; needs Andrew's per-run
+// Task 49 spike (design gate, "Spike first"). NOT part of the normal run; needs the maintainer's per-run
 // approval. Opt-in: AGENT_GATEWAY_E2E_PF2E=1 and AGENT_GATEWAY_E2E_PF2E_WRITE=1 (both), plus
 // AGENT_GATEWAY_E2E_PF2E_SPIKE=1.
 //

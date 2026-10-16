@@ -10,6 +10,7 @@ import {
   MAX_HTTP_SESSIONS_PUBLIC,
   PUBLIC_HTTP_SESSION_IDLE_MS,
 } from '../../src/config/index.js';
+import { MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool } from '../routing/harness.js';
 
@@ -26,7 +27,7 @@ afterEach(async () => {
   h = undefined;
 });
 
-async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC) {
+async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC, idleMs = 1000) {
   h = await startServer();
   const harness = h;
   const toolsets = new ToolsetStore(() => undefined);
@@ -60,7 +61,7 @@ async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC) {
     maxRequestBytes: 10_000,
     rps: 1000,
     maxSessions,
-    idleMs: 1000,
+    idleMs,
     now: () => (clock.t += 100),
   });
   const port = await http.listen();
@@ -125,7 +126,7 @@ describe('session listeners on the shared emitters', () => {
 
     // open -> evict: one principal, so every open past the cap evicts one.
     for (let i = 0; i < 50; i++) await open(port, 'evictor', '7.7.7.7');
-    expect(http!.sessionCount).toBeLessThanOrEqual(4);
+    expect(http!.sessionCount).toBeLessThanOrEqual(MAX_HTTP_SESSIONS_PER_PRINCIPAL);
     // Drain what is left of the eviction phase.
     clock.t += 10_000;
     http!.sweep();
@@ -159,7 +160,8 @@ describe('session listeners on the shared emitters', () => {
   });
 
   it('emits no MaxListenersExceededWarning with MAX_HTTP_SESSIONS_PUBLIC sessions open', async () => {
-    const { port, toolsets, buf, registry } = await setup();
+    // Long idle window: stops the background sweeper (every idleMs/2) closing early sessions while all 256 are still opening.
+    const { port, toolsets, buf, registry } = await setup(MAX_HTTP_SESSIONS_PUBLIC, 3_600_000);
     const warnings: string[] = [];
     const onWarning = (w: Error) => warnings.push(w.name);
     process.on('warning', onWarning);
@@ -178,7 +180,7 @@ describe('session listeners on the shared emitters', () => {
   });
 
   it('keeps the public and local session constants apart', () => {
-    expect(MAX_HTTP_SESSIONS_PUBLIC).toBe(64);
+    expect(MAX_HTTP_SESSIONS_PUBLIC).toBe(256);
     expect(PUBLIC_HTTP_SESSION_IDLE_MS).toBe(10 * 60_000);
     expect(MAX_HTTP_SESSIONS).toBe(16);
     expect(HTTP_SESSION_IDLE_MS).toBe(30 * 60_000);

@@ -2,7 +2,8 @@ import { request } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpServer, type HttpServerOptions } from '../../src/http/index.js';
 import { createSessionServer } from '../../src/mcp/session.js';
-import { MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
+import { MAX_HTTP_SESSIONS_PUBLIC } from '../../src/config/index.js';
+import { EVICTION_LOG_WINDOW_MS, MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool, pairModule, until, type FakeModule } from '../routing/harness.js';
 
@@ -50,6 +51,7 @@ async function setup(over: Partial<HttpServerOptions> = {}) {
   mod = await pairModule(harness, 'u1');
   answer(mod);
   const lines: string[] = [];
+  const debugLines: string[] = [];
   // A ticking clock keeps the per-client request rate under its limit.
   let clock = 1_000_000;
   http = new HttpServer({
@@ -80,13 +82,14 @@ async function setup(over: Partial<HttpServerOptions> = {}) {
       }),
     maxRequestBytes: 10_000,
     rps: 1000,
-    maxSessions: 64,
+    maxSessions: MAX_HTTP_SESSIONS_PUBLIC,
     idleMs: 600_000,
     now: () => (clock += 100),
     log: (l) => lines.push(l),
+    logDebug: (l) => debugLines.push(l),
     ...over,
   });
-  return { port: await http.listen(), lines };
+  return { port: await http.listen(), lines, debugLines };
 }
 
 interface Reply {
@@ -187,24 +190,57 @@ function openStream(
   });
 }
 
-// Pins today's behaviour for task 110 (spike). It changes nothing in src/.
+// Pins the session caps and eviction behaviour after task 111: oldest-idle sessions
+// are evicted once a cap is reached, and one principal cannot exhaust the pool.
 describe('HTTP session churn from one OAuth principal', () => {
-  it('eight initializes with no DELETE give exactly four evictions, oldest-idle first', async () => {
-    const { port, lines } = await setup();
+  it('twenty initializes with no DELETE give exactly four evictions, oldest-idle first', async () => {
+    const { port, lines, debugLines } = await setup();
     const sids: string[] = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 20; i++) {
       const r = await init(port, 'chatgpt', '9.129.58.1');
       expect(r.status).toBe(200);
       sids.push(r.sid!);
     }
-    expect(lines).toHaveLength(8 - MAX_HTTP_SESSIONS_PER_PRINCIPAL);
-    for (const l of lines)
+    expect(MAX_HTTP_SESSIONS_PER_PRINCIPAL).toBe(16);
+    expect(lines.length + debugLines.length).toBe(20 - MAX_HTTP_SESSIONS_PER_PRINCIPAL);
+    for (const l of [...lines, ...debugLines])
       expect(l).toMatch(/^http session evicted: principal=oauth reason=principal-cap idle_ms=\d+$/);
-    // Oldest-idle first: the first four ids are the ones gone, the last four still work.
+    // Oldest-idle first: the first four ids are the ones gone, the last sixteen still work.
     for (let i = 0; i < 4; i++)
       expect((await call(port, 'chatgpt', '9.129.58.1', sids[i]!)).status).toBe(404);
-    for (let i = 4; i < 8; i++)
+    for (let i = 4; i < 20; i++)
       expect((await call(port, 'chatgpt', '9.129.58.1', sids[i]!)).status).toBe(200);
+  });
+
+  it('fifty evictions for one principal in ten minutes give one info line, the rest debug', async () => {
+    const { port, lines, debugLines } = await setup();
+    for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL + 50; i++)
+      expect((await init(port, 'chatgpt', '9.129.58.1')).status).toBe(200);
+    expect(lines).toHaveLength(1);
+    expect(debugLines).toHaveLength(49);
+    // Another principal has its own allowance.
+    for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL + 1; i++)
+      await init(port, 'other', '9.129.58.2');
+    expect(lines).toHaveLength(2);
+  });
+
+  it('logs a second info line once the ten-minute window has passed', async () => {
+    let clock = 1_000_000;
+    const { port, lines, debugLines } = await setup({ now: () => (clock += 100) });
+    const churn = async () => {
+      for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL + 3; i++)
+        expect((await init(port, 'chatgpt', '9.129.58.1')).status).toBe(200);
+    };
+    await churn();
+    expect(lines).toHaveLength(1);
+    expect(debugLines).toHaveLength(2);
+    // Still inside the window: more evictions stay at debug.
+    clock += EVICTION_LOG_WINDOW_MS - 60_000;
+    await churn();
+    expect(lines).toHaveLength(1);
+    clock += 120_000;
+    await init(port, 'chatgpt', '9.129.58.1');
+    expect(lines).toHaveLength(2);
   });
 
   it('a POST on an evicted session id gets 404 with body "unknown session"', async () => {

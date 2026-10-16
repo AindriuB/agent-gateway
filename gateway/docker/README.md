@@ -17,18 +17,15 @@ Caddy gets a TLS certificate for your domain and proxies to the gateway, which s
 
 ```
 cd gateway/docker
-cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION picks the image
-# While the package is private, log in first with a token that has read:packages:
-docker login ghcr.io -u <github-user> --password-stdin   # paste the token on stdin
+cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION: ghcr.io image
 docker compose pull
 docker compose up -d
 docker compose ps         # both services should be running; gateway "healthy"
 curl https://<domain>/status
 ```
 
-To build from source instead of pulling, run `docker compose up -d --build`. Use it until v0.1.0
-is published, or for any version that has no image. Never put the token in a file or on the
-command line; pass it on stdin.
+To build from source instead of pulling, run `docker compose up -d --build`. Use it for any
+version that has no published image.
 
 `/status` shows only the version and uptime.
 
@@ -49,8 +46,8 @@ files at once. To move from the bundled stack, first run `docker compose down` w
 `COMPOSE_FILE` is still unset (the volume is kept), then switch. If you switched first, run
 `docker compose up -d --build --remove-orphans` to remove the old `caddy` container.
 
-To serve the Foundry module's manifest and zip from the same Caddy while the repo is private, see
-"Self-hosted manifest (private testing)" in `docs/releasing.md`.
+To serve the Foundry module's manifest and zip from the same Caddy yourself, see
+"Self-hosted manifest (testing a build)" in `docs/releasing.md`.
 
 1. Put `COMPOSE_FILE=compose.byo-caddy.yaml` in `.env` (with `DOMAIN` and `FOUNDRY_ORIGIN`;
    `ACME_EMAIL` is not needed). Every command in this README then works unchanged, with no `-f`.
@@ -102,19 +99,30 @@ The invite works because `COMPOSE_FILE` is set.
 
 ## Pair each person
 
-Invites arrive with task 68 (not in this build yet). Until then the shared pairing code is
-printed in the log: `docker compose logs gateway | grep "Pairing code:"`.
+Pairing is per browser. Pair the Foundry user first, then sign in the AI client. The full
+explanation, including why a player invite needs a GM online, is in
+[docs/server-mode.md](../../docs/server-mode.md#pairing).
 
-After task 68:
+1. **First GM.** The GM opens Agent Gateway's pairing window in Foundry and sends you the world id
+   and user id from the "Copy my ids" button, which sits in the details block "For the gateway
+   operator: your ids". You run
+   `docker compose exec gateway <cli> --invite <world id> <user id> --admin --origin https://<foundry host>`
+   and send the printed invite privately. It works once and expires after 1 hour. The GM pastes it
+   into the pairing window.
+2. **Players.** The admin GM invites them from Manage access (Configure Settings, then Agent
+   Gateway, then Manage access). You can also run
+   `docker compose exec gateway <cli> --invite <world id> <user id>`. A player invite completes
+   only while an admin GM is in the world with Agent Gateway connected; otherwise the invite is
+   refused unused and the player is told to ask their GM to open the world with Agent Gateway
+   connected, then paste the invite again.
+3. **Extra GM accounts.** For a dedicated GM user such as a "ChatGPT" GM, use
+   `--invite ... --gm --origin ...`. It pairs directly and is not admin.
 
-1. The person opens Agent Gateway's pairing app in Foundry and sends you the world id and user
-   id from its "Copy my ids" line.
-2. You run `docker compose exec gateway <cli> --invite <world id> <user id>` and send them the
-   printed code privately. It works once and expires after 24 hours.
-3. They set the gateway URL to `wss://<domain>/link` and enter the code.
+Re-pairing a lost device needs a new invite, which replaces the old pairing. A plain invite for a GM
+user is refused. An admin GM re-pairs with a new `--admin` invite and other GM accounts with
+`--gm`; `--gm` downgrades an admin GM, so never use it for the only admin.
 
-Re-pairing a lost device needs a new invite.
-
+- `docker compose exec gateway <cli> --demote <world> <user>` clears a GM's admin flag.
 - `docker compose exec gateway <cli> --revoke-pairing <world> <user>` removes someone and
   cancels their unused invites.
 - `docker compose exec gateway <cli> --cancel-invite <world> <user>` withdraws an unused invite.

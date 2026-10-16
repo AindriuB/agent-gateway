@@ -92,6 +92,8 @@ Foundry v13 and v14 (`minimum` 13, `verified` 14). Tested combinations are pf2e 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). For a local development setup, see [docs/dev.md](docs/dev.md).
 
+Support the project through [GitHub Sponsors](https://github.com/sponsors/AindriuB) or [Ko-fi](https://ko-fi.com/aindriub).
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).

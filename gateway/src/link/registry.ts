@@ -86,7 +86,12 @@ export class LinkConnection {
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
       this.pending.delete(id);
-      p.reject(new LinkCallError('WORLD_OFFLINE', 'World disconnected'));
+      p.reject(
+        new LinkCallError(
+          'WORLD_OFFLINE',
+          'World disconnected. If this call was waiting for approval, you may retry the same call to rejoin the pending approval.',
+        ),
+      );
     }
   }
 
