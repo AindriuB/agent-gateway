@@ -100,17 +100,12 @@ describe('.env.example', () => {
 });
 
 describe('README', () => {
-  it('explains the GHCR pull, login, version and build', () => {
+  it('explains the GHCR pull, version and build', () => {
     const readme = read('README.md');
-    for (const s of [
-      'ghcr.io',
-      'read:packages',
-      '--password-stdin',
-      'GATEWAY_VERSION',
-      '--build',
-    ]) {
+    for (const s of ['ghcr.io', 'GATEWAY_VERSION', '--build']) {
       assert.ok(readme.includes(s), s);
     }
+    assert.ok(!readme.includes('While the package is private'));
     assert.doesNotMatch(readme, /once an image is published/);
   });
 

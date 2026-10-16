@@ -199,6 +199,7 @@ describe('ci.yml hygiene', () => {
   });
   it('keeps .github to the allowlisted files', () => {
     const allowed = [
+      'FUNDING.yml',
       'ISSUE_TEMPLATE/bug_report.yml',
       'ISSUE_TEMPLATE/config.yml',
       'ISSUE_TEMPLATE/feature_request.yml',
