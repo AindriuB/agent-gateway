@@ -1,6 +1,6 @@
 # 148 — Filtered-history public copy: runbook and verification script
 
-**Repo:** the private companion repo from 147 (`AindriuB/agent-gateway-internal`, pending name)
+**Repo:** the private companion repo from 147 (`AindriuB/agent-gateway-internal`, Decided Q8)
 **Depends on:** 147
 **Owns:**
 - ops/go-public/** in the companion repo (new): `RUNBOOK.md`, `filter.sh`, `verify.sh`,
@@ -20,6 +20,21 @@ The 0.4.0 release is cut from the public repo after this task, not by it. Record
   filter does not touch them. Only the Ascend **mark** (SVG path data) goes.
 - These scripts contain the personal strings they hunt for, which is why they live in the private
   companion and never in the public tree.
+- Q9 — Decided (owner, 2026-10-16): the freeze commit is cut only after 146 and the open playtest
+  tasks 109-114 have merged (147's freeze precondition), so no task branch needs porting by patch.
+- Q10 — Decided (owner, 2026-10-16): rewritten history maps the author and committer NAME to
+  `AindriuB` and the email to `3417729+AindriuB@users.noreply.github.com`. GitHub's own merge
+  committer (`GitHub <noreply@github.com>`) is left as is. LICENSE keeps the legal name.
+- Q11 — Decided (owner, 2026-10-16): keep tags v0.1.0, v0.1.1, v0.2.0, v0.3.0; drop v0.1.0-rc.1,
+  v0.1.0-rc.2 and any other `*-rc*` tag; drop the 0.1.0 draft release; re-create only the 0.3.0
+  release, with its assets, on the new repo.
+- Q12 — Decided (owner, 2026-10-16): "Merge pull request #NNN" messages stay unchanged. Task 146
+  adds one line to CONTRIBUTING.md saying pre-public PR numbers refer to the private archive.
+- Q13/Q14 — Decided (owner, 2026-10-16): the early `.github/FUNDING.yml` and the
+  gw.aindriub.app / dl.aindriub.app hostnames stay in history; no rewrite rule for them.
+- Q15 — Decided (owner, 2026-10-16): the per-connection frame budget (T17) and capability
+  negotiation in `welcome` are not prerequisites for going public or for 0.4.0; they stay
+  follow-ups.
 
 **Every destructive or GitHub-side step is an owner action.** The implementer writes and
 dry-runs the scripts on local clones only. The implementer never renames, creates, pushes to,
@@ -55,8 +70,16 @@ swap it in under the existing repo name and restore the releases.
     `noreply@github.com`, the PR merges). GitHub user id for AindriuB is 3417729, so the noreply
     address is `3417729+AindriuB@users.noreply.github.com`. Commit messages contain no personal
     path or email (checked on main).
-  - `.github/FUNDING.yml` existed early in main's history and was later removed; it is public
-    content, keep unless Andrew says otherwise.
+  - `.github/FUNDING.yml` existed early in main's history (`github: AindriuB`,
+    `ko_fi: AindriuB`; added c117d4d, removed 5f8ed04) and 146 adds a new one
+    (`github: AindriuB` then `ko_fi: aindriub`, 146 Amendment 2). Both stay (Q13): the old one is
+    kept in history as is, the new one is in the tree.
+  - Kept public identity, never a personal-string hit: the GHCR image
+    `ghcr.io/aindriub/foundry-agent-gateway`; module.json's `url`, `manifest` and `download` URLs
+    on `https://github.com/AindriuB/agent-gateway`; `"authors": [{ "name": "AindriuB" }]` in
+    module.json and `"author": "AindriuB"` in package.json; the FUNDING.yml handles and README's
+    `https://github.com/sponsors/AindriuB` and `https://ko-fi.com/aindriub` links (146); the
+    rewritten identity `AindriuB <3417729+AindriuB@users.noreply.github.com>` (Q10).
   - Screenshot blobs: whatever 144 reported (possibly none).
 - Refs: tags v0.1.0, v0.1.0-rc.2, v0.1.1, v0.2.0, v0.3.0 are ancestors of main; v0.1.0-rc.1 is
   not (a scratch commit). Releases on GitHub: "Agent Gateway 0.3.0" (published, Latest, assets
@@ -71,7 +94,7 @@ swap it in under the existing repo name and restore the releases.
 
 - [ ] `filter.sh <mirror-clone-dir>` refuses unless the dir is a fresh `git clone --mirror` (no
       worktrees, filter-repo's own fresh-clone check not overridden with `--force`), deletes every
-      ref except `refs/heads/main` and the release tags chosen (see owner questions), then runs one
+      ref except `refs/heads/main` and the tags `v0.1.0`, `v0.1.1`, `v0.2.0`, `v0.3.0` (Q11), then runs one
       `git filter-repo` with `--invert-paths --paths-from-file internal-paths.txt`,
       `--replace-text replacements.txt`, `--mailmap mailmap`, and `--strip-blobs-with-ids
       strip-blobs.txt` if present. Default empty-commit pruning stays on (plan-only commits
@@ -91,8 +114,12 @@ swap it in under the existing repo name and restore the releases.
       phrase found in docs/spikes/foundry-socket-identity.md and docs/testing.md history to a
       generic "test server" phrase). Rules are literal or anchored regexes, never a bare
       `homelab` word replacement across all files without first listing every hit.
-- [ ] `mailmap` maps `aindriubannister@gmail.com` to `3417729+AindriuB@users.noreply.github.com`
-      for author and committer; the display name follows Andrew's answer below.
+- [ ] `mailmap` is exactly the one line
+      `AindriuB <3417729+AindriuB@users.noreply.github.com> <aindriubannister@gmail.com>`, so the
+      name and email of every author and committer with the old email change (Q10). After the run,
+      `git log --all --format='%an <%ae>%n%cn <%ce>' | sort -u` prints only
+      `AindriuB <3417729+AindriuB@users.noreply.github.com>` and `GitHub <noreply@github.com>`.
+      LICENSE is byte-identical at main before and after (`git diff <old> <new> -- LICENSE` empty).
 - [ ] `filter.sh --dry-run` runs `git filter-repo --dry-run` and leaves
       `$(git rev-parse --git-dir)/filter-repo/fast-export.original` and `.filtered` for
       inspection; RUNBOOK.md says how to diff them.
@@ -117,9 +144,24 @@ swap it in under the existing repo name and restore the releases.
          `andrew@`, `homelab`, `/srv/dev/`, the first 24 characters of the Ascend path literal,
          `ASCEND_PATH = '` followed by a non-placeholder, `All rights reserved` in marks.ts).
          The first name "Andrew" alone is not a pattern: it stays in LICENSE by decision 6.
-      4. **Identity.** Every author and committer email in the rewritten repo is the AindriuB
-         noreply address or `noreply@github.com`.
-      5. **Refs.** Only main and the chosen tags exist; each tag points at the rewritten
+         By Q13/Q14, `patterns.txt` contains no pattern that matches `gw.aindriub.app`,
+         `dl.aindriub.app`, `AindriuB`/`aindriub` on its own, either FUNDING.yml content, or
+         any of the kept public identity listed in Context. verify.sh runs a pattern self-test
+         before the scan, using the same matcher and case rule as the scan, and fails it unless
+         the patterns match none of `https://gw.aindriub.app/mcp`,
+         `https://dl.aindriub.app/x.zip`, `github: AindriuB`, `ko_fi: AindriuB`,
+         `ko_fi: aindriub`, `https://github.com/sponsors/AindriuB`,
+         `https://ko-fi.com/aindriub`, `ghcr.io/aindriub/foundry-agent-gateway:0.3.0`,
+         `https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`,
+         `https://github.com/AindriuB/agent-gateway/releases/download/v0.3.0/agent-gateway.zip`,
+         `"authors": [{ "name": "AindriuB" }]`, `"author": "AindriuB"` and
+         `AindriuB <3417729+AindriuB@users.noreply.github.com>`, and match each of
+         `/home/andrew/x`, `/Users/Andrew/x`, `aindriubannister@gmail.com` and `homelab`.
+      4. **Identity.** Every author and committer in the rewritten repo is
+         `AindriuB <3417729+AindriuB@users.noreply.github.com>` or `GitHub <noreply@github.com>`
+         (name and email both checked, Q10).
+      5. **Refs.** Only main and exactly the tags v0.1.0, v0.1.1, v0.2.0, v0.3.0 exist
+         (`git tag -l '*-rc*'` is empty); each tag points at the rewritten
          counterpart of its old commit, looked up in the `--commit-map` file (the mapping table
          is printed). An old tag commit missing from the map fails.
       6. **Build.** In a temp worktree of the rewritten main, `npm ci && npm run verify` exits 0;
@@ -135,8 +177,12 @@ swap it in under the existing repo name and restore the releases.
 - [ ] RUNBOOK.md gives the cut-over as numbered steps, each marked **OWNER** or **SCRIPT**, in
       this order. Steps 1-10 are all reversible and nothing in them is visible outside the
       owner's account; step 11 is the single publish gate; steps 12-13 publish (Amendment 1):
-      1. OWNER: declare the freeze SHA; stop merging to main; list and close or port open PRs and
-         branches. Before any PR is closed or any branch deleted, every branch to port goes into a
+      1. OWNER: declare the freeze SHA only once 147's freeze precondition holds (146 and 109,
+         111, 112, 113, 114 merged); stop merging to main. SCRIPT: print
+         `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
+         `git branch -r --no-merged origin/main`, and exit non-zero if any open PR or unmerged
+         branch names task 146 or 109-114. OWNER: mark each remaining open PR or branch
+         "abandon" or "port". Before any PR is closed or any branch deleted, every branch to port goes into a
          self-contained `<backup-dir>/open-branches.bundle` outside the checkout
          (`git bundle create` with no `^` exclusions, then `git bundle verify`), and the bundle
          is restored into a scratch repository (`git -C <scratch> fetch <bundle>
@@ -154,14 +200,15 @@ swap it in under the existing repo name and restore the releases.
          preserves commit-map and ref-map under `ops/go-public/out/<freeze-sha>/`; commit that
          folder to the private companion); `verify.sh --commit-map
          ops/go-public/out/<freeze-sha>/commit-map <original-mirror> <rewritten-mirror>`.
-      3. OWNER: download all assets of the 0.3.0 release (and 0.1.0 draft if kept) with
-         `gh release download` into a local folder, and record release titles and notes.
+      3. OWNER: download all assets of the 0.3.0 release with `gh release download v0.3.0` into
+         a local folder, and record its title and notes. The 0.1.0 draft is not re-created
+         (Q11); it stays on the frozen archive.
       4. OWNER: rename AindriuB/agent-gateway to AindriuB/agent-gateway-private (Settings,
          Rename); confirm it stays private. GitHub's redirect from the old name ends as soon as a
          new repo takes the name, which is what makes module.json's URLs hit the new repo.
       5. OWNER: create AindriuB/agent-gateway as **private** first, empty, no README.
-      6. OWNER: push the rewritten main and tags (`git push origin main` and the tag list
-         explicitly; never `--mirror`, never `--force` to the archive).
+      6. OWNER: push the rewritten main and tags (`git push origin main v0.1.0 v0.1.1 v0.2.0
+         v0.3.0`, tags named explicitly; never `--mirror`, never `--force` to the archive).
       7. OWNER: re-create releases with `gh release create v0.3.0 -R AindriuB/agent-gateway
          --title "Agent Gateway 0.3.0" --notes-file … --latest <assets>`; while the repo is
          private, check them with `gh release view` and `gh release download` (authenticated).
@@ -268,6 +315,11 @@ swap it in under the existing repo name and restore the releases.
         rollback is deleting the affected versions (or the whole package) and re-publishing them
         privately under new tags; GitHub may refuse to delete public versions above its download
         threshold without a support request. Images already pulled cannot be recalled.
+- [ ] Q12: `git -C <rewritten-repo> show main:CONTRIBUTING.md | rg -c "private archive"` prints
+      `1` (the line task 146 added); verify.sh runs this check and prints PASS/FAIL. RUNBOOK.md says "Merge pull request #NNN" messages are left unchanged and points at
+      that CONTRIBUTING.md line.
+- [ ] After step 7, `gh release list -R AindriuB/agent-gateway` lists only "Agent Gateway 0.3.0"
+      (Latest), and its asset names equal those downloaded in step 3.
 - [ ] Nothing is pushed, renamed or created on GitHub by the implementer
       (`gh api` calls in scripts are read-only, and the scripts refuse to run `git push`).
 
@@ -279,21 +331,25 @@ swap it in under the existing repo name and restore the releases.
   answers.
 - The hosted builds on dl.aindriub.app (unaffected: they are built from the tree).
 - Rewriting e2e/** comments or "Andrew" as a first name anywhere in history.
-- Re-numbering or rewriting `#NNN` PR references in commit messages (owner question).
+- Re-numbering or rewriting `#NNN` PR references in commit messages (Decided Q12: unchanged).
+- Rewriting the gw./dl.aindriub.app hostnames or the early FUNDING.yml in history (Q13/Q14).
+- The per-connection frame budget (T17) and `welcome` capability negotiation (Q15: follow-ups,
+  not prerequisites for going public or for 0.4.0).
 
 ## Owner questions
 
-- Commit author **name**: keep "Andrew Bannister" (consistent with LICENSE) or map it to
-  "AindriuB" alongside the email?
-- Tags to keep: all of v0.1.0, v0.1.1, v0.2.0, v0.3.0? Drop the rc tags (v0.1.0-rc.1 is not on
-  main; v0.1.0-rc.2 is)? Re-create the never-published 0.1.0 draft or drop it? Proposal: keep the
-  four release tags, drop both rc tags, re-create only 0.3.0 as a release.
-- `Merge pull request #NNN` messages will point at unrelated or missing numbers in the new repo:
-  leave them, or rewrite to plain "Merge branch …" with `--replace-message`?
-- `.github/FUNDING.yml` in early history: keep (default) or drop?
-- Whether the hosted `gw.aindriub.app` / `dl.aindriub.app` URLs in older commits of the plugin
-  files and docs should also be replaced. Default: keep; they are public service hostnames, not
-  personal data.
+- Q10 commit author name — Decided (owner, 2026-10-16): map name to "AindriuB" and email to
+  `3417729+AindriuB@users.noreply.github.com`, author and committer; LICENSE keeps the legal name.
+- Q11 tags and releases — Decided (owner, 2026-10-16): keep v0.1.0, v0.1.1, v0.2.0, v0.3.0; drop
+  v0.1.0-rc.1, v0.1.0-rc.2 and any other rc tag; drop the 0.1.0 draft; re-create only the 0.3.0
+  release with its assets.
+- Q12 `Merge pull request #NNN` messages — Decided (owner, 2026-10-16): leave unchanged; one line
+  in CONTRIBUTING.md (task 146) explains them.
+- Q13 `.github/FUNDING.yml` in early history — Decided (owner, 2026-10-16): keep.
+- Q14 gw./dl.aindriub.app hostnames in history — Decided (owner, 2026-10-16): keep, no rewrite;
+  verify.sh does not count them as failures.
+- Q15 frame budget (T17) and `welcome` capability negotiation — Decided (owner, 2026-10-16): not
+  prerequisites for going public or 0.4.0; follow-ups.
 
 ## Amendments
 
@@ -363,3 +419,31 @@ swap it in under the existing repo name and restore the releases.
   anything is closed or deleted, and re-applies onto the rewritten main by cherry-pick (`-m 1`
   for merges) or `git rebase --rebase-merges`, keeping patches only as the carrier for linear
   branches.
+
+### Amendment 5 (owner answers, 2026-10-16)
+
+- Q9: runbook step 1 now requires 147's freeze precondition (146 and 109-114 merged) and a
+  script check over open PRs and unmerged branches.
+- Q10: concrete one-line `mailmap` (name and email); identity check covers names.
+- Q11: the four kept tags are named in filter.sh, check 5, steps 3, 6 and 7; rc tags and the
+  0.1.0 draft are dropped.
+- Q12: PR-number messages unchanged; new acceptance item checks 146's CONTRIBUTING.md line.
+- Q13/Q14: FUNDING.yml and gw./dl.aindriub.app hostnames stay; verify.sh's personal-string check
+  gains a pattern self-test so they never count as failures while personal paths, the old email
+  and the homelab name still do.
+- Q15: T17 frame budget and `welcome` capability negotiation recorded as non-prerequisites.
+
+### Amendment 6 (external review and owner decision, 2026-10-16)
+
+- [P2, external review] 146's scrub `rg` could never pass because it also matched the kept GHCR
+  image name. Checked here for the same trap: check 3's patterns did not hit the kept public
+  identity, but the self-test only proved it for the hostnames and FUNDING.yml handles. Context
+  now lists the kept public identity (GHCR image, module.json URLs on
+  github.com/AindriuB/agent-gateway, author "AindriuB", FUNDING handles, the Sponsors and Ko-fi
+  links, the Q10 noreply identity), and the self-test must show the patterns match none of it,
+  with the same matcher and case rule as the scan, while personal paths, the old email and
+  "homelab" still match. `gw.`/`dl.aindriub.app` stay non-failures here by Q14.
+- Owner decision (146 Amendment 2): the new `.github/FUNDING.yml` is `github: AindriuB` then
+  `ko_fi: aindriub`, and README links `https://github.com/sponsors/AindriuB`. Context updated;
+  both are in the self-test's must-not-match list. Q13 still refers to the old FUNDING.yml in
+  history (c117d4d to 5f8ed04), kept as is.
