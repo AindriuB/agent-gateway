@@ -126,3 +126,15 @@ Reviewed HEAD: 186d513649fe1c9110d1bc5996d3ee840b3721b9
 - [P2] e2e/image-view/image-view.e2e.test.ts beforeAll — waits on a human approval (the GM's probe `image_upload` via `settle`) under a fixed 15-minute hook timeout; Shape item 3 requires at least the approval budget. route: implementer — use `humanTimeout(1) + RECONNECT_MS` like the other suites. input: approve the probe 16+ min after the prompt → hook fails, all four image-view tests fail to run, and a later approval uploads a PNG never listed under UPLOADED FILES.
 - [STYLE] e2e/image-upload/upload.e2e.test.ts:15 — ~175-char header comment line; wrap to ≤100 (.prettierrc printWidth). route: implementer.
 - [NOTE, do it if cheap] image-view's hidden-token fixture belongs to the no-permission Actor, so the refusal can't show the hidden-token rule alone. Give player1 LIMITED on that Actor (or use a third Actor the player can see) so only `token.hidden` causes the refusal, and assert the refusal still happens.
+
+## Review round 2 — findings
+
+Source: the headed native e2e run on Foundry 14.369, after review round 1.
+
+1. **P1: player owned-Actor tests fail on v14.**
+   - **Upload:** `e2e/image-upload/upload.e2e.test.ts` "a player sets the portrait and token of an Actor they own" fails with `FORBIDDEN: An owned supported world document is required`.
+   - **Assign:** `e2e/image-assign/image-assign.e2e.test.ts` "a player sets the portrait and token art of an Actor they own" fails with `FORBIDDEN: You do not own that document`.
+   - **Probe:** a read-only probe as the player, on the same world, shows every `resolveActor` clause passing for the player's real character. That character's ownership is `{ default: 2, <gm>: 3, <player>: 3 }`. The policy snapshot is valid, and `playerAgents` is `[]`.
+   - **So:** the product guard is fine. The difference is the test fixture, which creates the Actor with `ownership: { default: 3 }` only.
+   - **Fix:** create the owned Actor with explicit per-user OWNER for the player user (and default 0), in both suites, as the real world does. Then wait until the player's client sees the Actor with `testUserPermission(game.user, 'OWNER') === true` before calling the tool.
+   - **Assertions:** keep the foreign-Actor refusal tests. Make the upload one assert the reason text, as the assign one already does.
