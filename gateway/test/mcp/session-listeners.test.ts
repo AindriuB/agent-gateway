@@ -10,6 +10,7 @@ import {
   MAX_HTTP_SESSIONS_PUBLIC,
   PUBLIC_HTTP_SESSION_IDLE_MS,
 } from '../../src/config/index.js';
+import { MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool } from '../routing/harness.js';
 
@@ -125,7 +126,7 @@ describe('session listeners on the shared emitters', () => {
 
     // open -> evict: one principal, so every open past the cap evicts one.
     for (let i = 0; i < 50; i++) await open(port, 'evictor', '7.7.7.7');
-    expect(http!.sessionCount).toBeLessThanOrEqual(4);
+    expect(http!.sessionCount).toBeLessThanOrEqual(MAX_HTTP_SESSIONS_PER_PRINCIPAL);
     // Drain what is left of the eviction phase.
     clock.t += 10_000;
     http!.sweep();
