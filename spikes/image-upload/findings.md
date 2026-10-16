@@ -1,7 +1,6 @@
 # Task 52 findings: image upload spike
 
-Status: PARTIAL. Part A (static) is done. Part B is live on v13.351 and v14.369. Not done: the live
-gateway/link/module run of the large upload, the upload size limit, and the MCP client rows ("unverified").
+Status: DONE for this spike. Part A (static) and Part B (live on v13.351 and v14.369) are answered. Client rows are web research, not live-tested. Three items are deferred or closed (see 'Closed items' near the end).
 
 Versions: `@modelcontextprotocol/sdk` 1.32.1 (as installed), repo at main f68d9e0.
 
@@ -32,18 +31,24 @@ Measured by serialising the real envelope shape (36-char ids) and searching for 
 - Audit: `AUDIT_LIMITS.argsChars = 8000`, `argsString = 500`; `boundedJson(ctx.args)` truncates and sets `argsTruncated`. Large base64 is cut safely to 500 characters, so audit needs no change; but the stored form cannot reproduce the upload, so the tool should log name, size and hash as distinct small args.
 - Audit result summary keeps only the first text line (stage.ts:254): put the destination path on the first line.
 
-### MCP clients (docs only; none run live)
-No client was run. The values below are what I recall from vendor documentation and are UNVERIFIED; they have not been cited from live sources because no web access was used. They must be confirmed before 123 fixes its cap.
+### MCP clients (docs/reports, not live-tested)
+Source: web research supplied by the owner on 2026-10-16. No client was run by this spike. Issue-tracker reports are reports, not vendor statements, and the fix versions are unknown.
 
-| Client | Image in tool result reaches model | Limits |
-| --- | --- | --- |
-| Claude Code | unverified | unverified |
-| Claude Desktop | unverified | unverified |
-| claude.ai connector | unverified | unverified |
-| ChatGPT connector | unverified | unverified |
-| Gemini CLI | unverified | unverified |
+| Client | Image in tool result reaches model | Limits / caveats | Basis |
+| --- | --- | --- | --- |
+| Claude Code | Reported both ways. One report: MCP `ImageContent` reached the model as base64 text, costing about 15-25k tokens per image and hitting the "exceeds maximum allowed tokens" limit (https://claudeissues.com/issue/31208-bug-mcp-imagecontent-returned-as-text-in-tool-results-instead-of-native-image-bl). Another: image blocks are dropped when `structuredContent` is also present (https://claudeissues.com/issue/54737-bug-mcp-tool-results-image-content-blocks-dropped-when-structuredcontent-is-also). Both are shown as resolved; the fix version is unknown. | Model-side limits below | docs/reports, not live-tested |
+| Claude Desktop | Image results render, collapsed by default (https://claudeissues.com/issue/53256-bug-mcp-imagecontent-in-tool-results-is-collapsed-by-default-in-claude-ai-web-cl) | Model-side limits below | docs/reports, not live-tested |
+| claude.ai connector | Same report as Claude Desktop: renders, collapsed by default | Model-side limits below | docs/reports, not live-tested |
+| ChatGPT connector (developer mode) | Community report: a tool returning an MCP image block shows an empty `{}`, while the same tool works in MCP Inspector (https://community.openai.com/t/chatgpt-connector-returns-empty-for-mcp-tool-results-with-type-image-while-same-tool-works-in-mcp-inspector/1375446). No official statement either way. | unknown | docs/reports, not live-tested |
+| Gemini CLI | unverified | unverified | no source |
 
-Provisional recommendation for `image_view`: raw cap 512 KiB (about 683 KB base64, well under the 786 KB frame maximum), downscaled in the browser; revisit after the live checks.
+Claude model vision limits (https://platform.claude.com/docs/en/build-with-claude/vision; docs, not live-tested): at most 8000x8000 px, or 2000 px per side when a request has more than 20 images; at most 10 MB base64 per image on the direct API, 5 MB on Bedrock and Vertex; the standard tier downscales to a 1568 px long edge (about 1.15 MP); newer models allow 2576 px.
+
+Recommendations for tasks 122 and 123:
+- Return image results WITHOUT `structuredContent`, or verify live that Claude Code keeps the image block when both are present. (This reverses the Part A note that `structuredContent` may accompany images: the SDK allows it, but at least one client reportedly drops the image.)
+- Downscale to at most 1568 px on the long edge before sending.
+- Keep the 512 KiB raw cap (about 683 KB base64, under the 786 KB frame ceiling and every limit above).
+- Treat ChatGPT image viewing as unsupported until tested live. `image_view` must still return a useful text description (dimensions, mime, size, source) alongside the image block, so clients that drop or blank the image still get an answer.
 
 ## Part B. Live results, v13.351 (pf2e 7.12.2), headless Chrome via Playwright, empty-password join
 
@@ -105,7 +110,7 @@ So 121 can rely on Foundry's own check: it needs no extra permission test of its
 - Same-origin `fetch(url)` works for the player and the GM. Response headers: `content-type` (from the extension), `content-length`, `accept-ranges: bytes`, `cache-control: no-cache`, a weak `etag`, `last-modified`. SVG also carries a restrictive CSP.
 - No session needed: an unauthenticated `curl` of an uploaded file returned 200. Foundry serves data files to anyone who can reach the URL, so visibility must be enforced by the tool, not the server.
 - Stream cutoff: `response.body.getReader()`, accumulate `value.length`, call `reader.cancel()` past N bytes. Granularity is one network chunk: v13 returned about 20 KB of a 64 KB file on the first read, v14 returned the whole 64 KB in the first read, so the cap check must also use `content-length` first and then enforce N+chunk.
-- Downscale: `createImageBitmap(blob)` plus `OffscreenCanvas.convertToBlob` for `image/jpeg` and `image/webp` both worked in the headless Chrome runner on v13 (a 950x420 64,681-byte PNG became a 256-wide JPEG of 3,445 bytes or WebP of 6,280 bytes). Recommendation: downscale to at most 1024 px on the long edge and re-encode to JPEG (use WebP only if the client supports it; JPEG is the safest); refuse only non-decodable data and files over the fetch cap (e.g. 4 MB source). SVG: rasterise through `createImageBitmap` is not reliable for SVG blobs (untested), so refuse SVG in `image_view` or mark it "unsupported".
+- Downscale: `createImageBitmap(blob)` plus `OffscreenCanvas.convertToBlob` for `image/jpeg` and `image/webp` both worked in the headless Chrome runner on v13 (a 950x420 64,681-byte PNG became a 256-wide JPEG of 3,445 bytes or WebP of 6,280 bytes). Recommendation: downscale to at most 1568 px on the long edge and re-encode to JPEG (use WebP only if the client supports it; JPEG is the safest); refuse only non-decodable data and files over the fetch cap (e.g. 4 MB source). SVG: not applicable, since every image tool refuses SVG (see Closed items).
 - The client-side collections contain documents the user cannot see: player1 holds `Actor` objects with ownership NONE (level 0), a hidden Token (`hidden: true`) and a non-visible Scene in `game.actors`, `scene.tokens` and `game.scenes`. So "exists in the collection" is NOT a visibility test. Use:
   - Actor portrait and prototype token: `actor.testUserPermission(user, 'LIMITED')` (level >= 1). Observed: level 0 -> false; a LIMITED actor reports level 1; OWNER 3.
   - Placed token: scene visible (below) AND (`!token.hidden || token.isOwner`) AND the token's actor LIMITED if the image shown is the actor's. The hidden token was returned in `scene.tokens` to the player, so `hidden` must be checked explicitly.
@@ -113,20 +118,25 @@ So 121 can rely on Foundry's own check: it needs no extra permission test of its
 - v14 gave the same results: an ownership-NONE actor and the hidden token are present in the player's collections (levels 0, `hidden: true`, `isOwner: false`), and neither a navigation scene nor a plain scene was `visible` to player1. The rules above hold on v14; for a scene's background on v14 read `scene.background.src` after the `visible` check.
 
 ### MCP image content (for 122 and 123): live clients
-Not run. Every row stays "unverified" (see Part A).
+Not run live. See the client table in Part A (docs/reports, not live-tested).
 
 ## What I created, and cleanup
 Documents, all named `ag-spike-52-...`, each deleted by exact id (a name-prefix check afterwards found none left):
 - v13: Scene `mxwzM2QXJ3Mc9Np6` (embedded tokens `uEYsQfriIavAMI2A`, `aglGqcXjSGYEM55M`, tile `u8Kt27pBQKPqY7Bt`), Scene `gfKzNALbOKc824RP`, Actors `q8fhbBQkytJDY7J6`, `yU5yHjv3IOkr9AGF`, `M6HDSJJNm28hN2od`.
 - v14: Scene `xTOZpksqwyoQm4wg` (embedded tokens `x7NmHEbiTapFp9SJ`, `QDcgIE8Al61wG0xD`, tile `Lzbj8Y3l3CWbejRK`), Scene `vsq4XEXKSEyhUDL9`, Actors `MiMMNP5f007tZyb3`, `JWNquuln87TFBf3R`, `5GdV8xhE769KYm9b`.
-Files cannot be deleted through Foundry's API; these remain and need manual removal:
+Foundry's API cannot delete files, so the uploads below were left for the operator to remove. **The operator has since deleted the v13 and v14 upload leftovers; no files from this spike remain on either test server.** What was left (for the record):
 - v13: `agent-gateway/uploads/ag-spike-52/` with `ag-spike-52-a.png`, `-B.PNG`, `-s.svg`, `-w.webp`, `-t.txt`, `-m.png`, `-x.png`; the new parents `agent-gateway/` and `agent-gateway/uploads/`; and the stray `ag-spike-52-tt.png` in the Data root.
 - v14: `agent-gateway/uploads/ag-spike-52/` with `ag-spike-52-a.png`, `-s.svg`, `-m.png`, `-x.png`; the new parents `agent-gateway/` and `agent-gateway/uploads/`.
 No existing document or setting was changed on either version.
 
-## Proposed arguments and caps (provisional until v14 and the client rows are filled)
+## Closed items
+- Live 700 KiB gateway -> link -> module -> offline-queue run: moved to task 53's native e2e acceptance. Reason: it needs a paired gateway, and pairing was out of bounds for this spike. The static frame arithmetic (Part A) stands until then.
+- Server upload size limit: deferred to task 53's e2e. Reason: uploaded files cannot be deleted through Foundry's API, so probing the limit here would leave large files behind. The e2e must use deletable test files, with cleanup by the operator.
+- SVG rasterisation in the browser: not needed. Every image tool refuses SVG, so `image_view` never decodes one.
+
+## Proposed arguments and caps
 - 53 `image_upload`: args `{ name, mimeType, data (base64) }`; raw cap 512 KiB; extension allow-list png jpg jpeg webp gif avif (svg refused); magic-byte check; server-side unique name `<sha256-prefix>-<name>`; target `agent-gateway/uploads/<userId>/`; create each directory level; treat `false`/`undefined`/`{}` as failure; approval and audit carry `{name, bytes, sha256}`.
 - 121 `image_assign`: args `{ document, id, field, path }`, with `field` one of the five verified paths (v14 Scene background is a Level update, see above); path must be under `agent-gateway/uploads/` or a browsed path; rely on Foundry's update permission check.
 - 120 helpers: path validator above; `browse` cap results (no server paging); the upload and browse paths require `FILES_UPLOAD` / `FILES_BROWSE` and should report a clear `FORBIDDEN` for Players.
 - 122 result frame: image block `{type:'image', data, mimeType}` beside the text block, `structuredContent` free of base64; the link `ResultMessage` needs an image field; frame ceiling 786,162 raw bytes.
-- 123 `image_view`: raw cap 512 KiB after downscale to 1024 px JPEG; source cap 4 MB; visibility tests above.
+- 123 `image_view`: raw cap 512 KiB after downscale to at most 1568 px (long edge) JPEG; source cap 4 MB; visibility tests above.
