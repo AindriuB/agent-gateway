@@ -73,3 +73,10 @@ own heartbeat termination from a proxy or browser close, because both show as 10
 4. Local repro (e2e/link-idle/idle.mjs, caddy:2, stand-in ws server copying the heartbeat): idle for 25 min gave 0 closes; a reload at 10 min gave 1001 on both sides. No 1006 reproduced.
 5. Approval across a drop: the module record survives and is re-presented on reconnect (live.ts:78-83). The gateway fails the in-flight call with WORLD_OFFLINE (registry.ts:82-88), so the agent never gets the outcome. If the drop comes before APPROVAL_WAIT_MS, the agent has no approval id, and its retry creates a duplicate pending record.
 6. Recommendation for 109 (outside the four listed options): document the browser-side cause, and raise the pong tolerance (MAX_MISSED_PONGS or a deadline of about 2 min); keep fast reconnect; deliver the pending approval id and outcome after reconnect, and dedupe on retry. Ruled out: Caddy stream settings, which address no cause; a shorter ping interval, which would make it worse; a module keepalive, which detects but doesn't prevent. Optional hardening: treat any inbound frame as liveness, since `missed` resets only on an app-level pong (server.ts:449-451).
+
+## Review round 1 — findings
+
+Reviewed HEAD: 60534d4b8ac4767027eccbddc2e81f9f31e1da95
+
+- [STYLE] e2e/link-idle/idle.mjs — not Prettier-formatted (for example lines 16-17, 32 and 51). The root lint glob skips e2e/ .mjs, but docs/conventions.md:3 requires Prettier. Fix: `npx prettier --write e2e/link-idle/idle.mjs`. route: implementer
+- [NOTE, optional] gateway/src/link/server.ts:401 — no test covers the `code === 1006` guard (it matters only when a real close frame races a terminate). Not a defect.
