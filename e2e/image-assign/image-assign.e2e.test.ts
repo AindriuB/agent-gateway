@@ -156,6 +156,53 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   );
 
   it(
+    'v14: Undo of the GM scene_background set restores the Level previous background.src',
+    async (ctx) => {
+      if (!gm.foundryVersion.startsWith('14')) return ctx.skip();
+      const levelBackground = `async (u) => { const s = await fromUuid(u); const l = s.initialLevel ?? s.levels.contents[0]; return [l.uuid, l.background?.src ?? null]; }`;
+      // The earlier test left the image in place; reset the Level natively so Undo has a different
+      // value to restore, and read it back as the expected "previous".
+      await evalGm(
+        `async (u) => { const s = await fromUuid(u); const l = s.initialLevel ?? s.levels.contents[0]; await s.updateEmbeddedDocuments('Level', [{ _id: l.id, 'background.src': null }]); }`,
+        sceneUuid,
+      );
+      const [levelUuid, previous] = await evalGm<[string, string | null]>(
+        levelBackground,
+        sceneUuid,
+      );
+      expect(previous).not.toBe(image);
+      const done = await settle(gm, await set(gm, 'scene_background', sceneUuid));
+      expect(done.isError, done.text).toBe(false);
+      const [, now] = await evalGm<[string, string | null]>(levelBackground, sceneUuid);
+      expect(now).toBe(image);
+      const pageId = await evalGm<string | null>(
+        `async (levelUuid) => {
+          const find = () => [...(game.journal.get(game.settings.get('agent-gateway', 'auditJournalId'))?.pages ?? [])]
+            .filter((p) => p.system.tool === 'image_assign' &&
+              (p.system.targets ?? []).some((t) => t.uuid === levelUuid && t.undoable === true))
+            .sort((a, b) => b.system.timestamp - a.system.timestamp)[0];
+          let page = find();
+          for (let i = 0; i < 40 && !page; i++) { await new Promise((r) => setTimeout(r, 250)); page = find(); }
+          return page?.id ?? null;
+        }`,
+        levelUuid,
+      );
+      expect(pageId, 'an undoable audit target for the Level').not.toBeNull();
+      // The Audit app's own Undo action (the same code path as its Undo button).
+      await evalGm(
+        `async (id) => {
+          const App = game.settings.menus.get('agent-gateway.audit').type;
+          await App.onUndo.call({}, null, { dataset: { pageId: id } });
+        }`,
+        pageId,
+      );
+      const [, after] = await evalGm<[string, string | null]>(levelBackground, sceneUuid);
+      expect(after).toBe(previous);
+    },
+    humanTimeout(2),
+  );
+
+  it(
     'a player sets the portrait and token art of an Actor they own',
     async () => {
       for (const target of ['actor_portrait', 'actor_token']) {
