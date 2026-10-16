@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-16 | 112 | Pending approvals mirrored into the offline queue (migration 014); protocol 7.2.0 `approvalState` + `approvalOwnership`; always re-ask; hold-until-reconnected, gateway-confirmed ownership; residual: `approved` frame lost as socket dies | `## 2026-10-16 — Pending approvals survive logout and link drops (task 112)` |
 | 2026-10-16 | 109 | Link tolerates ~135 s of silence (MAX_MISSED_PONGS 8), any inbound frame is liveness; a retry after a drop rejoins its pending approval in the same tab; WORLD_OFFLINE says retry | `## 2026-10-16 — Link keepalive tolerates stalls; a retry after a drop rejoins its approval (task 109)` |
 | 2026-10-16 | 117 | OfflineQueue.enqueue refuses core tools with non-empty redactArgs (image_upload) while offline with WORLD_OFFLINE; nothing stored; 0.4.0 release blocker | `## 2026-10-16 — Offline queue refuses redactArgs tools (task 117)` |
 | 2026-10-16 | 111 | Session caps 16 per principal, 32 per client key, 256 public total; eviction info log once per principal per 10 min; live-session DELETE exempt from per-client rate; option C declined | `## 2026-10-16 — HTTP session caps for ChatGPT churn (task 111)` |

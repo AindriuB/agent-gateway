@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 92 done in `docs/plan/done/` (excluding its README.md), 20 active in `docs/plan/tasks/` (2026-10-16).
+Inventory: 93 done in `docs/plan/done/` (excluding its README.md), 19 active in `docs/plan/tasks/` (2026-10-16).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -65,7 +65,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - **111** (HTTP session caps, option B) is done on branch `claude/task-111` (PR #184); archived in `docs/plan/done/`. Caps are 16, 32, 256 (were 4, 16, 64).
   - **116** (headless restart re-invite flake) is the failure on PR #180: `gateway/test/headless/app.test.ts` "reconnects with the stored token and mints no invite" minted a second invite. Diagnose first; the lead is the 50 ms `linkGraceMs` in the test boot helper.
 - **109** (link keepalive: about 135 s of silence tolerated, any authenticated inbound frame counts as liveness, a retry after a drop rejoins its pending approval in the same tab) is done in PR claude/task-109; archived in `docs/plan/done/`. Not in the go-public freeze's open items any more.
-- **112** is Ready once 109 and 117 merge; 117 has merged, so 112 waits on this PR only. **Held until the Mac's task 53 (image upload) merges:** 44.
+- **112** (pending approvals survive logout and link drops; protocol 7.2.0, migration 014) is done in this PR (`claude/task-112`); archived in `docs/plan/done/`. **Pending Andrew:** the live Foundry v14 check (player requests, logs out, logs back in, GM approves, the call runs once). Merge order: after #188 (Mac 151) and the Mac's 150 PR, before 116. Follow-ups: `lang/` keys for the English-literal warning in `module/src/approvals/live.ts`; Prettier warnings on `gateway/docker/compose*.yaml`. **Held until the Mac's task 53 (image upload) merges:** 44.
 - **0.4.0 release blockers:**
   - **117** (offline queue refuses `redactArgs` tools such as `image_upload`): merged (PR #186; archived in `docs/plan/done/`). Not a go-public blocker (agreed with the Mac session).
 - **Awaiting Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window).
