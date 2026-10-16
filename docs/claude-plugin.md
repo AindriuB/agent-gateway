@@ -60,6 +60,6 @@ If the plugin cannot be used, add a custom connector in claude.ai with URL `<you
 
 Automated, on 2026-10-14: the plugin and marketplace contract tests and the build script tests pass; `claude plugin validate --strict` ran and passed on both the repo and the hosted marketplace. The hosted files at `https://dl.aindriub.app/claude/` were built from `5fa4da5` (zip sha256 starting `4730657a`), replacing an earlier hand-built upload.
 
-Not yet verified, pending a live Claude Code run by Andrew: adding the marketplace and installing, the `/mcp` OAuth flow and which scopes Claude Code requests (if it asks for read only, writes cannot be approved and that must be reported), listing tools, one read, one approved write, revocation and logout. Loading the plugin in claude.ai chat is also unverified.
+Not yet verified, pending a live Claude Code run by the maintainer: adding the marketplace and installing, the `/mcp` OAuth flow and which scopes Claude Code requests (if it asks for read only, writes cannot be approved and that must be reported), listing tools, one read, one approved write, revocation and logout. Loading the plugin in claude.ai chat is also unverified.
 
 Known limits of the build script: a symlinked plugin root is followed; there is a window between the file check and the copy; a bare `?` or `#` on the base URL is silently dropped.

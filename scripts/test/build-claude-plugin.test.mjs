@@ -65,6 +65,7 @@ describe('build-claude-plugin argument checks', () => {
       'gateway credentials',
       ['--base-url', 'https://x.test', '--gateway-url', 'https://u:p@gw.test'],
     ],
+    ['gateway mcp path', ['--base-url', 'https://x.test', '--gateway-url', 'https://gw.test/mcp']],
     ['gateway query', ['--base-url', 'https://x.test', '--gateway-url', 'https://gw.test/?a=1']],
   ]) {
     it(`rejects ${label} and writes nothing`, () => {

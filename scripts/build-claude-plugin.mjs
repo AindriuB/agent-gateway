@@ -63,6 +63,9 @@ if (gatewayArg !== undefined) {
       'build-claude-plugin: --gateway-url must be an https URL without credentials, query or fragment',
     );
   }
+  if (/\/mcp\/*$/.test(g.pathname)) {
+    fail('build-claude-plugin: --gateway-url must not end in /mcp; the build appends it');
+  }
   gatewayMcpUrl = `${g.origin}${g.pathname.replace(/\/+$/, '')}/mcp`;
 }
 
