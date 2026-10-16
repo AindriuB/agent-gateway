@@ -203,3 +203,14 @@ creation on the `pending_approval` path, orphan and requeue on disconnect and ne
    re-ask.** Honouring it needs the gateway to trust a module-reported approval it cannot verify.
 3. **Expiry.** How long a carried-over pending approval lives (today pending records expire
    after the approval wait). **Recommendation:** the offline queue's existing retention.
+
+## Amendment 2 (orchestrator, 2026-10-16): Owns extended; restart survival
+
+The implementer stopped before coding: the 7.2.0 bump breaks hard-coded version assertions outside Owns (the same situation task 122 had).
+- Added to Owns, for the version change only:
+  - protocol/test/link/link.test.ts:142 and :260, protocol/test/link/vouch.test.ts:8 (7.1.0 → 7.2.0);
+  - module/test/link/client.test.ts:259 (the hello `protocolVersion` → 7.2.0);
+  - protocol/test/link/result-images.test.ts:9, which becomes a floor check: retitle it "is at least protocol 7.1.0" and assert the version is >= 7.1.0 by semver comparison, since images arrived in 7.1.0.
+  - module/test/link/result-images.test.ts:228 needs no change.
+- Restart survival (ruling): orphaned approval rows whose last report was `pending` must survive a gateway restart. They have never executed, so marking them `unknown` loses a never-run approval and contradicts decision 3 (queue retention). Add to Owns a one-clause change to `recover()` in gateway/src/offline-queue/repository.ts that excludes rows with `orphaned_at` set and last report `pending` from the pending→unknown sweep. Rows whose last report is `approved` or `executing` are still swept to `unknown`, as before. Add a test: orphan, simulated restart (new repository over the same DB), the owner's hello → requeued and asked again.
+- The implementer's other plans are accepted as within Owns: `expireOrphans` called before `cleanup`; capable-connection tracking in a Set inside OfflineQueue keyed by connection id; ApprovalManager setters (`onApprovalState`, `pendingApprovalIds`) instead of editing types.ts.
