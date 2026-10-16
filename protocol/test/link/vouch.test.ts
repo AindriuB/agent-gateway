@@ -5,7 +5,7 @@ const ok = (f: unknown) => parseLinkMessage(JSON.stringify(f)).ok;
 
 describe('vouch messages', () => {
   it('is protocol 7 and refuses 6 naming the side to upgrade', () => {
-    expect(PROTOCOL_VERSION).toBe('7.1.0');
+    expect(PROTOCOL_VERSION).toBe('7.2.0');
     const r = checkCompat('6.0.0', PROTOCOL_VERSION);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.message).toMatch(/upgrade the local side/i);

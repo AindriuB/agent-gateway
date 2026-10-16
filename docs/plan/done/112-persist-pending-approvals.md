@@ -203,3 +203,91 @@ creation on the `pending_approval` path, orphan and requeue on disconnect and ne
    re-ask.** Honouring it needs the gateway to trust a module-reported approval it cannot verify.
 3. **Expiry.** How long a carried-over pending approval lives (today pending records expire
    after the approval wait). **Recommendation:** the offline queue's existing retention.
+
+## Amendment 2 (orchestrator, 2026-10-16): Owns extended; restart survival
+
+The implementer stopped before coding: the 7.2.0 bump breaks hard-coded version assertions outside Owns (the same situation task 122 had).
+- Added to Owns, for the version change only:
+  - protocol/test/link/link.test.ts:142 and :260, protocol/test/link/vouch.test.ts:8 (7.1.0 → 7.2.0);
+  - module/test/link/client.test.ts:259 (the hello `protocolVersion` → 7.2.0);
+  - protocol/test/link/result-images.test.ts:9, which becomes a floor check: retitle it "is at least protocol 7.1.0" and assert the version is >= 7.1.0 by semver comparison, since images arrived in 7.1.0.
+  - module/test/link/result-images.test.ts:228 needs no change.
+- Restart survival (ruling): orphaned approval rows whose last report was `pending` must survive a gateway restart. They have never executed, so marking them `unknown` loses a never-run approval and contradicts decision 3 (queue retention). Add to Owns a one-clause change to `recover()` in gateway/src/offline-queue/repository.ts that excludes rows with `orphaned_at` set and last report `pending` from the pending→unknown sweep. Rows whose last report is `approved` or `executing` are still swept to `unknown`, as before. Add a test: orphan, simulated restart (new repository over the same DB), the owner's hello → requeued and asked again.
+- The implementer's other plans are accepted as within Owns: `expireOrphans` called before `cleanup`; capable-connection tracking in a Set inside OfflineQueue keyed by connection id; ApprovalManager setters (`onApprovalState`, `pendingApprovalIds`) instead of editing types.ts.
+
+## Amendment 3 (orchestrator, 2026-10-16): Owns extended for the migration count
+
+Migration 014 raises the migration count from 13 to 14 and breaks hard-coded assertions outside Owns. Added to Owns, for the 13 → 14 change only:
+- gateway/test/store/store.test.ts:147 (length and test title) and :171 (`user_version`);
+- gateway/test/store/admin-flag.test.ts:69-70;
+- gateway/test/store/retire-legacy-pairings.test.ts:47.
+Prefer deriving the expected count from the migrations registry where that is a one-line change; otherwise use the literal 14.
+
+## Amendment 4 (2026-10-16, decided by Andrew): hold approved calls until reconnected
+
+Code review found two paths to a double run that the residual didn't cover: (a) the GM approves or denies while the requester's link is down, the `approvalState` frame is dropped, and `reconcile` requeues and re-asks; (b) a second tab takes over the link while the first tab still holds the record. Andrew chose "hold until reconnected":
+- The requester's module never executes an approved call while its gateway link isn't connected. It keeps the record pending and approved locally, waits for the link (usually about 2 s), sends `approvalState{approved}`, then runs. The pending-id list sent on hello includes such held records, so `reconcile` doesn't requeue them. A denial during an outage is likewise held and reported on reconnect before anything else.
+- When a tab's link is replaced (closed with the replacement reason), that tab withdraws its pending approval records and stops offering them, so the gateway's row is the only copy. It tells the user it moved to another tab.
+- Tests:
+  - an approval during an outage → no execution until reconnect → `approved` reported → runs once → the row ends `unknown` and is never requeued;
+  - a denial during an outage → reported on reconnect → not re-asked;
+  - takeover by a second tab → the first tab's records withdrawn → re-asked once in the second tab → approving runs once.
+- The residual shrinks back to: an `approved` frame lost as the socket dies after it was sent.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 316a48a
+
+- [P2] repository.ts `report` (approved branch) and the `insertAlias`/`enqueue` cap counts: rows reported `approved` stay `state='pending'` until disconnect or expiry and count against perOwner (20), global (500) and receipt caps. After 20 approvals the 21st mirror throws RATE_LIMITED, is swallowed and is lost. Fix: on an `approved` report, move the row to `unknown` with `resolved_at` set (spec step 5 needs only that it ends `unknown`, never `queued`); `approval_status` still forwards to the module while live. Add a test: 25 mirror+approve cycles leave capacity free. route: implementer
+- [P3] service.ts `recordLive`, `live ? c.id : null` branch: unreachable, because `disconnected` already removed the connection from `capableIds`. Use the capability captured before the call (session.ts holds it) so the orphan-at-insert branch works; add a same-tick close test. route: implementer
+- [P3] session.ts:537 / service.ts `approvalState`: an `approved` report arriving before its row exists is dropped. Hold early reports per connection for unknown aliases, with a bounded count and time, and apply them in `insertAlias`. route: implementer
+- [P3] service.ts `carriesImage`: misses `data:<any>;base64,` prefixes, leading whitespace and numeric byte arrays. Strip any `data:[^,]*;base64,` prefix and whitespace before sniffing, and treat arrays of more than 8 integers whose first bytes match image magic as images. route: implementer
+- [P3] gateway/test/store/admin-flag.test.ts:70 and store.test.ts:147: use the literal 14, as Amendment 3 allows, not `>=` floors. route: implementer
+- [NOTE] `pendingApprovalIds()` caps at 256: document it in a code comment. Optional.
+
+## Amendment 5 (2026-10-16, decided by Andrew): the gateway confirms ownership on reconnect
+
+Re-review found a double run outside the residual. Tab A's link dies without a REPLACED close (laptop sleep). Tab B takes over, gets X requeued, and the GM approves it, so it runs. Then A reconnects, evicts B, and releases its held answer for X (or re-presents X), so X runs a second time. Andrew chose "the gateway confirms ownership":
+- A new gateway-to-module frame in the same 7.2.0 protocol bump, `approvalOwnership` (insertion-only in protocol/src/link/messages.ts). It is sent in reply to the module's post-hello pending list, and lists which of those aliases are still owned by this connection: rows still `pending` and live or orphaned for the same (world, user, agent), which reconcile re-attaches to this connection.
+- After hello, the module waits for `approvalOwnership` before releasing any held answer or re-presenting any mirrored record. For each listed alias it keeps the record and releases held answers (report, then run). For each alias not listed it withdraws the record and drops its held answer, with nothing run or reported.
+- If no `approvalOwnership` arrives within a bounded time (say 10 s), the module withdraws all its mirrored records. That fails safe: the gateway's row is authoritative and gets re-asked.
+- A gateway that reports a protocol below 7.2.0 is never sent the list and never replies. A 7.2.0 module talking to an older gateway keeps the pre-112 behaviour (no mirroring), as now.
+- Owns: protocol/src/link/messages.ts (insertion), gateway/src/offline-queue/service.ts and repository.ts (the reply after reconcile), gateway/src/link/server.ts (send helper or case insertion only), and module manager.ts, live.ts and client.ts (receive and gate).
+- Tests, each failing on the current code:
+  - the stale-tab scenario above runs X exactly once;
+  - a normal blip reconnect keeps and releases a held answer;
+  - a missing reply withdraws everything after the timeout;
+  - ownership is scoped: another user or agent's aliases are never confirmed.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 156852e
+
+- [P2, orchestrator] the stale-tab double run is settled by Amendment 5 above.
+- [P2] module/src/approvals/live.ts:80-95: no test drives the Amendment 4/5 wiring through `startApprovals`/`onState`. Add tests in the style of module/test/approvals/approval-across-drop.test.ts:170 with a fake `onState`:
+  - connected, disconnected (ERROR), approve: nothing runs;
+  - reconnect: the frames go list, then ownership, then `approved`, then the run;
+  - disconnected with REPLACED: withdrawal, nothing sent.
+  The tests must fail when the gate is replaced by `holdWhile(() => false)` or when the REPLACED branch is removed. route: implementer
+- [P3] service.ts:85 and :227-232: don't delete early reports on disconnect. Let them expire by their own 30 s bound, and apply them to a row inserted as an orphan too. route: implementer
+- [P3] live.ts:87: the REPLACED warning also fires on pairing revocation and store failures (same 1000/'replaced' close). Reword it neutrally: "Agent Gateway: this tab's link was closed; its pending approvals were moved to the gateway and will be asked again where you are connected." It stays an English literal for now; lang/ is a follow-up. route: implementer
+
+## Amendment 6 (orchestrator ruling, 2026-10-16): don't withdraw records the gateway never mirrored
+
+Amendment 5 as built withdraws every listed record that isn't confirmed. That includes records the gateway never mirrored: redactArgs or image tools, rows skipped at a queue cap, and calls made to an older gateway. Such records used to survive a same-tab blip (task 109) and now don't. No other tab can hold a copy of a record the gateway never stored, so keeping it can't cause a double run.
+- `approvalOwnership` carries two lists: `ids` (owned by this connection: keep and release) and `unknown` (listed aliases for which the gateway has no row at all for this (world, user, agent): keep and release, with the pre-112 behaviour). The module withdraws only the listed aliases that appear in neither list, meaning ones the gateway knows but that belong elsewhere or are already resolved or requeued.
+- The 10 s timeout still withdraws everything, which fails safe.
+- Tests: an image_upload record held through a blip is kept and runs once after the reply; the stale-tab scenario still runs X exactly once; an alias whose row was requeued to another tab is withdrawn.
+
+## Review round 3 — findings (fourth round approved by Andrew, 2026-10-16)
+
+Reviewed HEAD: 10b70d3
+
+- [P2] module/src/approvals/manager.ts:672-677: `confirmOwnership` withdraws every pending mirrored record in neither list, including records created after the post-hello list was sent. Those ids were never listed, so the gateway couldn't confirm them. Amendment 6 says to withdraw only listed aliases in neither list. Fix: remember the exact ids sent with the list (in `expectOwnership`, or at live.ts:111) and apply the filter only to those. Unlisted records are left untouched. The 10 s timeout still withdraws everything. Test (this fails on the current code): `wireApprovalLink` with a fake link; connected, then disconnected (ERROR), then connected, so the list `[]` is sent; then `rig.call('write_thing')` creates Y; then `ownership([], [])`. Y must stay `pending`, and a GM approval of Y given inside the window must be released and run once. route: implementer
+
+Ratified: module/test/approvals/link-wiring.test.ts is added to Owns (round 2 asked for these tests without naming a file).
+Note for the record (not a defect): if ownership is late or never arrives, the module withdraws while `reconcile` has already re-attached the rows to this connection, so they are re-asked only after the next disconnect. This is Amendment 5's fail-safe, accepted.
+
+## External PR review (2026-10-16)
+
+P2, "Detach terminal approval aliases when their connection closes": terminal (denied or expired) alias rows kept their connection_id after a disconnect, so approval_status answered WORLD_OFFLINE instead of the terminal status. Confirmed: the SQL in orphanLive matched neither of its two updates. Fix at `gateway/src/offline-queue/repository.ts:94-98`: a third UPDATE scoped by LIVE_ALIAS and connection_id that detaches the row and keeps state, result and resolved_at. It runs on disconnect and in the startup sweep. Tests cover denied and expired then disconnect then approval_status returning the terminal status, the restart sweep, and reconcile and ownedAliases ignoring detached rows.
