@@ -5,6 +5,7 @@
 **Owns:**
 - ops/go-public/** in the companion repo (new): `RUNBOOK.md`, `filter.sh`, `verify.sh`,
   `replacements.txt`, `mailmap`, `internal-paths.txt`, `strip-blobs.txt` (only if 144 found any)
+- ops/go-public/out/** in the companion repo (new): preserved filter-repo maps (Amendment 2)
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16. Sequential and last: it runs
 at the freeze SHA declared for 147, after every cleanup task and the image wave have merged.
@@ -75,6 +76,13 @@ swap it in under the existing repo name and restore the releases.
       `--replace-text replacements.txt`, `--mailmap mailmap`, and `--strip-blobs-with-ids
       strip-blobs.txt` if present. Default empty-commit pruning stays on (plan-only commits
       disappear; say so in RUNBOOK.md).
+- [ ] Straight after a successful (non-dry) run, `filter.sh` copies `commit-map` and `ref-map`
+      from `"$(git -C <mirror-clone-dir> rev-parse --git-dir)/filter-repo/"` (a mirror clone is
+      bare and has no nested `.git`; never hard-code `.git/filter-repo/`) to
+      `ops/go-public/out/<freeze-sha>/` in the companion repo (or a path given with `--out`), and
+      prints the two destination paths. It exits non-zero if either source file is missing or the
+      copy fails. These preserved copies are the only maps that count: filter-repo's own copies
+      are local metadata and do not survive a push and clone (Amendment 2).
 - [ ] `replacements.txt` replaces the exact Ascend path-data literal with a neutral valid path
       (e.g. `M0 0`) and the Ascend copyright comment line with a neutral line, plus each personal
       path from the discovery with a generic one (`/home/andrew/homelab/bin/foundry-link` to
@@ -86,10 +94,15 @@ swap it in under the existing repo name and restore the releases.
 - [ ] `mailmap` maps `aindriubannister@gmail.com` to `3417729+AindriuB@users.noreply.github.com`
       for author and committer; the display name follows Andrew's answer below.
 - [ ] `filter.sh --dry-run` runs `git filter-repo --dry-run` and leaves
-      `.git/filter-repo/fast-export.original` and `.filtered` for inspection; RUNBOOK.md says how to
-      diff them.
-- [ ] `verify.sh <original-mirror> <rewritten-repo>` exits 0 only if all of these hold, printing
-      one PASS/FAIL line per check and never printing a matched secret-like value:
+      `$(git rev-parse --git-dir)/filter-repo/fast-export.original` and `.filtered` for
+      inspection; RUNBOOK.md says how to diff them.
+- [ ] `verify.sh --commit-map <path> [--ref-map <path>] <original-mirror> <rewritten-repo>`
+      exits 0 only if all of these hold, printing one PASS/FAIL line per check and never printing
+      a matched secret-like value. `--commit-map` is required and always points at the preserved
+      copy from `filter.sh`, never at the rewritten repo's own `filter-repo/` directory. If the
+      flag is absent, the file does not exist or is empty, or its header is not filter-repo's
+      `old new` header, verify.sh prints `FAIL commit-map: <reason>` and exits non-zero before
+      running any check (Amendment 2):
       1. **File list diff.** The set of paths ever present (`git log --all --format= --name-only
          | sort -u`) after the run equals the set before minus exactly the internal paths (and
          any stripped screenshot paths if a blob strip removed the only version). Any other
@@ -107,8 +120,8 @@ swap it in under the existing repo name and restore the releases.
       4. **Identity.** Every author and committer email in the rewritten repo is the AindriuB
          noreply address or `noreply@github.com`.
       5. **Refs.** Only main and the chosen tags exist; each tag points at the rewritten
-         counterpart of its old commit (a mapping table from `.git/filter-repo/commit-map` is
-         printed).
+         counterpart of its old commit, looked up in the `--commit-map` file (the mapping table
+         is printed). An old tag commit missing from the map fails.
       6. **Build.** In a temp worktree of the rewritten main, `npm ci && npm run verify` exits 0;
          at the rewritten v0.3.0, `npm ci && npm run build && node scripts/pack-module.mjs`
          produces an `agent-gateway.zip` whose file list matches the published 0.3.0 asset.
@@ -125,7 +138,10 @@ swap it in under the existing repo name and restore the releases.
       1. OWNER: declare the freeze SHA; stop merging to main; list and close or port open PRs and
          branches (port with `git format-patch` from the old repo and `git am` onto the new main,
          excluding internal paths).
-      2. SCRIPT: fresh `git clone --mirror` of AindriuB/agent-gateway; `filter.sh`; `verify.sh`.
+      2. SCRIPT: fresh `git clone --mirror` of AindriuB/agent-gateway; `filter.sh` (which
+         preserves commit-map and ref-map under `ops/go-public/out/<freeze-sha>/`; commit that
+         folder to the private companion); `verify.sh --commit-map
+         ops/go-public/out/<freeze-sha>/commit-map <original-mirror> <rewritten-mirror>`.
       3. OWNER: download all assets of the 0.3.0 release (and 0.1.0 draft if kept) with
          `gh release download` into a local folder, and record release titles and notes.
       4. OWNER: rename AindriuB/agent-gateway to AindriuB/agent-gateway-private (Settings,
@@ -137,14 +153,17 @@ swap it in under the existing repo name and restore the releases.
       7. OWNER: re-create releases with `gh release create v0.3.0 -R AindriuB/agent-gateway
          --title "Agent Gateway 0.3.0" --notes-file … --latest <assets>`; while the repo is
          private, check them with `gh release view` and `gh release download` (authenticated).
-      8. OWNER: repo settings: enable private vulnerability reporting (SECURITY.md relies on it),
-         Actions "Require approval for first-time contributors", branch protection on main
-         requiring the `test` check, Issues on, Discussions per preference.
+      8. OWNER: repo settings that work while private: Actions "Require approval for
+         first-time contributors", branch protection on main requiring the `test` check, Issues
+         on, Discussions per preference. Private vulnerability reporting is NOT here: GitHub
+         offers it only on public repos, so it moves to step 12 (Amendment 2).
       9. OWNER: GHCR package `foundry-agent-gateway`: connect it to the new repo (Package
          settings, Manage Actions access, give the new repo write). Visibility stays **private**;
          check an authenticated `docker pull ghcr.io/aindriub/foundry-agent-gateway:0.3.0`.
       10. OWNER + SCRIPT: pre-publish check. Fresh `git clone --mirror` of the pushed private
-          AindriuB/agent-gateway and re-run `verify.sh <original-mirror> <that clone>`: all PASS.
+          AindriuB/agent-gateway and re-run `verify.sh --commit-map
+          ops/go-public/out/<freeze-sha>/commit-map <original-mirror> <that clone>` with the same
+          preserved map as step 2 (the clone has no `filter-repo/` metadata): all PASS.
           Confirm the package's version list holds nothing that should not go public.
       11. OWNER: **PUBLISH GATE.** Andrew explicitly confirms, in writing in the cut-over PR or
           issue, that steps 1-10 passed and that he is publishing. This is the point of no return:
@@ -152,7 +171,12 @@ swap it in under the existing repo name and restore the releases.
           after it cannot be recalled. No step before the gate makes anything public.
       12. OWNER: flip AindriuB/agent-gateway to **public**; check
           `curl -sIL https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`
-          returns 200, and that module.json's `download` URL resolves.
+          returns 200, and that module.json's `download` URL resolves. Straight after the flip,
+          enable private vulnerability reporting (Settings, Code security; SECURITY.md from task
+          140 relies on it), then check that the "Report a vulnerability" button SECURITY.md
+          points to appears on https://github.com/AindriuB/agent-gateway/security and opens the
+          advisory form (`…/security/advisories/new`) when signed in as an account other than
+          the owner.
       13. OWNER: set the GHCR package visibility to **public**; check
           `docker pull ghcr.io/aindriub/foundry-agent-gateway:0.3.0` without login. Last, because
           GitHub documents package visibility as one-way (public cannot be set back to private).
@@ -231,3 +255,19 @@ swap it in under the existing repo name and restore the releases.
   settings, package link, re-verify) comes first, then a single OWNER publish gate (step 11),
   then repo public (12) and package public (13). The rollback section now says what is and is
   not reversible after the gate, including the package.
+
+### Amendment 2 (from external PR review, 2026-10-16)
+
+- [P2] Step 8 enabled private vulnerability reporting while the new repo was still private, but
+  GitHub offers that setting only on public repositories, so steps 1-10 could never all
+  complete. Step 8 now keeps only the settings that work while private; enabling private
+  vulnerability reporting moves to step 12 straight after the visibility flip, with a check that
+  the "Report a vulnerability" entry point SECURITY.md (task 140) promises works on the public
+  repo.
+- [P2] Step 10 re-ran verify.sh against a fresh mirror, but check 5 read
+  `.git/filter-repo/commit-map`, which is local metadata that does not survive a push and clone
+  (and in a bare mirror lives at `$(git rev-parse --git-dir)/filter-repo/`, not under `.git/`).
+  `filter.sh` now copies commit-map and ref-map to `ops/go-public/out/<freeze-sha>/` right after
+  the run, resolving the source through `git rev-parse --git-dir`; `verify.sh` takes a required
+  `--commit-map <path>` (optional `--ref-map`) used for both the step 2 and step 10 runs, and
+  fails clearly when the map is missing, empty or malformed.
