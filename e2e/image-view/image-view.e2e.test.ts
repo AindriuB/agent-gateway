@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseImageUploadText } from '@agent-gateway/protocol/tools';
 import type { CallResult, GatewayProcess } from '../lib/gateway.js';
-import { loadContext, requireUuids } from '../lib/context.js';
+import { loadContext } from '../lib/context.js';
 import { RECONNECT_MS, Rig } from '../multi/rig.js';
 
 // Needs the repository owner's per-run approval: AGENT_GATEWAY_E2E_IMAGE=1. One Rig keeps the GM
