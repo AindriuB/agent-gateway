@@ -244,3 +244,30 @@ Reviewed HEAD: 316a48a
 - [P3] service.ts `carriesImage`: misses `data:<any>;base64,` prefixes, leading whitespace and numeric byte arrays. Strip any `data:[^,]*;base64,` prefix and whitespace before sniffing, and treat arrays of more than 8 integers whose first bytes match image magic as images. route: implementer
 - [P3] gateway/test/store/admin-flag.test.ts:70 and store.test.ts:147: use the literal 14, as Amendment 3 allows, not `>=` floors. route: implementer
 - [NOTE] `pendingApprovalIds()` caps at 256: document it in a code comment. Optional.
+
+## Amendment 5 (2026-10-16, decided by Andrew): the gateway confirms ownership on reconnect
+
+Re-review found a double run outside the residual. Tab A's link dies without a REPLACED close (laptop sleep). Tab B takes over, gets X requeued, and the GM approves it, so it runs. Then A reconnects, evicts B, and releases its held answer for X (or re-presents X), so X runs a second time. Andrew chose "the gateway confirms ownership":
+- A new gateway-to-module frame in the same 7.2.0 protocol bump, `approvalOwnership` (insertion-only in protocol/src/link/messages.ts). It is sent in reply to the module's post-hello pending list, and lists which of those aliases are still owned by this connection: rows still `pending` and live or orphaned for the same (world, user, agent), which reconcile re-attaches to this connection.
+- After hello, the module waits for `approvalOwnership` before releasing any held answer or re-presenting any mirrored record. For each listed alias it keeps the record and releases held answers (report, then run). For each alias not listed it withdraws the record and drops its held answer, with nothing run or reported.
+- If no `approvalOwnership` arrives within a bounded time (say 10 s), the module withdraws all its mirrored records. That fails safe: the gateway's row is authoritative and gets re-asked.
+- A gateway that reports a protocol below 7.2.0 is never sent the list and never replies. A 7.2.0 module talking to an older gateway keeps the pre-112 behaviour (no mirroring), as now.
+- Owns: protocol/src/link/messages.ts (insertion), gateway/src/offline-queue/service.ts and repository.ts (the reply after reconcile), gateway/src/link/server.ts (send helper or case insertion only), and module manager.ts, live.ts and client.ts (receive and gate).
+- Tests, each failing on the current code:
+  - the stale-tab scenario above runs X exactly once;
+  - a normal blip reconnect keeps and releases a held answer;
+  - a missing reply withdraws everything after the timeout;
+  - ownership is scoped: another user or agent's aliases are never confirmed.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 156852e
+
+- [P2, orchestrator] the stale-tab double run is settled by Amendment 5 above.
+- [P2] module/src/approvals/live.ts:80-95: no test drives the Amendment 4/5 wiring through `startApprovals`/`onState`. Add tests in the style of module/test/approvals/approval-across-drop.test.ts:170 with a fake `onState`:
+  - connected, disconnected (ERROR), approve: nothing runs;
+  - reconnect: the frames go list, then ownership, then `approved`, then the run;
+  - disconnected with REPLACED: withdrawal, nothing sent.
+  The tests must fail when the gate is replaced by `holdWhile(() => false)` or when the REPLACED branch is removed. route: implementer
+- [P3] service.ts:85 and :227-232: don't delete early reports on disconnect. Let them expire by their own 30 s bound, and apply them to a row inserted as an orphan too. route: implementer
+- [P3] live.ts:87: the REPLACED warning also fires on pairing revocation and store failures (same 1000/'replaced' close). Reword it neutrally: "Agent Gateway: this tab's link was closed; its pending approvals were moved to the gateway and will be asked again where you are connected." It stays an English literal for now; lang/ is a follow-up. route: implementer
