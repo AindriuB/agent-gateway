@@ -162,7 +162,9 @@
         "unconfirmed": "Your GM could not confirm this pairing, so the invite was not used. Ask your GM to open this world with Agent Gateway connected, then paste the invite again. If you are the GM, ask the gateway operator for a GM invite.",
         "content": "Agent Gateway pairing request. Your GM confirms this automatically; you do not need to do anything.",
         "noGm": "No GM is online in this world to confirm your pairing. Ask your GM to join, then try again.",
-        "failed": "Agent Gateway could not send the pairing request to your GM. Try again."
+        "failed": "Agent Gateway could not send the pairing request to your GM. Try again.",
+        "confirmed": "Agent Gateway pairing confirmed for {player}.",
+        "notConfirmed": "A player's Agent Gateway pairing could not be confirmed because your Agent Gateway link is not connected."
       },
       "Address": {
         "current": "Gateway: {address}",
@@ -276,7 +278,7 @@
   "AGENT_GATEWAY.Manage.menu.hint": "Invite players to connect their agents and revoke pairings in this world. Only the admin GM can use it.",
   "AGENT_GATEWAY.Manage.tabInvites": "Invites",
   "AGENT_GATEWAY.Manage.tabPairings": "Pairings",
-  "AGENT_GATEWAY.Manage.invitesIntro": "Create an invite for a player. The code is shown once and works once. A player's GM can also see which apps that player has connected.",
+  "AGENT_GATEWAY.Manage.invitesIntro": "Create an invite for a player. The code is shown once and works once. A player's GM can also see which apps that player has connected. This GM must be online in this world, with Agent Gateway connected, when the player pairs.",
   "AGENT_GATEWAY.Manage.pairingsIntro": "Revoking a pairing signs that player out, cancels their unused invites and removes their connected apps.",
   "AGENT_GATEWAY.Manage.createInvite": "Create invite",
   "AGENT_GATEWAY.Manage.noInvites": "No invites yet.",
@@ -304,6 +306,8 @@
   "AGENT_GATEWAY.Manage.codeTitle": "Invite code",
   "AGENT_GATEWAY.Manage.codeIntro": "Give the player this address and code. In the player's settings, enter it as the pairing code.",
   "AGENT_GATEWAY.Manage.codeOnce": "It is shown only once. Close this window and it cannot be shown again.",
+  "AGENT_GATEWAY.Manage.codeNeedsGm": "{player} can only finish pairing while this GM is in this world with Agent Gateway connected.",
+  "AGENT_GATEWAY.Manage.needsGm": "Needs you online to confirm",
   "AGENT_GATEWAY.Manage.copy": "Copy",
   "AGENT_GATEWAY.Manage.close": "Done",
   "AGENT_GATEWAY.Manage.notAdmin": "Only the admin GM can manage access.",

@@ -39,6 +39,9 @@
           <li class="invite" data-invite-id="{{id}}">
             <strong class="user">{{userName}}</strong>
             <span class="status">{{status}}</span>
+            {{#if needsGm}}
+              <span class="notes needs-gm">{{localize "AGENT_GATEWAY.Manage.needsGm"}}</span>
+            {{/if}}
             <span class="expires">{{localize "AGENT_GATEWAY.Manage.expires"}}: {{expires}}</span>
             {{#if canCancel}}
               <button type="button" data-action="cancelInvite" data-invite-id="{{id}}">
