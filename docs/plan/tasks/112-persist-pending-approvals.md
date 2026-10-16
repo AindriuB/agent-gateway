@@ -214,3 +214,11 @@ The implementer stopped before coding: the 7.2.0 bump breaks hard-coded version 
   - module/test/link/result-images.test.ts:228 needs no change.
 - Restart survival (ruling): orphaned approval rows whose last report was `pending` must survive a gateway restart. They have never executed, so marking them `unknown` loses a never-run approval and contradicts decision 3 (queue retention). Add to Owns a one-clause change to `recover()` in gateway/src/offline-queue/repository.ts that excludes rows with `orphaned_at` set and last report `pending` from the pending→unknown sweep. Rows whose last report is `approved` or `executing` are still swept to `unknown`, as before. Add a test: orphan, simulated restart (new repository over the same DB), the owner's hello → requeued and asked again.
 - The implementer's other plans are accepted as within Owns: `expireOrphans` called before `cleanup`; capable-connection tracking in a Set inside OfflineQueue keyed by connection id; ApprovalManager setters (`onApprovalState`, `pendingApprovalIds`) instead of editing types.ts.
+
+## Amendment 3 (orchestrator, 2026-10-16): Owns extended for the migration count
+
+Migration 014 raises the migration count from 13 to 14 and breaks hard-coded assertions outside Owns. Added to Owns, for the 13 → 14 change only:
+- gateway/test/store/store.test.ts:147 (length and test title) and :171 (`user_version`);
+- gateway/test/store/admin-flag.test.ts:69-70;
+- gateway/test/store/retire-legacy-pairings.test.ts:47.
+Prefer deriving the expected count from the migrations registry where that is a one-line change; otherwise use the literal 14.
