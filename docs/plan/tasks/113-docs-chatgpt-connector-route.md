@@ -59,3 +59,12 @@ entry and index row.
 - Consent-page world and user wording beyond scopes (follows task 104 once decided).
 - The plugin package, the packer and any code.
 - PLAN.md and HISTORY*.md (the record step).
+
+## Review round 1 — findings
+
+Reviewed HEAD: e50bfc4
+
+- [P2] docs/chatgpt-plugin.md:98-100, :66-74, :122-129, :154-156 — the new Status section (:14-16) is contradicted by unchanged text in the same file. :99-100 says the observation "does not establish that the plugin is Codex-only". :66-74 tells readers to switch to Work and install the plugin in ChatGPT. "Next checks" (:122-129) says to test the Work installation first. :156 says the task stays incomplete until live acceptance passes. Make the whole file consistent with Status. Orchestrator ruling on scope of the finding: the 2026-10-16 observation is that the plugin surfaced only in Codex and not in ChatGPT chat; Work mode was not separately verified. Say exactly that. Don't claim Work mode is ruled out; say it is unverified and that the connector is the supported route either way. route: implementer
+- [P2] docs/guides/chatgpt.md:27 — "Scopes are `read` (default), `write`, …" contradicts step 3 (:24) and gateway/src/oauth/consent/render.ts:81,88: `read` and `write` start ticked, `destructive` and `code` start unticked. Fix it so a reader who wants read-only knows to untick `write`. route: implementer
+- [P3] docs/guides/chatgpt.md:24 — step 3 is hard for a non-technical reader: a comma splice, and "untick any other scope" is unclear, because the page shows only the scopes the client requested (render.ts:85). Rewrite as short steps. route: implementer
+- [NOTE] docs/guides/chatgpt.md:7 — "used by ChatGPT as the agent in a playtest" is accurate. On 2026-10-16 ChatGPT, via the connector, made real tool calls: 1808 /mcp requests, and one queued call that was approved at 08:13:58Z. Keep it.
