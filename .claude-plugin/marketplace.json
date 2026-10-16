@@ -1,14 +1,14 @@
 {
   "name": "agent-gateway",
-  "description": "Private marketplace for the agent-gateway Foundry VTT plugin.",
+  "description": "Marketplace for the agent-gateway Foundry VTT plugin.",
   "owner": {
-    "name": "Andrew Bannister"
+    "name": "AindriuB"
   },
   "plugins": [
     {
       "name": "foundry-gateway",
       "source": "./plugins/claude/foundry-gateway",
-      "description": "Work in a Foundry VTT world through the agent-gateway MCP server, as your own Foundry user and within the permissions you grant."
+      "description": "Work in a Foundry VTT world through your Foundry VTT gateway (the agent-gateway MCP server), as your own Foundry user and within the permissions you grant."
     }
   ]
 }

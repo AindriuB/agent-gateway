@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "license": "MIT",
+  "author": "AindriuB",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

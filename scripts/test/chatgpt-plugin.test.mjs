@@ -70,7 +70,42 @@ describe('ChatGPT plugin package', () => {
     const connection = JSON.parse(
       execFileSync('unzip', ['-p', archive(root), `${name}/mcp.json`], { encoding: 'utf8' }),
     );
-    assert.equal(connection.mcpServers[name].url, 'https://gw.aindriub.app/mcp');
+    assert.equal(connection.mcpServers[name].url, 'https://gateway.example.invalid/mcp');
+  });
+
+  it('--gateway-url writes <url>/mcp into the archive and leaves the source untouched', () => {
+    const root = fixture();
+    const before = readFileSync(source(root, 'mcp.json'));
+    const result = spawnSync(
+      process.execPath,
+      [script, '--root', root, '--gateway-url', 'https://gw.example.org/'],
+      { encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const connection = JSON.parse(
+      execFileSync('unzip', ['-p', archive(root), `${name}/mcp.json`], { encoding: 'utf8' }),
+    );
+    assert.equal(connection.mcpServers[name].url, 'https://gw.example.org/mcp');
+    assert.deepEqual(readFileSync(source(root, 'mcp.json')), before);
+  });
+
+  it('rejects an invalid --gateway-url without echoing it', () => {
+    for (const [label, args] of [
+      ['missing value', ['--gateway-url']],
+      ['http', ['--gateway-url', 'http://secret-host.example']],
+      ['credentials', ['--gateway-url', 'https://user:secret@gw.example']],
+      ['query', ['--gateway-url', 'https://gw.example/?token=secret']],
+      ['fragment', ['--gateway-url', 'https://gw.example/#secret']],
+      ['not a url', ['--gateway-url', 'secret not a url']],
+    ]) {
+      const root = fixture();
+      const result = spawnSync(process.execPath, [script, '--root', root, ...args], {
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 1, label);
+      assert.doesNotMatch(result.stderr, /secret/, label);
+      assert.equal(result.stdout, '', label);
+    }
   });
 
   it('allows an explicitly changed self-hosted HTTPS resource without adding auth fields', () => {

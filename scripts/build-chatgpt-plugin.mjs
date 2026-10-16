@@ -1,5 +1,5 @@
 // Package-contract validator v1: intentionally supports only this plugin's small profile.
-// Usage: node scripts/build-chatgpt-plugin.mjs [--root <repository>]
+// Usage: node scripts/build-chatgpt-plugin.mjs [--gateway-url <https-url>] [--root <repository>]
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -159,12 +159,36 @@ function validate(files) {
 
 function main() {
   const args = process.argv.slice(2);
-  requireThat(
-    args.length === 0 || (args.length === 2 && args[0] === '--root' && !args[1].startsWith('--')),
-    'usage: node scripts/build-chatgpt-plugin.mjs [--root <repository>]',
-  );
+  const usage =
+    'usage: node scripts/build-chatgpt-plugin.mjs [--gateway-url <https-url>] [--root <repository>]';
+  let rootArg;
+  let gatewayArg;
+  for (let i = 0; i < args.length; i += 2) {
+    requireThat(
+      (args[i] === '--root' || args[i] === '--gateway-url') &&
+        args[i + 1] !== undefined &&
+        !args[i + 1].startsWith('--'),
+      usage,
+    );
+    if (args[i] === '--root') rootArg = args[i + 1];
+    else gatewayArg = args[i + 1];
+  }
+  let gatewayMcpUrl;
+  if (gatewayArg !== undefined) {
+    let g;
+    try {
+      g = new URL(gatewayArg);
+    } catch {
+      g = undefined;
+    }
+    requireThat(
+      g && g.protocol === 'https:' && !g.username && !g.password && !g.search && !g.hash,
+      '--gateway-url must be an https URL without credentials, query or fragment',
+    );
+    gatewayMcpUrl = `${g.origin}${g.pathname.replace(/\/+$/, '')}/mcp`;
+  }
   const root = path.resolve(
-    args[1] ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'),
+    rootArg ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'),
   );
   const source = `plugins/${name}`;
   // An explicit allowlist means notes, credentials, dependency trees and unrelated assets never enter the archive.
@@ -175,6 +199,12 @@ function main() {
     ]),
   );
   validate(files);
+  if (gatewayMcpUrl !== undefined) {
+    const mcp = JSON.parse(files.get('mcp.json').toString('utf8'));
+    mcp.mcpServers[name].url = gatewayMcpUrl;
+    files.set('mcp.json', Buffer.from(JSON.stringify(mcp, null, 2) + '\n'));
+    validate(files);
+  }
   const outDir = regularPath(root, 'dist/release', 'directory', true);
   mkdirSync(outDir, { recursive: true });
   const stage = mkdtempSync(path.join(outDir, '.chatgpt-plugin-'));

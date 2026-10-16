@@ -1,6 +1,6 @@
 // Builds the hosted Claude Code marketplace: dist/release/claude/marketplace.json plus
 // dist/release/claude/plugins/foundry-gateway-<version>.zip, for upload under <base-url>.
-// Usage: node scripts/build-claude-plugin.mjs --base-url <https-url> [--root <dir>]   (root defaults to the repo root)
+// Usage: node scripts/build-claude-plugin.mjs --base-url <https-url> [--gateway-url <https-url>] [--root <dir>]   (root defaults to the repo root)
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const usage =
-  'build-claude-plugin: usage: node scripts/build-claude-plugin.mjs --base-url <https-url> [--root <dir>]';
+  'build-claude-plugin: usage: node scripts/build-claude-plugin.mjs --base-url <https-url> [--gateway-url <https-url>] [--root <dir>]';
 const fail = (msg) => {
   console.error(msg);
   process.exit(1);
@@ -34,6 +34,7 @@ function flag(name) {
 const rootArg = flag('--root');
 const baseArg = flag('--base-url');
 if (baseArg === undefined) fail(usage);
+const gatewayArg = flag('--gateway-url');
 const root = path.resolve(rootArg ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
 
 let u;
@@ -48,6 +49,22 @@ if (!u || u.protocol !== 'https:' || u.username || u.password || u.search || u.h
   );
 }
 const base = `${u.origin}${u.pathname.replace(/\/+$/, '')}`;
+
+let gatewayMcpUrl;
+if (gatewayArg !== undefined) {
+  let g;
+  try {
+    g = new URL(gatewayArg);
+  } catch {
+    g = undefined;
+  }
+  if (!g || g.protocol !== 'https:' || g.username || g.password || g.search || g.hash) {
+    fail(
+      'build-claude-plugin: --gateway-url must be an https URL without credentials, query or fragment',
+    );
+  }
+  gatewayMcpUrl = `${g.origin}${g.pathname.replace(/\/+$/, '')}/mcp`;
+}
 
 const MAX_MARKETPLACE = 5 * 1024 * 1024;
 const MAX_ZIP = 256 * 1024 * 1024;
@@ -90,6 +107,11 @@ try {
     const dest = path.join(stage, name, f);
     mkdirSync(path.dirname(dest), { recursive: true });
     cpSync(path.join(root, pluginRel, f), dest);
+    if (f === '.mcp.json' && gatewayMcpUrl !== undefined) {
+      const mcp = JSON.parse(readFileSync(dest, 'utf8'));
+      for (const server of Object.values(mcp.mcpServers)) server.url = gatewayMcpUrl;
+      writeFileSync(dest, JSON.stringify(mcp, null, 2) + '\n');
+    }
   }
   mkdirSync(path.dirname(zipPath), { recursive: true });
   rmSync(zipPath, { force: true });
@@ -115,7 +137,7 @@ const market =
     {
       name: 'aindriub-dl',
       description: 'Hosted marketplace for the agent-gateway Foundry VTT plugin.',
-      owner: { name: 'Andrew Bannister' },
+      owner: { name: 'AindriuB' },
       plugins: [
         {
           name,
