@@ -90,3 +90,10 @@ satisfies the dependency), and the 401 reference in the follow-up note is correc
 server.ts:330-334. Reason: B fixes the client-visible breakage 110 measured (404s after
 evictions, 429 on DELETE) without weakening the per-client rate limit for every authenticated
 client, which C would.
+
+## Orchestrator note (2026-10-16): Owns extended
+
+The implementer stopped at two files outside Owns. Both are mechanical consequences of Amendment 1 and are added to Owns:
+- gateway/test/mcp/session-listeners.test.ts:128 — asserts `sessionCount <= 4` after 50 opens for one principal. Change only that assertion to use MAX_HTTP_SESSIONS_PER_PRINCIPAL.
+- gateway/src/app.ts (where HttpServer is constructed, about :969) — wire the new optional `logDebug` option to the logger's debug channel, so suppressed eviction lines go to debug instead of being dropped. One option line only.
+Also: grep README.md and docs/ for the old "4 per principal" or "16 per client" figures and list any hits in the report. Don't edit docs; the scribe updates them at record time.

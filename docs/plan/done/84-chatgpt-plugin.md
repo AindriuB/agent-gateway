@@ -38,3 +38,6 @@ Deliver a reviewable private plugin package that lets ChatGPT use the existing h
 - General MCP conformance and compatibility matrix edits (40), general remote-client guides (43), CI, release publishing and version-bump automation. These tasks can proceed independently because ownership is disjoint. Give their scribe a package-doc link and verified results for later incorporation.
 - Public directory submission, workspace-wide sharing and public publication. Planning this task does not authorize those actions or account installation now; implementation prepares the reviewable package before the live connection step.
 - If supported plugin packaging requires a gateway change or another task's owned file, stop and report the concrete requirement for an amended contract instead of silently widening scope.
+
+## Closing note — 2026-10-16
+Closed, not completed as written. The package and packer were delivered (PR #136). The live ChatGPT acceptance is superseded: the plugin surfaced only in Codex and not in ChatGPT chat (Work mode was not separately verified), and the supported ChatGPT route is the developer-mode connector documented by task 113. Andrew reported Codex use working.

@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 87 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-16).
+Inventory: 91 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-16).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -27,7 +27,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - **98: owner-routed OAuth consent for headless agents** is done on a branch (PR #160); see item 0b.
   - **35b owns the audit-trail docs** (Amendment 1); it is still deferred.
   - **Funding links:** none until the repo goes public (Amendment 1); add them as part of going public.
-  - **Docs gap:** `docs/server-mode.md` and `gateway/docker/README.md` do not cover task 90's GM-vouched invites or `--admin`/`--gm`/`--demote`, and the docker README still says invites arrive "with task 68". Fix in a small docs task.
+  - **Docs gap:** closed by 114 (see item 0f).
   - `docs/security.md` and `docs/releasing.md` fail prettier on main too; not touched by 43.
 
 - **94: GM grants view (merged, PR #159; archived in `docs/plan/done/`).** "Authorized apps" tab in Manage access, gated on gateway 0.3.0 or later. **93 and 94 complete 0.3.0, which is ready to cut.** Follow-ups:
@@ -57,12 +57,21 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 ### 0e. 101 done on branch (PR pending): conformance retry on the gateway 429
 - **101: conformance inspector calls retry on the per-client 429 (branch `task/101-conformance-oauth-rate-retry`, archived in `docs/plan/done/`).** Fixes release gate 3 failing on the Mac. After merge, re-run the 0.3.0 release on the Mac: that run is the proof that a retry turns a 429 into a pass, which Linux cannot show. With 99 and 100 this completes the 0.3.0 unblockers.
 
-### 0f. 0.3.0 playtest fixes (tasks 102-114); wave 1 done on branch `claude/playtest-wave-1`, PR pending
-- **Tasks 102-114 come from the 0.3.0 playtest** (server mode behind Caddy, ChatGPT as the agent, 2026-10-16).
-- **Wave 1 (102, 103, 105, 107, 108, 110; archived in `docs/plan/done/`).** Offline-queue text, unticked destructive/code scopes, pairing-window wording, vouch notices, and two diagnosis spikes. Details in `HISTORY.md` (see the index).
-- **Ready, start after the wave 1 PR merges:** 109 (keep the link alive through short stalls: raise pong tolerance, keep in-flight approvals across a drop; direction from 108) and 111 (HTTP session cap, option B: raise the cap, rate-limit the eviction log line, treat refused DELETEs).
-- **Docs for the next wave:** 113 (lead ChatGPT setup with the developer-mode connector; needs 103 merged) and 114 (GM-vouched invites and `--admin/--gm/--demote` in server-mode docs; needs 105 merged).
-- **Blocked on Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window), 112 (keep pending approvals when the requesting player logs out or reloads; architecture decision, then an architect pass).
+### 0f. 0.3.0 playtest fixes (tasks 102-116); waves 1 and 2 done on branches, PRs pending
+- **Tasks 102-116 come from the 0.3.0 playtest** (server mode behind Caddy, ChatGPT as the agent, 2026-10-16).
+- **Wave 1 (102, 103, 105, 107, 108, 110; archived in `docs/plan/done/`), branch `claude/playtest-wave-1`.** Offline-queue text, unticked destructive/code scopes, pairing-window wording, vouch notices, and two diagnosis spikes. Details in `HISTORY.md` (see the index).
+- **Wave 2 (113, 114, 115; archived in `docs/plan/done/`), branch `claude/playtest-wave-2`.** ChatGPT docs lead with the developer-mode connector (113, which also closes task 84), server-mode docs cover GM-vouched invites and `--admin/--gm/--demote` (114), and the hygiene test no longer fails on the conformance runner (115).
+- **In progress:**
+  - **111** (HTTP session cap, option B: raise the cap, rate-limit the eviction log line, treat refused DELETEs) waits on Andrew's decision on the global cap: `MAX_HTTP_SESSIONS_PUBLIC` 64 versus 128 or 256.
+  - **116** (headless restart re-invite flake) is the failure on PR #180: `gateway/test/headless/app.test.ts` "reconnects with the stored token and mints no invite" minted a second invite. Diagnose first; the lead is the 50 ms `linkGraceMs` in the test boot helper.
+- **Held until the Mac's task 53 (image upload) merges:** 109 (keep the link alive through short stalls: raise pong tolerance, keep in-flight approvals across a drop; direction from 108), 112 and 44.
+- **Awaiting Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window), 112 (keep pending approvals when the requesting player logs out or reloads; architecture decision, then an architect pass).
+- **Follow-ups from wave 2:**
+  - Wire `e2e-unit` and the e2e `tsc` into `npm run verify`. They are not in it today, which hid the 115 failure on `main`.
+  - Tick the ChatGPT checklist items "one read call" and "write held for approval" in `docs/compatibility.md` only after a deliberate live run.
+  - The spec for 114 quoted the wrong player message ("No GM is online"); the orchestrator ruled in round 1 that the docs follow the code (`PAIRING_UNCONFIRMED`, `Pairing.Vouch.unconfirmed`).
+  - `module/test/serialise/paging-oracle.test.ts` timed out once under full-suite load and passed 10/10 alone; treat as a load flake.
+  - The 429 sign-in retest of 88 against the deployed gateway is Andrew's if not already done.
 - **Follow-ups from wave 1:**
   - 388 `GET /mcp` requests returned 401 in the 2026-10-16 live sample (718 GETs in all); the cause is not known. Look at the access log for which principal and when.
   - Option C for the HTTP limits, more rps for authenticated clients (`PUBLIC_CLIENT_RPS` is 10), was declined for now; 111 takes option B only. Revisit if 429s persist after 111.
@@ -70,9 +79,6 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - 108 suggested capturing `document.visibilityState` and a timestamp at each link drop (tab-visibility capture) to learn why the module stops answering pings.
   - 108 optional hardening: treat any inbound frame as liveness, since `missed` resets only on an app-level pong (`gateway/src/link/server.ts:449-451`).
   - Releases need written notes: the 0.3.0 GitHub release body is a placeholder.
-
-### 1. ChatGPT plugin
-- **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
 
 ### 2. Done on branch, PR pending: 87
 - **87: link resilience and diagnostics (branch `claude/task-87`, done; PR pending; archived in `docs/plan/done/`).** Link drops are logged, recoverable without re-pairing, and visible in the Players list. Follow-ups:
@@ -175,7 +181,7 @@ Re-planned 2026-10-14 for the shortest path to a friend test on a public VPS. Ta
    - **38** (merged, PR #153) Stored headless agents, `headless add|list|remove`, owner attribution (migration 013).
    - **43** (merged, PR #155; archived in `docs/plan/done/`) Remote, server-mode and headless docs.
 
-### ChatGPT plugin: 84 (merged, PR #136; run by a separate Codex session; open issues under Now item 1)
+### ChatGPT plugin: 84 (merged, PR #136; closed 2026-10-16, archived in `docs/plan/done/`)
 - **84 — Private ChatGPT plugin package for the existing gateway.** Adds a portable MCP package, a focused Foundry workflow skill, a standalone packer and package-specific verification notes. Andrew confirms the supporting tasks are delivered and the deployment is live at `https://foundry.aindriub.app` and `https://gw.aindriub.app` (2026-10-14); public OAuth metadata verifies `https://gw.aindriub.app/mcp`. No open task dependencies or deployment work. Package ownership is disjoint from 40 (conformance/matrix) and 43 (general guides). Live ChatGPT OAuth/read/approved-write/revocation acceptance still needs Andrew's account and participation; the metadata check is not a client compatibility claim.
 
 ### Self-hosted module manifest: 83 (done on branch `claude/task-83`, archived in `docs/plan/done/`; PR pending)
