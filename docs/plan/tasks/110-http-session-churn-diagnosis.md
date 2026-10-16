@@ -25,6 +25,29 @@ harmless clean-up, and whether the cap or the LRU rule suits ChatGPT's pattern.
 - docs/plan/PLAN.md item 0a (95) — the accepted residual: a session whose only open request is its
   GET SSE stream can be evicted.
 
+## Live evidence (aindriub.app, 2026-10-16 07:00-08:45Z, collected read-only by the operator's Mac session)
+This is a second sample, separate from the 0.3.0 playtest log. It answers parts of findings 1 and 2
+below. The implementer cites it and does not need to collect it again.
+
+- **Client.** `codex-mcp-client/0.162.0-alpha.17.2` (ChatGPT's MCP client) sent 1808 of the 1812
+  `/mcp` requests. The others were `Claude-User` (2) and `python-httpx` (2).
+- **Evictions.** 70 `reason=principal-cap` evictions. `idle_ms`: min 24, median 21,479, max 328,565.
+- **404s.** `/mcp` returned 132 404s (GET 114, DELETE 13, POST 5). 93 of them came within 60 s after
+  an eviction. Only 37 of the 132 were followed within 5 s by a fresh `initialize` from the same
+  client, so recovery is unreliable.
+- **Initialize rate.** 288 `initialize` calls over 27 active minutes (per active minute: min 2,
+  median 7, max 46).
+- **DELETE.** 210 `DELETE /mcp`: 149 returned 200, 48 returned 429, 13 returned 404. The client does
+  close its sessions, but a DELETE refused with 429 likely leaves the session open, and that session
+  counts against the cap.
+- **GET (SSE).** 718 `GET /mcp`: 388 returned 401, 188 returned 200, 114 returned 404, 28 returned
+  429. Durations: median 0 s, max 621.6 s.
+- **429s.** 186 in total (POST 158, DELETE 48, GET 28), all from the per-client limit
+  `PUBLIC_CLIENT_RPS = 10` (gateway/src/http/limits.ts:4). There were no 503s.
+- **Conclusion.** Evictions are visible to the client: 404s follow evictions, and recovery is
+  unreliable. The per-client rate limiter and the per-principal session cap make each other worse,
+  because refused DELETEs leave sessions open and so drive more evictions.
+
 ## Acceptance
 - [ ] session-churn.test.ts pins today's behaviour for one principal. Eight `initialize` calls
       with no DELETE give exactly four evictions, oldest-idle first. A POST on an evicted session id
