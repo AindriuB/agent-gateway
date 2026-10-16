@@ -129,3 +129,7 @@ ids, the `approvalState` frame and the alias) is task 112's. 112 depends on 109 
 `markClosed`. The heartbeat tolerance (about 2 minutes) and the docs note are kept. 53 has merged
 (PR #171), so Owns was rechecked against current main: the manager.ts lines are re-cited and the
 53 hash and stored-args lines are excluded. Status: Ready.
+
+## Orchestrator note (2026-10-16): Owns extended
+
+gateway/test/link/connection-log.test.ts ("logs 1006 when a heartbeat terminates the socket", about line 98) advances exactly 4 heartbeat intervals, which hard-codes the old 30-45 s bound. It is added to Owns for one change only: loop `MAX_MISSED_PONGS + 1` intervals, importing the constant. The acceptance item "existing gateway/test/link suites pass unmodified" is read as "unmodified except this mechanical bound update".
