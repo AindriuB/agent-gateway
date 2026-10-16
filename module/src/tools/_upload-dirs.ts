@@ -35,7 +35,7 @@ export async function ensureUploadDirs(fp: any, user: any, userId: string): Prom
     }
     if (!canCreateDirectories(user))
       forbid(
-        `The upload folder ${level} does not exist. A GM must create it, or a GM must load the world so it is created automatically.`,
+        `The upload folder ${levels[2]} does not exist. A GM must create it, or a GM must load the world so it is created automatically.`,
       );
     try {
       await fp.createDirectory('data', level);
@@ -53,6 +53,8 @@ const isActiveGm = (): boolean =>
   game?.user?.isGM === true && game.users?.activeGM?.id === game.user.id;
 
 let chain: Promise<void> = Promise.resolve();
+let running = false;
+let queued = false;
 
 async function provisionAll(): Promise<void> {
   if (!isActiveGm()) return;
@@ -73,13 +75,27 @@ async function provisionAll(): Promise<void> {
   }
 }
 
-/** Runs are serialised; every error is logged, nothing is thrown into a hook. */
+/** Runs are serialised; triggers arriving mid-run merge into one follow-up. Nothing is thrown into a hook. */
 function trigger(): void {
-  chain = chain
-    .then(() => provisionAll())
-    .catch((error) => {
-      console.warn(`agent-gateway | upload provisioning failed: ${message(error)}`);
-    });
+  if (running) {
+    queued = true;
+    return;
+  }
+  running = true;
+  chain = (async () => {
+    try {
+      do {
+        queued = false;
+        try {
+          await provisionAll();
+        } catch (error) {
+          console.warn(`agent-gateway | upload provisioning failed: ${message(error)}`);
+        }
+      } while (queued);
+    } finally {
+      running = false;
+    }
+  })();
 }
 
 /** Registers the GM-side hooks that create each uploader's folder. Call once, from `ready`. */

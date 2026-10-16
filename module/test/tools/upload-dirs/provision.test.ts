@@ -119,3 +119,30 @@ describe('GM upload provisioning', () => {
     expect(await bump(() => hooks.updateSetting!({ key: 'core.other' }))).toBe(false);
   });
 });
+
+describe('upload dir review fixes', () => {
+  it('names the caller folder when every level is missing', async () => {
+    const { ensureUploadDirs } = await import('../../../src/tools/_upload-dirs.js');
+    await expect(ensureUploadDirs(fp, { id: 'p1', isGM: false, role: 1 }, 'p1')).rejects.toThrow(
+      /agent-gateway\/uploads\/p1 does not exist/,
+    );
+  });
+
+  it('merges triggers arriving during a run into one follow-up run', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const origBrowse = fp.browse;
+    fp.browse = vi.fn(async (...a: any[]) => {
+      await gate;
+      return origBrowse(...a);
+    });
+    installUploadProvisioning();
+    for (let i = 0; i < 5; i++) hooks['updateUser']!();
+    await Promise.resolve();
+    release();
+    await provisioningIdle();
+    // two runs of users gm+p1 (3 levels each) at most
+    const firstLevelBrowses = fp.browse.mock.calls.filter((c: any[]) => c[1] === 'agent-gateway');
+    expect(firstLevelBrowses.length).toBe(4);
+  });
+});
