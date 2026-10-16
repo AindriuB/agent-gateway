@@ -68,3 +68,10 @@ Reviewed HEAD: e50bfc4
 - [P2] docs/guides/chatgpt.md:27 — "Scopes are `read` (default), `write`, …" contradicts step 3 (:24) and gateway/src/oauth/consent/render.ts:81,88: `read` and `write` start ticked, `destructive` and `code` start unticked. Fix it so a reader who wants read-only knows to untick `write`. route: implementer
 - [P3] docs/guides/chatgpt.md:24 — step 3 is hard for a non-technical reader: a comma splice, and "untick any other scope" is unclear, because the page shows only the scopes the client requested (render.ts:85). Rewrite as short steps. route: implementer
 - [NOTE] docs/guides/chatgpt.md:7 — "used by ChatGPT as the agent in a playtest" is accurate. On 2026-10-16 ChatGPT, via the connector, made real tool calls: 1808 /mcp requests, and one queued call that was approved at 08:13:58Z. Keep it.
+
+## Review round 2 — findings
+
+Reviewed HEAD: da02050
+
+- [P2] docs/chatgpt-plugin.md:147 — the "Tool discovery and read" row still says "ChatGPT tool discovery through a plugin is not possible (see Status)", which contradicts Status (:16), the diagnosis (:98-100) and row :146. Carried forward from round 1 finding 1. Suggested wording: "ChatGPT chat: plugin did not surface (2026-10-16); Work mode unverified. Use the connector guide." route: implementer
+- [P3, optional] docs/chatgpt-plugin.md:75-78 — "request `read` for inspection": since task 103, `write` also starts ticked when requested (gateway/src/oauth/consent/render.ts:88). Add "untick `write` for read-only" to match docs/guides/chatgpt.md:26. route: implementer
