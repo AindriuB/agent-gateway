@@ -274,6 +274,18 @@ export function createSessionServer(opts: SessionServerOptions): Server {
     return { tools: listed(conn) };
   });
 
+  // Who a queued call waits for, from the binding (never from tool arguments).
+  const queuedFor = (pair: { worldId: string; userId: string }): string => {
+    const id = binding.identity;
+    const name = safeText(id?.userName || id?.userId || pair.userId) || 'the bound user';
+    return `${name} in world ${safeText(id?.worldId || pair.worldId)}`;
+  };
+  const queuedNext = (pair: { worldId: string; userId: string }): string => {
+    const id = binding.identity;
+    const name = safeText(id?.userName || id?.userId || pair.userId) || 'the bound user';
+    return `It is held until ${name} opens that world with Agent Gateway connected, then asks for approval there. Nothing has been approved or run yet.`;
+  };
+
   const notConnected = (): ReturnType<typeof failure> => {
     const who = binding.identity;
     const pairing = who ? opts.pairingState?.(who.worldId, who.userId) : undefined;
@@ -431,7 +443,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
                   type: 'text' as const,
                   text:
                     status === 'queued'
-                      ? 'World offline: queued intent; no approval or execution yet.'
+                      ? `World offline: queued for ${queuedFor(r.pair)}. ${queuedNext(r.pair)}`
                       : status === 'unknown'
                         ? 'Execution outcome unknown; reconcile before any new request.'
                         : JSON.stringify(result),
@@ -459,7 +471,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
             content: [
               {
                 type: 'text' as const,
-                text: 'World offline: intent queued; no human approval or execution has occurred.',
+                text: `World offline: queued for ${queuedFor(r.pair)}. ${queuedNext(r.pair)} Check it with approval_status.`,
               },
             ],
             structuredContent: { status: 'pending_approval', id: row.id },

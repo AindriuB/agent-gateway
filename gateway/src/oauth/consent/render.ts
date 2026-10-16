@@ -77,12 +77,15 @@ export interface FormView {
   notice?: string;
 }
 
+/** Scopes a user must tick on purpose. */
+const UNTICKED_SCOPES: ReadonlySet<string> = new Set(['destructive', 'code']);
+
 /** Step 1: name the world and the Foundry user, pick scopes. */
 export function renderRequestPage(v: FormView): string {
   const boxes = v.scopes
     .map(
       (s) =>
-        `<label><input type="checkbox" name="scope" value="${s}" checked> ${escapeHtml(s)}</label>`,
+        `<label><input type="checkbox" name="scope" value="${escapeHtml(s)}"${UNTICKED_SCOPES.has(s) ? '' : ' checked'}> ${escapeHtml(s)}</label>`,
     )
     .join('');
   return shell(

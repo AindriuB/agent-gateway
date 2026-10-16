@@ -347,6 +347,8 @@ export class LinkServer {
     let conn: LinkConnection | undefined;
     let handshaking = false;
     let missed = 0;
+    /** Why this side terminated the socket; terminate() reports 1006 with no reason otherwise. */
+    let terminatedBecause: 'heartbeat-timeout' | 'socket-error' | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
 
     const send = (m: LinkMessage): void => {
@@ -375,6 +377,7 @@ export class LinkServer {
       });
       heartbeat = setInterval(() => {
         if (missed >= MAX_MISSED_PONGS) {
+          terminatedBecause ??= 'heartbeat-timeout';
           ws.terminate();
           return;
         }
@@ -395,13 +398,14 @@ export class LinkServer {
           userName: conn.info.userName,
           connectionId: conn.id,
           code,
-          reason: reasonBuf.toString('utf8'),
+          reason: reasonBuf.toString('utf8') || (code === 1006 ? (terminatedBecause ?? '') : ''),
           durationMs: (this.opts.now ?? Date.now)() - connectedAt,
         });
       }
     });
     ws.on('error', () => {
       if (conn) toolsets.revokeEventReads(conn);
+      terminatedBecause ??= 'socket-error';
       ws.terminate();
     });
 

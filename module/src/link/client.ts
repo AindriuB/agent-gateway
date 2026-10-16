@@ -393,6 +393,7 @@ export class LinkClient {
   /** The agent id the gateway assigned in `welcome`; null until connected. */
   agentId: string | null = null;
   private admin = false;
+  private everAdmin = false;
   private welcomeHeadless = false;
   private welcomeOwner: string | null = null;
   private _state: LinkState = { kind: 'disconnected' };
@@ -427,6 +428,11 @@ export class LinkClient {
    */
   get isAdmin(): boolean {
     return this.admin && this._state.kind === 'connected';
+  }
+
+  /** True when the last `welcome` said `admin: true`, even if the link has since dropped. Not an authorisation. */
+  get wasAdmin(): boolean {
+    return this.everAdmin;
   }
 
   /** True while connected and the last `welcome` said `headless: true` (the gateway's own classification). */
@@ -588,6 +594,7 @@ export class LinkClient {
   async unpair(): Promise<void> {
     const id = this.deps.getIdentity();
     this.requirePairing();
+    this.everAdmin = false;
     await this.deps.setToken(null, { worldId: id.world.id, userId: id.user.id });
   }
 
@@ -749,6 +756,7 @@ export class LinkClient {
         this.attempt = 0;
         this.agentId = msg.agentId;
         this.admin = msg.admin === true;
+        this.everAdmin = this.admin;
         this.welcomeHeadless = msg.headless === true;
         this.welcomeOwner = msg.headless === true ? (msg.ownerUserId ?? null) : null;
         this.gatewayVersion = msg.gatewayVersion;
@@ -947,6 +955,7 @@ export class LinkClient {
     const usedToken = this.code === null;
     this.clearCode();
     if (usedToken) {
+      this.everAdmin = false;
       // Only the credential that was sent is stale: the old shared one, or this user's own.
       if (this.authSource === 'legacy') await this.deps.clearLegacyToken?.();
       else if (this.authSource === 'keyed')

@@ -4,10 +4,14 @@ import type { LinkClient } from './client.js';
 declare const game: any;
 declare const Hooks: any;
 declare const ChatMessage: any;
+declare const ui: any;
 
 const NS = 'agent-gateway';
 const FLAG_KEY = 'vouch';
 const MAX_NONCE = 200;
+
+/** Messages already handled here, so a re-fired hook never notifies twice. */
+const handled = new WeakSet<object>();
 
 /** Ids of the GM users who are logged in now; the only recipients of a vouch whisper. */
 export function activeGmIds(): string[] {
@@ -46,21 +50,32 @@ function nonceOf(message: any): string | undefined {
 
 /**
  * Admin side: for a flagged message, read the author Foundry set (never a flag or the content),
- * vouch for it over the admin's own link, then delete the message. A client that is not admin, or
+ * vouch for it over the admin's own link, then delete the message. A client that was never admin, or
  * a missing or malformed flag, does nothing.
  */
 export async function handleVouchMessage(
   message: any,
-  client: Pick<LinkClient, 'isAdmin' | 'attest'>,
+  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
 ): Promise<void> {
-  if (!client.isAdmin) return;
+  if (!client.isAdmin && !client.wasAdmin) return;
   const nonce = nonceOf(message);
   if (nonce === undefined) return;
   const authorId = message?.author?.id;
   if (typeof authorId !== 'string' || authorId === '') return;
   const author = game.users?.get?.(authorId);
   if (!author) return;
-  if (!client.attest(nonce, authorId, author.isGM === true)) return;
+  if (handled.has(message)) return;
+  handled.add(message);
+  // A GM whose link dropped is still told; only a connected admin link can attest.
+  if (!client.isAdmin || !client.attest(nonce, authorId, author.isGM === true)) {
+    ui?.notifications?.warn(game.i18n.localize('AGENT_GATEWAY.Pairing.Vouch.notConfirmed'));
+    return;
+  }
+  ui?.notifications?.info(
+    game.i18n.format('AGENT_GATEWAY.Pairing.Vouch.confirmed', {
+      player: String(author.name ?? authorId),
+    }),
+  );
   try {
     await message.delete();
   } catch {
@@ -69,7 +84,9 @@ export async function handleVouchMessage(
 }
 
 /** Register the `createChatMessage` hook on the admin's side. Idempotent callers: call once. */
-export function installVouchHook(client: Pick<LinkClient, 'isAdmin' | 'attest'>): void {
+export function installVouchHook(
+  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
+): void {
   Hooks.on('createChatMessage', (message: unknown) => {
     void handleVouchMessage(message, client);
   });

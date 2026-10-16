@@ -195,6 +195,7 @@ describe('the management app', () => {
       canCancel: true,
     });
     expect(ctx.invites[1]!.canCancel).toBe(false);
+    expect(ctx.invites.map((r) => r.needsGm)).toEqual([true, false]);
     expect(ctx.users.map((u) => u.id)).toEqual(['u1', 'u2']);
     expect(ctx.ttls.length).toBeGreaterThan(0);
   });
@@ -219,6 +220,9 @@ describe('the management app', () => {
     expect(prompt).toHaveBeenCalledOnce();
     const content: string = (prompt.mock.calls[0]![0] as any).content;
     expect(content).toContain(`wss://gw.example/link#${SECRET}`);
+    expect(content).toContain(
+      'F:AGENT_GATEWAY.Manage.codeNeedsGm:{&#34;player&#34;:&#34;Una&#34;}',
+    );
     // Not on the next render, in console, notifications or settings.
     expect(JSON.stringify(await mod.prepareManage('invites'))).not.toContain(SECRET);
     expect(JSON.stringify(await mod.prepareManage('pairings'))).not.toContain(SECRET);
