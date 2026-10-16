@@ -12,7 +12,8 @@ import { RECONNECT_MS, Rig } from '../multi/rig.js';
 // (e.g. v14 requiredRoles), the player cases skip with a reason naming the Foundry version.
 // One Rig holds the GM and player browsers open for the whole suite; the gateway is bound to one
 // user at a time and swapped only when a test needs the other. The suite creates temporary Actors
-// and a Scene natively in the GM page and deletes exactly those UUIDs there in afterAll. Uploaded files cannot be deleted through the API: every uploaded path is printed at the
+// and a Scene natively in the GM page and deletes exactly those UUIDs there in afterAll.
+// Uploaded files cannot be deleted through the API: every uploaded path is printed at the
 // end for the operator to delete from agent-gateway/uploads/<userId>/. Every write needs approval.
 const enabled = process.env.AGENT_GATEWAY_E2E_UPLOAD === '1';
 

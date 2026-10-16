@@ -4,12 +4,13 @@ import type { CallResult, GatewayProcess } from '../lib/gateway.js';
 import { loadContext, requireUuids } from '../lib/context.js';
 import { RECONNECT_MS, Rig } from '../multi/rig.js';
 
-// Needs the repository owner's per-run approval: AGENT_GATEWAY_E2E_IMAGE=1. One Rig keeps the GM and
-// player browsers open; the gateway is bound to one user at a time and swapped once, from the GM to
-// the player. beforeAll uploads a 1x1 PNG as the GM (one approval) and creates, natively in the GM
-// page, an Actor the player owns, an Actor with no permission, and a Scene holding a hidden Token
-// of the second Actor. afterAll deletes each by its exact UUID. The uploaded file cannot be deleted
-// through the API: its path is printed for the operator to delete by hand.
+// Needs the repository owner's per-run approval: AGENT_GATEWAY_E2E_IMAGE=1. One Rig keeps the GM
+// and player browsers open; the gateway is bound to one user at a time and swapped once, from the
+// GM to the player. beforeAll uploads a 1x1 PNG as the GM (one approval) and creates, natively in
+// the GM page, an Actor the player owns, an Actor with no permission, an Actor the player can see
+// (LIMITED), and a Scene holding a hidden Token of the LIMITED Actor. afterAll deletes each by its
+// exact UUID. The uploaded file cannot be deleted through the API: its path is printed for the
+// operator to delete by hand.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
 
 const APPROVAL_TTL_MS = 60 * 60_000;
@@ -51,6 +52,7 @@ describe.skipIf(!enabled)('image_view', () => {
   let probePath: string;
   let ownedActor: string;
   let noPermActor: string;
+  let limitedActor: string;
   let hiddenToken: string;
   const created: string[] = [];
   const uploaded: string[] = [];
@@ -74,35 +76,38 @@ describe.skipIf(!enabled)('image_view', () => {
     return uuid;
   };
 
-  beforeAll(async () => {
-    rig = new Rig(ctx);
-    await rig.open(gmUser, [gmUser, playerUser]);
-    bound = gmUser;
-    const gw = await as(gmUser);
-    const up = await settle(
-      gw,
-      await gw.call('image_upload', { data: PNG_B64, mime: 'image/png' }),
-    );
-    const parsed = parseImageUploadText(up.text);
-    if (!up.isError && parsed) uploaded.push(parsed.path);
-    expect(up.isError, up.text).toBe(false);
-    expect(parsed, 'the image_upload result names the file').toBeTruthy();
-    probePath = parsed!.path;
-    const actor = (name: string, ownership: number): Promise<string> =>
-      createDoc(`async (d) => (await Actor.create(d)).uuid`, {
-        name,
-        type: 'character',
-        img: probePath,
-        ownership: { default: ownership },
-      });
-    ownedActor = await actor('agent-gateway e2e view owned (temporary)', 3);
-    noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
-    const sceneUuid = await createDoc(
-      `async () => (await Scene.create({ name: 'agent-gateway e2e view scene (temporary)' })).uuid`,
-      null,
-    );
-    hiddenToken = await createDoc(
-      `async ([sceneUuid, actorUuid, src]) => {
+  beforeAll(
+    async () => {
+      rig = new Rig(ctx);
+      await rig.open(gmUser, [gmUser, playerUser]);
+      bound = gmUser;
+      const gw = await as(gmUser);
+      const up = await settle(
+        gw,
+        await gw.call('image_upload', { data: PNG_B64, mime: 'image/png' }),
+      );
+      const parsed = parseImageUploadText(up.text);
+      if (!up.isError && parsed) uploaded.push(parsed.path);
+      expect(up.isError, up.text).toBe(false);
+      expect(parsed, 'the image_upload result names the file').toBeTruthy();
+      probePath = parsed!.path;
+      const actor = (name: string, ownership: number): Promise<string> =>
+        createDoc(`async (d) => (await Actor.create(d)).uuid`, {
+          name,
+          type: 'character',
+          img: probePath,
+          ownership: { default: ownership },
+        });
+      ownedActor = await actor('agent-gateway e2e view owned (temporary)', 3);
+      noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
+      // LIMITED (1): the player can see this Actor, so only token.hidden can refuse its Token.
+      limitedActor = await actor('agent-gateway e2e view limited (temporary)', 1);
+      const sceneUuid = await createDoc(
+        `async () => (await Scene.create({ name: 'agent-gateway e2e view scene (temporary)' })).uuid`,
+        null,
+      );
+      hiddenToken = await createDoc(
+        `async ([sceneUuid, actorUuid, src]) => {
         const scene = await fromUuid(sceneUuid);
         const actor = await fromUuid(actorUuid);
         const [t] = await scene.createEmbeddedDocuments('Token', [
@@ -110,9 +115,11 @@ describe.skipIf(!enabled)('image_view', () => {
         ]);
         return t.uuid;
       }`,
-      [sceneUuid, noPermActor, probePath],
-    );
-  }, 15 * 60_000);
+        [sceneUuid, limitedActor, probePath],
+      );
+    },
+    humanTimeout(1) + RECONNECT_MS,
+  );
 
   afterAll(async () => {
     const failures: string[] = [];
