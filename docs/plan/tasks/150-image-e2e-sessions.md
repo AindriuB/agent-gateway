@@ -163,3 +163,15 @@ Date: 2026-10-16. Owner decision (Andrew, in chat).
   for the player user and `default: 0`, then wait until the player's client reports
   `testUserPermission(game.user, 'OWNER') === true` before the tests use it, as in the upload
   and assign suites. Leave the 0 and LIMITED (1) Actors as they are.
+
+## Review round 4 — findings
+
+Source: the headed v14 run of image-view (2/4 passed), then a read-only diagnosis with live probes.
+
+1. **[P1] The player refusal test cannot tell who it ran as.** "a player is refused a hidden token they do not own and an Actor with no permission" (around :436) failed at `expect(r.isError).toBe(true)`.
+   - The product code refuses both fixtures for a non-GM player on v14: unit tests and live probes agree. A GM-bound session would explain the result exactly. This is a possible leak until one rerun settles it.
+   - After every `as(user)` swap, call `world_info` and assert that the bound user name equals the expected user and that `isGM` matches. Do this in image-view, and add the same assertion to the upload and assign suites' `as()` if they have one.
+   - Give each refusal assertion a message that names the source and includes `r.text`.
+2. **[P2] The scene background test assumes a background that doesn't exist.** "a GM views the active scene background as one image block" uses the world's active scene. On v14 that scene's Level background is null.
+   - Create a temporary Scene in beforeAll whose background is the uploaded PNG. On v14 set it on the Level the tools use: `initialLevel`, then `defaultLevel0000`, then the first Level, as image_upload does. On v13 set `scene.background.src`.
+   - Point the test at that Scene, and record it in `created` for cleanup.
