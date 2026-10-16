@@ -8,9 +8,9 @@ import { RECONNECT_MS, Rig } from '../multi/rig.js';
 // and player browsers open; the gateway is bound to one user at a time and swapped once, from the
 // GM to the player. beforeAll uploads a 1x1 PNG as the GM (one approval) and creates, natively in
 // the GM page, an Actor the player owns, an Actor with no permission, an Actor the player can see
-// (LIMITED), and a LIMITED Scene holding a hidden Token of the LIMITED Actor. afterAll deletes each by its
-// exact UUID. The uploaded file cannot be deleted through the API: its path is printed for the
-// operator to delete by hand.
+// (LIMITED), and a LIMITED Scene holding a hidden Token of the LIMITED Actor. afterAll deletes
+// each by its exact UUID. The uploaded file cannot be deleted through the API: its path is printed
+// for the operator to delete by hand.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
 
 const APPROVAL_TTL_MS = 60 * 60_000;
