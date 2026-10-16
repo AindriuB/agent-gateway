@@ -2,6 +2,7 @@ import { request } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpServer, type HttpServerOptions } from '../../src/http/index.js';
 import { createSessionServer } from '../../src/mcp/session.js';
+import { MAX_HTTP_SESSIONS_PUBLIC } from '../../src/config/index.js';
 import {
   MAX_HTTP_SESSIONS_PER_CLIENT,
   MAX_HTTP_SESSIONS_PER_PRINCIPAL,
@@ -83,7 +84,7 @@ async function setup(over: Partial<HttpServerOptions> = {}) {
       }),
     maxRequestBytes: 10_000,
     rps: 1000,
-    maxSessions: 64,
+    maxSessions: MAX_HTTP_SESSIONS_PUBLIC,
     idleMs: 600_000,
     now: () => (clock += 100),
     log: (l) => lines.push(l),
@@ -230,11 +231,32 @@ describe('HTTP session eviction', () => {
   });
 
   it('bounds one client key at 32 across principals, but not a principal elsewhere', async () => {
-    const { port } = await setup({ maxSessions: 64 });
+    const { port } = await setup();
     for (let p = 0; p < 2; p++)
       for (let i = 0; i < 16; i++) expect((await init(port, `o${p}`, '5.5.5.5')).status).toBe(200);
-    expect((await init(port, 'fifth', '5.5.5.5')).status).toBe(503);
-    expect((await init(port, 'fifth', '5.5.5.6')).status).toBe(200);
+    expect((await init(port, 'third', '5.5.5.5')).status).toBe(503);
+    expect((await init(port, 'third', '5.5.5.6')).status).toBe(200);
+  });
+
+  it('admits a fifth principal at full quota under the public cap of 256', async () => {
+    const { port } = await setup();
+    expect(MAX_HTTP_SESSIONS_PUBLIC).toBe(256);
+    for (let p = 0; p < 5; p++)
+      for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
+        expect((await init(port, `q${p}`, `7.7.7.${p}`)).status).toBe(200);
+    expect(http!.sessionCount).toBe(5 * MAX_HTTP_SESSIONS_PER_PRINCIPAL);
+  });
+
+  it('still holds the global public cap at 256: a seventeenth principal gets 503', async () => {
+    const { port, lines } = await setup();
+    const principals = MAX_HTTP_SESSIONS_PUBLIC / MAX_HTTP_SESSIONS_PER_PRINCIPAL;
+    for (let p = 0; p < principals; p++)
+      for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
+        expect((await init(port, `g${p}`, `7.8.${p}.1`)).status).toBe(200);
+    expect(http!.sessionCount).toBe(MAX_HTTP_SESSIONS_PUBLIC);
+    expect((await init(port, 'extra', '7.8.99.1')).status).toBe(503);
+    expect(http!.sessionCount).toBe(MAX_HTTP_SESSIONS_PUBLIC);
+    expect(lines).toEqual([]);
   });
 
   it('never evicts a session with a request in flight', async () => {
@@ -308,7 +330,7 @@ describe('HTTP session eviction', () => {
   });
 
   it('at the client cap a principal replaces its own oldest session under that client key', async () => {
-    const { port, lines } = await setup({ maxSessions: 64 });
+    const { port, lines } = await setup();
     // Fill the client key: 16 + 13 from others, 3 of its own.
     for (let i = 0; i < 16; i++) await init(port, 'o0', '6.6.6.6');
     for (let i = 0; i < 13; i++) await init(port, 'o1', '6.6.6.6');
@@ -323,7 +345,7 @@ describe('HTTP session eviction', () => {
   });
 
   it('at the client cap a principal whose only idle session is elsewhere gets 503', async () => {
-    const { port, lines } = await setup({ maxSessions: 64 });
+    const { port, lines } = await setup();
     const elsewhere = await init(port, 'p', '6.6.6.7');
     for (let p = 0; p < 2; p++)
       for (let i = 0; i < MAX_HTTP_SESSIONS_PER_CLIENT / 2; i++)
@@ -334,7 +356,7 @@ describe('HTTP session eviction', () => {
   });
 
   it('a refused initialize costs the requester no session', async () => {
-    const { port, lines } = await setup({ maxSessions: 64 });
+    const { port, lines } = await setup();
     const mine = [];
     for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL; i++)
       mine.push(await init(port, 'a', '4.4.4.4'));

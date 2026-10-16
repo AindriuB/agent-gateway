@@ -27,7 +27,7 @@ afterEach(async () => {
   h = undefined;
 });
 
-async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC) {
+async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC, idleMs = 1000) {
   h = await startServer();
   const harness = h;
   const toolsets = new ToolsetStore(() => undefined);
@@ -61,7 +61,7 @@ async function setup(maxSessions = MAX_HTTP_SESSIONS_PUBLIC) {
     maxRequestBytes: 10_000,
     rps: 1000,
     maxSessions,
-    idleMs: 1000,
+    idleMs,
     now: () => (clock.t += 100),
   });
   const port = await http.listen();
@@ -160,7 +160,7 @@ describe('session listeners on the shared emitters', () => {
   });
 
   it('emits no MaxListenersExceededWarning with MAX_HTTP_SESSIONS_PUBLIC sessions open', async () => {
-    const { port, toolsets, buf, registry } = await setup();
+    const { port, toolsets, buf, registry } = await setup(MAX_HTTP_SESSIONS_PUBLIC, 3_600_000);
     const warnings: string[] = [];
     const onWarning = (w: Error) => warnings.push(w.name);
     process.on('warning', onWarning);
@@ -179,7 +179,7 @@ describe('session listeners on the shared emitters', () => {
   });
 
   it('keeps the public and local session constants apart', () => {
-    expect(MAX_HTTP_SESSIONS_PUBLIC).toBe(64);
+    expect(MAX_HTTP_SESSIONS_PUBLIC).toBe(256);
     expect(PUBLIC_HTTP_SESSION_IDLE_MS).toBe(10 * 60_000);
     expect(MAX_HTTP_SESSIONS).toBe(16);
     expect(HTTP_SESSION_IDLE_MS).toBe(30 * 60_000);

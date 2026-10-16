@@ -2,7 +2,8 @@ import { request } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpServer, type HttpServerOptions } from '../../src/http/index.js';
 import { createSessionServer } from '../../src/mcp/session.js';
-import { MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
+import { MAX_HTTP_SESSIONS_PUBLIC } from '../../src/config/index.js';
+import { EVICTION_LOG_WINDOW_MS, MAX_HTTP_SESSIONS_PER_PRINCIPAL } from '../../src/http/limits.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool, pairModule, until, type FakeModule } from '../routing/harness.js';
 
@@ -81,7 +82,7 @@ async function setup(over: Partial<HttpServerOptions> = {}) {
       }),
     maxRequestBytes: 10_000,
     rps: 1000,
-    maxSessions: 64,
+    maxSessions: MAX_HTTP_SESSIONS_PUBLIC,
     idleMs: 600_000,
     now: () => (clock += 100),
     log: (l) => lines.push(l),
@@ -219,6 +220,25 @@ describe('HTTP session churn from one OAuth principal', () => {
     // Another principal has its own allowance.
     for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL + 1; i++)
       await init(port, 'other', '9.129.58.2');
+    expect(lines).toHaveLength(2);
+  });
+
+  it('logs a second info line once the ten-minute window has passed', async () => {
+    let clock = 1_000_000;
+    const { port, lines, debugLines } = await setup({ now: () => (clock += 100) });
+    const churn = async () => {
+      for (let i = 0; i < MAX_HTTP_SESSIONS_PER_PRINCIPAL + 3; i++)
+        expect((await init(port, 'chatgpt', '9.129.58.1')).status).toBe(200);
+    };
+    await churn();
+    expect(lines).toHaveLength(1);
+    expect(debugLines).toHaveLength(2);
+    // Still inside the window: more evictions stay at debug.
+    clock += EVICTION_LOG_WINDOW_MS - 60_000;
+    await churn();
+    expect(lines).toHaveLength(1);
+    clock += 120_000;
+    await init(port, 'chatgpt', '9.129.58.1');
     expect(lines).toHaveLength(2);
   });
 

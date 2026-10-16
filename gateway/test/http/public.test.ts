@@ -4,6 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { HttpServer, type HttpPrincipal, type HttpServerOptions } from '../../src/http/index.js';
 import { createSessionServer } from '../../src/mcp/session.js';
+import { MAX_HTTP_SESSIONS_PUBLIC } from '../../src/config/index.js';
 import { startServer, type Harness } from '../link/helpers.js';
 import { fixtureTool, pairModule, tick, type FakeModule } from '../routing/harness.js';
 
@@ -229,7 +230,7 @@ describe('per-client limits', () => {
     const { port } = await setup({
       publicUrl: PUBLIC,
       trustProxy: true,
-      maxSessions: 80,
+      maxSessions: MAX_HTTP_SESSIONS_PUBLIC,
       now: (() => {
         let t = 1_000_000;
         return () => (t += 100);
@@ -249,11 +250,11 @@ describe('per-client limits', () => {
     // One principal never hits the client cap: it replaces its own idle sessions.
     for (let i = 0; i < 20; i++) expect((await init('203.0.113.9', 'p')).status).toBe(200);
     expect(http?.sessionCount).toBe(16);
-    // Two other principals fill the client key; a fifth is refused there, not elsewhere.
+    // Two other principals fill the client key; a third is refused there, not elsewhere.
     for (let p = 0; p < 2; p++)
       for (let i = 0; i < 16; i++) expect((await init('203.0.113.20', `o${p}`)).status).toBe(200);
-    expect((await init('203.0.113.20', 'fifth')).status).toBe(503);
-    expect((await init('203.0.113.21', 'fifth')).status).toBe(200);
+    expect((await init('203.0.113.20', 'third')).status).toBe(503);
+    expect((await init('203.0.113.21', 'third')).status).toBe(200);
   });
 
   describe('DELETE /mcp is exempt from the per-client rate for a live session of the same principal', () => {
