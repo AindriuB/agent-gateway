@@ -366,8 +366,8 @@ describe.skipIf(!enabled)('image_view', () => {
           img: probePath,
           ownership: { default: ownership },
         });
-      // As in the real world: explicit per-user OWNER for the player. pf2e forces default ownership to
-      // LIMITED on a character, so the player's real level is checked below.
+      // As in the real world: explicit per-user OWNER for the player. pf2e forces default
+      // ownership to LIMITED on a character, so the player's real level is checked below.
       ownedActor = await createDoc(
         `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', img: d.img, ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
         {
@@ -422,6 +422,9 @@ describe.skipIf(!enabled)('image_view', () => {
             `(${PLAYER_LEVELS})(${JSON.stringify([ownedActor, noPermActor, limitedActor, hiddenToken])})`,
           ) as Promise<Levels>,
       )) as Levels;
+      for (const u of [ownedActor, noPermActor, limitedActor, hiddenToken]) {
+        expect(levels[u], `fixture ${u} did not reach the player's client`).not.toBeNull();
+      }
       expect(levels[ownedActor]?.owner, 'fixture is not OWNER for the player (owned Actor)').toBe(
         true,
       );

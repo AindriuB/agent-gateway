@@ -188,8 +188,8 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       `async (u) => { const s = await fromUuid(u); const [t] = await s.createEmbeddedDocuments('Tile', [{ x: 0, y: 0, width: 100, height: 100 }]); return t.uuid; }`,
       sceneUuid,
     );
-    // As in the real world: explicit per-user OWNER for the player. pf2e forces default ownership to
-    // LIMITED on a character, so the player's real level is checked below.
+    // As in the real world: explicit per-user OWNER for the player. pf2e forces default
+    // ownership to LIMITED on a character, so the player's real level is checked below.
     ownedUuid = await createDoc(
       `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
       { name: 'agent-gateway e2e image owned (temporary)', player: playerUser },
@@ -218,6 +218,9 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     const levels = (await pageOf(playerUser).evaluate(
       `(${PLAYER_LEVELS})(${JSON.stringify([ownedUuid, foreignUuid])})`,
     )) as Levels;
+    for (const u of [ownedUuid, foreignUuid]) {
+      expect(levels[u], `fixture ${u} did not reach the player's client`).not.toBeNull();
+    }
     expect(levels[ownedUuid]?.owner, 'fixture is not OWNER for the player (owned Actor)').toBe(
       true,
     );

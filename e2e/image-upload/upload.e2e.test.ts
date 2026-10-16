@@ -181,8 +181,8 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       grantSkipReason = reason;
     }
     sceneUuid = await create('Scene', { name: 'agent-gateway e2e upload scene (temporary)' });
-    // As in the real world: explicit per-user OWNER for the player. pf2e forces default ownership to
-    // LIMITED on a character, so the player's real level is checked below.
+    // As in the real world: explicit per-user OWNER for the player. pf2e forces default
+    // ownership to LIMITED on a character, so the player's real level is checked below.
     ownedActor = await evalGm<string>(
       `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
       { name: 'agent-gateway e2e upload owned (temporary)', player: playerUser },
@@ -212,6 +212,9 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
     const levels = (await pageOf(playerUser).evaluate(
       `(${PLAYER_LEVELS})(${JSON.stringify([ownedActor, foreignActor])})`,
     )) as Levels;
+    for (const u of [ownedActor, foreignActor]) {
+      expect(levels[u], `fixture ${u} did not reach the player's client`).not.toBeNull();
+    }
     expect(levels[ownedActor]?.owner, 'fixture is not OWNER for the player (owned Actor)').toBe(
       true,
     );
