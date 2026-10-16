@@ -14,10 +14,20 @@
 - module/test/stubs/** (insertion only)
 - e2e/image-view/** (new)
 - e2e/vitest.e2e.config.ts (insert one `image-view/**/*.e2e.test.ts` line in the e2e-live include list only)
+- protocol/src/tools/define.ts (Amendment 1, insertion only: one optional `mcpOutputSchema?: false` field on `ToolDefinition`)
+- gateway/src/mcp/session.ts (Amendment 1: the `listed` tools/list mapping at :262-270 only)
+- gateway/test/routing/dynamic-tools/definitions.test.ts (Amendment 1: the module-tool sweep at :96-108 only, so a tool with `mcpOutputSchema: false` is expected without `outputSchema`)
+- gateway/test/mcp/image-view.test.ts (new, Amendment 1)
+- module/src/ops/types.ts (Amendment 1: `OpResult.structured` becomes optional; no other change)
+- module/src/link/bridge.ts (Amendment 1: the `res.structured.status` read at :190 becomes `res.structured?.status`; no other change)
 
 Overlap: only the insertion-only shared files above, also inserted into by 53 and 121. Uses
 protocol/src/images/**, module/src/tools/_image.ts (120) and the `OpResult.images` field (122)
-without editing them.
+without editing them. Amendment 1 files: gateway/src/mcp/session.ts, module/src/ops/types.ts and
+module/src/link/bridge.ts are also edited by 122, which this task depends on, so they land in
+order. session.ts is also listed by 112 (blocked; the `approval_status` branch) and 35b
+(deferred; insertions at return points), neither of which touches `listed`. No open task owns
+protocol/src/tools/define.ts or gateway/test/routing/dynamic-tools/definitions.test.ts.
 
 ## Goal
 Let the agent look at an Actor portrait, an Actor's prototype token art, a placed token's
@@ -30,9 +40,21 @@ could see it in Foundry.
 - module/src/ops/types.ts `OpResult.images` and the result path (task 122).
 - protocol/src/images/** and module/src/tools/_image.ts (task 120): `sniffImage`, `normalizeDataPath`, `isImagePath`.
 - protocol/src/link/messages.ts:9 `MAX_FRAME_BYTES`.
+- (Amendment 1) Every tool must have an `outputSchema` today, in these places:
+  protocol/src/tools/define.ts:19 (`output` is required on `ToolDefinition`) and
+  protocol/src/tools/json-schema.ts:20 (`toJsonSchema` always emits `outputSchema`);
+  protocol/src/link/messages.ts:135-137 (a toolset announcement whose tool lacks an object
+  `outputSchema` is rejected); gateway/src/mcp/session.ts:267 (tools/list projects an
+  `outputSchema` for every listed tool); and gateway/test/routing/dynamic-tools/definitions.test.ts:96-108
+  (asserts the projected `outputSchema` for every module-handled protocol tool).
+  module/src/ops/types.ts:38 makes `OpResult.structured` required, and module/src/link/bridge.ts:190
+  reads `res.structured.status`.
 
 ## Acceptance
-- [ ] A new tool `image_view` (minRole `player`, category `read`, handledBy `module`) takes `source` enum `actor_portrait|actor_token|token|scene_background|file`, with `uuid` for the first four and `path` for `file`. The result's `structured` holds `{ source, mimeType, bytes }` and the text says what was shown; the image travels only in `images`.
+- [ ] A new tool `image_view` (minRole `player`, category `read`, handledBy `module`) takes `source` enum `actor_portrait|actor_token|token|scene_background|file`, with `uuid` for the first four and `path` for `file`. (Amendment 1) Its handler returns `text` and `images` and no `structured` key. The text states the source, the mime type, the pixel dimensions and the byte size, and says whether the image was downscaled; the image travels only in `images`.
+- [ ] (Amendment 1) `image_view` declares no MCP `outputSchema`: its definition sets `mcpOutputSchema: false`, and keeps an empty strict `output` object only because the protocol and the link announcement require one. In gateway/src/mcp/session.ts `listed`, a core tool with `mcpOutputSchema === false` is listed without an `outputSchema` key; every other tool is listed exactly as today. The link announcement, `toJsonSchema` and the version-skew check are unchanged. protocol/test/tools/image-view.test.ts asserts the flag; definitions.test.ts expects `image_view` without `outputSchema` and every other tool unchanged.
+- [ ] (Amendment 1) `OpResult.structured` is optional and bridge.ts:190 reads it with `?.`; no other module source changes for this. Existing module tests pass unchanged.
+- [ ] (Amendment 1) An MCP-level test in gateway/test/mcp/image-view.test.ts, through the SDK client after `listTools`, shows that `image_view` is listed without `outputSchema` and that its `tools/call` result has `content` of exactly one text block and one `image` block, and no `structuredContent` key. The text block names the dimensions, mime type, byte size and source. Another tool's result in the same session still carries `structuredContent`.
 - [ ] Visibility, with identity only from the server-set Foundry user (a GM sees all):
   - `actor_portrait`, `actor_token`: the user has at least the ownership level the 52 findings name on the Actor.
   - `token`: the token is not hidden and is on a scene the user can view.
@@ -42,12 +64,32 @@ could see it in Foundry.
   Otherwise `FORBIDDEN`, and nothing is fetched. Unit tests cover each refusal.
 - [ ] The resolved image path must pass `isImagePath` before any request, so an `.svg` source is refused with `INVALID_ARGS` and never fetched; a remote `http(s)` source is refused the same way. Unit tests cover an Actor whose `img` is an `.svg` and one whose `img` is an external URL.
 - [ ] The file is read same-origin with a stream reader that stops at the raw cap plus one byte; the module never holds more than that. The bytes must pass `sniffImage`, whatever the response `Content-Type` says; otherwise `INVALID_ARGS`. Unit tests cover SVG content in a `.png` file and a server that sends more bytes than the cap.
-- [ ] Oversize images follow the 52 decision: either they are downscaled in the browser to fit the cap and re-encoded as JPEG or WebP (the result says so), or they are refused with `INVALID_ARGS` stating the byte size and the cap. A unit test covers the chosen path. The returned frame fits `MAX_FRAME_BYTES` in a test using the largest allowed image.
+- [ ] (Amendment 1, from spikes/image-upload/findings.md:49-50,142) An image whose long edge exceeds 1568 px, or whose bytes exceed the 512 KiB raw cap, is downscaled in the browser to at most 1568 px on the long edge and re-encoded as JPEG (the text says so). A source over the 4 MB fetch cap, or one still over 512 KiB after re-encoding, is refused with `INVALID_ARGS` stating the byte size and the cap. 123 owns the downscale and the cap; 122 only carries prepared bytes. Unit tests cover the downscale, the refusal, and the returned frame fitting `MAX_FRAME_BYTES` with the largest allowed image.
 - [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_IMAGE=1`): a GM views a scene background and a data file; a player views the portrait of an Actor they own; a player is refused on a hidden token and on an Actor with no permission. The MCP result contains one `image` content block. Native execution needs the repository owner's per-run approval.
 - [ ] `npm run verify` passes
 
 ## Out of scope
-- Changing the link result format or the gateway (122)
+- Changing the link result format, the result path or any other part of the gateway (122), apart from the tools/list `outputSchema` omission in Amendment 1
+- Omitting `outputSchema` or `structuredContent` for any tool other than `image_view`
 - Uploading or assigning images (53, 121)
 - Image sources outside `data`, URL fetching, tile textures, compendium art
 - Editing protocol/test/tools/tool-count.test.ts, protocol/src/images/** or module/src/tools/_image.ts (120; stop and report if a helper is missing)
+
+## Amendment 1 (owner, 2026-10-16)
+
+Reason: Claude Code reportedly drops image blocks when `structuredContent` is also present
+(spikes/image-upload/findings.md:39, client rows). 122 Amendment 2 keeps `structuredContent` for
+every tool that sends `structured`, because the SDK client rejects a result without it for a tool
+listed with an `outputSchema`.
+
+Decision: `image_view` declares no MCP `outputSchema`, and its module handler returns no
+`structured`. Under 122's rule the gateway then returns only the text and image blocks for it.
+Other tools are unchanged.
+
+Every tool is required to have an `outputSchema` today (see Context). The least invasive exemption
+leaves the protocol definition, the link announcement and its validation alone: `image_view` keeps
+an empty strict `output`, a new optional `mcpOutputSchema: false` flag on `ToolDefinition` marks
+it, and only the gateway's tools/list mapping drops `outputSchema` for a flagged core tool.
+`OpResult.structured` becomes optional so the handler can omit it. Owns, Context, Acceptance and
+Out of scope are updated. The 1568 px long-edge downscale and the 512 KiB raw cap stay with this
+task, because 122 only carries prepared bytes.

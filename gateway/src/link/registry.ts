@@ -15,6 +15,7 @@ export class LinkCallError extends Error {
 export interface CallResult {
   text: string;
   structured?: unknown;
+  images?: { mimeType: string; data: string }[];
 }
 
 export interface LinkTransport {
