@@ -44,3 +44,11 @@ player invite only completes while an admin GM is online. This was a known gap (
 - ChatGPT docs (task 113), docs/security.md and docs/privacy.md (including the 94 privacy follow-up).
 - Any CLI or code change; if a documented behaviour turns out wrong, report it, do not fix it.
 - PLAN.md and HISTORY*.md (the record step closes the "Docs gap" follow-up line).
+
+## Review round 1 — findings
+
+Reviewed HEAD: 5b1e3cd
+
+- [P2] docs/server-mode.md:80-82 and gateway/docker/README.md:116-118 — both say a player sees "No GM is online" when no admin GM is online. In the ordinary case the gateway refuses the invite before any challenge (gateway/src/link/server.ts:848-854, PAIRING_UNCONFIRMED), and the pairing window shows `Pairing.Vouch.unconfirmed` (module/src/apps/pairing/index.ts:53-54, lang/en.json:162): "Your GM could not confirm this pairing, so the invite was not used. Ask your GM to open this world with Agent Gateway connected, then paste the invite again." `Vouch.noGm` (en.json:164) is a rare race notification only (client.ts:795, vouch.ts:31-33). Also "once a GM has joined" should say an admin GM with Agent Gateway connected. Orchestrator ruling (2026-10-16): Acceptance bullet 1 quoted the wrong message, a factual error in the spec; the docs must describe the real behaviour and quote the `unconfirmed` text. Bullet 1 is read as "the docs say what the player sees when no admin GM is online". route: implementer
+- [P3] docs/server-mode.md:107-109 and gateway/docker/README.md:122 — "Redeeming any invite … replaces the old pairing" and "Re-pairing a lost device needs a new invite" don't hold for GM users. A plain invite for a GM user is refused (server.ts:944-946, GM_USER_MESSAGE), and a delegated invite to a user with an admin pairing is spent as a mismatch (gateway/src/link/invites.ts:189-193). Say a GM re-pairs with a new `--admin` or `--gm` invite. route: implementer
+- [P3] docs/server-mode.md:77 and gateway/docker/README.md:115 — "invites players from Manage access" never says where Manage access is. Give the path as docs/guides/headless.md:14 does (Configure Settings, then Agent Gateway, then Manage access). route: implementer
