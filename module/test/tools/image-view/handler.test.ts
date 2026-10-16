@@ -276,7 +276,9 @@ describe('image_view handler: folder allowlist', () => {
 });
 
 describe('image_view handler: embedded token Actors', () => {
-  const embedded = (opts: { sceneFolder?: string; hidden?: boolean; isOwner?: boolean } = {}) => {
+  const embedded = (
+    opts: { sceneFolder?: string; actorFolder?: string; hidden?: boolean; isOwner?: boolean } = {},
+  ) => {
     const scene = {
       documentName: 'Scene',
       testUserPermission: () => true,
@@ -288,7 +290,13 @@ describe('image_view handler: embedded token Actors', () => {
       isOwner: opts.isOwner === true,
       parent: scene,
     };
-    return { 'Scene.S.Token.K.Actor.A': doc({ limited: true, parent: token }) };
+    return {
+      'Scene.S.Token.K.Actor.A': doc({
+        limited: true,
+        parent: token,
+        ...(opts.actorFolder ? { folder: { id: opts.actorFolder } } : {}),
+      }),
+    };
   };
   const uuid = 'Scene.S.Token.K.Actor.A';
   const refusedLike = async (user: any, docs: Record<string, any>) => {
@@ -304,7 +312,8 @@ describe('image_view handler: embedded token Actors', () => {
     ['gmAgents', gm],
   ] as const)('refuses on a Scene outside the %s allowlist', async (cls, user) => {
     folders[cls] = ['ok'];
-    await refusedLike(user, embedded({ sceneFolder: 'other' }));
+    // The Actor's own folder is allowed; only the root Scene is excluded.
+    await refusedLike(user, embedded({ sceneFolder: 'other', actorFolder: 'ok' }));
   });
   it('refuses on a hidden token the player does not own', () =>
     refusedLike(player, embedded({ hidden: true })));
