@@ -13,12 +13,12 @@ afterEach(async () => {
   h?.store.close();
 });
 
-async function run(frame: Record<string, unknown>) {
+async function run(frame: Record<string, unknown>, list = true) {
   h = await startServer();
   const m = await pairModule(h, 'u1');
   const s = await openSession(h, {}, [fixtureTool]);
   sessions.push(s);
-  await s.client.listTools();
+  if (list) await s.client.listTools();
   const pending = s.client.callTool({ name: 'fixture_tool', arguments: { a: 'x' } });
   const call = (await m.tc.next('call')) as { id: string };
   m.tc.send({ type: 'result', id: call.id, ok: true, text: 'seen', ...frame });
@@ -34,6 +34,18 @@ describe('MCP image results', () => {
       { type: 'image', data, mimeType: 'image/png' },
     ]);
     expect(res.structuredContent).toEqual({ b: 'y' });
+    expect(JSON.stringify(res.structuredContent)).not.toContain(data);
+  });
+
+  it('has no structuredContent key when the module sent no structured', async () => {
+    const data = PNG.toString('base64');
+    // No listTools first: the SDK client rejects such a result for a tool with an outputSchema.
+    const res = await run({ images: [{ mimeType: 'image/png', data }] }, false);
+    expect(res.content).toEqual([
+      { type: 'text', text: 'seen' },
+      { type: 'image', data, mimeType: 'image/png' },
+    ]);
+    expect('structuredContent' in res).toBe(false);
   });
 
   it.each([
