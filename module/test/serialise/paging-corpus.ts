@@ -1,4 +1,4 @@
-// Corpus built from Andrew's table of paging hazards, plus a seeded fuzzer.
+// Corpus built from the table of paging hazards, plus a seeded fuzzer.
 
 export const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
