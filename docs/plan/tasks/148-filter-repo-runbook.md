@@ -192,10 +192,15 @@ swap it in under the existing repo name and restore the releases.
          (`git status --porcelain`), branches with commits not on the old origin/main
          (`git log --branches --not origin/main --oneline`), and stashes (`git stash list`, read
          only).
-      2. Preserve: commit uncommitted changes to a `wip/<name>` branch in that worktree; export
-         every unpushed branch as patches
-         (`git format-patch origin/main..<branch> -o <backup-dir>/<branch>/`) to a folder outside
-         the checkout. Stashes are **not** exported with `git stash show -p` (by default it drops
+      2. Preserve: commit uncommitted changes to a `wip/<name>` branch in that worktree. Every
+         inventoried branch tip (every local branch from step 1 with commits not on main, including
+         each worktree's branch and the `wip/*` branches just made) goes into a self-contained
+         bundle outside the checkout: `git bundle create <backup-dir>/branches.bundle <every such
+         branch>` (no `^` exclusions, so the full history including merge commits and their
+         conflict resolutions travels), then `git bundle verify <backup-dir>/branches.bundle`
+         (Amendment 4). `git format-patch` is **NOT** the backup: it skips merge commits and any
+         change made in a merge. It may still be used later, in step 4, only as a transport for
+         re-applying linear work. Stashes are **not** exported with `git stash show -p` (by default it drops
          untracked files and binary content; Amendment 3). Instead, for each entry N, without
          touching the stash stack: `git branch wip/stash-N stash@{N}` (the stash commit, whose
          parents are the base `^1`, the index `^2` and, when present, the untracked-files commit
@@ -215,15 +220,29 @@ swap it in under the existing repo name and restore the releases.
          `wip/stash-N^3` tree ids, and diff `git ls-tree -r --full-tree` output (mode, blob hash,
          path) between the two, so untracked and binary files are covered by content hash. A
          tree present on one side and absent on the other is a failure. The step prints one
-         PASS/FAIL line per stash and per tree, and the old checkout is not renamed, reset or
-         removed until every line is PASS.
+         PASS/FAIL line per stash and per tree. Branches are verified the same way (Amendment 4):
+         fetch `<backup-dir>/branches.bundle` into the scratch repository with the same
+         `'refs/heads/*:refs/heads/*'` refspec, and for every inventoried branch check that
+         (a) `git rev-parse <branch>` in the scratch copy equals the original's commit id, so the
+         whole history including merges survived, (b) `git rev-parse <branch>^{tree}` matches,
+         and (c) `git ls-tree -r --full-tree <branch>` output is identical on both sides. A branch
+         missing from the restored repo is a failure. The step prints one PASS/FAIL line per
+         branch. Nothing (worktree, branch or checkout) is removed, reset or renamed until every
+         stash, tree and branch line is PASS; a non-empty folder alone never counts as a pass.
       3. Replace: fresh `git clone https://github.com/AindriuB/agent-gateway` into a new directory
          (preferred), or, only once step 2 is confirmed, `git fetch` the new remote and
          `git reset --hard origin/main` in the main checkout after removing each old worktree with
          `git worktree remove` and deleting its pre-rewrite branch. The old checkout directory is
          kept (renamed) until Andrew deletes it.
-      4. Run 147's `link.sh` in the new checkout and in each new worktree; re-apply preserved work
-         with `git am`/`git apply` onto the new main, excluding internal paths. Stash work is
+      4. Run 147's `link.sh` in the new checkout and in each new worktree; fetch
+         `branches.bundle` into the new checkout under a separate namespace (e.g.
+         `'refs/heads/*:refs/old/*'`) and re-apply preserved work onto the new main, excluding
+         internal paths. Linear branches may use `git format-patch` from the bundle refs piped to
+         `git am` as transport only. Branches containing merges
+         (`git rev-list --merges <base>..refs/old/<branch>` is non-empty) are re-applied by
+         `git cherry-pick` of their commits (`-m 1` for merges) or by
+         `git rebase --rebase-merges --onto main <base> <branch>` from the bundle refs, never by
+         patches alone. Stash work is
          re-applied from the bundle's `wip/stash-N` branches (tracked changes via
          `git diff wip/stash-N^1 wip/stash-N`, untracked files via
          `git restore --source=wip/stash-N^3 -- <paths>`), never via `git stash apply`.
@@ -308,3 +327,19 @@ swap it in under the existing repo name and restore the releases.
   compares tree ids and `git ls-tree -r` listings (mode, blob hash, path) against the original
   `stash@{N}`, `^2` and `^3` trees, covering untracked and binary files; any mismatch fails the
   backup and blocks step 3. Step 4 re-applies stash work from those branches.
+
+### Amendment 4 (from external PR review, 2026-10-16)
+
+- [P2] Step 14's preserve step backed up unpushed branches with
+  `git format-patch origin/main..<branch>`, which leaves out merge commits along with any
+  conflict resolutions or changes made in a merge. Ordinary commits still made the backup folder
+  non-empty, so the preservation check passed while work was missing, and deleting the old
+  worktree and branch could then lose it. Every inventoried branch tip (all local branches not on
+  the new main, including worktree and `wip/*` branches) now goes into a self-contained
+  `branches.bundle` with no `^` exclusions, checked with `git bundle verify`. Step 2a restores it
+  into the scratch repository and, per branch, compares the tip commit id, the `^{tree}` id and
+  the full `git ls-tree -r --full-tree` listing against the original, printing one PASS/FAIL line
+  per branch; nothing is removed, reset or renamed until every line passes. `format-patch` stays
+  only as a transport for re-applying linear work in step 4 and is explicitly not the backup;
+  branches containing merges are re-applied by cherry-pick or `git rebase --rebase-merges` from
+  the bundle refs.
