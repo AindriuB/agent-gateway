@@ -287,3 +287,7 @@ Reviewed HEAD: 10b70d3
 
 Ratified: module/test/approvals/link-wiring.test.ts is added to Owns (round 2 asked for these tests without naming a file).
 Note for the record (not a defect): if ownership is late or never arrives, the module withdraws while `reconcile` has already re-attached the rows to this connection, so they are re-asked only after the next disconnect. This is Amendment 5's fail-safe, accepted.
+
+## External PR review (2026-10-16)
+
+P2, "Detach terminal approval aliases when their connection closes": terminal (denied or expired) alias rows kept their connection_id after a disconnect, so approval_status answered WORLD_OFFLINE instead of the terminal status. Confirmed: the SQL in orphanLive matched neither of its two updates. Fix at `gateway/src/offline-queue/repository.ts:94-98`: a third UPDATE scoped by LIVE_ALIAS and connection_id that detaches the row and keeps state, result and resolved_at. It runs on disconnect and in the startup sweep. Tests cover denied and expired then disconnect then approval_status returning the terminal status, the restart sweep, and reconcile and ownedAliases ignoring detached rows.
