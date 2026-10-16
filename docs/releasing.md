@@ -1,9 +1,9 @@
 # Releasing
 
-A release is one local command. GitHub Actions runs only on `v*` tags (the tests, then the
-server-mode image; see "Publishing the image") and on demand from "Run workflow" (the tests
-only). It never runs on pull requests or on `main`, so local `npm run verify` is the PR gate.
-Quench and remote OAuth conformance are not gates yet.
+A release is one local command. GitHub Actions runs the tests on pull requests, on pushes to
+`main` and on `v*` tags. Only a `v*` tag also builds and pushes the server-mode image (see
+"Publishing the image"); "Run workflow" runs the tests only. Running `npm run verify` locally
+before you push is still expected. Quench and remote OAuth conformance are not gates yet.
 
 ```
 npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
@@ -51,10 +51,14 @@ before retrying.
 ## Publishing the image
 
 `.github/workflows/ci.yml` builds and pushes the image when a `v*` tag is pushed. It runs the
-tests first and checks that the tag matches the repo version, so bump the version on `main`
-(the release PR) before tagging. Update `CHANGELOG.md` in that same PR: move the entries for this
-release out of Unreleased under the new version heading, before you tag. "Run workflow" on a branch or tag only runs the tests and
-never publishes; a failed publish is retried with "Re-run jobs" on the tag run. To publish by hand:
+tests first and checks that the tag matches the repo version. "Run workflow" on a branch or tag
+only runs the tests and never publishes; a failed publish is retried with "Re-run jobs" on the
+tag run. Before tagging:
+
+1. Bump the version on `main` (the release PR).
+2. Update `CHANGELOG.md` in that same PR: move this release's entries out of Unreleased under
+   the new version heading.
+3. Tag and push. To publish by hand:
 
 ```
 git tag v<version> <commit on main>
@@ -111,6 +115,7 @@ build, serve the files yourself:
    There is no `browse`, so there is no directory listing. If Caddy runs in a container, `/srv/dl`
    must be a folder mounted into it, for example read-only through an uncommitted
    `compose.override.yaml`.
+
 4. Check `curl -sI https://dl.example.org/agent-gateway/module.json` returns 200. In Foundry
    Setup, go to Add-on Modules, Install Module, and paste the manifest URL.
 
@@ -125,31 +130,37 @@ the source (a link or a quote of the reply). The release script counts a questio
 when its `Answer` line is not blank.
 
 ### 1. May paid packs be sold outside Premium Content while the core is listed?
+
 - Answer:
 - Date:
 - Source:
 
 ### 2. What is the Premium Content fee, and do code-only modules fit it?
+
 - Answer:
 - Date:
 - Source:
 
 ### 3. Does each pack need the "AI Tools" tag and its own attestation?
+
 - Answer:
 - Date:
 - Source:
 
 ### 4. Do agents reading compendium or game-system data trip the other-modules context rule?
+
 - Answer:
 - Date:
 - Source:
 
 ### 5. Is minified or obfuscated code acceptable in premium packs?
+
 - Answer:
 - Date:
 - Source:
 
 ### 6. What consent UI satisfies the runtime-code rule for agent-run macros?
+
 - Answer:
 - Date:
 - Source:

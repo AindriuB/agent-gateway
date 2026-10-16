@@ -6,12 +6,12 @@ weekly belongs in the code or the per-feature docs.
 
 ## Components
 
-| Component | Directory | Port | Owns |
-|---|---|---|---|
-| Foundry module, running in the browser tab of a logged-in user | `module/src` (entry `module/src/main.ts`) | none | Native permission checks, policy, approvals, audit log with Undo, tool execution, the link client (`module/src/link/`) |
-| Gateway, one Node process per MCP client | `gateway/src` (CLI `gateway/src/bin/cli.ts`, wiring `gateway/src/app.ts`) | link 7420, local HTTP 7421 | Link server, pairing, MCP sessions and routing, SQLite store, event buffer, offline queue |
-| MCP clients (Claude Desktop, Claude Code, others) | outside the repo | stdio, or HTTP on 7421 | Speak MCP to the gateway; never talk to Foundry directly |
-| Link protocol | `protocol/src` (`link/`, `tools/`, `events/`) | none | The wire types shared by module and gateway |
+| Component                                                      | Directory                                                                 | Port                       | Owns                                                                                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Foundry module, running in the browser tab of a logged-in user | `module/src` (entry `module/src/main.ts`)                                 | none                       | Native permission checks, policy, approvals, audit log with Undo, tool execution, the link client (`module/src/link/`) |
+| Gateway, one Node process per MCP client                       | `gateway/src` (CLI `gateway/src/bin/cli.ts`, wiring `gateway/src/app.ts`) | link 7420, local HTTP 7421 | Link server, pairing, MCP sessions and routing, SQLite store, event buffer, offline queue                              |
+| MCP clients (Claude Desktop, Claude Code, others)              | outside the repo                                                          | stdio, or HTTP on 7421     | Speak MCP to the gateway; never talk to Foundry directly                                                               |
+| Link protocol                                                  | `protocol/src` (`link/`, `tools/`, `events/`)                             | none                       | The wire types shared by module and gateway                                                                            |
 
 The gateway never runs inside Foundry. The module, which runs in the browser with the user's own Foundry session, is the only thing that touches world data, so every action runs as that Foundry user.
 
@@ -28,6 +28,7 @@ Several instances can share one state dir and one database, for example Claude D
 - **Primary**: the instance that holds the link port. It serves the module link, the optional HTTP endpoint and the relay (`gateway/src/relay/server.ts`).
 - **Secondary**: an instance that finds the port taken relays its stdio MCP session to the primary (`gateway/src/relay/secondary.ts`, `proxy.ts`, `upstream.ts`). Each connection gets its own session. On primary loss it takes over, replaying initialize and a `list_changed`; calls in flight get `RELAY_LOST`.
 - **Standby**: an instance that may not relay because its settings differ from the primary's, or that was stepped down (`gateway/src/relay/standby.ts`). It serves only `gateway_status`, keeps watching the link port, and takes over when it can.
+- **Headless runner** (`gateway/src/headless/`): logs in as an agent user with its own Chromium, so a world needs no open GM tab. It stores its profile with migration 013; see [guides/headless.md](guides/headless.md).
 
 A secondary with a strictly newer config fingerprint asks the primary to step down after a 2 s grace. The primary writes a handover claim naming the heir by its `startedAt` (`gateway/src/relay/claim.ts`, file `relay-heir-<linkPort>.json`, mode 0600), so the old primary becomes a standby and the heir takes the port without a race (tasks 69 and 72). The step-down sequence is in `gateway/src/app.ts`.
 
@@ -35,19 +36,19 @@ A secondary with a strictly newer config fingerprint asks the primary to step do
 
 SQLite, opened and migrated by `gateway/src/store/` (`store.ts`, `migrate.ts`). Migrations are numbered, positional files in `gateway/src/store/migrations/`, and a migration's number must equal its position in `index.ts`.
 
-| Migration | Adds |
-|---|---|
-| 001 | `pairings` |
-| 002 | `pairings.user_name` |
-| 003 | `event_streams`, `event_evictions`, `event_rows` |
-| 004 | `event_policies`, `event_read_permissions` |
-| 005 | `queued_catalogs`, `queued_calls` |
-| 006 | `queued_calls.result_failed` |
-| 007 | `pairings.origin` |
-| 008 | retires pairings with no origin |
-| 009 | `gateway_settings` (the HTTP token hash) |
-| 010 | OAuth clients, codes, grants and tokens (task 35, 67) |
-| 011 | `invites` (task 68) |
+| Migration | Adds                                                  |
+| --------- | ----------------------------------------------------- |
+| 001       | `pairings`                                            |
+| 002       | `pairings.user_name`                                  |
+| 003       | `event_streams`, `event_evictions`, `event_rows`      |
+| 004       | `event_policies`, `event_read_permissions`            |
+| 005       | `queued_catalogs`, `queued_calls`                     |
+| 006       | `queued_calls.result_failed`                          |
+| 007       | `pairings.origin`                                     |
+| 008       | retires pairings with no origin                       |
+| 009       | `gateway_settings` (the HTTP token hash)              |
+| 010       | OAuth clients, codes, grants and tokens (task 35, 67) |
+| 011       | `invites` (task 68)                                   |
 
 ## Pairing
 
