@@ -1,4 +1,4 @@
-export default async (page, ctx) => page.evaluate(async () => {
+export default async (page) => page.evaluate(async () => {
   const out = { origin: location.origin === new URL(location.href).origin, routePrefix: game.data.options?.routePrefix ?? null };
   const path = 'agent-gateway/uploads/ag-spike-52/ag-spike-52-a.png';
   out.url = foundry.utils.getRoute ? foundry.utils.getRoute(path) : null;
