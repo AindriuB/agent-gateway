@@ -152,3 +152,12 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
   an exact allowlist; this task depends on 145 and merges after it, though it can be implemented
   in parallel. Owns and acceptance now name the four `.github` files exactly, matching 145's
   allowlist.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 132217578a4391eb9005634e692223ea1cbc9709
+
+- [P2] CHANGELOG.md:39 — the 0.2.0 bullet "Admin GMs can create, list and cancel player invites from inside Foundry" is false for 0.2.0: task 92 shipped only the gateway link messages; the in-Foundry "Manage access" window (task 93) shipped in 0.3.0, which line 32 already claims. route: implementer — reword to the link-message capability with "(the in-Foundry window arrived in 0.3.0)", or drop it. input: `git grep -n -E 'createInvite|listInvites|cancelInvite' v0.2.0 -- module/src` → no matches.
+- [P3] CONTRIBUTING.md:30 — the layout lists `module/src/... ui/`, which doesn't exist; UI apps are in `module/src/apps/`. route: implementer.
+- [P3] CONTRIBUTING.md:17 — the stale-build reason for `npm ci` is worktree-only; in a fresh clone nothing resolves without it. route: implementer — cut to "run `npm ci` first".
+- [NOTE] CHANGELOG 0.4.0 "Added" lacks `image_view` (task 123, merged as #172 after this branch's base). route: implementer — add it when rebasing onto main after 145.
