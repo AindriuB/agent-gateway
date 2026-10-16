@@ -7,8 +7,10 @@ import { RECONNECT_MS, Rig } from '../multi/rig.js';
 // Needs the repository owner's per-run approval: AGENT_GATEWAY_E2E_IMAGE=1. One Rig keeps the GM
 // and player browsers open; the gateway is bound to one user at a time and swapped once, from the
 // GM to the player. beforeAll uploads a 1x1 PNG as the GM (one approval) and creates, natively in
-// the GM page, an Actor the player owns, an Actor with no permission, an Actor the player can see
-// (LIMITED), and a LIMITED Scene holding a hidden Token of the LIMITED Actor. afterAll deletes
+// the GM page, an Actor the player owns, an Actor with no permission (an npc: pf2e forces a
+// character to LIMITED), an Actor the player can see (LIMITED), a LIMITED Scene holding a hidden
+// Token of the LIMITED Actor, and a background Scene whose background is the uploaded PNG.
+// beforeAll then checks the player's real level on each fixture. afterAll deletes
 // each by its exact UUID. The uploaded file cannot be deleted through the API: its path is printed
 // for the operator to delete by hand.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
@@ -231,6 +233,33 @@ async function settle(
   );
 }
 
+/**
+ * Reads, on the player's own page, the player's real level on each fixture. pf2e forces a
+ * `character` Actor's default ownership to LIMITED at creation, so a fixture's assumed level is
+ * checked rather than trusted. Waits for the document to arrive, then reports the levels.
+ */
+const PLAYER_LEVELS = `async (uuids) => {
+  const out = {};
+  for (const uuid of uuids) {
+    let d = null;
+    for (let i = 0; i < 40 && !d; i++) {
+      d = await fromUuid(uuid).catch(() => null);
+      if (!d) await new Promise((r) => setTimeout(r, 250));
+    }
+    out[uuid] = d && {
+      owner: d.testUserPermission(game.user, 'OWNER') === true,
+      limited: d.testUserPermission(game.user, 'LIMITED') === true,
+      hidden: d.hidden === true,
+      isOwner: d.isOwner === true,
+    };
+  }
+  return out;
+}`;
+type Levels = Record<
+  string,
+  { owner: boolean; limited: boolean; hidden: boolean; isOwner: boolean } | null
+>;
+
 describe.skipIf(!enabled)('image_view', () => {
   const ctx = loadContext();
   const gmUser = ctx.config.gmUser;
@@ -328,14 +357,17 @@ describe.skipIf(!enabled)('image_view', () => {
       expect(up.isError, up.text).toBe(false);
       expect(parsed, 'the image_upload result names the file').toBeTruthy();
       probePath = parsed!.path;
-      const actor = (name: string, ownership: number): Promise<string> =>
+      // pf2e forces default ownership to LIMITED on a character or familiar, so the no-permission
+      // Actor is an npc, which keeps the ownership it is given.
+      const actor = (name: string, ownership: number, type = 'character'): Promise<string> =>
         createDoc(`async (d) => (await Actor.create(d)).uuid`, {
           name,
-          type: 'character',
+          type,
           img: probePath,
           ownership: { default: ownership },
         });
-      // As in the real world: explicit per-user OWNER for the player, default 0 (NONE).
+      // As in the real world: explicit per-user OWNER for the player. pf2e forces default ownership to
+      // LIMITED on a character, so the player's real level is checked below.
       ownedActor = await createDoc(
         `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', img: d.img, ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
         {
@@ -362,7 +394,7 @@ describe.skipIf(!enabled)('image_view', () => {
       );
       log(`OWNER wait done: ${String(ownerSeen)}`);
       expect(ownerSeen, 'player client sees the owned Actor as OWNER').toBe(true);
-      noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
+      noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0, 'npc');
       // LIMITED (1) on this Actor and on the Scene below: the player can see both, so only
       // token.hidden can refuse the Token.
       limitedActor = await actor('agent-gateway e2e view limited (temporary)', 1);
@@ -380,6 +412,36 @@ describe.skipIf(!enabled)('image_view', () => {
         return t.uuid;
       }`,
         [sceneUuid, limitedActor, probePath],
+      );
+      const levels = (await bounded(
+        'fixture level check (player client)',
+        60_000,
+        rig.users
+          .get(playerUser)!
+          .browser.page.evaluate(
+            `(${PLAYER_LEVELS})(${JSON.stringify([ownedActor, noPermActor, limitedActor, hiddenToken])})`,
+          ) as Promise<Levels>,
+      )) as Levels;
+      expect(levels[ownedActor]?.owner, 'fixture is not OWNER for the player (owned Actor)').toBe(
+        true,
+      );
+      expect(
+        levels[noPermActor]?.limited,
+        'fixture is not NONE for the player (no-permission Actor): it grants LIMITED or more',
+      ).toBe(false);
+      expect(
+        levels[limitedActor]?.limited,
+        'fixture is not LIMITED for the player (limited Actor)',
+      ).toBe(true);
+      expect(
+        levels[limitedActor]?.owner,
+        'fixture is not LIMITED for the player (limited Actor): it grants OWNER',
+      ).toBe(false);
+      expect(levels[hiddenToken]?.hidden, 'fixture is not hidden for the player (token)').toBe(
+        true,
+      );
+      expect(levels[hiddenToken]?.isOwner, 'fixture is owned by the player (hidden token)').toBe(
+        false,
       );
       // A Scene whose background is the uploaded PNG: v14 reads the Level the tools use
       // (initialLevel, then defaultLevel0000, then the first Level), v13 scene.background.src.
