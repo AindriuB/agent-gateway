@@ -8,33 +8,19 @@ import {
 } from '@agent-gateway/protocol';
 import { isAuditDocument } from '../audit/guard.js';
 import { foundryGeneration } from '../compat/index.js';
+import { decodeBase64Strict, sha256Bytes } from '../ops/redact.js';
 import { resolveFilePicker } from './_image.js';
 import { defineWriteHandler, forbid, invalid, owns, trustedUser, WriteError } from './_write.js';
 
 declare const fromUuid: (uuid: string) => Promise<any>;
 declare const globalThis: any;
 
-const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const USER_ID = /^[A-Za-z0-9]{1,32}$/;
 const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as const;
 const ROOT = 'agent-gateway/uploads';
 
 export function decodeBase64(data: string): Uint8Array {
-  if (data.length % 4 !== 0 || !BASE64.test(data)) invalid('data is not valid base64');
-  let binary: string;
-  try {
-    binary = globalThis.atob(data);
-  } catch {
-    return invalid('data is not valid base64');
-  }
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return decodeBase64Strict(data) ?? invalid('data is not valid base64');
 }
 
 /** Server-generated name: random id, decoded size (so the quota needs no stat call), derived extension. */
@@ -131,7 +117,7 @@ export const imageUploadHandler = defineWriteHandler({
     if (actor) await ctx.snapshot(actor.uuid);
     if (scene) await ctx.snapshot(scene.uuid);
 
-    const sha256 = await sha256Hex(bytes);
+    const sha256 = sha256Bytes(bytes);
     const fp = resolveFilePicker();
     const dir = await ensureDirectories(fp, user.id);
     if ((await usedBytes(fp, dir)) + bytes.length > IMAGE_UPLOAD_USER_QUOTA_BYTES)

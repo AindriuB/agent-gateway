@@ -19,6 +19,7 @@ export interface RegistryEntry {
   inputSchema: JsonSchemaObject;
   outputSchema: JsonSchemaObject;
   origin: ToolOrigin;
+  redactArgs?: readonly string[];
   parseArgs(args: unknown): ParsedArgs;
   handler: OpHandler;
 }
@@ -91,7 +92,16 @@ export class ToolRegistry {
         throw new RegistryError('INVALID', `Tool "${name}": ${problems.join('; ')}`);
       // JSON copies isolate metadata from the caller and exclude callable values at every depth.
       const info = JSON.parse(
-        JSON.stringify({ name, category, minRole, description, inputSchema, outputSchema, origin }),
+        JSON.stringify({
+          name,
+          category,
+          minRole,
+          description,
+          inputSchema,
+          outputSchema,
+          origin,
+          ...(origin === 'core' && entry.redactArgs ? { redactArgs: entry.redactArgs } : {}),
+        }),
       ) as ToolInfo;
       pending.set(name, freezeJson(info));
     }

@@ -126,12 +126,29 @@ describe('image_upload storage', () => {
     const r = await call({ data: b64(JPEG), mime: 'image/jpeg' });
     expect(r.structured.path).toMatch(/\.jpg$/);
   });
-  it('refuses when the per-user quota would be exceeded', async () => {
-    existing = ['agent-gateway/uploads/p1/aa-524288.png', ...Array(15).fill('x/bb-524288.png')];
+  it('allows an upload that fits under 64 MiB but would have exceeded 8 MiB', async () => {
+    existing = Array(16).fill('x/bb-524288.png');
+    const r = await call(args());
+    expect(r.error).toBeUndefined();
+    expect(fp.upload).toHaveBeenCalledTimes(1);
+  });
+  it('refuses when the per-user quota of 64 MiB would be exceeded', async () => {
+    existing = Array(128).fill('x/bb-524288.png');
     const r = await call(args());
     expect(r.error?.code).toBe('INVALID_ARGS');
     expect(r.error.message).toContain('quota');
     expect(fp.upload).not.toHaveBeenCalled();
+  });
+  it('counts a file whose name does not parse at the per-file cap', async () => {
+    existing = Array(128).fill('x/odd.png');
+    expect((await call(args())).error?.code).toBe('INVALID_ARGS');
+  });
+  it('reports the same SHA-256 the approval and audit show', async () => {
+    const { redactedArgs } = await import('../../../src/ops/redact.js');
+    const { imageUpload } = await import('@agent-gateway/protocol');
+    const a = args();
+    const shown = redactedArgs(imageUpload, a) as any;
+    expect((await call(a)).structured.sha256).toBe(shown.data.sha256);
   });
   it('fails when Foundry reports a failed upload', async () => {
     for (const bad of [false, undefined, {}]) {
