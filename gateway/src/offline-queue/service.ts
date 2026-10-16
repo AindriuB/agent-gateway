@@ -5,23 +5,47 @@ import {
   TOOL_NAME_PATTERN,
   TOOLS,
   toJsonSchema,
+  sniffImage,
   type LinkMessage,
 } from '@agent-gateway/protocol';
 import type { Store } from '../store/store.js';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/registry.js';
 import { toolsets, type ToolsetStore } from '../routing/toolsets.js';
-import { QUEUE_CONFIG, type QueueOwner } from './repository.js';
+import { QUEUE_CONFIG, hashArgs, type QueueOwner } from './repository.js';
+const IMAGE_SCAN_LIMIT = 1_000_000;
+/** True when any string in the arguments is a data URL or base64 text that sniffs as an image. */
+function carriesImage(v: unknown, budget = { n: IMAGE_SCAN_LIMIT }): boolean {
+  if (typeof v === 'string') {
+    budget.n -= v.length;
+    if (/^data:image\//i.test(v)) return true;
+    return v.length >= 16 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(v.slice(0, 64))
+      ? sniffImage(Buffer.from(v.slice(0, 64), 'base64')) !== null
+      : false;
+  }
+  if (budget.n < 0) return true;
+  if (Array.isArray(v)) return v.some((x) => carriesImage(x, budget));
+  if (v && typeof v === 'object') return Object.values(v).some((x) => carriesImage(x, budget));
+  return false;
+}
 export class OfflineQueue {
   private timer: ReturnType<typeof setInterval>;
   private readonly changed: (c: LinkConnection) => void;
   private readonly disconnected: (c: LinkConnection) => void;
   private readonly offRevoked: () => void;
+  /** Connections whose module has sent its post-hello approval list (protocol 7.2.0). */
+  private readonly capableIds = new Set<string>();
   constructor(
     private store: Store,
     private registry: LinkRegistry,
     private sets: ToolsetStore = toolsets,
     private now: () => number = Date.now,
   ) {
+    try {
+      store.queue.orphanLive(now());
+      store.queue.expireOrphans(now());
+    } catch {
+      /* The sweep below still fails closed. */
+    }
     store.queue.recover(now());
     this.changed = (c) => {
       if (!this.current(c)) return;
@@ -35,6 +59,7 @@ export class OfflineQueue {
       }
     };
     this.disconnected = (c) => {
+      this.capableIds.delete(c.id);
       try {
         store.queue.disconnected(c.id, now());
       } catch {
@@ -52,12 +77,20 @@ export class OfflineQueue {
     });
     this.timer = setInterval(() => {
       try {
-        store.queue.cleanup(now());
+        this.sweep();
       } catch {
         /* Admission/read remains fail-closed on storage failure. */
       }
     }, QUEUE_CONFIG.cleanupMs);
     this.timer.unref();
+  }
+  /** Expire overdue orphans before the general cleanup would mark them `unknown`. */
+  private sweep() {
+    this.store.queue.expireOrphans(this.now());
+    this.store.queue.cleanup(this.now());
+  }
+  capable(c: LinkConnection) {
+    return this.capableIds.has(c.id);
   }
   private current(c: LinkConnection) {
     return (
@@ -86,9 +119,8 @@ export class OfflineQueue {
       throw new LinkCallError('FORBIDDEN', 'Choose an exact unambiguous active pairing');
     return { ...pair, agentId: rows[0]!.id };
   }
-  enqueue(owner: QueueOwner, sessionId: string, name: string, args: unknown, signal?: AbortSignal) {
-    if (signal?.aborted) throw new LinkCallError('INTERNAL', 'Request aborted before queue commit');
-    this.owner(owner, owner);
+  /** The queue's own admission checks, shared by the offline enqueue and the live mirror. */
+  private admit(owner: QueueOwner, name: string, args: unknown) {
     const def = this.store.queue.catalog(owner)?.find((t) => t.name === name);
     if (!def || def.category === 'read')
       throw new LinkCallError('FORBIDDEN', 'No validated offline write catalog for this tool');
@@ -126,25 +158,68 @@ export class OfflineQueue {
         'INVALID_ARGS',
         'Invalid queued arguments: ' + parsed.issues.map((i) => i.message).join('; '),
       );
-    return this.store.queue.enqueue(
-      owner,
-      sessionId,
-      def,
-      parsed.value as Record<string, unknown>,
-      this.now(),
-    );
+    return { def, value: parsed.value as Record<string, unknown> };
+  }
+  enqueue(owner: QueueOwner, sessionId: string, name: string, args: unknown, signal?: AbortSignal) {
+    if (signal?.aborted) throw new LinkCallError('INTERNAL', 'Request aborted before queue commit');
+    this.owner(owner, owner);
+    const { def, value } = this.admit(owner, name, args);
+    // An orphaned or requeued mirrored approval for this very call is still open: reuse it.
+    this.sweep();
+    const open = this.store.queue.findOpenAlias(owner, name, hashArgs(JSON.stringify(value)));
+    if (open) return open;
+    return this.store.queue.enqueue(owner, sessionId, def, value, this.now());
+  }
+  /**
+   * Mirror a live `pending_approval` so it can outlive the requester's tab. Only for a capable
+   * connection; skipped, never failing the call, when the queue would not have admitted the call,
+   * when the tool carries file data, or when the arguments hold image bytes.
+   */
+  recordLive(c: LinkConnection, sessionId: string, name: string, args: unknown, alias: string) {
+    if (!this.capable(c) || !alias || alias.length > 64) return undefined;
+    try {
+      const owner: QueueOwner = { worldId: c.worldId, userId: c.userId, agentId: c.agentId };
+      if (!this.store.isPairingActive(c.agentId, c.worldId, c.userId)) return undefined;
+      const { def, value } = this.admit(owner, name, args);
+      if (carriesImage(value)) return undefined;
+      const live = !c.closed && this.registry.get(c.worldId, c.userId) === c;
+      return this.store.queue.insertAlias(
+        owner,
+        sessionId,
+        def,
+        value,
+        alias,
+        live ? c.id : null,
+        this.now(),
+      );
+    } catch {
+      return undefined;
+    }
+  }
+  /** The module's `approvalState` frame: a transition, or the pending list after a hello. */
+  approvalState(c: LinkConnection, msg: Extract<LinkMessage, { type: 'approvalState' }>) {
+    if (!this.current(c)) throw new LinkCallError('FORBIDDEN', 'Stale approval state connection');
+    const owner: QueueOwner = { worldId: c.worldId, userId: c.userId, agentId: c.agentId };
+    if (msg.ids) {
+      this.capableIds.add(c.id);
+      this.store.queue.expireOrphans(this.now());
+      this.store.queue.reconcile(owner, c.id, new Set(msg.ids), this.now());
+      this.deliver(c);
+    } else if (this.capableIds.has(c.id) && msg.id && msg.state) {
+      this.store.queue.report(owner, c.id, msg.id, msg.state, this.now());
+    }
   }
   isRead(owner: QueueOwner, name: string) {
     return this.store.queue.catalog(owner)?.find((t) => t.name === name)?.category === 'read';
   }
   status(owner: QueueOwner, id: string) {
     this.owner(owner, owner);
-    this.store.queue.cleanup(this.now());
-    return this.store.queue.get(owner, id);
+    this.sweep();
+    return this.store.queue.get(owner, id) ?? this.store.queue.getByAlias(owner, id);
   }
   deliver(c: LinkConnection) {
     if (!this.current(c)) return;
-    this.store.queue.cleanup(this.now());
+    this.sweep();
     const catalog = this.sets.catalog(c);
     if (!catalog) return;
     const calls = [];

@@ -519,6 +519,14 @@ export class LinkServer {
             ws.close(1008, 'invalid queued receipt');
           }
           break;
+        case 'approvalState':
+          try {
+            this.opts.queue?.approvalState(conn, msg);
+          } catch {
+            this.opts.registry.remove(conn);
+            ws.close(1008, 'invalid approval state');
+          }
+          break;
         case 'listGrants':
         case 'revokeGrant':
           // A replaced connection must not act for the user any more.

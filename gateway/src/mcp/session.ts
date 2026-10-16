@@ -433,11 +433,15 @@ export function createSessionServer(opts: SessionServerOptions): Server {
             .find((t) => t.name === 'approval_status')!
             .input.safeParse(req.params.arguments ?? {});
           if (!id.success) return failure('INVALID_ARGS', 'Invalid approval id');
-          const row = opts.queue.status(queueOwner, (id.data as { id: string }).id);
-          if (row) {
-            const status = row.state === 'claimed' ? 'unknown' : row.state;
+          const asked = (id.data as { id: string }).id;
+          const row = opts.queue.status(queueOwner, asked);
+          // A mirrored approval still attached to its live requester is answered by the module.
+          if (row && !(row.approval_alias !== null && row.orphaned_at === null)) {
+            // An orphan (task 112) is pending in the table but waiting for its user to return.
+            const orphan = row.state === 'pending' && row.connection_id === null;
+            const status = orphan ? 'queued' : row.state === 'claimed' ? 'unknown' : row.state;
             const result = {
-              id: row.id,
+              id: row.approval_alias === asked ? asked : row.id,
               status,
               ...(row.result ? { result: row.result } : {}),
               ...(status === 'approved' && row.result_failed !== null
@@ -481,7 +485,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
                 text: `World offline: queued for ${queuedFor(r.pair)}. ${queuedNext(r.pair)} Check it with approval_status.`,
               },
             ],
-            structuredContent: { status: 'pending_approval', id: row.id },
+            structuredContent: { status: 'pending_approval', id: row.approval_alias ?? row.id },
           };
         }
       } catch (e) {
@@ -517,6 +521,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
       return failure('INVALID_ARGS', issues.map((i) => `${i.path}: ${i.message}`).join('; '));
     }
     const args = parsed?.success ? parsed.data : packParsed?.ok ? packParsed.value : {};
+    const capable = !!opts.queue?.capable(conn);
     try {
       const res = await opts.registry.call(
         conn,
@@ -529,6 +534,8 @@ export function createSessionServer(opts: SessionServerOptions): Server {
         res.structured !== null && typeof res.structured === 'object'
           ? (res.structured as Record<string, unknown>)
           : undefined;
+      if (capable && structured?.status === 'pending_approval' && typeof structured.id === 'string')
+        opts.queue?.recordLive(conn, sessionId, tool.name, args, structured.id);
       if (res.images && res.images.length > 0) {
         // Re-check what the module sent: the bytes must be the image type they claim.
         for (const img of res.images) {

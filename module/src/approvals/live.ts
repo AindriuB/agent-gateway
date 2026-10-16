@@ -75,10 +75,14 @@ export function startApprovals(): void {
   Hooks.on?.('userConnected', (user: any, connected: boolean) => {
     if (connected && typeof user?.id === 'string') m.representTo(user.id);
   });
+  m.onApprovalState((msg) => getLinkClient().sendApprovalState?.(msg));
   let wasConnected = false;
   getLinkClient().onState?.((s) => {
     const now = s.kind === 'connected';
-    if (now && !wasConnected) m.representAll();
+    if (now && !wasConnected) {
+      m.representAll();
+      getLinkClient().sendApprovalState?.({ ids: m.pendingApprovalIds() });
+    }
     if (!now && wasConnected) m.linkDropped();
     wasConnected = now;
   });

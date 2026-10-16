@@ -372,6 +372,16 @@ export class LinkClient {
   sendEventPolicy(policy: { enabled: boolean; retentionDays: number }): void {
     if (this._state.kind === 'connected') this.sendMessage({ type: 'eventPolicy', ...policy });
   }
+  /**
+   * Mirror an approval transition, or the still-pending list after `welcome`, to the gateway
+   * (task 112). Dropped, never sent, to a gateway older than protocol 7.2.0.
+   */
+  sendApprovalState(
+    msg: { id: string; state: 'pending' | 'approved' | 'denied' | 'expired' } | { ids: string[] },
+  ): void {
+    if (this._state.kind !== 'connected' || !protocolAtLeast(this.gatewayProtocol, '7.2.0')) return;
+    this.sendMessage({ type: 'approvalState', ...msg });
+  }
   private eventResume:
     | {
         url: string;

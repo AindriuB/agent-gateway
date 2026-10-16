@@ -1,6 +1,6 @@
 import { actionCategory, effectiveCategory } from '../ops/context.js';
 import { isOpError, replayOf, type DispatchResult, type OpContext } from '../ops/types.js';
-import type { ToolDefinition } from '@agent-gateway/protocol';
+import { MAX_APPROVAL_STATE_IDS, type ToolDefinition } from '@agent-gateway/protocol';
 import { liveToolMetadata as toolRegistry } from '../ops/registry-class.js';
 import { redactedArgs } from '../ops/redact.js';
 import { callHash } from './canonical.js';
@@ -15,6 +15,11 @@ import type {
   InboxEntry,
   ResolveOptions,
 } from './types.js';
+
+export type ApprovalStateReport = {
+  id: string;
+  state: 'pending' | 'approved' | 'denied' | 'expired';
+};
 
 export const HOOK_REQUESTED = 'agentGateway.approvalRequested';
 export const HOOK_RESOLVED = 'agentGateway.approvalResolved';
@@ -66,6 +71,9 @@ export class ApprovalManager {
   private answered = new Map<string, { requesterId: string; until: number; announced: string }>();
   private grants = new Map<string, ApproverClass>();
   private loadedFor: string | undefined;
+  /** Ids of records created in this page session (never loaded from storage, never a replay). */
+  private mirrored = new Set<string>();
+  private stateSink?: (msg: ApprovalStateReport) => void;
 
   constructor(
     private env: ApprovalEnv,
@@ -444,6 +452,7 @@ export class ApprovalManager {
       status: 'pending',
     };
     this.records.set(record.id, record);
+    if (!record.replay) this.mirrored.add(record.id);
     this.scheduleExpiry(record);
     this.persist();
 
@@ -592,7 +601,29 @@ export class ApprovalManager {
     return true;
   }
 
+  /** Where to mirror transitions of this session's own records (the gateway link). */
+  onApprovalState(sink: ((msg: ApprovalStateReport) => void) | undefined): void {
+    this.stateSink = sink;
+  }
+
+  /** This session's records still pending, newest first, for the list sent after each welcome. */
+  pendingApprovalIds(): string[] {
+    this.expireDue();
+    return [...this.records.values()]
+      .filter((r) => r.status === 'pending' && this.mirrored.has(r.id))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, MAX_APPROVAL_STATE_IDS)
+      .map((r) => r.id);
+  }
+
   private announceResolved(r: ApprovalRecord): void {
+    if (this.mirrored.delete(r.id) && r.status !== 'pending') {
+      try {
+        this.stateSink?.({ id: r.id, state: r.status });
+      } catch {
+        // Mirroring is best effort and must never break the approval flow.
+      }
+    }
     this.env.callHook(HOOK_RESOLVED, {
       id: r.id,
       status: r.status,
