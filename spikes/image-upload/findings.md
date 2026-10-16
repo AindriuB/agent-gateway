@@ -8,18 +8,18 @@ Versions: `@modelcontextprotocol/sdk` 1.32.1 (as installed), repo at main f68d9e
 
 ## Part A. Answered without Foundry
 
-### MCP image content (for 104, 105)
+### MCP image content (for 122, 123)
 - The SDK defines `ImageContentSchema` in `dist/esm/types.d.ts`: `{ type: 'image', data: string, mimeType: string, annotations?, _meta? }`. `data` is base64.
 - `CallToolResult.content` accepts a mix of text and image blocks. `structuredContent` may accompany them.
 - `McpServer.validateToolOutput` (server/mcp.js) checks only `structuredContent` against `outputSchema`, and skips the check when `isError` is true. If the tool has an `outputSchema`, `structuredContent` is mandatory for non-error results; image blocks are not validated against it. So image content plus `structuredContent` plus `outputSchema` is legal; `structuredContent` must match the schema and must not repeat the base64.
-- Today `gateway/src/mcp/session.ts:503-515` emits one text block and optional `structuredContent`. 104 must add an image block there. `failure()` deliberately omits `structuredContent`; keep that.
+- Today `gateway/src/mcp/session.ts:503-515` emits one text block and optional `structuredContent`. 122 must add an image block there. `failure()` deliberately omits `structuredContent`; keep that.
 
-### Frame arithmetic (for 53, 104, 105)
+### Frame arithmetic (for 53, 122, 123)
 Measured by serialising the real envelope shape (36-char ids) and searching for the largest base64 string with `Buffer.byteLength <= MAX_FRAME_BYTES (1,048,576)`:
 - `call` frame with `{ name, data }` args: at most 1,048,410 base64 chars, which is 786,306 raw bytes (about 768 KiB). Extra args shrink this; budget 2 KiB of envelope.
 - `result` frame carrying one image inside `structured`: 1,048,217 base64 chars, 786,162 raw bytes.
 - A 700 KiB raw file is 955,736 base64 chars, which fits a call frame with about 92 KB spare. The "~700 KiB" assumption holds, with about 68 KiB of raw headroom.
-- `ResultMessage` (protocol/src/link/messages.ts:74-80) has only `text` and `structured`. There is no image field, so 104 must either add one (protocol change, bump the link version) or tunnel the base64 in `structured`. `TOOL_LIMITS.resultStructuredBytes` (64 KiB) would reject it today and must be raised for the image tools only.
+- `ResultMessage` (protocol/src/link/messages.ts:74-80) has only `text` and `structured`. There is no image field, so 122 must either add one (protocol change, bump the link version) or tunnel the base64 in `structured`. `TOOL_LIMITS.resultStructuredBytes` (64 KiB) would reject it today and must be raised for the image tools only.
 - An over-limit frame is not a per-call failure: `maxPayload` on the WebSocketServer closes the link (server.ts:215), and `parseLinkMessage` returns `oversize`. Tools must refuse before sending.
 - Relay: `MAX_RELAY_LINE_BYTES` is 4 MiB, and one JSON-RPC line holds the whole result. A 1 MiB frame passes with room to spare (base64 expands by 4/3 only once on the way). Stdio and HTTP have no frame cap in this repo. Not exercised live.
 
@@ -34,7 +34,7 @@ Measured by serialising the real envelope shape (36-char ids) and searching for 
 - Audit result summary keeps only the first text line (stage.ts:254): put the destination path on the first line.
 
 ### MCP clients (docs only; none run live)
-No client was run. The values below are what I recall from vendor documentation and are UNVERIFIED; they have not been cited from live sources because no web access was used. They must be confirmed before 105 fixes its cap.
+No client was run. The values below are what I recall from vendor documentation and are UNVERIFIED; they have not been cited from live sources because no web access was used. They must be confirmed before 123 fixes its cap.
 
 | Client | Image in tool result reaches model | Limits |
 | --- | --- | --- |
