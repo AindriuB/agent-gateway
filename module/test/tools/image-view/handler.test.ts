@@ -3,7 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_FRAME_BYTES, ResultMessage } from '@agent-gateway/protocol/link';
 import { imageViewHandler, MAX_IMAGE_BYTES } from '../../../src/tools/image-view.js';
 
-afterEach(() => vi.unstubAllGlobals());
+const folders = vi.hoisted(() => ({ gmAgents: [] as string[], playerAgents: [] as string[] }));
+vi.mock('../../../src/policy/snapshot.js', () => ({ readWorldSnapshot: () => ({ folders }) }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  folders.gmAgents = [];
+  folders.playerAgents = [];
+});
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const SVG = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
@@ -196,6 +203,75 @@ describe('image_view handler: probing', () => {
     expect(b).toEqual(a);
     expect(c).toEqual(a);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('image_view handler: folder allowlist', () => {
+  const inFolder = (id: string) => ({ folder: { id } });
+  const world = (actorFolder?: string, sceneFolder?: string) => ({
+    'Actor.a': doc({ limited: true, ...(actorFolder ? inFolder(actorFolder) : {}) }),
+    'Scene.s': {
+      documentName: 'Scene',
+      background: { src: 'maps/m.png' },
+      testUserPermission: () => true,
+      ...(sceneFolder ? inFolder(sceneFolder) : {}),
+    },
+    'Scene.s.Token.k': {
+      documentName: 'Token',
+      texture: { src: 'tok/k.png' },
+      parent: {
+        testUserPermission: () => true,
+        ...(sceneFolder ? inFolder(sceneFolder) : {}),
+      },
+    },
+  });
+  const cases: Array<[string, any, string]> = [
+    ['actor_portrait', { uuid: 'Actor.a' }, 'actor'],
+    ['actor_token', { uuid: 'Actor.a' }, 'actor'],
+    ['scene_background', { uuid: 'Scene.s' }, 'scene'],
+    ['token', { uuid: 'Scene.s.Token.k' }, 'scene'],
+  ];
+  for (const [cls, user] of [
+    ['playerAgents', player],
+    ['gmAgents', gm],
+  ] as const) {
+    describe(cls, () => {
+      it.each(cases)(
+        'refuses %s outside the allowlist, identically to a missing uuid',
+        async (source, extra, which) => {
+          folders[cls] = ['ok'];
+          const { fetchMock } = install(user, {
+            docs: world(which === 'actor' ? 'other' : 'ok', which === 'scene' ? 'other' : 'ok'),
+          });
+          const r = await run({ source, ...extra }, user);
+          const missing = await run({ source, uuid: 'Nope.x' }, user);
+          expect(r.error.code).toBe('FORBIDDEN');
+          expect(r).toEqual(missing);
+          expect(fetchMock).not.toHaveBeenCalled();
+        },
+      );
+      it.each(cases)('allows %s inside the allowlist', async (source, extra) => {
+        folders[cls] = ['ok'];
+        const { fetchMock } = install(user, { docs: world('ok', 'ok') });
+        const r = await run({ source, ...extra }, user);
+        expect(r.images).toHaveLength(1);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      });
+      it.each(cases)(
+        'treats an empty allowlist as no restriction for %s',
+        async (source, extra) => {
+          const { fetchMock } = install(user, { docs: world('any', 'any') });
+          const r = await run({ source, ...extra }, user);
+          expect(r.images).toHaveLength(1);
+          expect(fetchMock).toHaveBeenCalledTimes(1);
+        },
+      );
+    });
+  }
+  it('does not apply the allowlist to file sources', async () => {
+    folders.gmAgents = ['ok'];
+    install(gm);
+    expect((await run({ source: 'file', path: 'a.png' }, gm)).images).toHaveLength(1);
   });
 });
 

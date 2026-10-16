@@ -2,6 +2,7 @@
 import { isImagePath, normalizeDataPath, sniffImage } from '@agent-gateway/protocol';
 import { fromUuidCompat } from '../compat/index.js';
 import type { OpHandler } from '../ops/types.js';
+import { folderAllowed } from '../policy/folders.js';
 import { inlineText } from '../serialise/index.js';
 import { WriteError, forbid, invalid, trustedUser } from './_write.js';
 
@@ -13,8 +14,11 @@ export const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 export const MAX_LONG_EDGE = 1568;
 const JPEG_QUALITY = 0.85;
 
+/** The root world document must be inside the agent class's folder allowlist, GMs included. */
 const canSee = (doc: any, user: any): boolean =>
-  user.isGM === true || doc?.testUserPermission?.(user, 'LIMITED') === true;
+  doc != null &&
+  folderAllowed(doc, user.isGM === true) &&
+  (user.isGM === true || doc?.testUserPermission?.(user, 'LIMITED') === true);
 
 const REFUSED = 'You cannot view this image';
 
