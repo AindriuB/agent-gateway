@@ -33,19 +33,21 @@ building and pushing the GHCR image exactly as today.
 
 ## Acceptance
 
-- [ ] `on:` has `pull_request` with `branches: [main]`, the existing `push: tags: ['v*']`, and
-      `workflow_dispatch`. Whether `push: branches: [main]` is also added follows Andrew's answer
-      below; until then it is not added.
+- [ ] `on:` has exactly these triggers (decided, owner 2026-10-16): `pull_request` with
+      `branches: [main]` (forks included), `push` with `branches: [main]` and `tags: ['v*']`, and
+      the existing `workflow_dispatch`. The test asserts this exact set.
 - [ ] No `pull_request_target`, `workflow_run`, `issue_comment` or `schedule` trigger
       (test asserts each is absent).
 - [ ] Top-level `permissions: contents: read` unchanged; the `test` job declares no permissions and
       uses no `secrets.` reference; `rg -n 'secrets\.' .github/workflows/ci.yml` shows only the
       image job's `GITHUB_TOKEN` login.
-- [ ] The `image` job's `if:` is unchanged, so it is skipped for `pull_request` and
-      `workflow_dispatch` (test asserts the exact condition string).
+- [ ] The `image` job's `if:` is unchanged, so it stays tag-only: it is skipped for
+      `pull_request`, for `push` to `main` and for `workflow_dispatch` (test asserts the exact
+      condition string `github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')`).
 - [ ] `actions/checkout` in the `test` job sets `persist-credentials: false`.
 - [ ] A `concurrency` group keyed on the workflow and PR number (or ref) with
-      `cancel-in-progress: true` for pull requests only, so tag builds are never cancelled.
+      `cancel-in-progress: true` for pull requests only, so tag builds and `main` pushes are never
+      cancelled.
 - [ ] ci-workflow.test.mjs is updated to assert the new trigger set, the forbidden triggers, the
       secret-free test job, the persist-credentials setting and the unchanged image gate; its
       other assertions still pass unchanged.
@@ -61,4 +63,6 @@ building and pushing the GHCR image exactly as today.
 
 ## Owner questions
 
-- Also run CI on every push to `main` (a check on the merged result), or PRs and tags only?
+- CI triggers — Decided (owner, 2026-10-16): run on pull requests (forks included, no secrets,
+  never `pull_request_target`), on push to `main`, and on `v*` tags. The image job stays
+  tag-only.

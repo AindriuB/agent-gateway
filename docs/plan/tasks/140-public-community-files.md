@@ -50,9 +50,8 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
 - [ ] SECURITY.md exists. It says vulnerabilities are reported through GitHub private
       vulnerability reporting ("Report a vulnerability" on the repo's Security tab, with the
       `https://github.com/AindriuB/agent-gateway/security/advisories/new` URL), never in a public
-      issue, PR or discussion. It has a "Supported versions" table. Until Andrew answers the open
-      question below, the table lists `0.4.x` as supported and `< 0.4` as not supported, and the
-      PR description flags it. It states what to include (affected component: module, gateway,
+      issue, PR or discussion. It has a "Supported versions" table listing `0.4.x` as supported and `< 0.4` as
+      not supported (decided, owner 2026-10-16: latest minor only). It states what to include (affected component: module, gateway,
       plugin or Docker image; version; reproduction) and links `docs/security.md` for the threat
       model. It contains no email address and no personal name.
 - [ ] CODE_OF_CONDUCT.md exists, written in the implementer's own words (no sentence copied from
@@ -66,9 +65,11 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
       4. an AI agent driving Foundry through this project must not be used to extract, bulk-copy
          or redistribute licensed content (compendium packs, premium module content, paid art);
       5. ordinary conduct rules: respectful, no harassment, no personal data of others.
-      It names enforcement steps and says reports go through GitHub (a private vulnerability
-      advisory is not the channel for conduct; use GitHub's "Report content" or a maintainer
-      contact on GitHub — pick one, and name it). No email address.
+      It names enforcement steps and says conduct reports go through GitHub's "Report content"
+      feature or to the maintainer handle `@AindriuB` on GitHub (decided, owner 2026-10-16); it
+      says a private vulnerability advisory is not the channel for conduct. No email address
+      (`rg -n '@AindriuB' CODE_OF_CONDUCT.md` finds the handle; `rg -n 'Report content'
+      CODE_OF_CONDUCT.md` finds the feature).
 - [ ] The PR description lists the foundryvtt.com policy pages this was grounded in (at least the
       package development / submission rules, the software licence or EULA, and the community
       rules), each with its URL and the date it was read. The URLs do not appear in
@@ -99,14 +100,16 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
 - [ ] `.github/pull_request_template.md` asks for what and why, how it was tested, `npm run verify`
       result, and Foundry versions tried, with checkboxes for "no copyrighted content added" and
       "no secrets or personal paths".
+- [ ] No `.github/FUNDING.yml` is added (decided, owner 2026-10-16): `test ! -e .github/FUNDING.yml`
+      succeeds after the change.
 - [ ] No file in this task contains `Andrew`, `aindriub.app`, `homelab`, `/Users/`, `/home/` or an
       email address (`rg -n -i 'andrew|aindriub\.app|homelab|/Users/|/home/|@[a-z0-9-]+\.[a-z]' SECURITY.md CODE_OF_CONDUCT.md CONTRIBUTING.md CHANGELOG.md .github/ISSUE_TEMPLATE .github/pull_request_template.md` prints nothing).
 - [ ] `npm run verify` exits 0.
 
 ## Out of scope
 
-- `.github/workflows/ci.yml` (task 145) and `.github/FUNDING.yml` (an owner question; not added
-  here).
+- `.github/workflows/ci.yml` (task 145) and `.github/FUNDING.yml` (decided, owner 2026-10-16: not
+  added at all).
 - README.md (task 142) and every file under `docs/` (tasks 143 and 146), including adding the
   CHANGELOG step to docs/releasing.md.
 - Moving or editing `docs/conventions.md`, PROJECT.md, CLAUDE.md, AGENTS.md (task 147).
@@ -115,10 +118,11 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
 
 ## Owner questions
 
-- Supported versions in SECURITY.md: only the latest minor (`0.4.x`), or also the previous one?
-- Funding links (43 Amendment 1 deferred them to going public; a `.github/FUNDING.yml` existed
-  early in history and was removed): add one, and with which platform?
-- Conduct enforcement contact: GitHub "Report content" only, or a named maintainer handle?
+- Supported versions in SECURITY.md — Decided (owner, 2026-10-16): only the latest minor,
+  `0.4.x`; `< 0.4` is not supported.
+- Funding links — Decided (owner, 2026-10-16): no `.github/FUNDING.yml` is added.
+- Conduct enforcement contact — Decided (owner, 2026-10-16): GitHub "Report content" plus the
+  maintainer handle `@AindriuB`.
 
 ## Scribe items
 

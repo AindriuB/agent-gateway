@@ -63,11 +63,11 @@ in at build time.
 
 - [ ] `rg -n -i "andrew|aindriub\.app|private marketplace|private repo" plugins .claude-plugin module.json gateway/mcpb/manifest.json package.json gateway/package.json module/package.json protocol/package.json`
       prints nothing.
-- [ ] Claude plugin `.mcp.json` URL is `${AGENT_GATEWAY_URL}/mcp` with a non-routable placeholder
-      default, `${AGENT_GATEWAY_URL:-https://gateway.example.invalid}/mcp` (or another
-      `.invalid`/`example` host, stated in the PR), and docs/claude-plugin.md says the user must set
+- [ ] Claude plugin `.mcp.json` URL is `${AGENT_GATEWAY_URL}/mcp` with the placeholder default
+      `${AGENT_GATEWAY_URL:-https://gateway.example.invalid}/mcp` exactly (host decided, owner
+      2026-10-16), and docs/claude-plugin.md says the user must set
       `AGENT_GATEWAY_URL` to their gateway's public URL before `/mcp`.
-- [ ] ChatGPT plugin `mcp.json` URL is the same placeholder host with path `/mcp`, and the package
+- [ ] ChatGPT plugin `mcp.json` URL is exactly `https://gateway.example.invalid/mcp`, and the package
       validator still accepts it (https, `/mcp`, no credentials, query or fragment).
 - [ ] `scripts/build-claude-plugin.mjs` gains `--gateway-url <https-url>`, validated like
       `--base-url`. When given, the staged `.mcp.json` inside the zip has the URL
@@ -82,8 +82,9 @@ in at build time.
       (`https://gw.example.org`), and docs/claude-plugin.md gives the exact aindriub commands under a
       "Hosted build" heading.
 - [ ] The hosted marketplace's `owner.name` is "AindriuB" and its description says "Hosted
-      marketplace…"; its `name` stays `aindriub-dl` so existing users' marketplace entries keep
-      working (unless Andrew answers the question below otherwise).
+      marketplace…"; its `name` stays exactly `aindriub-dl` (decided, owner 2026-10-16) so existing users'
+      marketplace entries keep working; a test asserts the built marketplace name is
+      `aindriub-dl`.
 - [ ] Every `author`/`owner`/`authors` name in the owned manifests is "AindriuB"
       (`rg -n '"name": "AindriuB"'` finds one per file). plugin.json descriptions say "your Foundry
       VTT gateway" and no longer name a host.
@@ -107,9 +108,10 @@ in at build time.
 - Rebuilding or re-uploading anything on dl.aindriub.app: an owner action after merge.
 - Plugin behaviour, skills content beyond the wording above, OAuth settings.
 - module.json `documentTypes`, `version`, `manifest`, `download`.
+- Renaming the hosted marketplace (decided against, owner 2026-10-16).
 
 ## Owner questions
 
-- Rename the hosted Claude marketplace from `aindriub-dl` to something neutral? Renaming breaks
-  existing `/plugin marketplace add` entries, so the default here is to keep it.
-- The placeholder host: `gateway.example.invalid` is the proposal; confirm or name another.
+- Hosted Claude marketplace name — Decided (owner, 2026-10-16): keep `aindriub-dl`; renaming
+  would break existing `/plugin marketplace add` installs.
+- Placeholder gateway host — Decided (owner, 2026-10-16): `gateway.example.invalid`.
