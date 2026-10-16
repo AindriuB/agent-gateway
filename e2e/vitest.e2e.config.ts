@@ -32,6 +32,7 @@ export default defineConfig({
           root: import.meta.dirname,
           include: [
             'read/**/*.e2e.test.ts',
+            'image-view/**/*.e2e.test.ts',
             'multi/**/*.e2e.test.ts',
             'takeover/**/*.e2e.test.ts',
             'vouch/**/*.e2e.test.ts',

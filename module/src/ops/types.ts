@@ -35,7 +35,7 @@ export interface OpContext {
 
 export interface OpResult {
   text: string;
-  structured: Record<string, unknown>;
+  structured?: Record<string, unknown>;
   /** At most one image, carried to the MCP client; never logged or audited. */
   images?: ResultImage[];
 }
