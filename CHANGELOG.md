@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 ### Added
 
 - `image_upload` tool: an agent can upload an image into the world's Data folder, with a size quota, an approval step that does not show the raw image data, and a folder allowlist.
+- `image_view` tool: an agent can look at an image from the world, downscaled, subject to the same visibility checks and folder allowlist.
 - `image_assign` tool: list existing Data images and set them on actors, tokens, items and scene backgrounds, with Undo for each target and the same folder allowlist.
 - Image content now travels from module tool results through the gateway to MCP clients.
 - Gateway protocol 7.1.0.
@@ -37,7 +38,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 - GM-vouched pairing: a player invite is completed once an admin GM confirms who the player is.
 - Operator commands `--invite --admin`, `--gm` and `--demote` for pairing without a vouch.
-- Admin GMs can create, list and cancel player invites from inside Foundry.
+- The gateway accepts invite create, list and cancel requests from an admin GM's link (the window for this arrived in 0.3.0).
 - Fixes the "too many sessions" errors for remote MCP clients by evicting idle sessions at the cap.
 
 ### 0.1.1

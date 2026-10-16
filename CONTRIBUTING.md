@@ -14,7 +14,7 @@ npm run test:slow
 npm run verify
 ```
 
-`npm run verify` is the gate. It builds, lints, runs the fast and slow test suites, then the script tests. A change is ready when `npm run verify` passes. Run `npm ci` in a fresh checkout first, otherwise `@agent-gateway/protocol` may resolve from a stale build and fail with unrelated TypeScript errors.
+`npm run verify` is the gate. It builds, lints, runs the fast and slow test suites, then the script tests. A change is ready when `npm run verify` passes. Run `npm ci` first.
 
 ## Tests
 
@@ -27,7 +27,7 @@ The live end-to-end tests need a running Foundry instance and are not required f
 ## Layout
 
 - `protocol/src/link/` link messages; `protocol/src/tools/` tool schemas (zod), re-exported from `index.ts`.
-- `module/src/` the Foundry module: `main.ts`, `tools/`, `ops/`, `settings/`, `adapters/` (game system adapters), `ui/`.
+- `module/src/` the Foundry module: `main.ts`, `tools/`, `ops/`, `settings/`, `adapters/` (game system adapters), `apps/` (application windows).
 - `gateway/src/` the Node gateway: `bin/cli.ts`, `store/` (with `migrations/`), transport, auth and the headless runner.
 - Root: `module.json`, `lang/en.json`, `styles/agent-gateway.css`, `templates/`, and `dist/module/main.js` (build output).
 
