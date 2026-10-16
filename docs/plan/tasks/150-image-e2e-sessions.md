@@ -118,3 +118,11 @@ image-view's four fixture variables with temporary fixtures the suite creates an
 - The image tools themselves (module/**, gateway/**, protocol/**) and their test assertions,
   apart from moving a read-back from a gateway call to the GM page as described above.
 - Task 149 (image_assign folder allowlist) and the docs scrub tasks 146-148.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 186d513649fe1c9110d1bc5996d3ee840b3721b9
+
+- [P2] e2e/image-view/image-view.e2e.test.ts beforeAll — waits on a human approval (the GM's probe `image_upload` via `settle`) under a fixed 15-minute hook timeout; Shape item 3 requires at least the approval budget. route: implementer — use `humanTimeout(1) + RECONNECT_MS` like the other suites. input: approve the probe 16+ min after the prompt → hook fails, all four image-view tests fail to run, and a later approval uploads a PNG never listed under UPLOADED FILES.
+- [STYLE] e2e/image-upload/upload.e2e.test.ts:15 — ~175-char header comment line; wrap to ≤100 (.prettierrc printWidth). route: implementer.
+- [NOTE, do it if cheap] image-view's hidden-token fixture belongs to the no-permission Actor, so the refusal can't show the hidden-token rule alone. Give player1 LIMITED on that Actor (or use a third Actor the player can see) so only `token.hidden` causes the refusal, and assert the refusal still happens.
