@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Explicit, human-approved native write acceptance. No approval button is clicked by this harness.
- * Run one configured instance at a time after Andrew approves the exact fixture plan and cleanup.
+ * Run one configured instance at a time after the GM approves the exact fixture plan and cleanup.
  * Uses the production module bundle, real MCP/link, default policy and native owner approval UI.
  */
 import {
@@ -24,7 +24,7 @@ import { createSessionServer } from '../../../../gateway/src/mcp/session.js';
 import { openStore } from '../../../../gateway/src/store/index.js';
 
 if (process.env.AGENT_GATEWAY_TASK21_APPROVED !== 'exact-fixtures-and-cleanup')
-  throw Error('Andrew must first approve the exact task 21 fixture writes and cleanup');
+  throw Error('The human approver must first approve the exact task 21 fixture writes and cleanup');
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const { config, paths } = loadContext();
 if (config.world !== 'test-world') throw Error('Only the prepared fixture world is authorized');
@@ -134,7 +134,7 @@ async function session(user: string, userId: string) {
           break;
         }
         await new Promise((done) => setTimeout(done, 1000));
-        if (i === 599) throw Error(`Timed out waiting for Andrew to approve ${name}`);
+        if (i === 599) throw Error(`Timed out waiting for the human approver to approve ${name}`);
       }
     }
     if (result.isError) throw Error(`${name}: ${result.text}`);
@@ -247,7 +247,7 @@ try {
         ?.pages.contents.map((p: any) => p.uuid) ?? []
     );
   });
-  // This one fixture parent creation is separately included in Andrew's exact approval plan.
+  // This one fixture parent creation is separately included in the GM's exact approval plan.
   await gmBrowser.page.evaluate(
     ({ id, playerId }) =>
       (globalThis as any).JournalEntry.create(
@@ -284,7 +284,7 @@ try {
     }));
     const tag = `Task 21 ${version} ${who} ${fixtureRun}`;
     console.log(
-      `[task21] READY ${version} ${user.name}: four real owner approvals will appear (chat, roll, page create, no-chat roll). Andrew must approve them in Foundry.`,
+      `[task21] READY ${version} ${user.name}: four real owner approvals will appear (chat, roll, page create, no-chat roll). The human approver must approve them in Foundry.`,
     );
     const auditBefore = await gmBrowser.page.evaluate(() => {
       const game = (globalThis as any).game;

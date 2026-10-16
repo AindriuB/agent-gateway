@@ -28,7 +28,9 @@ if (config.world !== 'test-world' || (version !== 'v13' && version !== 'v14'))
   throw Error('Select a prepared test-world generation');
 const approved = process.env.AGENT_GATEWAY_TASK22_APPROVED === 'exact-fixtures-and-cleanup';
 if (!approved)
-  throw Error('Andrew must approve the exact task22 fixtures and cleanup before this harness runs');
+  throw Error(
+    'The human approver must approve the exact task22 fixtures and cleanup before this harness runs',
+  );
 const fixtureRun = randomBytes(6).toString('hex');
 const evidence = resolve('/private/tmp', `task22-native-${version}-${fixtureRun}`);
 mkdirSync(evidence, { recursive: true });
@@ -135,7 +137,7 @@ async function session(user: string, userId: string) {
           break;
         }
         await new Promise((done) => setTimeout(done, 1000));
-        if (i === 599) throw Error(`Timed out waiting for Andrew to approve ${name}`);
+        if (i === 599) throw Error(`Timed out waiting for the human approver to approve ${name}`);
       }
     }
     if (result.isError !== expectDenied) throw Error(`${name}: unexpected result ${result.text}`);
