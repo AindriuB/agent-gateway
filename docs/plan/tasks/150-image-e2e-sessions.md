@@ -194,3 +194,10 @@ Source: v14 image-view run 5, which was identity-checked and bound as player1, t
      - `hidden` true and `isOwner` false for the hidden token.
    - Fail with a clear "fixture is not <level> for the player" error.
 3. **[P3] Comments.** Fix the `default: 0` comments on the owned Actors, and image-view's header comment (lines 7-13), which doesn't list the new background Scene.
+
+## Review round 6 — findings
+
+Source: an external review of PR #189, passed on by Andrew and confirmed on the branch.
+
+1. **[P2] A failed background-Scene setup leaks the Scene.** e2e/image-view/image-view.e2e.test.ts, around :453, the `bgScene = await createDoc(...)` block. One callback creates the Scene, updates its Level (or, on v13, the Scene) and only then returns the uuid. If either update rejects, or the "the temporary Scene has no Level" error is thrown, the uuid is never returned, never recorded, and never deleted in afterAll. Fix: have createDoc only create the Scene and return its uuid, then set the background in a separate step.
+   Check the image-upload and image-assign suites for the same create-then-mutate pattern in a single callback, and fix every one found.
