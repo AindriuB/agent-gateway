@@ -61,11 +61,18 @@ and they never show up as untracked or committed files in the public repo.
 
 - [ ] **Freeze precondition (Q9).** Before extraction, the PR quotes the output of
       `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
-      `git fetch origin && git branch -r --no-merged origin/main`, and of
-      `git log --oneline origin/main | rg -e '#?(146|109|110|111|113|114)\b'` showing a merge for
-      each of 146, 109, 110, 111, 113 and 114. No open PR and no unmerged branch carries any of
-      those tasks (branch names `claude/task-<id>` or titles naming the id), and each remaining
-      open PR or unmerged branch is listed with the owner's word "abandon" or "port" next to it.
+      `git fetch origin && git branch -r --no-merged origin/main`, and, for each `<id>` of 146,
+      109, 110, 111, 113 and 114, of
+      `git log --merges --format='%h %s' origin/main | rg -e "(^|[ /])task/<id>-|claude/task-<id>\b"`
+      printing at least one merge. The check matches task branch names only, never PR numbers
+      (`#110` is PR 110, not task 110), and uses all merges reachable from main, not
+      `--first-parent`, because playtest tasks reach main through a wave branch (e.g. 113 via
+      `merge 113: task/113-...` inside `claude/playtest-wave-2`). `docs/plan/done/<id>-*.md` is not
+      used: it lags the merge (140-145 merged without one). Checked on origin/main at 7fd545c: 110,
+      113 and 114 found; 109, 111 and 146 not yet (Amendment 3). No open PR and no unmerged branch
+      carries any of those tasks (`headRefName` or branch name matching the same pattern, or a PR
+      title starting `<id>:`), and each remaining open PR or unmerged branch is listed with the
+      owner's word "abandon" or "port" next to it.
       An open PR or unmerged branch for 112 does not block: it is listed and marked "port"
       (Amendment 2). If any of the six is unmerged, the task stops and reports; it does not
       extract.
@@ -139,3 +146,15 @@ and they never show up as untracked or committed files in the public repo.
   marked "port" rather than blocking, and it is ported by bundle per 148 Amendment 4's procedure
   (148 runbook step 1: verified `open-branches.bundle`, re-applied onto the rewritten main by
   cherry-pick or `git rebase --rebase-merges`, never by patches alone).
+
+### Amendment 3 (coordinator review, 2026-10-16)
+
+- The freeze-precondition check `git log --oneline origin/main | rg -e '#?(<ids>)\b'` counted PR
+  numbers as task merges (`Merge pull request #110 from AindriuB/claude/plan-72` matched task
+  110). It now matches task identifiers only: per id, a merge subject reachable from origin/main
+  naming the task branch (`task/<id>-` or `claude/task-<id>`). Chosen over `<id>:` commit
+  subjects (they also appear on review commits before merge, and 114 has none) and over
+  `docs/plan/done/<id>-*.md` (it lags the merge). Not `--first-parent`: 110, 113 and 114 reached
+  main through playtest wave branches. Tested on origin/main at 7fd545c: 110 (d9aaad7), 113
+  (3465879) and 114 (d74783a) found; 109, 111, 112 and 146 not found. The open-PR and
+  unmerged-branch check uses the same branch pattern. 148's step 1 script uses the same check.

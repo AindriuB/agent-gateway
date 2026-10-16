@@ -184,7 +184,13 @@ swap it in under the existing repo name and restore the releases.
          110, 111, 113 and 114 merged); stop merging to main. SCRIPT: print
          `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
          `git branch -r --no-merged origin/main`, and exit non-zero if any open PR or unmerged
-         branch names task 146, 109, 110, 111, 113 or 114. An open PR or unmerged branch for
+         branch names task 146, 109, 110, 111, 113 or 114 (`headRefName` or branch name matching
+         `(^|[ /])task/<id>-|claude/task-<id>\b`, or a PR title starting `<id>:`), or if, for any
+         of those ids,
+         `git log --merges --format='%h %s' origin/main | rg -e "(^|[ /])task/<id>-|claude/task-<id>\b"`
+         prints nothing. Task identifiers only, never PR numbers; all reachable merges, not
+         `--first-parent`, since playtest tasks merge through wave branches (147 Amendment 3;
+         Amendment 8). An open PR or unmerged branch for
          112 does not fail the check; the script lists it pre-marked "port" (Amendment 7).
          OWNER: mark each remaining open PR or branch "abandon" or "port". Before any PR is closed or any branch deleted, every branch to port goes into a
          self-contained `<backup-dir>/open-branches.bundle` outside the checkout
@@ -462,3 +468,12 @@ swap it in under the existing repo name and restore the releases.
   marked "port" rather than blocking, and it is ported by bundle per Amendment 4's procedure in
   step 1 (verified `open-branches.bundle`, PASS per branch before anything is closed or deleted,
   re-applied onto the rewritten main by cherry-pick or `git rebase --rebase-merges`).
+
+### Amendment 8 (coordinator review, 2026-10-16)
+
+- Step 1's script check matched tasks loosely and could count PR numbers as task merges. It now
+  uses 147 Amendment 3's check: per id, an open PR or unmerged branch fails the check only if its
+  `headRefName` or branch name matches `(^|[ /])task/<id>-|claude/task-<id>\b` or its title starts
+  `<id>:`, and the task counts as merged only if a merge subject reachable from origin/main
+  names its task branch (not `--first-parent`; playtest tasks merge through wave branches).
+  Tested on origin/main at 7fd545c: 110, 113 and 114 found; 109, 111 and 146 not yet.
