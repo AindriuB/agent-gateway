@@ -253,3 +253,12 @@ Reviewed HEAD: a982023e9d42403409ac21afbe2b56c95b1f33c4
   route: implementer — serialise uploads per user inside the handler; the 64 MiB rule is unchanged.
   input: user at 64 MiB − 300 KiB; two concurrent 512 KiB `image_upload` calls, both approved → both pass, total ends ~724 KiB over quota.
 - [NOTE] e2e beforeAll/afterAll: if the world never stored `core.permissions`, the snapshot may be `{}` or defaults; the native run must confirm the key and read-back (already in Amendment 2).
+
+## Review round 2 — findings (external PR review on #171)
+
+Reviewed HEAD: 475542e0acfa6e555fb9fbc5a186eddb0c1abf18
+
+- [P2] module/src/tools/image-upload.ts:166-167 — On v14 the handler snapshots the Scene (`ctx.snapshot(scene.uuid)`) but changes the embedded Level's `background.src`. Undo strips embedded collections from a Scene snapshot, so it cannot restore the background, although the result promises restoration. Adding Level to the undo allowlist (task 121) alone does not fix this.
+  route: implementer — on v14, snapshot the actual Level document (`Scene.<id>.Level.<id>`) before the update, as task 121's image_assign does; on v13 keep the Scene snapshot. Add a unit test that runs the real dispatch, then `undoEntry`, and asserts the v14 Level background is restored (pattern: module/test/audit/undo-levels.test.ts).
+- [P2] e2e/image-upload/upload.e2e.test.ts:25-40 — When approval takes longer than APPROVAL_WAIT_MS (25 s), `settle` returns the approved result as text only (`approval_status` carries `result` but not the structured `path`/`updated`), so a successful upload fails its assertions and its file is missing from the cleanup report.
+  route: implementer — recover the completed upload's details before asserting and recording the path, e.g. parse them from the result text, or have the tool's text first line carry the path in a stable form. Record every uploaded path for cleanup either way, and add a unit-level test of the parsing.
