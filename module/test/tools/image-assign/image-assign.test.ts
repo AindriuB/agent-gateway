@@ -109,15 +109,36 @@ describe('image_assign permissions', () => {
 });
 
 describe('image_assign snapshot and undo data', () => {
-  const cases: [string, string, (d: any) => unknown, string, string][] = [
-    ['actor_portrait', 'Actor.a', (d) => d.actor.img, 'Actor.a', 'old.png'],
-    ['actor_token', 'Actor.a', (d) => d.actor.prototypeToken.texture.src, 'Actor.a', 'old-t.png'],
-    ['token', 'Scene.s.Token.t', (d) => d.mine.texture.src, 'Scene.s.Token.t', 'old-tok.png'],
-    ['tile', 'Scene.s.Tile.tl', (d) => d.tile.texture.src, 'Scene.s.Tile.tl', 'old-tile.png'],
+  const cases: [string, string, (d: any) => unknown, string, string, (d: any) => any][] = [
+    ['actor_portrait', 'Actor.a', (d) => d.actor.img, 'Actor.a', 'old.png', (d) => d.actor],
+    [
+      'actor_token',
+      'Actor.a',
+      (d) => d.actor.prototypeToken.texture.src,
+      'Actor.a',
+      'old-t.png',
+      (d) => d.actor,
+    ],
+    [
+      'token',
+      'Scene.s.Token.t',
+      (d) => d.mine.texture.src,
+      'Scene.s.Token.t',
+      'old-tok.png',
+      (d) => d.mine,
+    ],
+    [
+      'tile',
+      'Scene.s.Tile.tl',
+      (d) => d.tile.texture.src,
+      'Scene.s.Tile.tl',
+      'old-tile.png',
+      (d) => d.tile,
+    ],
   ];
   it.each(cases)(
     '%s: snapshot precedes the update and carries callOptions',
-    async (target, uuid, read, snap, old) => {
+    async (target, uuid, read, snap, old, owner) => {
       let before: unknown;
       f.snapshot.mockImplementationOnce(async (u: string) => {
         f.events.push(`snapshot:${u}`);
@@ -129,9 +150,7 @@ describe('image_assign snapshot and undo data', () => {
       expect(read(f.docs)).toBe('art/a.png');
       expect(f.events).toEqual([`snapshot:${snap}`, `update:${snap}`]);
       expect(ctx.callOptions.agentGateway.callId).toBe('call-1');
-      expect(f.docs.actor.lastOptions ?? f.docs.mine.lastOptions ?? f.docs.tile.lastOptions).toBe(
-        ctx.callOptions,
-      );
+      expect(owner(f.docs).lastOptions).toBe(ctx.callOptions);
     },
   );
   it('scene_background on v14 snapshots and updates the Level', async () => {
