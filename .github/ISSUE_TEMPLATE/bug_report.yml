@@ -1,0 +1,67 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste tokens, invite codes or pairing codes. Redact them. For security problems use private vulnerability reporting instead of this form.
+  - type: input
+    id: foundry
+    attributes:
+      label: Foundry VTT version
+      placeholder: "14.360"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Game system and version
+      placeholder: "dnd5e 5.1.0"
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module version
+    validations:
+      required: true
+  - type: input
+    id: gateway
+    attributes:
+      label: Gateway version
+    validations:
+      required: true
+  - type: dropdown
+    id: running
+    attributes:
+      label: How the gateway runs
+      description: Also say how the module was installed (manifest URL, release zip or manual copy).
+      options:
+        - Claude Desktop bundle
+        - npm
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: AI client
+      placeholder: "Claude Desktop, Claude Code, ChatGPT, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, what you expected and what happened. Include relevant log lines with secrets removed.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have not pasted copyrighted rulebook text or premium content, and no tokens, invite codes or pairing codes.
+          required: true
