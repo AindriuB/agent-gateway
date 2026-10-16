@@ -222,3 +222,25 @@ Migration 014 raises the migration count from 13 to 14 and breaks hard-coded ass
 - gateway/test/store/admin-flag.test.ts:69-70;
 - gateway/test/store/retire-legacy-pairings.test.ts:47.
 Prefer deriving the expected count from the migrations registry where that is a one-line change; otherwise use the literal 14.
+
+## Amendment 4 (2026-10-16, decided by Andrew): hold approved calls until reconnected
+
+Code review found two paths to a double run that the residual didn't cover: (a) the GM approves or denies while the requester's link is down, the `approvalState` frame is dropped, and `reconcile` requeues and re-asks; (b) a second tab takes over the link while the first tab still holds the record. Andrew chose "hold until reconnected":
+- The requester's module never executes an approved call while its gateway link isn't connected. It keeps the record pending and approved locally, waits for the link (usually about 2 s), sends `approvalState{approved}`, then runs. The pending-id list sent on hello includes such held records, so `reconcile` doesn't requeue them. A denial during an outage is likewise held and reported on reconnect before anything else.
+- When a tab's link is replaced (closed with the replacement reason), that tab withdraws its pending approval records and stops offering them, so the gateway's row is the only copy. It tells the user it moved to another tab.
+- Tests:
+  - an approval during an outage → no execution until reconnect → `approved` reported → runs once → the row ends `unknown` and is never requeued;
+  - a denial during an outage → reported on reconnect → not re-asked;
+  - takeover by a second tab → the first tab's records withdrawn → re-asked once in the second tab → approving runs once.
+- The residual shrinks back to: an `approved` frame lost as the socket dies after it was sent.
+
+## Review round 1 — findings
+
+Reviewed HEAD: 316a48a
+
+- [P2] repository.ts `report` (approved branch) and the `insertAlias`/`enqueue` cap counts: rows reported `approved` stay `state='pending'` until disconnect or expiry and count against perOwner (20), global (500) and receipt caps. After 20 approvals the 21st mirror throws RATE_LIMITED, is swallowed and is lost. Fix: on an `approved` report, move the row to `unknown` with `resolved_at` set (spec step 5 needs only that it ends `unknown`, never `queued`); `approval_status` still forwards to the module while live. Add a test: 25 mirror+approve cycles leave capacity free. route: implementer
+- [P3] service.ts `recordLive`, `live ? c.id : null` branch: unreachable, because `disconnected` already removed the connection from `capableIds`. Use the capability captured before the call (session.ts holds it) so the orphan-at-insert branch works; add a same-tick close test. route: implementer
+- [P3] session.ts:537 / service.ts `approvalState`: an `approved` report arriving before its row exists is dropped. Hold early reports per connection for unknown aliases, with a bounded count and time, and apply them in `insertAlias`. route: implementer
+- [P3] service.ts `carriesImage`: misses `data:<any>;base64,` prefixes, leading whitespace and numeric byte arrays. Strip any `data:[^,]*;base64,` prefix and whitespace before sniffing, and treat arrays of more than 8 integers whose first bytes match image magic as images. route: implementer
+- [P3] gateway/test/store/admin-flag.test.ts:70 and store.test.ts:147: use the literal 14, as Amendment 3 allows, not `>=` floors. route: implementer
+- [NOTE] `pendingApprovalIds()` caps at 256: document it in a code comment. Optional.
