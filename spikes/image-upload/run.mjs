@@ -19,7 +19,7 @@ try {
   await page.click('button[name="join"]');
   await page.waitForFunction('globalThis.game?.ready === true', null, { timeout: 60000 });
   const mod = await import(pathToFileURL(resolve(probe)).href);
-  const out = await mod.default(page, { ver, user, base });
+  const out = await mod.default(page, { ver, user, base, arg: process.env.PROBE_ARG ? JSON.parse(process.env.PROBE_ARG) : null });
   console.log(JSON.stringify(out, null, 1));
 } finally {
   await browser.close();
