@@ -134,6 +134,42 @@ describe('image_view handler: results', () => {
       '/tok/k.png',
     ]);
   });
+  it('reads the v14 scene background from initialLevel, not the first Level', async () => {
+    const level = (src: string) => ({ id: src, background: { src } });
+    const first = level('maps/first.png');
+    const init = level('maps/init.png');
+    const { fetchMock } = install(gm, {
+      docs: {
+        'Scene.s': {
+          documentName: 'Scene',
+          initialLevel: init,
+          levels: Object.assign(new Map(), { contents: [first, init] }),
+          testUserPermission: () => true,
+        },
+      },
+    });
+    vi.stubGlobal('game', { ...(globalThis as any).game, release: { generation: 14 } });
+    const r = await run({ source: 'scene_background', uuid: 'Scene.s' }, gm);
+    expect(r.images).toHaveLength(1);
+    expect((fetchMock.mock.calls as unknown[][])[0]![0]).toBe('/maps/init.png');
+  });
+  it.each([[''], [null], [undefined]])(
+    'says the scene has no background for src %j',
+    async (src) => {
+      install(gm, {
+        docs: {
+          'Scene.s': {
+            documentName: 'Scene',
+            background: { src },
+            testUserPermission: () => true,
+          },
+        },
+      });
+      const r = await run({ source: 'scene_background', uuid: 'Scene.s' }, gm);
+      expect(r.error?.code).toBe('INVALID_ARGS');
+      expect(r.error?.message).toBe('The scene has no background image');
+    },
+  );
   it('lets a GM or FILES_BROWSE user view a file, with spaces encoded', async () => {
     const { fetchMock } = install(trusted);
     const r = await run({ source: 'file', path: 'my dir/x.png' }, trusted);
