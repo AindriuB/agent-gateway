@@ -85,7 +85,7 @@ export function createQueueRepository(db: DatabaseSync) {
     const by = connectionId === undefined ? '' : ' AND connection_id=?';
     const extra = connectionId === undefined ? [] : [connectionId];
     db.prepare(
-      `UPDATE queued_calls SET state='unknown',resolved_at=?,orphaned_at=?,connection_id=NULL WHERE ${LIVE_ALIAS} AND state='pending' AND alias_report='approved'${by}`,
+      `UPDATE queued_calls SET state='unknown',resolved_at=COALESCE(resolved_at,?),orphaned_at=?,connection_id=NULL WHERE ${LIVE_ALIAS} AND state IN ('pending','unknown') AND alias_report='approved'${by}`,
     ).run(now, now, ...extra);
     db.prepare(
       `UPDATE queued_calls SET orphaned_at=?,connection_id=NULL WHERE ${LIVE_ALIAS} AND state='pending'${by}`,
@@ -346,15 +346,17 @@ export function createQueueRepository(db: DatabaseSync) {
     ): boolean {
       const where = `${scope} AND approval_alias=? AND connection_id=? AND state='pending' AND orphaned_at IS NULL AND alias_report='pending'`;
       const args = [...ownerArgs(o), alias, connectionId];
+      // Approved, denied and expired all leave the live set at once. An approved row may have
+      // run, so it is `unknown` (never requeued) and stops counting against the queue caps.
       const changes =
-        state === 'denied' || state === 'expired'
-          ? db
+        state === 'pending'
+          ? db.prepare(`UPDATE queued_calls SET alias_report=? WHERE ${where}`).run(state, ...args)
+              .changes
+          : db
               .prepare(
                 `UPDATE queued_calls SET alias_report=?,state=?,resolved_at=? WHERE ${where}`,
               )
-              .run(state, state, now, ...args).changes
-          : db.prepare(`UPDATE queued_calls SET alias_report=? WHERE ${where}`).run(state, ...args)
-              .changes;
+              .run(state, state === 'approved' ? 'unknown' : state, now, ...args).changes;
       return Number(changes) === 1;
     },
     /**

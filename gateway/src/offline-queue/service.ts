@@ -12,18 +12,38 @@ import type { Store } from '../store/store.js';
 import { LinkCallError, type LinkConnection, type LinkRegistry } from '../link/registry.js';
 import { toolsets, type ToolsetStore } from '../routing/toolsets.js';
 import { QUEUE_CONFIG, hashArgs, type QueueOwner } from './repository.js';
+type ReportState = 'pending' | 'approved' | 'denied' | 'expired';
+const EARLY_REPORTS_PER_CONNECTION = 32;
+const EARLY_REPORT_MS = 30_000;
 const IMAGE_SCAN_LIMIT = 1_000_000;
-/** True when any string in the arguments is a data URL or base64 text that sniffs as an image. */
-function carriesImage(v: unknown, budget = { n: IMAGE_SCAN_LIMIT }): boolean {
+/**
+ * True when any value in the arguments looks like image bytes: a data URL or base64 text (any
+ * `data:<type>;base64,` prefix, leading whitespace and line breaks allowed) that sniffs as an
+ * image, or an array of integers whose first bytes are an image header.
+ */
+export function carriesImage(v: unknown, budget = { n: IMAGE_SCAN_LIMIT }): boolean {
   if (typeof v === 'string') {
     budget.n -= v.length;
-    if (/^data:image\//i.test(v)) return true;
-    return v.length >= 16 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(v.slice(0, 64))
-      ? sniffImage(Buffer.from(v.slice(0, 64), 'base64')) !== null
+    if (/^\s*data:image\//i.test(v)) return true;
+    const head = v
+      .slice(0, 256)
+      .replace(/^\s+/, '')
+      .replace(/^data:[^,]*;base64,/i, '')
+      .replace(/\s+/g, '')
+      .slice(0, 64);
+    return v.length >= 16 && /^[A-Za-z0-9+/_-]+={0,2}$/.test(head)
+      ? sniffImage(Buffer.from(head, 'base64')) !== null
       : false;
   }
   if (budget.n < 0) return true;
-  if (Array.isArray(v)) return v.some((x) => carriesImage(x, budget));
+  if (Array.isArray(v)) {
+    if (v.length > 8) {
+      const first = v.slice(0, 12);
+      if (first.every((x) => Number.isInteger(x) && x >= 0 && x <= 255))
+        if (sniffImage(Uint8Array.from(first as number[])) !== null) return true;
+    }
+    return v.some((x) => carriesImage(x, budget));
+  }
   if (v && typeof v === 'object') return Object.values(v).some((x) => carriesImage(x, budget));
   return false;
 }
@@ -34,6 +54,8 @@ export class OfflineQueue {
   private readonly offRevoked: () => void;
   /** Connections whose module has sent its post-hello approval list (protocol 7.2.0). */
   private readonly capableIds = new Set<string>();
+  /** Reports that beat their row (the result frame is still on its way): per connection, bounded. */
+  private readonly early = new Map<string, Map<string, { state: ReportState; at: number }>>();
   constructor(
     private store: Store,
     private registry: LinkRegistry,
@@ -60,6 +82,7 @@ export class OfflineQueue {
     };
     this.disconnected = (c) => {
       this.capableIds.delete(c.id);
+      this.early.delete(c.id);
       try {
         store.queue.disconnected(c.id, now());
       } catch {
@@ -175,23 +198,38 @@ export class OfflineQueue {
    * connection; skipped, never failing the call, when the queue would not have admitted the call,
    * when the tool carries file data, or when the arguments hold image bytes.
    */
-  recordLive(c: LinkConnection, sessionId: string, name: string, args: unknown, alias: string) {
-    if (!this.capable(c) || !alias || alias.length > 64) return undefined;
+  recordLive(
+    c: LinkConnection,
+    sessionId: string,
+    name: string,
+    args: unknown,
+    alias: string,
+    /** Whether the connection was capable when the call began (it may have closed since). */
+    wasCapable = this.capable(c),
+  ) {
+    if (!wasCapable || !alias || alias.length > 64) return undefined;
     try {
       const owner: QueueOwner = { worldId: c.worldId, userId: c.userId, agentId: c.agentId };
       if (!this.store.isPairingActive(c.agentId, c.worldId, c.userId)) return undefined;
       const { def, value } = this.admit(owner, name, args);
       if (carriesImage(value)) return undefined;
       const live = !c.closed && this.registry.get(c.worldId, c.userId) === c;
-      return this.store.queue.insertAlias(
+      const now = this.now();
+      const row = this.store.queue.insertAlias(
         owner,
         sessionId,
         def,
         value,
         alias,
         live ? c.id : null,
-        this.now(),
+        now,
       );
+      const early = this.early.get(c.id);
+      const held = early?.get(alias);
+      if (held && live && now - held.at <= EARLY_REPORT_MS)
+        this.store.queue.report(owner, c.id, alias, held.state, now);
+      early?.delete(alias);
+      return row;
     } catch {
       return undefined;
     }
@@ -206,7 +244,19 @@ export class OfflineQueue {
       this.store.queue.reconcile(owner, c.id, new Set(msg.ids), this.now());
       this.deliver(c);
     } else if (this.capableIds.has(c.id) && msg.id && msg.state) {
-      this.store.queue.report(owner, c.id, msg.id, msg.state, this.now());
+      const now = this.now();
+      if (
+        !this.store.queue.report(owner, c.id, msg.id, msg.state, now) &&
+        !this.store.queue.getByAlias(owner, msg.id) &&
+        msg.state !== 'pending'
+      ) {
+        // The row is not written yet (its call result is still being processed): keep the report.
+        let held = this.early.get(c.id);
+        if (!held) this.early.set(c.id, (held = new Map()));
+        for (const [k, v] of held) if (now - v.at > EARLY_REPORT_MS) held.delete(k);
+        if (held.size < EARLY_REPORTS_PER_CONNECTION)
+          held.set(msg.id, { state: msg.state, at: now });
+      }
     }
   }
   isRead(owner: QueueOwner, name: string) {

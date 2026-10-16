@@ -143,8 +143,8 @@ describe('store', () => {
     }
   });
 
-  it('has at least fourteen migrations', () => {
-    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(14);
+  it('has fourteen migrations', () => {
+    expect(MIGRATIONS).toHaveLength(14);
   });
 
   it('migrates a version 6 database with one pairing: origin reads back null, and 008 revokes it', () => {

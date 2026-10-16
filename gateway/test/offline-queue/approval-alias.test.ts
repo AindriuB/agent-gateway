@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AnnouncedTool } from '@agent-gateway/protocol';
+import { carriesImage } from '../../src/offline-queue/service.js';
 import { QUEUE_CONFIG } from '../../src/offline-queue/repository.js';
 import { openStore, type Store } from '../../src/store/store.js';
 
@@ -68,7 +69,8 @@ describe('mirrored approval rows (migration 014)', () => {
     expect(s.queue.report(owner, 'c1', 'alias-1', 'approved', 12)).toBe(true);
     expect(s.queue.getByAlias(owner, 'alias-1')).toMatchObject({
       alias_report: 'approved',
-      state: 'pending',
+      state: 'unknown',
+      resolved_at: 12,
     });
     mirror(s, 'alias-2');
     s.queue.report(owner, 'c1', 'alias-2', 'denied', 13);
@@ -189,4 +191,40 @@ describe('mirrored approval rows (migration 014)', () => {
     expect(s.queue.findOpenAlias(owner, 'chat_post', r.args_hash)?.approval_alias).toBe('alias-1');
     expect(s.queue.findOpenAlias(owner, 'other_tool', r.args_hash)).toBeUndefined();
   });
+
+  it('an approved report frees queue capacity: 25 mirror+approve cycles never hit the cap', () => {
+    const s = open();
+    for (let i = 0; i < 25; i++) {
+      mirror(s, `cycle-${i}`, 'c1', 10 + i);
+      expect(s.queue.report(owner, 'c1', `cycle-${i}`, 'approved', 10 + i)).toBe(true);
+    }
+    expect(s.queue.getByAlias(owner, 'cycle-24')?.state).toBe('unknown');
+    // And on disconnect the approved rows still end orphaned-unknown, never requeued.
+    s.queue.disconnected('c1', 99);
+    expect(s.queue.getByAlias(owner, 'cycle-3')).toMatchObject({
+      state: 'unknown',
+      orphaned_at: 99,
+      connection_id: null,
+    });
+    s.queue.reconcile(owner, 'c2', new Set(), 100);
+    expect(s.queue.queued(owner)).toEqual([]);
+  });
+});
+
+describe('carriesImage', () => {
+  const png = Buffer.from('89504e470d0a1a0a0000000000', 'hex').toString('base64');
+  it.each([
+    ['a data:image URL', `data:image/png;base64,${png}`],
+    ['any data: prefix', `data:application/octet-stream;base64,${png}`],
+    ['leading whitespace', `  \n\t${png}`],
+    ['whitespace inside the head', `${png.slice(0, 8)}\n${png.slice(8)}`],
+    ['a numeric byte array', { bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0] }],
+    ['a nested value', { a: [{ b: `data:text/plain;base64,${png}` }] }],
+  ])('flags %s', (_name, value) => expect(carriesImage(value)).toBe(true));
+  it.each([
+    ['plain text', 'Hello there, this is a perfectly ordinary chat message.'],
+    ['a short integer array', [0x89, 0x50, 0x4e, 0x47]],
+    ['a non-image integer array', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+    ['a plain object', { content: 'hi', n: 3 }],
+  ])('does not flag %s', (_name, value) => expect(carriesImage(value)).toBe(false));
 });

@@ -83,10 +83,14 @@ async function livePending(
   alias: string,
   name = chatPost.name,
   args = {},
+  /** Frames the module sends before the result, as when its report beats the result frame. */
+  before: object[] = [],
 ) {
   const arguments_ = name === chatPost.name ? { content: 'hello', ...args } : { ...args };
   const result = c.callTool({ name, arguments: arguments_ });
   const call = (await m.tc.next('call')) as { id: string };
+  for (const f of before) m.tc.send(f);
+  if (before.length) await new Promise((r) => setTimeout(r, 30));
   m.tc.send({
     type: 'result',
     id: call.id,
@@ -313,5 +317,101 @@ describe('mirrored pending approvals', () => {
     await capable(re, []);
     const batch = (await re.tc.next('queuedCalls')) as { calls: { id: string }[] };
     expect(batch.calls).toHaveLength(1);
+  });
+
+  it('keeps an approved report that arrives before its row, and applies it', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    await livePending(m, c, 'alias-1', chatPost.name, {}, [
+      { type: 'approvalState', id: 'alias-1', state: 'approved' },
+    ]);
+    expect(store.queue.getByAlias(owner(m), 'alias-1')).toMatchObject({
+      alias_report: 'approved',
+      state: 'unknown',
+    });
+  });
+
+  it('mirrors a call whose link closed before the result was processed, already orphaned', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    const conn = h.registry.get(m.worldId, m.userId)!;
+    await offline(m);
+    expect(conn.closed).toBe(true);
+    const row = queue.recordLive(conn, 's', chatPost.name, { content: 'late' }, 'alias-3', true);
+    expect(row).toMatchObject({
+      state: 'pending',
+      connection_id: null,
+      orphaned_at: expect.any(Number),
+    });
+    const s = await status(c, 'alias-3');
+    expect(s.structuredContent).toMatchObject({ id: 'alias-3', status: 'queued' });
+    const re = await reconnectModule(h, m);
+    browsers.push(re.tc);
+    re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(re, []);
+    expect(((await re.tc.next('queuedCalls')) as { calls: unknown[] }).calls).toHaveLength(1);
+  });
+
+  it('flags image bytes behind any data: prefix or in a byte array and mirrors nothing', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex').toString('base64');
+    await livePending(m, c, 'alias-1', chatPost.name, {
+      content: `data:application/octet-stream;base64,${png}`,
+    });
+    await livePending(m, c, 'alias-2', chatPost.name, { content: `  \n${png}` });
+    expect(rows(m)).toHaveLength(0);
+  });
+
+  it('holds a reconnect: the held approval is listed, reported approved, never requeued', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    await livePending(m, c, 'alias-1');
+    await offline(m);
+    const re = await reconnectModule(h, m);
+    browsers.push(re.tc);
+    re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(re, ['alias-1']); // the held record is still in the list
+    re.tc.send({ type: 'approvalState', id: 'alias-1', state: 'approved' });
+    await until(() => store.queue.getByAlias(owner(m), 'alias-1')?.state === 'unknown');
+    await offline(re);
+    const re2 = await reconnectModule(h, m);
+    browsers.push(re2.tc);
+    re2.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(re2, []);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(re2.tc.messages.some((x) => x.type === 'queuedCalls')).toBe(false);
+    expect(JSON.stringify(await status(c, 'alias-1'))).toContain('outcome unknown');
+  });
+
+  it('a second tab with an empty list takes the approval over: asked once, in the new tab', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    await livePending(m, c, 'alias-1');
+    // The new tab connects while the old link is still registered; its empty list requeues the row.
+    const re = await reconnectModule(h, m);
+    browsers.push(re.tc);
+    re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(re, []);
+    const batch = (await re.tc.next('queuedCalls')) as { calls: { id: string }[] };
+    expect(batch.calls).toHaveLength(1);
+    re.tc.send({
+      type: 'queuedStatus',
+      id: batch.calls[0]!.id,
+      status: 'approved',
+      text: 'ran once',
+    });
+    await until(() => store.queue.get(owner(m), batch.calls[0]!.id)?.state === 'approved');
+    expect((await status(c, 'alias-1')).structuredContent).toMatchObject({ status: 'approved' });
   });
 });

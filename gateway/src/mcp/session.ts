@@ -535,7 +535,7 @@ export function createSessionServer(opts: SessionServerOptions): Server {
           ? (res.structured as Record<string, unknown>)
           : undefined;
       if (capable && structured?.status === 'pending_approval' && typeof structured.id === 'string')
-        opts.queue?.recordLive(conn, sessionId, tool.name, args, structured.id);
+        opts.queue?.recordLive(conn, sessionId, tool.name, args, structured.id, capable);
       if (res.images && res.images.length > 0) {
         // Re-check what the module sent: the bytes must be the image type they claim.
         for (const img of res.images) {
