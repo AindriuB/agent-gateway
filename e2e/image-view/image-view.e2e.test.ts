@@ -25,6 +25,18 @@ const blocks = (raw: unknown): Array<{ type: string }> =>
 
 const log = (msg: string): void => console.log(`[image-view] ${msg}`);
 
+/** One log line for a browser console message; token-like and pairing-code text is masked. */
+const consoleLine = (user: string, type: string, text: string): string => {
+  const safe = text
+    .replace(
+      /(pairing\s*code|code|token|secret|password|authorization|bearer)\s*[:=]?\s*\S+/gi,
+      '$1 [redacted]',
+    )
+    .replace(/[A-Za-z0-9_-]{24,}/g, '[redacted]')
+    .slice(0, 500);
+  return `${user} console ${type}: ${safe}`;
+};
+
 /** Rejects with an error naming `phase` if `p` has not settled within `ms`; never waits forever. */
 async function bounded<T>(phase: string, ms: number, p: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -132,6 +144,13 @@ describe.skipIf(!enabled)('image_view', () => {
         RECONNECT_MS + 150_000,
         rig.open(gmUser, [gmUser, playerUser]),
       );
+      for (const [user, u] of rig.users) {
+        u.browser.page.on('console', (m) => {
+          const type = m.type();
+          if (type === 'error' || type === 'warning') log(consoleLine(user, type, m.text()));
+        });
+        u.browser.page.on('pageerror', (e) => log(consoleLine(user, 'pageerror', e.message)));
+      }
       log(
         `browsers welcomed: ${[...rig.users].map(([k, u]) => `${k}=${u.frames.welcomes}`).join(', ')}`,
       );
