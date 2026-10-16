@@ -278,3 +278,12 @@ Amendment 5 as built withdraws every listed record that isn't confirmed. That in
 - `approvalOwnership` carries two lists: `ids` (owned by this connection: keep and release) and `unknown` (listed aliases for which the gateway has no row at all for this (world, user, agent): keep and release, with the pre-112 behaviour). The module withdraws only the listed aliases that appear in neither list, meaning ones the gateway knows but that belong elsewhere or are already resolved or requeued.
 - The 10 s timeout still withdraws everything, which fails safe.
 - Tests: an image_upload record held through a blip is kept and runs once after the reply; the stale-tab scenario still runs X exactly once; an alias whose row was requeued to another tab is withdrawn.
+
+## Review round 3 — findings (fourth round approved by Andrew, 2026-10-16)
+
+Reviewed HEAD: 10b70d3
+
+- [P2] module/src/approvals/manager.ts:672-677: `confirmOwnership` withdraws every pending mirrored record in neither list, including records created after the post-hello list was sent. Those ids were never listed, so the gateway couldn't confirm them. Amendment 6 says to withdraw only listed aliases in neither list. Fix: remember the exact ids sent with the list (in `expectOwnership`, or at live.ts:111) and apply the filter only to those. Unlisted records are left untouched. The 10 s timeout still withdraws everything. Test (this fails on the current code): `wireApprovalLink` with a fake link; connected, then disconnected (ERROR), then connected, so the list `[]` is sent; then `rig.call('write_thing')` creates Y; then `ownership([], [])`. Y must stay `pending`, and a GM approval of Y given inside the window must be released and run once. route: implementer
+
+Ratified: module/test/approvals/link-wiring.test.ts is added to Owns (round 2 asked for these tests without naming a file).
+Note for the record (not a defect): if ownership is late or never arrives, the module withdraws while `reconcile` has already re-attached the rows to this connection, so they are re-asked only after the next disconnect. This is Amendment 5's fail-safe, accepted.
