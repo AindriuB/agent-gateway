@@ -2,7 +2,7 @@
   "id": "agent-gateway",
   "title": "Agent Gateway",
   "description": "Permissioned access to a running world for AI agents over MCP.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "compatibility": { "minimum": "13", "verified": "14" },
   "authors": [{ "name": "AindriuB" }],
   "license": "MIT",
@@ -16,5 +16,5 @@
   "readme": "https://github.com/AindriuB/agent-gateway#readme",
   "changelog": "https://github.com/AindriuB/agent-gateway/blob/main/CHANGELOG.md",
   "manifest": "https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json",
-  "download": "https://github.com/AindriuB/agent-gateway/releases/download/v0.3.0/agent-gateway.zip"
+  "download": "https://github.com/AindriuB/agent-gateway/releases/download/v0.4.0/agent-gateway.zip"
 }

@@ -1,6 +1,6 @@
 {
   "name": "foundry-gateway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Work in a Foundry VTT world through your Foundry VTT gateway (the agent-gateway MCP server), as your own Foundry user and within the permissions you grant.",
   "author": {
     "name": "AindriuB"
