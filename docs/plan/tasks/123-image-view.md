@@ -124,3 +124,10 @@ match.
   route: implementer — skip with a reason when unset, and fix the comment.
 - [NOTE] `createImageBitmap` decodes the image before the size check (the user's own tab only), and
   compendium uuids are not refused (allowed by Out of scope). Recorded only; no action.
+
+## Review round 3 — findings (external PR review on #172)
+
+Reviewed HEAD: e9e2f6f6ab67f5d39c4eec9a921ef2343f2d1b01
+
+- [P1] module/src/tools/image-view.ts:16 — `canSee` admits Actors and Scenes on native ownership (and everything for GM agents) without the GM's agent folder allowlist, so an agent that knows an excluded Actor uuid can read its portrait or prototype-token art, which document_get refuses. Scene backgrounds and placed-token images have the same bypass. Read handlers enforce folders via `folderAllowed` (module/src/policy/folders.ts); the setting is "Folders agents may read" (lang/en.json:78).
+  route: implementer — apply the class-specific allowlist to the source's root world document before fetching (the parent Scene for tokens); refuse identically to a missing uuid. Fixed in 0fe8f18.
