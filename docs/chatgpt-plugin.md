@@ -73,8 +73,9 @@ plugin-creator integration. In ChatGPT chat the plugin did not surface on
 No host build number has been recorded.
 
 In the gateway consent flow, select the intended world and Foundry user and
-request `read` for inspection. The user completes the consent code shown in their
-paired Foundry session. Add `write` only for user-requested changes; `destructive`
+request `read` for inspection (untick `write` for read-only, since `write` starts
+ticked when requested). The user completes the consent code shown in their
+paired Foundry session. Keep `write` only for user-requested changes; `destructive`
 and `code` are not needed for the acceptance check. Keep the paired Foundry
 session available. Credentials and codes stay in the supported host and Foundry
 interfaces, never in this package or an agent transcript.
@@ -144,7 +145,7 @@ As of 2026-10-14:
 | Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
 | Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
 | ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work mode was not verified; host/build not captured.                                                             |
-| Tool discovery and read      | Codex OAuth use reported by Andrew. ChatGPT tool discovery through a plugin is not possible (see Status); use the connector guide.                                                             |
+| Tool discovery and read      | Codex OAuth use reported by Andrew. ChatGPT chat: plugin did not surface (2026-10-16); Work mode unverified. Use the connector guide.                                                          |
 | Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
 | Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
 
