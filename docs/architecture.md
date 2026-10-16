@@ -28,7 +28,7 @@ Several instances can share one state dir and one database, for example Claude D
 - **Primary**: the instance that holds the link port. It serves the module link, the optional HTTP endpoint and the relay (`gateway/src/relay/server.ts`).
 - **Secondary**: an instance that finds the port taken relays its stdio MCP session to the primary (`gateway/src/relay/secondary.ts`, `proxy.ts`, `upstream.ts`). Each connection gets its own session. On primary loss it takes over, replaying initialize and a `list_changed`; calls in flight get `RELAY_LOST`.
 - **Standby**: an instance that may not relay because its settings differ from the primary's, or that was stepped down (`gateway/src/relay/standby.ts`). It serves only `gateway_status`, keeps watching the link port, and takes over when it can.
-- **Headless runner** (`gateway/src/headless/`): logs in as an agent user with its own Chromium, so a world needs no open GM tab. It stores its profile with migration 013; see [guides/headless.md](guides/headless.md).
+- **Headless runner** (`gateway/src/headless/`): logs in as an agent user with its own Chromium, so a world needs no open GM tab. Its schema is migration 013 (`013-headless-agents.ts`); see [guides/headless.md](guides/headless.md).
 
 A secondary with a strictly newer config fingerprint asks the primary to step down after a 2 s grace. The primary writes a handover claim naming the heir by its `startedAt` (`gateway/src/relay/claim.ts`, file `relay-heir-<linkPort>.json`, mode 0600), so the old primary becomes a standby and the heir takes the port without a race (tasks 69 and 72). The step-down sequence is in `gateway/src/app.ts`.
 
