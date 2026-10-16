@@ -183,6 +183,23 @@ describe('mirrored pending approvals', () => {
     expect(JSON.stringify(theirs)).not.toContain('queued for');
   });
 
+  it.each(['denied', 'expired'] as const)(
+    'answers a %s alias from the row after the requester disconnects',
+    async (term) => {
+      await start();
+      const m = await pair('u1');
+      await capable(m);
+      const c = await session('u1');
+      await livePending(m, c, 'alias-1');
+      m.tc.send({ type: 'approvalState', id: 'alias-1', state: term });
+      await until(() => store.queue.getByAlias(owner(m), 'alias-1')?.alias_report === term);
+      await offline(m);
+      const s = await status(c, 'alias-1');
+      expect(s.isError).toBeFalsy();
+      expect(s.structuredContent).toMatchObject({ id: 'alias-1', status: term });
+    },
+  );
+
   it('an offline retry of the same call returns the open alias and adds no row', async () => {
     await start();
     const m = await pair('u1');
