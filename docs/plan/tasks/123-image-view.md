@@ -57,7 +57,7 @@ could see it in Foundry.
 - [ ] (Amendment 1) An MCP-level test in gateway/test/mcp/image-view.test.ts, through the SDK client after `listTools`, shows that `image_view` is listed without `outputSchema` and that its `tools/call` result has `content` of exactly one text block and one `image` block, and no `structuredContent` key. The text block names the dimensions, mime type, byte size and source. Another tool's result in the same session still carries `structuredContent`.
 - [ ] Visibility, with identity only from the server-set Foundry user (a GM sees all):
   - `actor_portrait`, `actor_token`: the user has at least the ownership level the 52 findings name on the Actor.
-  - `token`: the token is not hidden and is on a scene the user can view.
+  - `token`: (Amendment 2) the token is on a scene the user can view, and `!token.hidden || token.isOwner` (a hidden token is visible to its owner).
   - `scene_background`: the user can view the scene, per the 52 findings.
   - `file`: a non-GM needs `FILES_BROWSE`; `path` must pass `normalizeDataPath` and `isImagePath`.
 
@@ -65,7 +65,7 @@ could see it in Foundry.
 - [ ] The resolved image path must pass `isImagePath` before any request, so an `.svg` source is refused with `INVALID_ARGS` and never fetched; a remote `http(s)` source is refused the same way. Unit tests cover an Actor whose `img` is an `.svg` and one whose `img` is an external URL.
 - [ ] The file is read same-origin with a stream reader that stops at the raw cap plus one byte; the module never holds more than that. The bytes must pass `sniffImage`, whatever the response `Content-Type` says; otherwise `INVALID_ARGS`. Unit tests cover SVG content in a `.png` file and a server that sends more bytes than the cap.
 - [ ] (Amendment 1, from spikes/image-upload/findings.md:49-50,142) An image whose long edge exceeds 1568 px, or whose bytes exceed the 512 KiB raw cap, is downscaled in the browser to at most 1568 px on the long edge and re-encoded as JPEG (the text says so). A source over the 4 MB fetch cap, or one still over 512 KiB after re-encoding, is refused with `INVALID_ARGS` stating the byte size and the cap. 123 owns the downscale and the cap; 122 only carries prepared bytes. Unit tests cover the downscale, the refusal, and the returned frame fitting `MAX_FRAME_BYTES` with the largest allowed image.
-- [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_IMAGE=1`): a GM views a scene background and a data file; a player views the portrait of an Actor they own; a player is refused on a hidden token and on an Actor with no permission. The MCP result contains one `image` content block. Native execution needs the repository owner's per-run approval.
+- [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_IMAGE=1`): a GM views a scene background and a data file; a player views the portrait of an Actor they own; a player is refused on a hidden token they do not own and on an Actor with no permission. The MCP result contains one `image` content block. Native execution needs the repository owner's per-run approval.
 - [ ] `npm run verify` passes
 
 ## Out of scope
@@ -93,3 +93,34 @@ it, and only the gateway's tools/list mapping drops `outputSchema` for a flagged
 `OpResult.structured` becomes optional so the handler can omit it. Owns, Context, Acceptance and
 Out of scope are updated. The 1568 px long-edge downscale and the 512 KiB raw cap stay with this
 task, because 122 only carries prepared bytes.
+
+## Amendment 2 (owner, 2026-10-16, from review round 1)
+
+Reason: the `token` visibility rule in Acceptance ("the token is not hidden") disagreed with
+spikes/image-upload/findings.md:116 (`!token.hidden || token.isOwner`). Foundry itself shows a
+hidden token to its owner.
+
+Decision: the owner of a hidden token MAY view its image. The rule is the scene is viewable by the
+user AND `!token.hidden || token.isOwner`. A hidden token the user does not own is still
+`FORBIDDEN`. The Acceptance `token` bullet and the native-acceptance refusal case are corrected to
+match.
+
+## Review round 1 — findings
+
+- [P3] The hidden-token rule disagreed between Acceptance and spikes/image-upload/findings.md:116.
+  route: orchestrator → settled by Amendment 2.
+- [P3] module/src/tools/image-view.ts:27 — `load` returns `INVALID_ARGS` "<uuid> is not a <type>
+  you can view" for a missing uuid, but `FORBIDDEN` for an existing document the user cannot see.
+  That lets a caller probe whether a uuid exists; module/src/tools/document-get.ts:206 makes the two
+  look the same on purpose. The message also echoes the raw uuid without `inlineText`
+  (document-get.ts:242).
+  route: implementer — answer both cases the same way, with the same code and message, as
+  `document_get` does, and pass the uuid through `inlineText`.
+  input: player, `Actor.<id with ownership NONE>` → `FORBIDDEN`, versus `Actor.doesNotExist` →
+  `INVALID_ARGS`.
+- [P3] e2e/image-view/image-view.e2e.test.ts:7-8 — the header calls `_OWNED_ACTOR`,
+  `_NO_PERM_ACTOR` and `_HIDDEN_TOKEN` optional, but the tests at :48 and :61 fail when they are
+  unset.
+  route: implementer — skip with a reason when unset, and fix the comment.
+- [NOTE] `createImageBitmap` decodes the image before the size check (the user's own tab only), and
+  compendium uuids are not refused (allowed by Out of scope). Recorded only; no action.
