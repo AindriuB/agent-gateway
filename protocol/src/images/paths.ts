@@ -11,46 +11,63 @@ export type DataPathError =
   | 'PERCENT'
   | 'DOT_SEGMENT'
   | 'EMPTY_SEGMENT'
+  | 'BAD_ESCAPE'
   | 'BAD_CHARACTER';
 export type DataPathResult = { ok: true; path: string } | { ok: false; code: DataPathError };
 
 const fail = (code: DataPathError): DataPathResult => ({ ok: false, code });
-const CONTROL = /[\u0000-\u001f\u007f]/;
-const SEGMENT = /^[A-Za-z0-9._ -]+$/;
-const isDot = (s: string): boolean => s === '.' || s === '..';
-function decodeOnce(s: string): string | null {
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const BAD_CHARS = /[:*?"<>|/]/;
+
+type Segment = { ok: true; decoded: string } | { ok: false; code: DataPathError };
+
+/** Decode one segment exactly once, NFC-normalize it and apply the per-segment rules. */
+function checkSegment(raw: string): Segment {
+  if (raw === '') return { ok: false, code: 'EMPTY_SEGMENT' };
+  let decoded: string;
   try {
-    return decodeURIComponent(s);
+    decoded = decodeURIComponent(raw).normalize('NFC');
   } catch {
-    return null;
+    return { ok: false, code: 'BAD_ESCAPE' };
   }
-}
-function hasDotSegment(s: string): boolean {
-  return s.split(/[/\\]/).some(isDot);
+  if (CONTROL.test(decoded)) return { ok: false, code: 'CONTROL' };
+  if (decoded.includes('\\')) return { ok: false, code: 'BACKSLASH' };
+  if (decoded.includes('%')) return { ok: false, code: 'PERCENT' };
+  if (/^[. ]*$/.test(decoded)) return { ok: false, code: 'DOT_SEGMENT' };
+  if (BAD_CHARS.test(decoded)) return { ok: false, code: 'BAD_CHARACTER' };
+  return { ok: true, decoded };
 }
 
-/** Validate a Data-relative file path. Allows only [A-Za-z0-9._ -] segments (52 findings). */
+/**
+ * Validate a Data-relative file path. Input may be raw or percent-encoded; the result is the
+ * canonical (Foundry percent-encoded, NFC) form (Amendment 2).
+ */
 export function normalizeDataPath(input: string): DataPathResult {
   if (typeof input !== 'string' || input === '') return fail('EMPTY');
-  if (input.length > MAX_DATA_PATH_LENGTH) return fail('TOO_LONG');
-  if (CONTROL.test(input)) return fail('CONTROL');
-  if (input.includes('\\')) return fail('BACKSLASH');
   if (input.startsWith('/') || /^[A-Za-z]:/.test(input)) {
     return fail(/^[A-Za-z]{2,}:/.test(input) ? 'SCHEME' : 'ABSOLUTE');
   }
   if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(input)) return fail('SCHEME');
-  if (hasDotSegment(input)) return fail('DOT_SEGMENT');
-  const decoded = decodeOnce(input);
-  if (decoded !== null) {
-    if (CONTROL.test(decoded)) return fail('CONTROL');
-    if (decoded.includes('\\')) return fail('BACKSLASH');
-    if (hasDotSegment(decoded)) return fail('DOT_SEGMENT');
+  const out: string[] = [];
+  for (const raw of input.split('/')) {
+    const seg = checkSegment(raw);
+    if (!seg.ok) return fail(seg.code);
+    out.push(encodeURIComponent(seg.decoded));
   }
-  if (input.includes('%')) return fail('PERCENT');
-  const segments = input.split('/');
-  if (segments.some((s) => s === '')) return fail('EMPTY_SEGMENT');
-  if (segments.some((s) => !SEGMENT.test(s))) return fail('BAD_CHARACTER');
-  return { ok: true, path: segments.join('/') };
+  const path = out.join('/');
+  if (path.length > MAX_DATA_PATH_LENGTH) return fail('TOO_LONG');
+  return { ok: true, path };
+}
+
+/** Decode a canonical path to its display form (each segment once, NFC). Null if invalid. */
+export function decodeDataPath(path: string): string | null {
+  const parts: string[] = [];
+  for (const raw of path.split('/')) {
+    const seg = checkSegment(raw);
+    if (!seg.ok) return null;
+    parts.push(seg.decoded);
+  }
+  return parts.join('/');
 }
 
 /** Validate a directory for browsing. '' or undefined is the Data root; everything else as a path. */
@@ -59,10 +76,10 @@ export function normalizeDataDir(input: string | undefined): DataPathResult {
   return normalizeDataPath(input);
 }
 
-/** True when the path is valid and ends in an allowed image extension (case-insensitive). */
+/** True when the path is valid and its decoded name ends in an allowed image extension. */
 export function isImagePath(path: string): boolean {
   const r = normalizeDataPath(path);
   if (!r.ok) return false;
-  const lower = r.path.toLowerCase();
+  const lower = (decodeDataPath(r.path) ?? '').toLowerCase();
   return (IMAGE_EXTENSIONS as readonly string[]).some((e) => lower.endsWith(e));
 }

@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { isImagePath, normalizeDataDir } from '@agent-gateway/protocol';
-import { forbid, invalid } from './_write.js';
+import {
+  decodeDataPath,
+  isImagePath,
+  normalizeDataDir,
+  normalizeDataPath,
+} from '@agent-gateway/protocol';
+import { WriteError, forbid, invalid } from './_write.js';
 
 declare const globalThis: any;
 
@@ -15,16 +20,37 @@ export function resolveFilePicker(): any {
   return fp;
 }
 
+export interface BrowseEntry {
+  /** Canonical (Foundry percent-encoded) path. */
+  path: string;
+  /** Decoded name of the last segment, for display. */
+  name: string;
+}
 export interface BrowseResult {
   dir: string;
-  dirs: string[];
-  files: string[];
+  dirs: BrowseEntry[];
+  files: BrowseEntry[];
   truncated: boolean;
 }
 
 /**
- * Browse the Data source for images. `user` must be Foundry's own user object (game.user);
- * never build it from tool arguments.
+ * Validate one entry Foundry returned. Entries arrive already encoded, so they are decoded once
+ * and never encoded again. When the string does not round-trip byte-for-byte (encodeURIComponent
+ * and Foundry differ on `()!*'`), the decoded+NFC forms are compared and Foundry's string stays
+ * canonical.
+ */
+function entryOf(value: unknown): BrowseEntry | null {
+  if (typeof value !== 'string') return null;
+  const r = normalizeDataPath(value);
+  if (!r.ok) return null;
+  const decoded = decodeDataPath(value);
+  if (decoded === null || decoded !== decodeDataPath(r.path)) return null;
+  return { path: value, name: decoded.slice(decoded.lastIndexOf('/') + 1) };
+}
+
+/**
+ * Browse the Data source for images. Callers must pass `trustedUser(ctx)` from ./_write.js as
+ * `user`: this function trusts the user it is given and never builds one from tool arguments.
  */
 export async function browseImages(
   user: any,
@@ -37,19 +63,25 @@ export async function browseImages(
   if (!target.ok) return invalid(`Invalid directory (${target.code})`);
   const cap = Math.min(Number.isInteger(limit) && limit > 0 ? limit : 0, MAX_BROWSE_ENTRIES);
   if (cap === 0) invalid('limit must be a positive integer');
-  const listing = await resolveFilePicker().browse('data', target.path);
-  const dirs = (Array.isArray(listing?.dirs) ? listing.dirs : []).filter(
-    (d: unknown): d is string => typeof d === 'string',
-  );
-  const files = (Array.isArray(listing?.files) ? listing.files : []).filter(
-    (f: unknown): f is string => typeof f === 'string' && isImagePath(f),
-  );
-  const all = [...dirs, ...files];
-  const kept = all.slice(0, cap);
+  let listing: any;
+  try {
+    listing = await resolveFilePicker().browse('data', target.path);
+  } catch (error) {
+    if (error instanceof WriteError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/permission|not allowed|forbidden/i.test(message)) return forbid(message);
+    return invalid(`Cannot browse the directory: ${message}`);
+  }
+  const collect = (v: unknown, keep: (e: BrowseEntry) => boolean): BrowseEntry[] =>
+    (Array.isArray(v) ? v : []).map(entryOf).filter((e): e is BrowseEntry => e !== null && keep(e));
+  const dirs = collect(listing?.dirs, () => true);
+  const files = collect(listing?.files, (e) => isImagePath(e.path));
+  const keptDirs = dirs.slice(0, cap);
+  const keptFiles = files.slice(0, cap - keptDirs.length);
   return {
     dir: target.path,
-    dirs: kept.filter((e) => dirs.includes(e)),
-    files: kept.filter((e) => !dirs.includes(e)),
-    truncated: all.length > cap,
+    dirs: keptDirs,
+    files: keptFiles,
+    truncated: dirs.length + files.length > cap,
   };
 }

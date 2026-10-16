@@ -26,8 +26,11 @@ describe('browseImages', () => {
       const r = await browseImages(u, 'a', 10);
       expect(r).toEqual({
         dir: 'a',
-        dirs: ['a/d'],
-        files: ['a/x.png', 'a/z.JPG'],
+        dirs: [{ path: 'a/d', name: 'd' }],
+        files: [
+          { path: 'a/x.png', name: 'x.png' },
+          { path: 'a/z.JPG', name: 'z.JPG' },
+        ],
         truncated: false,
       });
     }
@@ -54,11 +57,43 @@ describe('browseImages', () => {
     const files = Array.from({ length: 300 }, (_, i) => `f${i}.png`);
     install({ dirs: [], files });
     const r = await browseImages(gm, '', 3);
-    expect(r.files).toEqual(['f0.png', 'f1.png', 'f2.png']);
+    expect(r.files.map((f) => f.path)).toEqual(['f0.png', 'f1.png', 'f2.png']);
     expect(r.truncated).toBe(true);
     const big = await browseImages(gm, '', 1000);
     expect(big.files).toHaveLength(200);
     expect(big.truncated).toBe(true);
+  });
+  it('lists a file in a Token Art folder from encoded entries', async () => {
+    const browse = install({
+      dirs: ['Token%20Art/Sub%20%C3%A9'],
+      files: ['Token%20Art/Goblin%201.png', 'Token%20Art/%40types.svg', 'Token%20Art/a(1).png'],
+    });
+    const r = await browseImages(gm, 'Token Art', 10);
+    expect(browse).toHaveBeenCalledWith('data', 'Token%20Art');
+    expect(r.dir).toBe('Token%20Art');
+    expect(r.dirs).toEqual([{ path: 'Token%20Art/Sub%20%C3%A9', name: 'Sub é' }]);
+    expect(r.files).toEqual([
+      { path: 'Token%20Art/Goblin%201.png', name: 'Goblin 1.png' },
+      { path: 'Token%20Art/a(1).png', name: 'a(1).png' },
+    ]);
+    await browseImages(gm, 'Token%20Art', 10);
+    expect(browse).toHaveBeenLastCalledWith('data', 'Token%20Art');
+  });
+  it('drops invalid directory entries and never double-encodes', async () => {
+    install({
+      dirs: ['../secret', '/etc', 'https://x', 'ok%2520x', 'good'],
+      files: ['%2520.png'],
+    });
+    const r = await browseImages(gm, '', 10);
+    expect(r.dirs).toEqual([{ path: 'good', name: 'good' }]);
+    expect(r.files).toEqual([]);
+  });
+  it('maps browse errors to WriteError', async () => {
+    const browse = install();
+    browse.mockRejectedValueOnce(new Error('Directory x does not exist'));
+    await expect(browseImages(gm, 'x', 10)).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    browse.mockRejectedValueOnce(new Error('You lack permission to browse'));
+    await expect(browseImages(gm, 'x', 10)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
   it('resolves the FilePicker or fails closed', () => {
     install();
