@@ -152,7 +152,7 @@
         "invalid": "That is not a valid invite. Paste the whole invite exactly as you received it, or ask for a new one."
       },
       "Server": {
-        "line": "This is a shared gateway. Your GM invites you from Manage access; paste the invite they send you here.",
+        "line": "Paste the invite your GM or the gateway operator sends you here.",
         "pairingRequired": "This gateway has not issued a token to this client. Ask your GM or the gateway operator for an invite and paste it above.",
         "pairingInvalid": "The invite was not accepted. It may have expired or been used. Ask for a new invite and try again.",
         "codeRequired": "Paste the invite from your GM or the gateway operator."

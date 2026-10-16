@@ -61,3 +61,13 @@ it('shows a player hint to players and operator wording to a GM', async () => {
     'L:AGENT_GATEWAY.Pairing.CopyIds.hint',
   );
 });
+
+it('uses one neutral Server.line for every user', async () => {
+  const { readFileSync } = await import('node:fs');
+  const lang = JSON.parse(
+    readFileSync(new URL('../../../lang/en.json', import.meta.url), 'utf8'),
+  ) as any;
+  expect(lang.AGENT_GATEWAY.Pairing.Server.line).toBe(
+    'Paste the invite your GM or the gateway operator sends you here.',
+  );
+});
