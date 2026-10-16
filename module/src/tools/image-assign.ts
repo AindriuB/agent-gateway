@@ -67,7 +67,8 @@ async function resolveTarget(user: any, target: NonNullable<Args['target']>, uui
   const expect = (name: string): void => {
     if (!doc || doc.documentName !== name) invalid(`The uuid is not a ${name} (target ${target})`);
     // Embedded documents follow their root; an excluded one answers like a missing uuid.
-    const root = name === 'Token' || name === 'Tile' ? doc.parent : doc;
+    let root = doc;
+    for (let i = 0; root?.parent && i < 10; i++) root = root.parent;
     if (!folderAllowed(root, user.isGM === true))
       invalid(`The uuid is not a ${name} (target ${target})`);
   };

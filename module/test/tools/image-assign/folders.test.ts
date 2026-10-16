@@ -83,3 +83,26 @@ describe('image_assign set folder allowlist', () => {
     }
   }
 });
+
+describe('image_assign set synthetic token Actor', () => {
+  it.each(['actor_portrait', 'actor_token'])(
+    'checks %s against the excluded Scene root',
+    async (target) => {
+      const uuid = 'Scene.s.Token.t.Actor.a';
+      const synthetic = { ...f.docs.actor, uuid, parent: f.docs.mine, folder: { id: 'in' } };
+      const prior = g.fromUuid;
+      g.fromUuid = async (u: string) => (u === uuid ? synthetic : prior(u));
+      f.docs.scene.folder = { id: 'out' };
+      allow(['in'], ['in']);
+      for (const user of [player, gm]) {
+        const r = await run(user, { action: 'set', path: 'art/a.png', target, uuid });
+        expect(r.error).toEqual({
+          code: 'INVALID_ARGS',
+          message: `The uuid is not a Actor (target ${target})`,
+        });
+      }
+      expect(f.events.filter((e) => e.startsWith('update:'))).toEqual([]);
+      expect(f.snapshot).not.toHaveBeenCalled();
+    },
+  );
+});
