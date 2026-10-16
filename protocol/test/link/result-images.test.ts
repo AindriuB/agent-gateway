@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PROTOCOL_VERSION, parseLinkMessage } from '../../src/link/index.js';
+import { PROTOCOL_VERSION, parseLinkMessage, protocolAtLeast } from '../../src/link/index.js';
 
 const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
 const frame = (images: unknown) =>
   JSON.stringify({ type: 'result', id: '1', ok: true, text: 'x', images });
 
 describe('result images', () => {
-  it('is protocol 7.1.0', () => expect(PROTOCOL_VERSION).toBe('7.1.0'));
+  it('is at least protocol 7.1.0', () =>
+    expect(protocolAtLeast(PROTOCOL_VERSION, '7.1.0')).toBe(true));
   it('accepts one image', () => {
     expect(parseLinkMessage(frame([{ mimeType: 'image/png', data: png }])).ok).toBe(true);
   });

@@ -372,6 +372,24 @@ export class LinkClient {
   sendEventPolicy(policy: { enabled: boolean; retentionDays: number }): void {
     if (this._state.kind === 'connected') this.sendMessage({ type: 'eventPolicy', ...policy });
   }
+  /**
+   * Mirror an approval transition, or the still-pending list after `welcome`, to the gateway
+   * (task 112). Dropped, never sent, to a gateway older than protocol 7.2.0.
+   */
+  sendApprovalState(
+    msg: { id: string; state: 'pending' | 'approved' | 'denied' | 'expired' } | { ids: string[] },
+  ): boolean {
+    if (this._state.kind !== 'connected' || !protocolAtLeast(this.gatewayProtocol, '7.2.0'))
+      return false;
+    this.sendMessage({ type: 'approvalState', ...msg });
+    return true;
+  }
+  private readonly ownershipListeners = new Set<(ids: string[], unknown: string[]) => void>();
+  /** The gateway's reply to the pending list: ids this connection owns, and ids it has no row for. */
+  onApprovalOwnership(fn: (ids: string[], unknown: string[]) => void): () => void {
+    this.ownershipListeners.add(fn);
+    return () => this.ownershipListeners.delete(fn);
+  }
   private eventResume:
     | {
         url: string;
@@ -844,6 +862,10 @@ export class LinkClient {
         pending.reject(new ManageError(msg.code, msg.message));
         break;
       }
+      case 'approvalOwnership':
+        if (this.socket !== origin || this._state.kind !== 'connected') break;
+        for (const fn of this.ownershipListeners) fn(msg.ids, msg.unknown ?? []);
+        break;
       case 'consentCode':
         if (this.socket !== origin || this._state.kind !== 'connected') break;
         for (const fn of this.consentListeners) fn(msg);
