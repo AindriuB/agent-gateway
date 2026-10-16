@@ -119,3 +119,63 @@ and the v14 Undo assertion in the native e2e (still not run without owner approv
   `document_create` does not support those types.
 - (c) `set` reads the value back after the update and fails if Foundry did not store the path.
   This is the deliberate guard against the v14 `scene.update` no-op, not redundant code.
+
+## Amendment 3 (owner, 2026-10-16, from review round 1)
+
+Reason: on the documented test bed player1 is role PLAYER (1) and `FILES_BROWSE` defaults to
+Trusted (2) on v13 and v14 (spikes/image-upload/findings.md:63-64). Every player `set` is refused
+with FORBIDDEN "Assigning an image requires the FILES_BROWSE permission"
+(module/src/tools/image-assign.ts:103) before ownership is checked. So the native player tests
+cannot pass, and "a player is refused on another user's Actor" passes only on that browse
+refusal, because the regex `/FORBIDDEN|own/` matches the code.
+
+Decision: the native e2e suite grants the file permission itself and restores it afterwards.
+
+- In `beforeAll`, as the GM, snapshot the world's file permission configuration. This is the core
+  `permissions` setting, or whichever setting holds `FILES_BROWSE` on v13 and v14. The 52 findings
+  record that the test world's setting equals the defaults (findings.md:63) but do not name the
+  key, so confirm the key on each version before relying on it. Then grant `FILES_BROWSE` to the
+  PLAYER role (1) for the run.
+- In `afterAll`, always restore the exact snapshot, even when a test fails. A test reads the
+  setting back and asserts it deep-equals the snapshot.
+- The player ownership tests run with browse granted. "A player is refused on another user's
+  Actor" asserts the ownership refusal specifically: code `FORBIDDEN`, and a message about
+  ownership that does not mention `FILES_BROWSE`.
+- A separate native test runs with the grant removed and asserts the player gets `FORBIDDEN` with
+  a message naming `FILES_BROWSE`.
+- If v14 refuses to grant `FILES_BROWSE` to the Player role (v14's `requiredRoles` is `[3,4]` for
+  browse, findings.md:63), the player cases are skipped on v14 with a stated reason, not failed.
+- These setting changes apply only to the e2e test worlds and are restored after the run. The
+  native run still needs the repository owner's per-run approval.
+
+Owns: unchanged. `e2e/image-assign/**` already covers the e2e test and any helper this needs
+(for example `e2e/image-assign/permissions.ts`). Do not edit `e2e/lib/**` or another suite's
+files for this.
+
+Acceptance additions:
+- [ ] (Amendment 3) e2e/image-assign/** `beforeAll` snapshots the file permission setting as the
+  GM and grants `FILES_BROWSE` to role 1. `afterAll` restores the snapshot unconditionally (a
+  `finally`, or an `afterAll` that does not depend on test outcome), and a test asserts the
+  read-back value deep-equals the snapshot.
+- [ ] (Amendment 3) "A player is refused on another user's Actor" asserts `code === 'FORBIDDEN'`
+  and a message about ownership that does not contain `FILES_BROWSE`. The `/FORBIDDEN|own/`
+  regex is gone.
+- [ ] (Amendment 3) A native test with the grant removed asserts the player's `set` returns
+  `FORBIDDEN` with a message containing `FILES_BROWSE`.
+- [ ] (Amendment 3) If the v14 grant to role 1 does not take effect, the player cases are
+  skipped on v14 with a stated reason (`it.skip`/`ctx.skip` with a message), not failed.
+
+## Review round 1 — findings
+
+- [P2] e2e/image-assign/image-assign.e2e.test.ts:216-242. On the documented test bed the native
+  player tests cannot pass, and the refusal test passes for the wrong reason. player1 is role
+  PLAYER with `FILES_BROWSE` false on v13 and v14 (spikes/image-upload/findings.md:63-64; v14
+  `requiredRoles` for browse is `[3,4]`), so `set` returns FORBIDDEN "Assigning an image requires
+  the FILES_BROWSE permission" (module/src/tools/image-assign.ts:103). "A player is refused on
+  another user's Actor" passes only on that refusal, because `/FORBIDDEN|own/` matches the code,
+  so ownership is never shown natively. Route: orchestrator. Settled by Amendment 3.
+- [NOTE] module/test/tools/image-assign/image-assign.test.ts:120-142. "snapshot and undo data"
+  checks snapshot order and `callOptions` for `actor_portrait`, `actor_token`, `token` and
+  `tile`, but never runs `undoEntry`. Only the v14 Level path runs a real Undo. Recorded for the
+  acceptance reviewer to weigh against "A unit test covers Undo for each target"; not decided
+  here.
