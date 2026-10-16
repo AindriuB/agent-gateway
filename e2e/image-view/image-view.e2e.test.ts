@@ -266,7 +266,9 @@ describe.skipIf(!enabled)('image_view', () => {
     const gw = rig!.gateway!;
     const info = await gw.call('world_info');
     expect(info.isError, `world_info as ${user}: ${info.text}`).toBe(false);
-    expect(info.structured?.userName, `gateway is bound to the wrong user: ${info.text}`).toBe(user);
+    expect(info.structured?.userName, `gateway is bound to the wrong user: ${info.text}`).toBe(
+      user,
+    );
     expect(
       ['GAMEMASTER', 'ASSISTANT'].includes(String(info.structured?.userRole)),
       `isGM mismatch for ${user} (role ${String(info.structured?.userRole)})`,
