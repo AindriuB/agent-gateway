@@ -11,6 +11,10 @@ The gateway's existing OAuth grants, Foundry permissions and approval controls
 still govern tool use. World data returned to ChatGPT is processed by the AI
 service; connect only the Foundry user and scopes you intend to use.
 
+## Status
+
+As of 2026-10-16, a plugin made at chatgpt.com/plugins appears only in Codex, never in ChatGPT chat. A developer-mode custom connector (no plugin) works on a live ChatGPT account. ChatGPT chat users should follow the [ChatGPT guide](guides/chatgpt.md), which leads with the connector. This package remains for Codex, where its use was reported working. Live ChatGPT acceptance (install, read, approved write) cannot be met by a plugin and is superseded by the connector route.
+
 ## Build and inspect
 
 From the repository root, with Node.js 22.13+ and the `zip` and `unzip` command-line tools:
@@ -138,7 +142,7 @@ As of 2026-10-14:
 | Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
 | Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
 | ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work OAuth and host/build capture remain pending.                                                                |
-| Tool discovery and read      | Codex OAuth use reported by Andrew; ChatGPT Work tool discovery and read remain pending.                                                                                                       |
+| Tool discovery and read      | Codex OAuth use reported by Andrew. ChatGPT tool discovery through a plugin is not possible (see Status); use the connector guide.                                                             |
 | Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
 | Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
 

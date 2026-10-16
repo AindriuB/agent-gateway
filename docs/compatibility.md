@@ -25,7 +25,7 @@ any other failure fails at once.
 | Claude Desktop | MVP A                                 | MVP A   | not supported in this release (MVP B) | not supported in this release (MVP B) |
 | Claude Code    | MVP A                                 | n/a     | MVP A                                 | not supported in this release (MVP B) |
 | claude.ai      | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
-| ChatGPT        | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
+| ChatGPT        | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | developer-mode connector (0.3.0)      |
 | Gemini CLI     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
 | Gemini app     | not supported in this release (MVP B) | n/a     | not supported in this release (MVP B) | MVP B (manual checklist)              |
 
@@ -75,9 +75,9 @@ claude.ai (custom connector, Claude account):
 - [ ] One write call is held for approval.
 - [ ] Revoke from Foundry; the next call gets 401.
 
-ChatGPT (developer mode connector, ChatGPT account):
+ChatGPT (developer mode connector, ChatGPT account; connect and consent confirmed live 2026-10-16 on gateway 0.3.0, the other steps not individually recorded):
 
-- [ ] Connect through the public URL and complete consent.
+- [x] Connect through the public URL and complete consent.
 - [ ] One read call works.
 - [ ] One write call is held for approval.
 - [ ] Revoke from Foundry; the next call gets 401.
