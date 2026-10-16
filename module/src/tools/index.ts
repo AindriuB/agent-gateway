@@ -13,6 +13,7 @@ import { tokenManageHandler } from './token-manage.js';
 import { combatManageHandler } from './combat-manage.js';
 import { sceneControlHandler } from './scene-control.js';
 import { documentCreateHandler } from './document-create.js';
+import { imageUploadHandler } from './image-upload.js';
 import { documentUpdateHandler } from './document-update.js';
 import { documentDeleteHandler } from './document-delete.js';
 import { compendiumImportHandler } from './compendium-import.js';
@@ -66,4 +67,5 @@ export const HANDLERS: Record<string, OpHandler> = {
   document_update: documentUpdateHandler,
   document_delete: documentDeleteHandler,
   compendium_import: compendiumImportHandler,
+  image_upload: imageUploadHandler,
 };

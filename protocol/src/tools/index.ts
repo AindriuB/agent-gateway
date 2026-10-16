@@ -41,6 +41,7 @@ import { combatEndTurn } from './combat-end-turn.js';
 import { chatPost } from './chat-post.js';
 import { rollFormula } from './roll-formula.js';
 import { journalWrite } from './journal-write.js';
+import { imageUpload } from './image-upload.js';
 import type { ToolDefinition } from './define.js';
 import { documentGet } from './document-get.js';
 import { documentSearch } from './document-search.js';
@@ -53,6 +54,7 @@ import { approvalStatus } from './approval-status.js';
 export * from './chat-post.js';
 export * from './roll-formula.js';
 export * from './journal-write.js';
+export * from './image-upload.js';
 export * from './token-move.js';
 export * from './target-set.js';
 export * from './combat-status.js';
@@ -108,6 +110,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   compendiumImport,
   eventsPoll,
   eventsHistory,
+  imageUpload,
 ];
 
 export function toolsForRole(isGM: boolean): readonly ToolDefinition[] {
