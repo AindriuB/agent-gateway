@@ -119,8 +119,14 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       null,
     );
     expect(permissionSnapshot, 'core.permissions setting').toBeTypeOf('object');
-    if (!(await grantBrowse()))
+    if (!(await grantBrowse())) {
+      // On v13 the Player role can be granted browse, so a failed grant means a wrong key.
+      if (!gm.foundryVersion.startsWith('14'))
+        throw new Error(
+          `FILES_BROWSE grant to role 1 had no effect on Foundry ${gm.foundryVersion}; check the core.permissions key`,
+        );
       grantSkipReason = `Foundry ${gm.foundryVersion} did not grant FILES_BROWSE to the Player role (role 1)`;
+    }
     // A scene and tile have no tool to create them, so the GM browser makes them natively.
     sceneUuid = await evalGm<string>(
       `async () => (await Scene.create({ name: 'agent-gateway e2e image (temporary)' })).uuid`,
@@ -263,39 +269,51 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     humanTimeout(2),
   );
 
-  it('a player is refused on another user Actor for ownership, not for FILES_BROWSE', async (ctx) => {
-    needGrant(ctx);
-    const other = await set(player, 'actor_portrait', foreignUuid);
-    expect(other.isError).toBe(true);
-    expect(other.text).toContain('FORBIDDEN');
-    expect(other.text).toMatch(/own/i);
-    expect(other.text).not.toContain('FILES_BROWSE');
-  });
+  it(
+    'a player is refused on another user Actor for ownership, not for FILES_BROWSE',
+    async (ctx) => {
+      needGrant(ctx);
+      const other = await settle(player, await set(player, 'actor_portrait', foreignUuid));
+      expect(other.isError).toBe(true);
+      expect(other.text).toContain('FORBIDDEN');
+      expect(other.text).toMatch(/own/i);
+      expect(other.text).not.toContain('FILES_BROWSE');
+    },
+    humanTimeout(1),
+  );
 
-  it('a player is refused on GM-only targets', async (ctx) => {
-    needGrant(ctx);
-    const tile = await set(player, 'tile', tileUuid);
-    expect(tile.isError).toBe(true);
-    expect(tile.text).toContain('FORBIDDEN');
-    expect(tile.text).toMatch(/GM/);
-    expect(tile.text).not.toContain('FILES_BROWSE');
-  });
+  it(
+    'a player is refused on GM-only targets',
+    async (ctx) => {
+      needGrant(ctx);
+      const tile = await settle(player, await set(player, 'tile', tileUuid));
+      expect(tile.isError).toBe(true);
+      expect(tile.text).toContain('FORBIDDEN');
+      expect(tile.text).toMatch(/GM/);
+      expect(tile.text).not.toContain('FILES_BROWSE');
+    },
+    humanTimeout(1),
+  );
 
-  it('a player without FILES_BROWSE is refused with FORBIDDEN naming FILES_BROWSE', async () => {
-    await writePermissions({
-      ...permissionSnapshot!,
-      FILES_BROWSE: browseRoles().filter((r) => r !== 1),
-    });
-    try {
-      expect(await playerCanBrowse(false)).toBe(true);
-      const r = await set(player, 'actor_portrait', ownedUuid);
-      expect(r.isError).toBe(true);
-      expect(r.text).toContain('FORBIDDEN');
-      expect(r.text).toContain('FILES_BROWSE');
-    } finally {
-      await grantBrowse();
-    }
-  });
+  it(
+    'a player without FILES_BROWSE is refused with FORBIDDEN naming FILES_BROWSE',
+    async () => {
+      await writePermissions({
+        ...permissionSnapshot!,
+        FILES_BROWSE: browseRoles().filter((r) => r !== 1),
+      });
+      try {
+        expect(await playerCanBrowse(false)).toBe(true);
+        const r = await settle(player, await set(player, 'actor_portrait', ownedUuid));
+        expect(r.isError).toBe(true);
+        expect(r.text).toContain('FORBIDDEN');
+        expect(r.text).toContain('FILES_BROWSE');
+      } finally {
+        await grantBrowse();
+      }
+    },
+    humanTimeout(1),
+  );
 
   it('the permission setting round-trips: restoring the snapshot reads back equal', async () => {
     await writePermissions(permissionSnapshot!);
