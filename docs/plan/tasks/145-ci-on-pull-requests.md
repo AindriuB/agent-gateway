@@ -111,3 +111,7 @@ building and pushing the GHCR image exactly as today.
   140's issue and PR templates could never pass verify. This task (which owns the test) replaces
   it with an exact relative-path allowlist matching 140's file list; `FUNDING.yml` and any second
   workflow still fail. Task 140 now depends on 145 and merges after it.
+
+### Amendment 2 (owner, 2026-10-16, from review round 1)
+
+The concurrency group becomes `${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}` (was `|| github.ref`). Reason (review NOTE): with a per-ref group, GitHub keeps one running and one pending run per group, so a burst of main pushes A, B, C lets C replace B's pending run and commit B gets no CI result. Keyed per commit, every main push, tag and manual run has its own group and is never cancelled; PRs still cancel superseded runs (same PR number, `cancel-in-progress` true only for pull_request). The test pins the new exact group string.
