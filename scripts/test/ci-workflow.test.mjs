@@ -25,14 +25,26 @@ const image = job('image');
 
 describe('ci.yml triggers', () => {
   const on = top('on');
-  it('has exactly push tags and a bare workflow_dispatch', () => {
-    assert.deepEqual(on.match(/^ {2}[\w_]+:/gm), ['  push:', '  workflow_dispatch:']);
-    assert.match(on, /^ {2}push:\n {4}tags: \['v\*'\]\n {2}workflow_dispatch:\n(?! {3})/m);
+  it('has exactly pull_request, push and a bare workflow_dispatch', () => {
+    assert.deepEqual(on.match(/^ {2}[\w_]+:/gm), [
+      '  pull_request:',
+      '  push:',
+      '  workflow_dispatch:',
+    ]);
+    const pr = on.match(/^ {2}pull_request:\n((?: {4}.*\n)*)/m)[1];
+    assert.equal(pr, '    branches: [main]\n');
     const push = on.match(/^ {2}push:\n((?: {4}.*\n)*)/m)[1];
-    assert.equal(push, "    tags: ['v*']\n");
+    assert.equal(push, "    branches: [main]\n    tags: ['v*']\n");
+    assert.match(on, /^ {2}workflow_dispatch:\n(?! {3})/m);
   });
   it('has no forbidden triggers', () => {
-    for (const t of ['pull_request', 'pull_request_target', 'schedule', 'release', 'branches']) {
+    for (const t of [
+      'pull_request_target',
+      'workflow_run',
+      'issue_comment',
+      'schedule',
+      'release',
+    ]) {
       assert.doesNotMatch(on, new RegExp(`^\\s*${t}:`, 'm'));
     }
   });
@@ -64,6 +76,12 @@ describe('test job', () => {
       at = i;
     }
     assert.doesNotMatch(test, /run: npm run test:scripts/);
+  });
+  it('is secret-free and does not persist credentials', () => {
+    assert.doesNotMatch(test, /secrets\./);
+    const checkout = test.match(/^ {6}- uses: actions\/checkout@v\d+\n((?: {8}.*\n)+)/m);
+    assert.ok(checkout, 'checkout step');
+    assert.match(checkout[1], /^ {8}with:\n {10}persist-credentials: false$/m);
   });
   it('runs the script tests through verify', () => {
     const pkg = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8'));
@@ -158,8 +176,19 @@ describe('ci.yml hygiene', () => {
   it('sets timeouts and never cancels tag runs', () => {
     assert.ok(Number(test.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 30);
     assert.ok(Number(image.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 60);
-    assert.doesNotMatch(wf, /^\s*concurrency:/m);
-    assert.doesNotMatch(wf, /cancel-in-progress:/);
+    assert.equal(wf.match(/concurrency:/g).length, 1);
+    assert.equal(wf.match(/^concurrency:$/gm).length, 1);
+    assert.equal(
+      top('concurrency').trimEnd(),
+      '  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}\n' +
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    );
+    const groups = [...wf.matchAll(/^ {2}group: (.*)$/gm)].map((m) => m[1]);
+    assert.deepEqual(groups, [
+      '${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}',
+    ]);
+    const cancels = [...wf.matchAll(/cancel-in-progress:(.*)$/gm)].map((m) => m[1].trim());
+    assert.deepEqual(cancels, ["${{ github.event_name == 'pull_request' }}"]);
   });
   it('uses the Node major the image uses', () => {
     const docker = readFileSync(path.join(repo, 'gateway/Dockerfile'), 'utf8');
@@ -168,10 +197,20 @@ describe('ci.yml hygiene', () => {
     const versions = new Set([...wf.matchAll(/node-version: '(\d+)'/g)].map((m) => m[1]));
     assert.deepEqual([...versions], [...majors]);
   });
-  it('is the only file under .github', () => {
-    const files = readdirSync(path.join(repo, '.github'), { recursive: true, withFileTypes: true })
+  it('keeps .github to the allowlisted files', () => {
+    const allowed = [
+      'ISSUE_TEMPLATE/bug_report.yml',
+      'ISSUE_TEMPLATE/config.yml',
+      'ISSUE_TEMPLATE/feature_request.yml',
+      'pull_request_template.md',
+      'workflows/ci.yml',
+    ];
+    const root = path.join(repo, '.github');
+    const files = readdirSync(root, { recursive: true, withFileTypes: true })
       .filter((e) => e.isFile())
-      .map((e) => e.name);
-    assert.deepEqual(files, ['ci.yml']);
+      .map((e) => path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join('/'))
+      .sort();
+    assert.ok(files.includes('workflows/ci.yml'));
+    for (const f of files) assert.ok(allowed.includes(f), `${f} is not allowlisted`);
   });
 });
