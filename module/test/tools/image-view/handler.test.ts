@@ -181,6 +181,19 @@ describe('image_view handler: visibility', () => {
     refused({ source: 'file', path: 'a.png' }, player, {}));
 });
 
+describe('image_view handler: probing', () => {
+  it('answers a missing uuid and an unviewable document identically', async () => {
+    const { fetchMock } = install(player, { docs: { 'Actor.hidden': doc({ limited: false }) } });
+    const a = await run({ source: 'actor_portrait', uuid: 'Actor.hidden' }, player);
+    const b = await run({ source: 'actor_portrait', uuid: 'Actor.missing' }, player);
+    const c = await run({ source: 'actor_portrait', uuid: 'Scene.wrongtype' }, player);
+    expect(a.error.code).toBe('FORBIDDEN');
+    expect(b).toEqual(a);
+    expect(c).toEqual(a);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('image_view handler: path and content checks', () => {
   const invalidCase = async (img: string, user = gm) => {
     const { fetchMock } = install(user, { docs: { 'Actor.a': doc({ img }) } });

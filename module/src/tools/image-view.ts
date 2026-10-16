@@ -16,6 +16,8 @@ const JPEG_QUALITY = 0.85;
 const canSee = (doc: any, user: any): boolean =>
   user.isGM === true || doc?.testUserPermission?.(user, 'LIMITED') === true;
 
+const REFUSED = 'You cannot view this image';
+
 async function load(uuid: unknown, type: string): Promise<any> {
   if (typeof uuid !== 'string' || uuid === '') return invalid(`uuid is required for this source`);
   let doc: any = null;
@@ -24,7 +26,9 @@ async function load(uuid: unknown, type: string): Promise<any> {
   } catch {
     doc = null;
   }
-  if (!doc || doc.documentName !== type) return invalid(`${uuid} is not a ${type} you can view`);
+  // A missing or wrong-type document looks exactly like one the user cannot view, so uuids cannot
+  // be probed (as in document_get). Nothing is echoed.
+  if (!doc || doc.documentName !== type) return forbid(REFUSED);
   return doc;
 }
 
@@ -33,7 +37,7 @@ async function resolveSource(
   args: { source: string; uuid?: string; path?: string },
   user: any,
 ): Promise<string> {
-  const refuse = () => forbid('You cannot view this image');
+  const refuse = () => forbid(REFUSED);
   switch (args.source) {
     case 'actor_portrait':
     case 'actor_token': {
