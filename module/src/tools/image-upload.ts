@@ -8,9 +8,10 @@ import {
 } from '@agent-gateway/protocol';
 import { isAuditDocument } from '../audit/guard.js';
 import { folderAllowed } from '../policy/folders.js';
-import { foundryGeneration } from '../compat/index.js';
+import { foundryGeneration, sceneBackgroundLevel } from '../compat/index.js';
 import { decodeBase64Strict, sha256Bytes } from '../ops/redact.js';
 import { resolveFilePicker } from './_image.js';
+import { ensureUploadDirs } from './_upload-dirs.js';
 import { defineWriteHandler, forbid, invalid, owns, trustedUser, WriteError } from './_write.js';
 
 declare const fromUuid: (uuid: string) => Promise<any>;
@@ -18,7 +19,6 @@ declare const globalThis: any;
 
 const USER_ID = /^[A-Za-z0-9]{1,32}$/;
 const EXTENSION = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as const;
-const ROOT = 'agent-gateway/uploads';
 
 export function decodeBase64(data: string): Uint8Array {
   return decodeBase64Strict(data) ?? invalid('data is not valid base64');
@@ -30,21 +30,6 @@ function serverName(bytes: number, mime: keyof typeof EXTENSION): string {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
   return `${id}-${bytes}.${EXTENSION[mime]}`;
-}
-
-async function ensureDirectories(fp: any, userId: string): Promise<string> {
-  const levels = ['agent-gateway', 'agent-gateway/uploads', `${ROOT}/${userId}`];
-  for (const level of levels) {
-    try {
-      await fp.createDirectory('data', level);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/EEXIST|already exists/i.test(message)) continue;
-      if (/permission/i.test(message)) forbid(message);
-      invalid(`Cannot prepare the upload directory: ${message}`);
-    }
-  }
-  return levels[2]!;
 }
 
 async function usedBytes(fp: any, dir: string): Promise<number> {
@@ -95,9 +80,7 @@ async function resolveScene(user: any, uuid: string): Promise<any> {
 
 /** The v14 Level that holds the background (also the Undo snapshot target). */
 function backgroundLevel(scene: any): any {
-  const levels = scene.levels;
-  const list: any[] = Array.isArray(levels?.contents) ? levels.contents : levels ? [...levels] : [];
-  const level = scene.initialLevel ?? levels?.get?.('defaultLevel0000') ?? list[0];
+  const level = sceneBackgroundLevel(scene);
   if (typeof level?.id !== 'string' || typeof level.uuid !== 'string')
     return invalid('The Scene has no level to update');
   return level;
@@ -117,11 +100,12 @@ function withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
 
 async function storeFile(
   fp: any,
+  user: any,
   userId: string,
   bytes: Uint8Array,
   mime: keyof typeof EXTENSION,
 ): Promise<string> {
-  const dir = await ensureDirectories(fp, userId);
+  const dir = await ensureUploadDirs(fp, user, userId);
   if ((await usedBytes(fp, dir)) + bytes.length > IMAGE_UPLOAD_USER_QUOTA_BYTES)
     invalid(
       `The per-user upload quota of ${IMAGE_UPLOAD_USER_QUOTA_BYTES} bytes would be exceeded`,
@@ -186,7 +170,7 @@ export const imageUploadHandler = defineWriteHandler({
     const sha256 = sha256Bytes(bytes);
     const fp = resolveFilePicker();
     const path = await withUserLock(String(user.id), () =>
-      storeFile(fp, String(user.id), bytes, args.mime),
+      storeFile(fp, user, String(user.id), bytes, args.mime),
     );
 
     const updated: string[] = [];

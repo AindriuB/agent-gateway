@@ -131,7 +131,6 @@ export function setup(generation: 13 | 14 = 14) {
     events.push(`update:${level.uuid}`);
     for (const row of rows)
       for (const [k, v] of Object.entries(row)) if (k !== '_id') set(level, k, v);
-    scene.background = { src: level.background.src };
     level.lastOptions = options;
     return [level];
   });
