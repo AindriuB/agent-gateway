@@ -6,11 +6,13 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Added
 
-- `image_upload` tool: an agent can upload an image into the world's Data folder, with a size quota, an approval step that does not show the raw image data, and a folder allowlist.
-- `image_view` tool: an agent can look at an image from the world, downscaled, subject to the same visibility checks and folder allowlist.
-- `image_assign` tool: list existing Data images and set them on actors, tokens, items and scene backgrounds, with Undo for each target and the same folder allowlist.
+- `image_upload` tool: an agent can upload a PNG, JPEG or WebP image into the world's Data folder. Uploads have a per-user size quota and need approval, and the approval prompt doesn't show the raw image data.
+- `image_view` tool: an agent can look at an image from the world (an Actor portrait, token art, a scene background or a Data file). It is downscaled to fit, and it follows Foundry's visibility rules and the folder allowlist.
+- `image_assign` tool: list existing Data images and set them on Actors, tokens, tiles and scene backgrounds, with Undo for each change. Uses the same folder allowlist.
 - Image content now travels from module tool results through the gateway to MCP clients.
-- Gateway protocol 7.1.0.
+- Pending approvals now survive a logout, a reconnect, a tab being replaced and a gateway restart. A caller that asks after the requester has gone gets the recorded result.
+- The active GM's client creates each user's upload folder (`agent-gateway/uploads/<user id>`) for every user who has the "Upload files" permission. Foundry lets only Assistant GMs and GMs create folders.
+- Gateway protocol 7.2.0.
 
 ### Changed
 
@@ -20,9 +22,15 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - An admin GM is told when an invite needs them online, and sees whether a vouch was confirmed or the link is not connected.
 - Link closes record why they happened (`heartbeat-timeout` or `socket-error`).
 
-### Notes
+### Fixed
 
-- The image tools are still being added; this entry will be completed at release time.
+- Players can now use `image_upload`. Before this, a player was always refused because Foundry would not let them create the upload folder.
+- On Foundry v14, `image_view` and `image_assign` read a scene's background from its starting Level, the same Level `image_upload` writes to, instead of the deprecated `Scene#background`. A scene with no background now gets a clear error.
+
+### Upgrade notes
+
+- Update the module and the gateway together. Approval persistence needs both on 0.4.0. An older module or gateway keeps working with the previous approval behaviour.
+- For players to upload images, give them both "Upload files" and "Browse file explorer". Then have a GM load the world once, so their upload folder is created. Don't mark the `agent-gateway` folder private.
 
 ## Earlier releases
 

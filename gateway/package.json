@@ -1,6 +1,6 @@
 {
   "name": "foundry-agent-gateway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local MCP gateway that lets AI agents work inside a Foundry VTT world.",
   "license": "MIT",
   "author": "AindriuB",
