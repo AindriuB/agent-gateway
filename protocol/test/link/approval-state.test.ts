@@ -38,4 +38,18 @@ describe('approvalState frame', () => {
     expect(ok(t({ id: 'a', state: 'pending', ids: [] }))).toBe(false);
     expect(ok(t({ ids: [], extra: 1 }))).toBe(false);
   });
+
+  it('approvalOwnership: a bounded id list, strict', () => {
+    expect(ok({ type: 'approvalOwnership', ids: [] })).toBe(true);
+    expect(ok({ type: 'approvalOwnership', ids: ['a'.repeat(64)] })).toBe(true);
+    expect(ok({ type: 'approvalOwnership', ids: ['a'.repeat(65)] })).toBe(false);
+    expect(ok({ type: 'approvalOwnership' })).toBe(false);
+    expect(ok({ type: 'approvalOwnership', ids: [], extra: 1 })).toBe(false);
+    expect(
+      ok({
+        type: 'approvalOwnership',
+        ids: Array.from({ length: MAX_APPROVAL_STATE_IDS + 1 }, (_, i) => `i${i}`),
+      }),
+    ).toBe(false);
+  });
 });

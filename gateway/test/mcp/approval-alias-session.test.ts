@@ -414,4 +414,68 @@ describe('mirrored pending approvals', () => {
     await until(() => store.queue.get(owner(m), batch.calls[0]!.id)?.state === 'approved');
     expect((await status(c, 'alias-1')).structuredContent).toMatchObject({ status: 'approved' });
   });
+
+  it("answers the pending list with the aliases this connection owns, and no one else's", async () => {
+    await start();
+    const m = await pair('u1');
+    const m2 = await pair('u2');
+    await capable(m);
+    await capable(m2);
+    const c = await session('u1');
+    await livePending(m, c, 'alias-1');
+    await offline(m);
+    const re = await reconnectModule(h, m);
+    browsers.push(re.tc);
+    re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    // Another user claims u1's alias in its own list: it is never confirmed to them.
+    m2.tc.send({ type: 'approvalState', ids: ['alias-1', 'nope'] });
+    expect(await m2.tc.next('approvalOwnership')).toMatchObject({ ids: [] });
+    await capable(re, ['alias-1', 'not-held']);
+    expect(await re.tc.next('approvalOwnership')).toMatchObject({ ids: ['alias-1'] });
+  });
+
+  it('a stale tab is not confirmed: X runs once, in the tab that took it over', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    const c = await session('u1');
+    await livePending(m, c, 'alias-1');
+    // Tab B takes over (A's link just died silently), gets X requeued, and it runs once.
+    const b = await reconnectModule(h, m);
+    browsers.push(b.tc);
+    b.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(b, []);
+    expect(await b.tc.next('approvalOwnership')).toMatchObject({ ids: [] });
+    const batch = (await b.tc.next('queuedCalls')) as { calls: { id: string }[] };
+    const qid = batch.calls[0]!.id;
+    b.tc.send({ type: 'queuedStatus', id: qid, status: 'approved', text: 'ran once' });
+    await until(() => store.queue.get(owner(m), qid)?.state === 'approved');
+    await offline(b);
+    // Tab A wakes up, reconnects and lists X: it is not owned, and nothing is replayed.
+    const a = await reconnectModule(h, m);
+    browsers.push(a.tc);
+    a.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
+    await capable(a, ['alias-1']);
+    expect(await a.tc.next('approvalOwnership')).toMatchObject({ ids: [] });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(a.tc.messages.some((x) => x.type === 'queuedCalls')).toBe(false);
+    expect(store.queue.getByAlias(owner(m), 'alias-1')).toMatchObject({ state: 'approved' });
+  });
+
+  it('keeps an early report across the disconnect and applies it to an orphan inserted late', async () => {
+    await start();
+    const m = await pair('u1');
+    await capable(m);
+    await session('u1');
+    const conn = h.registry.get(m.worldId, m.userId)!;
+    m.tc.send({ type: 'approvalState', id: 'alias-3', state: 'approved' });
+    await new Promise((r) => setTimeout(r, 50));
+    await offline(m);
+    const row = queue.recordLive(conn, 's', chatPost.name, { content: 'late' }, 'alias-3', true);
+    expect(row).toBeDefined();
+    expect(store.queue.getByAlias(owner(m), 'alias-3')).toMatchObject({
+      alias_report: 'approved',
+      state: 'unknown',
+    });
+  });
 });

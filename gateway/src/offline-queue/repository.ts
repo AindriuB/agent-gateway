@@ -359,6 +359,35 @@ export function createQueueRepository(db: DatabaseSync) {
               .run(state, state === 'approved' ? 'unknown' : state, now, ...args).changes;
       return Number(changes) === 1;
     },
+    /** The listed aliases this owner's connection holds live and still pending (task 112). */
+    ownedAliases(o: QueueOwner, connectionId: string, ids: readonly string[]): string[] {
+      if (!ids.length) return [];
+      const marks = ids.map(() => '?').join(',');
+      const rows = db
+        .prepare(
+          `SELECT approval_alias a FROM queued_calls WHERE ${scope} AND connection_id=? AND state='pending' AND orphaned_at IS NULL AND approval_alias IN (${marks})`,
+        )
+        .all(...ownerArgs(o), connectionId, ...ids) as unknown as { a: string }[];
+      return rows.map((r) => r.a);
+    },
+    /** Apply a held report to a row that was inserted already orphaned. */
+    reportOrphan(
+      o: QueueOwner,
+      alias: string,
+      state: 'approved' | 'denied' | 'expired',
+      now: number,
+    ): boolean {
+      return (
+        Number(
+          db
+            .prepare(
+              `UPDATE queued_calls SET alias_report=?,state=?,resolved_at=? WHERE ${scope} AND approval_alias=? AND ${ORPHAN} AND alias_report='pending'`,
+            )
+            .run(state, state === 'approved' ? 'unknown' : state, now, ...ownerArgs(o), alias)
+            .changes,
+        ) === 1
+      );
+    },
     /**
      * The owner's new capable connection sent its pending list. Mirrored rows without a live
      * connection come back to life if the module still holds them, and are requeued otherwise (the

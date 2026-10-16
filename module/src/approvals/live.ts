@@ -65,6 +65,59 @@ export function getApprovalManager(): ApprovalManager {
   return (manager ??= new ApprovalManager(liveEnv()));
 }
 
+/** How long to wait for the gateway's ownership reply before withdrawing every mirrored record. */
+export const OWNERSHIP_WAIT_MS = 10_000;
+
+/** The parts of the link client the approval wiring uses. */
+export interface ApprovalLink {
+  onState?(fn: (s: { kind: string; reason?: string }) => void): unknown;
+  sendApprovalState?(
+    msg: { id: string; state: 'pending' | 'approved' | 'denied' | 'expired' } | { ids: string[] },
+  ): boolean | void;
+  onApprovalOwnership?(fn: (ids: string[]) => void): unknown;
+}
+
+/**
+ * Tie the approval queue to the gateway link (task 112). Transitions are mirrored to the gateway.
+ * An answer given while the link is down is held until it is back. After each connect the pending
+ * list is sent and nothing is released or re-presented until the gateway confirms which of those
+ * approvals this connection owns; with no reply, or on takeover, they are withdrawn here and the
+ * gateway asks again where the user is connected.
+ */
+export function wireApprovalLink(
+  m: ApprovalManager,
+  link: ApprovalLink,
+  notify: (text: string) => void = (text) => (globalThis as any).ui?.notifications?.warn?.(text),
+): void {
+  const moved = () =>
+    notify(
+      "Agent Gateway: this tab's link was closed; its pending approvals were moved to the gateway and will be asked again where you are connected.",
+    );
+  m.onApprovalState((msg) => void link.sendApprovalState?.(msg));
+  let wasConnected = false;
+  let everConnected = false;
+  // Approvals given while the link is down wait for it: the gateway must hear of them first.
+  m.holdWhile(() => everConnected && !wasConnected);
+  link.onApprovalOwnership?.((ids) => m.confirmOwnership(ids));
+  link.onState?.((s) => {
+    const now = s.kind === 'connected';
+    if (s.kind === 'disconnected' && s.reason === 'REPLACED' && m.withdrawPending() > 0) moved();
+    if (now && !wasConnected) {
+      everConnected = true;
+      wasConnected = true;
+      const sent = link.sendApprovalState?.({ ids: m.pendingApprovalIds() });
+      if (sent) m.expectOwnership(OWNERSHIP_WAIT_MS, moved);
+      else {
+        // A gateway that cannot mirror never replies: behave as before it existed.
+        m.representAll();
+        m.releaseHeld();
+      }
+    }
+    if (!now && wasConnected) m.linkDropped();
+    wasConnected = now;
+  });
+}
+
 /** Start the socket relay once the world is ready. */
 export function startApprovals(): void {
   const m = getApprovalManager();
@@ -75,28 +128,7 @@ export function startApprovals(): void {
   Hooks.on?.('userConnected', (user: any, connected: boolean) => {
     if (connected && typeof user?.id === 'string') m.representTo(user.id);
   });
-  m.onApprovalState((msg) => getLinkClient().sendApprovalState?.(msg));
-  let wasConnected = false;
-  let everConnected = false;
-  // Approvals given while the link is down wait for it: the gateway must hear of them first.
-  m.holdWhile(() => everConnected && !wasConnected);
-  getLinkClient().onState?.((s) => {
-    const now = s.kind === 'connected';
-    if (s.kind === 'disconnected' && s.reason === 'REPLACED' && m.withdrawPending() > 0) {
-      (globalThis as any).ui?.notifications?.warn?.(
-        'Agent Gateway: your pending approvals moved to another tab on this account.',
-      );
-    }
-    if (now && !wasConnected) {
-      everConnected = true;
-      wasConnected = true;
-      m.representAll();
-      getLinkClient().sendApprovalState?.({ ids: m.pendingApprovalIds() });
-      m.releaseHeld();
-    }
-    if (!now && wasConnected) m.linkDropped();
-    wasConnected = now;
-  });
+  wireApprovalLink(m, getLinkClient());
   m.representAll();
 }
 

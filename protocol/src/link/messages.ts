@@ -383,6 +383,16 @@ export const ApprovalStateMessage = z
     { message: 'approvalState is either a transition (id, state) or a list (ids)' },
   );
 
+/**
+ * The reply to the module's post-hello `approvalState` list (task 112, protocol 7.2.0), gateway to
+ * module: which of the listed approval ids this connection now owns. The module keeps those, and
+ * withdraws every mirrored record that is not listed.
+ */
+export const ApprovalOwnershipMessage = z.strictObject({
+  type: z.literal('approvalOwnership'),
+  ids: z.array(z.string().min(1).max(64)).max(MAX_APPROVAL_STATE_IDS),
+});
+
 // Insertion-only: later tasks add schemas above and members below.
 export const LinkMessage = z.discriminatedUnion('type', [
   HelloMessage,
@@ -418,6 +428,7 @@ export const LinkMessage = z.discriminatedUnion('type', [
   RevokeUserGrantMessage,
   UserGrantsMessage,
   ApprovalStateMessage,
+  ApprovalOwnershipMessage,
 ]);
 export type LinkMessage = z.infer<typeof LinkMessage>;
 

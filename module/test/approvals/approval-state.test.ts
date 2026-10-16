@@ -197,4 +197,16 @@ describe('the link client gate', () => {
       { type: 'approvalState', id: 'a', state: 'approved' },
     ]);
   });
+
+  it('reports whether the frame was sent, and passes the ownership reply to listeners', async () => {
+    const old = await connected('7.1.0');
+    expect(old.client.sendApprovalState({ ids: [] })).toBe(false);
+    const { socket, client } = await connected(PROTOCOL_VERSION);
+    const got: string[][] = [];
+    client.onApprovalOwnership((ids) => got.push(ids));
+    expect(client.sendApprovalState({ ids: ['a'] })).toBe(true);
+    socket.recv({ type: 'approvalOwnership', ids: ['a'] });
+    socket.recv({ type: 'approvalOwnership', ids: [] });
+    expect(got).toEqual([['a'], []]);
+  });
 });

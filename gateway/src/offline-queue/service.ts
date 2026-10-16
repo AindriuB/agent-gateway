@@ -82,7 +82,6 @@ export class OfflineQueue {
     };
     this.disconnected = (c) => {
       this.capableIds.delete(c.id);
-      this.early.delete(c.id);
       try {
         store.queue.disconnected(c.id, now());
       } catch {
@@ -109,6 +108,11 @@ export class OfflineQueue {
   }
   /** Expire overdue orphans before the general cleanup would mark them `unknown`. */
   private sweep() {
+    const t = this.now();
+    for (const [id, m] of this.early) {
+      for (const [k, v] of m) if (t - v.at > EARLY_REPORT_MS) m.delete(k);
+      if (!m.size) this.early.delete(id);
+    }
     this.store.queue.expireOrphans(this.now());
     this.store.queue.cleanup(this.now());
   }
@@ -226,8 +230,11 @@ export class OfflineQueue {
       );
       const early = this.early.get(c.id);
       const held = early?.get(alias);
-      if (held && live && now - held.at <= EARLY_REPORT_MS)
-        this.store.queue.report(owner, c.id, alias, held.state, now);
+      if (held && now - held.at <= EARLY_REPORT_MS) {
+        if (live) this.store.queue.report(owner, c.id, alias, held.state, now);
+        else if (held.state !== 'pending')
+          this.store.queue.reportOrphan(owner, alias, held.state, now);
+      }
       early?.delete(alias);
       return row;
     } catch {
@@ -242,6 +249,13 @@ export class OfflineQueue {
       this.capableIds.add(c.id);
       this.store.queue.expireOrphans(this.now());
       this.store.queue.reconcile(owner, c.id, new Set(msg.ids), this.now());
+      // Tell the module which of its records this connection now owns, before anything is replayed.
+      const owned = this.store.queue.ownedAliases(owner, c.id, msg.ids);
+      try {
+        c.send(JSON.stringify({ type: 'approvalOwnership', ids: owned }));
+      } catch {
+        /* A dead socket is handled by the close path; the module withdraws on its own timeout. */
+      }
       this.deliver(c);
     } else if (this.capableIds.has(c.id) && msg.id && msg.state) {
       const now = this.now();

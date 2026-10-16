@@ -378,9 +378,17 @@ export class LinkClient {
    */
   sendApprovalState(
     msg: { id: string; state: 'pending' | 'approved' | 'denied' | 'expired' } | { ids: string[] },
-  ): void {
-    if (this._state.kind !== 'connected' || !protocolAtLeast(this.gatewayProtocol, '7.2.0')) return;
+  ): boolean {
+    if (this._state.kind !== 'connected' || !protocolAtLeast(this.gatewayProtocol, '7.2.0'))
+      return false;
     this.sendMessage({ type: 'approvalState', ...msg });
+    return true;
+  }
+  private readonly ownershipListeners = new Set<(ids: string[]) => void>();
+  /** The gateway's reply to the pending list: which approval ids this connection owns. */
+  onApprovalOwnership(fn: (ids: string[]) => void): () => void {
+    this.ownershipListeners.add(fn);
+    return () => this.ownershipListeners.delete(fn);
   }
   private eventResume:
     | {
@@ -854,6 +862,10 @@ export class LinkClient {
         pending.reject(new ManageError(msg.code, msg.message));
         break;
       }
+      case 'approvalOwnership':
+        if (this.socket !== origin || this._state.kind !== 'connected') break;
+        for (const fn of this.ownershipListeners) fn(msg.ids);
+        break;
       case 'consentCode':
         if (this.socket !== origin || this._state.kind !== 'connected') break;
         for (const fn of this.consentListeners) fn(msg);

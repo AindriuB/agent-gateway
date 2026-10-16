@@ -211,6 +211,21 @@ describe('mirrored approval rows (migration 014)', () => {
   });
 });
 
+describe('ownedAliases', () => {
+  it('lists only live pending rows of this owner on this connection', () => {
+    const s = open();
+    mirror(s, 'mine', 'c1');
+    mirror(s, 'other-conn', 'c9');
+    mirror(s, 'theirs', 'c1', 10, other);
+    mirror(s, 'done', 'c1');
+    s.queue.report(owner, 'c1', 'done', 'approved', 11);
+    const ask = ['mine', 'other-conn', 'theirs', 'done', 'missing'];
+    expect(s.queue.ownedAliases(owner, 'c1', ask)).toEqual(['mine']);
+    expect(s.queue.ownedAliases(other, 'c1', ask)).toEqual(['theirs']);
+    expect(s.queue.ownedAliases(owner, 'c1', [])).toEqual([]);
+  });
+});
+
 describe('carriesImage', () => {
   const png = Buffer.from('89504e470d0a1a0a0000000000', 'hex').toString('base64');
   it.each([

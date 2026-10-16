@@ -78,6 +78,9 @@ export class ApprovalManager {
   private holdGate?: () => boolean;
   /** Answers given while the link was down, waiting to be applied once it is back. */
   private held = new Map<string, { resolver: string; o: ResolveOptions }>();
+  /** True between sending the post-hello list and the gateway's ownership reply. */
+  private awaiting = false;
+  private awaitTimer: unknown;
 
   constructor(
     private env: ApprovalEnv,
@@ -480,6 +483,7 @@ export class ApprovalManager {
    * has lost its caller, and a retry of the same call may take over.
    */
   linkDropped(): void {
+    this.stopAwaiting();
     for (const w of this.waiters.values()) w.orphaned = true;
   }
 
@@ -576,7 +580,7 @@ export class ApprovalManager {
     // The gateway holds its copy of this approval until it hears from us. While the link is down
     // an answer is kept, not applied: nothing runs and nothing is reported until the link is back,
     // so the gateway never re-asks a call that already ran.
-    if (!release && this.mirrored.has(r.id) && !r.replay && this.holdGate?.()) {
+    if (!release && this.mirrored.has(r.id) && !r.replay && (this.awaiting || this.holdGate?.())) {
       this.held.set(r.id, { resolver, o });
       return true;
     }
@@ -637,14 +641,54 @@ export class ApprovalManager {
   }
 
   /**
-   * Another tab took over the link. The gateway's row is now the only copy of each approval this
-   * tab created, so withdraw them here and stop offering them. Returns how many were withdrawn.
+   * The post-hello list was sent: until the gateway says which ids this connection owns, release
+   * and re-present nothing. With no reply within `ms`, withdraw every mirrored record (the
+   * gateway's row is authoritative and is asked again). `withdrawn` hears how many were withdrawn.
    */
-  withdrawPending(): number {
+  expectOwnership(ms: number, withdrawn?: (n: number) => void): void {
+    this.stopAwaiting();
+    this.awaiting = true;
+    this.awaitTimer = this.env.setTimer(() => {
+      if (!this.awaiting) return;
+      this.awaiting = false;
+      this.awaitTimer = undefined;
+      const n = this.withdrawPending();
+      if (n) withdrawn?.(n);
+    }, ms);
+    this.ownershipCallback = withdrawn;
+  }
+  private ownershipCallback?: (n: number) => void;
+
+  private stopAwaiting(): void {
+    if (this.awaitTimer !== undefined) this.env.clearTimer(this.awaitTimer);
+    this.awaitTimer = undefined;
+    this.awaiting = false;
+  }
+
+  /**
+   * The gateway's reply: keep the records it lists, withdraw the other mirrored ones with nothing
+   * run or reported, then release the held answers and re-present what is still ours.
+   */
+  confirmOwnership(ids: readonly string[]): void {
+    if (!this.awaiting) return;
+    this.stopAwaiting();
+    const owned = new Set(ids);
+    const n = this.withdrawPending((r) => !owned.has(r.id));
+    if (n) this.ownershipCallback?.(n);
+    this.representAll();
+    this.releaseHeld();
+  }
+
+  /**
+   * Withdraw this session's pending mirrored records (all, or those the filter accepts): the
+   * gateway's row is the only copy, so stop offering them here. Nothing is run or reported.
+   * Returns how many were withdrawn.
+   */
+  withdrawPending(filter: (r: ApprovalRecord) => boolean = () => true): number {
     const now = this.env.now();
     let n = 0;
     for (const r of this.records.values()) {
-      if (r.status !== 'pending' || !this.mirrored.has(r.id)) continue;
+      if (r.status !== 'pending' || !this.mirrored.has(r.id) || !filter(r)) continue;
       this.mirrored.delete(r.id);
       this.held.delete(r.id);
       r.status = 'expired';
@@ -843,6 +887,7 @@ export class ApprovalManager {
     this.ensureLoaded();
     this.expireDue();
     for (const r of this.records.values()) {
+      if (this.awaiting && this.mirrored.has(r.id)) continue; // not ours until the gateway says so
       if (r.status === 'pending' && this.eligible(r, userId)) this.sendRequest(r, [userId]);
     }
   }
@@ -852,6 +897,7 @@ export class ApprovalManager {
     this.ensureLoaded();
     this.expireDue();
     for (const r of this.records.values()) {
+      if (this.awaiting && this.mirrored.has(r.id)) continue; // not ours until the gateway says so
       if (r.status === 'pending') this.sendRequest(r, this.recipients(r));
     }
   }
