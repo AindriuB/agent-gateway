@@ -2,6 +2,7 @@
 // with a Caddy reload part-way. Not part of the default e2e run. Usage:
 //   node e2e/link-idle/idle.mjs <minutes> <reloadAtMinutes|-> <linkPort> <caddyPort> <adminPort> <name>
 // The server mimics the gateway heartbeat (JSON ping every 15 s, terminate after 2 missed pongs).
+// Stand-in server, not the real gateway: it resets `missed` on any frame, unlike server.ts:449-451.
 import { WebSocketServer, WebSocket } from 'ws';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
