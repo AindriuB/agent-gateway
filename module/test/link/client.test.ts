@@ -987,3 +987,23 @@ it('wasAdmin survives a disconnect and clears on a non-admin welcome and on unpa
   await client.unpair();
   expect(client.wasAdmin).toBe(false);
 });
+
+it('wasAdmin clears when the gateway rejects the used token, so a later vouch warns nothing', async () => {
+  const h = await vouchHarness();
+  try {
+    token = 'tok';
+    client.start();
+    open();
+    sockets[0]!.recv(welcome({ admin: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.wasAdmin).toBe(true);
+    sockets[0]!.recv({ type: 'reject', code: 'PAIRING_INVALID', message: 'no' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.wasAdmin).toBe(false);
+    await h.handleVouchMessage(h.message(), client);
+    expect(h.n.warn).not.toHaveBeenCalled();
+    expect(h.attests()).toEqual([]);
+  } finally {
+    h.restore();
+  }
+});
