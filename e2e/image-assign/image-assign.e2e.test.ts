@@ -155,7 +155,26 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       `async (u) => { const s = await fromUuid(u); const [t] = await s.createEmbeddedDocuments('Tile', [{ x: 0, y: 0, width: 100, height: 100 }]); return t.uuid; }`,
       sceneUuid,
     );
-    ownedUuid = await createActor('agent-gateway e2e image owned (temporary)', { default: 3 });
+    // As in the real world: explicit per-user OWNER for the player, default 0 (NONE).
+    ownedUuid = await createDoc(
+      `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
+      { name: 'agent-gateway e2e image owned (temporary)', player: playerUser },
+    );
+
+    // The player's own client must see the Actor as OWNER before any tool call.
+    expect(
+      await pageOf(playerUser).evaluate(
+        `(async (uuid) => {
+          for (let i = 0; i < 40; i++) {
+            const a = await fromUuid(uuid);
+            if (a && a.testUserPermission(game.user, 'OWNER') === true) return true;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          return false;
+        })(${JSON.stringify(ownedUuid)})`,
+      ),
+      'player client sees the owned Actor as OWNER',
+    ).toBe(true);
     foreignUuid = await createActor('agent-gateway e2e image foreign (temporary)', { default: 0 });
   }, 15 * 60_000);
 

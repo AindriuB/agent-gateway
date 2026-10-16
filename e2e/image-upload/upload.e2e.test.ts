@@ -144,12 +144,27 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       grantSkipReason = reason;
     }
     sceneUuid = await create('Scene', { name: 'agent-gateway e2e upload scene (temporary)' });
-    // Ownership default 3 (OWNER) makes the Actor the player's; default 0 (NONE) is not theirs.
-    ownedActor = await create('Actor', {
-      name: 'agent-gateway e2e upload owned (temporary)',
-      type: 'character',
-      ownership: { default: 3 },
-    });
+    // As in the real world: explicit per-user OWNER for the player, default 0 (NONE).
+    ownedActor = await evalGm<string>(
+      `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
+      { name: 'agent-gateway e2e upload owned (temporary)', player: playerUser },
+    );
+    created.push(ownedActor);
+
+    // The player's own client must see the Actor as OWNER before any tool call.
+    expect(
+      await pageOf(playerUser).evaluate(
+        `(async (uuid) => {
+          for (let i = 0; i < 40; i++) {
+            const a = await fromUuid(uuid);
+            if (a && a.testUserPermission(game.user, 'OWNER') === true) return true;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          return false;
+        })(${JSON.stringify(ownedActor)})`,
+      ),
+      'player client sees the owned Actor as OWNER',
+    ).toBe(true);
     foreignActor = await create('Actor', {
       name: 'agent-gateway e2e upload foreign (temporary)',
       type: 'character',
@@ -248,6 +263,7 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       const r = await upload(playerUser, { actorUuid: foreignActor, setPortrait: true });
       expect(r.isError, r.text).toBe(true);
       expect(r.text).toContain('FORBIDDEN');
+      expect(r.text).toMatch(/own/i);
       expect(r.text).not.toMatch(/FILES_/);
     },
     swapTimeout(1),
