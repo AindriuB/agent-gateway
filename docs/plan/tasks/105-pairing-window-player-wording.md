@@ -48,8 +48,9 @@ browser has no pairing for this user, and reword the ids block so a player is po
 - [ ] For a non-GM user, the hint shown with the ids says a player is normally invited by their GM
       from Manage access and does not need the ids. For a GM user it keeps the operator wording.
       Both are covered by tests.
-- [ ] `AGENT_GATEWAY.Pairing.Server.line` no longer tells players to send their ids "with the button
-      below"; it points them at their GM's invite.
+- [ ] `AGENT_GATEWAY.Pairing.Server.line` reads exactly "Paste the invite your GM or the gateway
+      operator sends you here." for every user, GM or player (Amendment 1). It no longer mentions
+      sending ids "with the button below" (test asserts the en.json value).
 - [ ] Every new or changed string is in lang/en.json under `AGENT_GATEWAY.Pairing.*`, and no other
       key in the file changes (diff check).
 - [ ] `npm run verify` passes.
@@ -60,3 +61,8 @@ browser has no pairing for this user, and reword the ids block so a player is po
 - Removing old-gateway credentials from the UI (an 89 follow-up).
 - docs/guides/headless.md and the docker README "Copy my ids" references (task 114 updates them
   after this lands).
+
+## Amendment 1 (2026-10-16, decided by Andrew)
+`AGENT_GATEWAY.Pairing.Server.line` becomes one neutral line for everyone: "Paste the invite your
+GM or the gateway operator sends you here." The acceptance item above is updated to match.
+Reason: GMs also see this line, and a GM is invited by the operator, not by a GM.

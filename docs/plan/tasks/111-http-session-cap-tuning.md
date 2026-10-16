@@ -2,9 +2,8 @@
 
 **Repo:** .
 **Depends on:** 110
-**Status:** BLOCKED on decision. Do not fan out until Andrew has answered "Open decisions" and the
-answer is written into this file. 110's live evidence is now in hand (see 110, "Live evidence"),
-so the decision does not have to wait for 110's PR.
+**Status:** Ready. Andrew chose option B (Amendment 1). 110's live evidence (see 110, "Live
+evidence") satisfies the dependency on 110; this task does not wait for 110's PR.
 **Owns:**
 - gateway/src/http/limits.ts
 - gateway/src/http/server.ts (only the eviction plan and eviction log line at `:430-500`, and the
@@ -51,22 +50,21 @@ protect a public gateway more than the chosen option states.
    - **Recommendation: B.** Decide C separately, because it weakens abuse protection for every
      authenticated client.
 
-## Acceptance (to be finalised with the decision)
+## Acceptance
 - [ ] `MAX_HTTP_SESSIONS_PER_PRINCIPAL` is 16, and session-churn.test.ts asserts that 20
       initializes with no DELETE for one principal give exactly 4 evictions, oldest idle first.
-- [ ] `MAX_HTTP_SESSIONS_PER_CLIENT` is raised to the value written here with the decision.
-      public.test.ts asserts that one principal stays within its own cap and that the client-key
+- [ ] `MAX_HTTP_SESSIONS_PER_CLIENT` is 32. public.test.ts asserts that one principal stays within its own cap and that the client-key
       cap still refuses with 503 once full.
 - [ ] The global public cap still holds. The existing session-eviction tests pass, apart from
       assertions this task deliberately updates, each one named in the PR.
 - [ ] A test shows that 50 evictions for one principal within 10 minutes produce at most one
       info-level eviction line, with the rest at debug.
-- [ ] Under B: with the per-client rate already exhausted, a `DELETE /mcp` on a live session of
+- [ ] With the per-client rate already exhausted, a `DELETE /mcp` on a live session of
       the same principal returns 200 and the session count drops by one. A POST from the same
       client key in the same second still gets 429. A DELETE carrying an unknown session id still
       gets 404 and is still counted, so a flood of fake DELETEs cannot bypass the limit.
-- [ ] Under C only: the new per-principal rate or burst is in limits.ts and asserted in
-      public.test.ts.
+- [ ] `PUBLIC_CLIENT_RPS` is unchanged at 10, and the eleventh non-DELETE request in a second still
+      gets 429 (public.test.ts:258-274 passes unmodified).
 - [ ] `npm run verify` passes.
 
 ## Out of scope
@@ -75,5 +73,20 @@ protect a public gateway more than the chosen option states.
   stop and re-plan).
 - **Open follow-up, not this task:** 388 of the 718 `GET /mcp` requests got 401. Find out whether
   ChatGPT opens its SSE GET without a bearer token or with an expired one, and whether the
-  gateway's 401 and `WWW-Authenticate` reply (server.ts:325-330) is correct for that case. The
+  gateway's 401 and `WWW-Authenticate` reply (server.ts:330-334) is correct for that case. The
   scribe should file this as its own PLAN item.
+- **Declined for now, follow-up:** option C, a higher request rate or burst allowance for an
+  authenticated OAuth principal. It weakens abuse protection for every authenticated client;
+  revisit only if 429s on non-DELETE requests persist after B ships. The scribe should file it as
+  its own PLAN item.
+
+## Amendment 1 (2026-10-16, decided by Andrew)
+Option B. `MAX_HTTP_SESSIONS_PER_PRINCIPAL` 4 → 16; `MAX_HTTP_SESSIONS_PER_CLIENT` (limits.ts:6)
+16 → 32; the eviction log line is rate-limited (one info line per principal per 10 minutes, the
+rest at debug); `DELETE /mcp` on a known session of the same principal is exempt from the
+per-client rate limit (server.ts:336-339). Option C is declined for now and recorded under Out of
+scope as a follow-up. Acceptance is now unconditional, Status is Ready (110's live evidence
+satisfies the dependency), and the 401 reference in the follow-up note is corrected to
+server.ts:330-334. Reason: B fixes the client-visible breakage 110 measured (404s after
+evictions, 429 on DELETE) without weakening the per-client rate limit for every authenticated
+client, which C would.

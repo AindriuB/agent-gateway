@@ -58,6 +58,9 @@ own heartbeat termination from a proxy or browser close, because both show as 10
      keepalive or dead-link timer; `stream_close_delay` / `stream_timeout` in the shipped
      Caddyfiles; a browser-side cause the gateway cannot fix (document only). Each comes with the
      evidence that rules the others in or out.
+- [ ] e2e/link-idle/idle.mjs carries a one-line comment saying its ws server is a stand-in that
+      resets `missed` on any frame, unlike the real gateway (gateway/src/link/server.ts:449-451,
+      which resets only on an app-level pong) (Amendment 1).
 - [ ] `npm run verify` passes.
 
 ## Out of scope
@@ -80,3 +83,12 @@ Reviewed HEAD: 60534d4b8ac4767027eccbddc2e81f9f31e1da95
 
 - [STYLE] e2e/link-idle/idle.mjs — not Prettier-formatted (for example lines 16-17, 32 and 51). The root lint glob skips e2e/ .mjs, but docs/conventions.md:3 requires Prettier. Fix: `npx prettier --write e2e/link-idle/idle.mjs`. route: implementer
 - [NOTE, optional] gateway/src/link/server.ts:401 — no test covers the `code === 1006` guard (it matters only when a real close frame races a terminate). Not a defect.
+
+## Amendment 1 (2026-10-16, decided by Andrew)
+Two known residuals are accepted:
+- (a) Finding 4's local reproduction used a stand-in ws server copying the heartbeat, not the real
+  gateway. Reason: the live evidence (finding 1) already identifies the gateway heartbeat as the
+  closer. The one remaining change is a one-line comment in e2e/link-idle/idle.mjs saying it is a
+  stand-in that resets `missed` on any frame, unlike server.ts:449-451 (acceptance item added).
+- (b) Finding 6 recommends a fix outside the four listed options. Reason: Andrew approved that fix
+  as task 109's direction (see 109, Amendment 1).

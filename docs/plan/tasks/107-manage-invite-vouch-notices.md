@@ -33,9 +33,10 @@ invite, and when their browser confirms or cannot confirm a player's pairing.
 - [ ] Each `unused` invite row in the Invites tab shows a short "needs you online to confirm" note.
       Used, expired and cancelled rows do not (model test).
 - [ ] `Manage.invitesIntro` mentions that this GM must be online when the player pairs.
-- [ ] When the admin GM's browser vouches successfully, that GM gets one
-      `ui.notifications.info` naming the player whose pairing was confirmed. The name comes from
-      the Foundry user Foundry set as the message author, never from message content (test).
+- [ ] When the admin GM's browser vouches successfully (`attest` returns true), that GM gets one
+      `ui.notifications.info` reading "confirmation sent for {player}", not "pairing confirmed for
+      {player}" (Amendment 1). The name comes from the Foundry user Foundry set as the message
+      author, never from message content (test).
 - [ ] When an admin GM's browser receives a vouch request but `attest` returns false (link not
       connected), that GM gets one `ui.notifications.warn` saying the pairing could not be confirmed
       because their Agent Gateway link is not connected (test). A non-admin client still does
@@ -51,3 +52,10 @@ invite, and when their browser confirms or cannot confirm a player's pairing.
 - Changing who may vouch, and the gateway's vouch logic (gateway/src/link/attestation.ts).
 - The pairing window (task 105) and the Players-list indicator (task 106).
 - Docs (task 114 covers the vouch flow in server-mode.md).
+- A gateway acknowledgement of `attest`, so that the notice could say the pairing was actually
+  confirmed. Possible follow-up; it needs a protocol and gateway change.
+
+## Amendment 1 (2026-10-16, decided by Andrew)
+The vouch success notice says "confirmation sent for {player}" instead of "pairing confirmed for
+{player}"; the acceptance item and Out of scope are updated to match. Reason: the notice fires when
+`attest` is sent (module/src/link/client.ts:443-446), not when the gateway accepts it.
