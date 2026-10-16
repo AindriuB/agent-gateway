@@ -45,6 +45,9 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   let ownedUuid: string | undefined;
   let foreignUuid: string | undefined;
   const residue: string[] = [];
+  // The world's core `permissions` setting (role lists per permission), snapshotted by the GM.
+  let permissionSnapshot: Record<string, number[]> | undefined;
+  let grantSkipReason: string | undefined;
 
   /** Breadth-first search of the Data tree for any image, bounded in depth and calls. */
   async function findImage(): Promise<string> {
@@ -78,12 +81,46 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     return uuid!;
   };
 
+  const PERMISSIONS = `game.settings.get('core', 'permissions')`;
+  const writePermissions = (value: Record<string, number[]>): Promise<void> =>
+    evalGm<void>(`async (v) => { await game.settings.set('core', 'permissions', v); }`, value);
+  const browseRoles = (): number[] => permissionSnapshot?.FILES_BROWSE ?? [2, 3, 4];
+  /** Waits for the player's own client to see its FILES_BROWSE permission become `want`. */
+  const playerCanBrowse = (want: boolean): Promise<boolean> =>
+    player.browser.page.evaluate(
+      `(async (want) => {
+        for (let i = 0; i < 40; i++) {
+          if (game.user.can('FILES_BROWSE') === want) return true;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        return game.user.can('FILES_BROWSE') === want;
+      })(${JSON.stringify(want)})`,
+    ) as Promise<boolean>;
+  const grantBrowse = async (): Promise<boolean> => {
+    await writePermissions({
+      ...permissionSnapshot!,
+      FILES_BROWSE: [...new Set([...browseRoles(), 1])],
+    });
+    return playerCanBrowse(true);
+  };
+  const needGrant = (ctx: { skip: (reason?: string) => never }): void => {
+    if (grantSkipReason) ctx.skip(grantSkipReason);
+  };
+
   beforeAll(async () => {
     if (!enabled) return;
     const ctx = loadContext();
     gm = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
     player = await openUserSession(ctx.config, ctx.paths, ctx.config.playerUser);
     image = await findImage();
+    // Players lack FILES_BROWSE by default (Trusted+), so grant it for the run; afterAll restores.
+    permissionSnapshot = await evalGm<Record<string, number[]>>(
+      `async () => JSON.parse(JSON.stringify(${PERMISSIONS}))`,
+      null,
+    );
+    expect(permissionSnapshot, 'core.permissions setting').toBeTypeOf('object');
+    if (!(await grantBrowse()))
+      grantSkipReason = `Foundry ${gm.foundryVersion} did not grant FILES_BROWSE to the Player role (role 1)`;
     // A scene and tile have no tool to create them, so the GM browser makes them natively.
     sceneUuid = await evalGm<string>(
       `async () => (await Scene.create({ name: 'agent-gateway e2e image (temporary)' })).uuid`,
@@ -99,6 +136,13 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
 
   afterAll(async () => {
     const failures: string[] = [];
+    if (gm && permissionSnapshot) {
+      try {
+        await writePermissions(permissionSnapshot);
+      } catch (e) {
+        failures.push(`permissions: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     if (gm) {
       try {
         if (sceneUuid)
@@ -204,7 +248,8 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
 
   it(
     'a player sets the portrait and token art of an Actor they own',
-    async () => {
+    async (ctx) => {
+      needGrant(ctx);
       for (const target of ['actor_portrait', 'actor_token']) {
         const r = await settle(player, await set(player, target, ownedUuid));
         expect(r.isError, r.text).toBe(false);
@@ -218,17 +263,47 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     humanTimeout(2),
   );
 
-  it('a player is refused on another user Actor and on GM-only targets', async () => {
-    const other = await player.gateway.call('image_assign', {
-      action: 'set',
-      path: image,
-      target: 'actor_portrait',
-      uuid: foreignUuid,
-    });
+  it('a player is refused on another user Actor for ownership, not for FILES_BROWSE', async (ctx) => {
+    needGrant(ctx);
+    const other = await set(player, 'actor_portrait', foreignUuid);
     expect(other.isError).toBe(true);
-    expect(other.text).toMatch(/FORBIDDEN|own/);
+    expect(other.text).toContain('FORBIDDEN');
+    expect(other.text).toMatch(/own/i);
+    expect(other.text).not.toContain('FILES_BROWSE');
+  });
+
+  it('a player is refused on GM-only targets', async (ctx) => {
+    needGrant(ctx);
     const tile = await set(player, 'tile', tileUuid);
     expect(tile.isError).toBe(true);
-    expect(tile.text).toMatch(/FORBIDDEN|GM/);
+    expect(tile.text).toContain('FORBIDDEN');
+    expect(tile.text).toMatch(/GM/);
+    expect(tile.text).not.toContain('FILES_BROWSE');
+  });
+
+  it('a player without FILES_BROWSE is refused with FORBIDDEN naming FILES_BROWSE', async () => {
+    await writePermissions({
+      ...permissionSnapshot!,
+      FILES_BROWSE: browseRoles().filter((r) => r !== 1),
+    });
+    try {
+      expect(await playerCanBrowse(false)).toBe(true);
+      const r = await set(player, 'actor_portrait', ownedUuid);
+      expect(r.isError).toBe(true);
+      expect(r.text).toContain('FORBIDDEN');
+      expect(r.text).toContain('FILES_BROWSE');
+    } finally {
+      await grantBrowse();
+    }
+  });
+
+  it('the permission setting round-trips: restoring the snapshot reads back equal', async () => {
+    await writePermissions(permissionSnapshot!);
+    const now = await evalGm<Record<string, number[]>>(
+      `async () => JSON.parse(JSON.stringify(${PERMISSIONS}))`,
+      null,
+    );
+    expect(now).toEqual(permissionSnapshot);
+    await grantBrowse();
   });
 });
