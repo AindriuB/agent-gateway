@@ -7,6 +7,7 @@ import {
   sniffImage,
 } from '@agent-gateway/protocol';
 import { isAuditDocument } from '../audit/guard.js';
+import { folderAllowed } from '../policy/folders.js';
 import { foundryGeneration } from '../compat/index.js';
 import { decodeBase64Strict, sha256Bytes } from '../ops/redact.js';
 import { resolveFilePicker } from './_image.js';
@@ -69,15 +70,22 @@ async function resolveActor(user: any, uuid: string): Promise<any> {
     actor.pack ||
     actor.uuid !== uuid ||
     isAuditDocument(actor) ||
-    (!user.isGM && !owns(actor, user))
+    (!user.isGM && !owns(actor, user)) ||
+    !folderAllowed(actor, user.isGM === true)
   )
     forbid();
   return actor;
 }
 
-async function resolveScene(uuid: string): Promise<any> {
+async function resolveScene(user: any, uuid: string): Promise<any> {
   const scene = await fromUuid(uuid);
-  if (scene?.documentName !== 'Scene' || scene.pack || scene.uuid !== uuid) forbid();
+  if (
+    scene?.documentName !== 'Scene' ||
+    scene.pack ||
+    scene.uuid !== uuid ||
+    !folderAllowed(scene, user.isGM === true)
+  )
+    forbid();
   return scene;
 }
 
@@ -164,7 +172,7 @@ export const imageUploadHandler = defineWriteHandler({
     if (!USER_ID.test(String(user.id))) invalid('The current user id cannot name a directory');
 
     const actor = args.actorUuid ? await resolveActor(user, args.actorUuid) : undefined;
-    const scene = args.sceneUuid ? await resolveScene(args.sceneUuid) : undefined;
+    const scene = args.sceneUuid ? await resolveScene(user, args.sceneUuid) : undefined;
     if (actor) await ctx.snapshot(actor.uuid);
     // v14 keeps the background on a Level, and Undo drops embedded collections from a Scene
     // snapshot, so the Level itself is snapshotted there; v13 snapshots the Scene.

@@ -4,6 +4,12 @@ import { createHash } from 'node:crypto';
 import { parseImageUploadText } from '@agent-gateway/protocol';
 import { imageUploadHandler } from '../../../src/tools/image-upload.js';
 
+const folders = vi.hoisted(() => ({ playerAgents: [] as string[], gmAgents: [] as string[] }));
+vi.mock('../../../src/policy/snapshot.js', async (orig) => ({
+  ...(await orig<object>()),
+  readWorldSnapshot: () => ({ folders }),
+}));
+
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]);
 const b64 = (b: Buffer) => b.toString('base64');
@@ -43,6 +49,8 @@ const doc = (uuid: string, kind: string, extra: any = {}) => {
 };
 
 beforeEach(() => {
+  folders.playerAgents = [];
+  folders.gmAgents = [];
   const g = globalThis as any;
   users = {
     p1: { id: 'p1', isGM: false, can: (p: string) => p === 'FILES_UPLOAD' || p === 'FILES_BROWSE' },
@@ -241,7 +249,7 @@ describe('image_upload permissions', () => {
 });
 
 describe('image_upload scene background', () => {
-  it('v14 updates the first Level, snapshots the Scene and passes callOptions', async () => {
+  it('v14 updates the Level (initialLevel, then defaultLevel0000, then first), snapshots that Level and passes callOptions', async () => {
     const scene = doc('Scene.s', 'Scene', {
       levels: { contents: [{ id: 'defaultLevel0000', uuid: 'Scene.s.Level.defaultLevel0000' }] },
       updateEmbeddedDocuments: vi.fn(async () => []),
@@ -266,4 +274,47 @@ describe('image_upload scene background', () => {
     );
     expect(snapshot).toHaveBeenCalledWith('Scene.s');
   });
+});
+
+describe('image_upload folder allowlist', () => {
+  const inFolder = { id: 'ok' };
+  const outFolder = { id: 'nope' };
+  const cases = [
+    ['player', 'p1', 'playerAgents', 'Actor', { actorUuid: 'Actor.t', setPortrait: true }],
+    ['GM', 'gm', 'gmAgents', 'Actor', { actorUuid: 'Actor.t', setPortrait: true }],
+    ['GM', 'gm', 'gmAgents', 'Scene', { sceneUuid: 'Scene.t', setBackground: true }],
+  ] as const;
+  it.each(cases)(
+    '%s agent: excluded %s is refused like a missing one, before any upload',
+    async (_n, who, key, kind, extra) => {
+      const d = doc(`${kind}.t`, kind, { folder: outFolder, levels: { contents: [] } });
+      folders[key] = ['ok'];
+      const missing = await call(
+        args({ ...extra, [kind === 'Actor' ? 'actorUuid' : 'sceneUuid']: `${kind}.gone` }),
+        who,
+      );
+      const r = await call(args(extra), who);
+      expect(r.error).toEqual(missing.error);
+      expect(r.error.code).toBe('FORBIDDEN');
+      expect(fp.upload).not.toHaveBeenCalled();
+      expect(fp.createDirectory).not.toHaveBeenCalled();
+      expect(d.update).not.toHaveBeenCalled();
+    },
+  );
+  it.each(cases)(
+    '%s agent: allowed %s works, and an empty allowlist means no restriction',
+    async (_n, who, key, kind, extra) => {
+      const d = doc(`${kind}.t`, kind, {
+        folder: { id: 'child', folder: inFolder },
+        levels: { contents: [{ id: 'l', uuid: `${kind}.t.Level.l` }] },
+        updateEmbeddedDocuments: vi.fn(async () => []),
+      });
+      d.owners.add(who);
+      folders[key] = ['ok'];
+      expect((await call(args(extra), who)).error).toBeUndefined();
+      folders[key] = [];
+      d.folder = outFolder;
+      expect((await call(args(extra), who)).error).toBeUndefined();
+    },
+  );
 });
