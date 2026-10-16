@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { MAX_FRAME_BYTES, PROTOCOL_VERSION, defineTool } from '@agent-gateway/protocol';
+import {
+  MAX_FRAME_BYTES,
+  MAX_RESULT_IMAGE_BASE64_CHARS,
+  PROTOCOL_VERSION,
+  defineTool,
+} from '@agent-gateway/protocol';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createAuditStage } from '../../src/audit/stage.js';
@@ -158,5 +163,75 @@ describe('result frame images', () => {
     expect(records).toHaveLength(1);
     expect(JSON.stringify(records[0])).not.toContain(data);
     expect(records[0]!.result).toBe('seen');
+  });
+  describe('frame validation (Amendment 3a)', () => {
+    const cases: [string, () => CallResult][] = [
+      [
+        'data over the image cap but under the frame cap',
+        () => ({ ok: true, text: 'a', images: [image('A'.repeat(700_000))] }),
+      ],
+      ['two images', () => ({ ok: true, text: 'a', images: [image(), image()] })],
+      [
+        'image/gif from an untyped handler',
+        () => ({ ok: true, text: 'a', images: [{ mimeType: 'image/gif', data: png(30) }] as any }),
+      ],
+    ];
+    it.each(cases)('%s yields INVALID_ARGS and keeps the link open', async (_n, make) => {
+      const res = make();
+      client.onCall = () => res;
+      socket.recv(call);
+      await flush();
+      const last = socket.sent.at(-1);
+      expect(last).toMatchObject({ type: 'error', id: 'c1', code: 'INVALID_ARGS' });
+      const data = (res as any).images[0].data as string;
+      expect(last.message).not.toContain(data.slice(0, 40));
+      expect(socket.raw.at(-1)!.length).toBeLessThan(2000);
+      expect(client.state.kind).toBe('connected');
+    });
+    it('the over-cap case is over the image cap and under the frame cap', () => {
+      expect(700_000).toBeGreaterThan(MAX_RESULT_IMAGE_BASE64_CHARS);
+      expect(700_000).toBeLessThan(MAX_FRAME_BYTES);
+    });
+  });
+
+  describe('gateway protocol gate (Amendment 3b)', () => {
+    const Old = z.strictObject({
+      type: z.literal('result'),
+      id: z.string(),
+      ok: z.literal(true),
+      text: z.string(),
+      structured: z.unknown().optional(),
+    });
+    async function welcomeWith(protocolVersion: string) {
+      socket.recv({
+        type: 'welcome',
+        gatewayVersion: '0',
+        protocolVersion,
+        connectionId: 'c',
+        agentId: 'a',
+      });
+      await flush();
+    }
+    it('strips images for a 7.0.0 gateway and says so', async () => {
+      await welcomeWith('7.0.0');
+      const img = image();
+      client.onCall = () => ({ ok: true, text: 'a', structured: { k: 1 }, images: [img] });
+      socket.recv(call);
+      await flush();
+      const f = socket.sent.at(-1);
+      expect('images' in f).toBe(false);
+      expect(f.structured).toEqual({ k: 1 });
+      expect(f.text).toMatch(/^a\n.*image omitted/);
+      expect(f.text).not.toContain(img.data);
+      expect(Old.safeParse(f).success).toBe(true);
+    });
+    it('sends images after a 7.1.0 welcome', async () => {
+      await welcomeWith('7.1.0');
+      const img = image();
+      client.onCall = () => ({ ok: true, text: 'a', images: [img] });
+      socket.recv(call);
+      await flush();
+      expect(socket.sent.at(-1).images).toEqual([img]);
+    });
   });
 });
