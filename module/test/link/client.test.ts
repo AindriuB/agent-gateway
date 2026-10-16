@@ -894,3 +894,96 @@ it('PAIRING_UNCONFIRMED ends the attempt, keeps the stored token, and shows no t
     expect(seen, `leaked ${secret}`).not.toContain(secret);
   spies.forEach((x) => x.mockRestore());
 });
+
+// Amendment 2 of task 107: a real client that was an admin GM and lost its link still tells the GM.
+async function vouchHarness() {
+  const g = globalThis as any;
+  const saved = { game: g.game, ui: g.ui };
+  const users = [{ id: 'p2', name: 'Other', isGM: false }];
+  g.game = {
+    i18n: { localize: (k: string) => `L:${k}`, format: (k: string) => k },
+    users: Object.assign([...users], { get: (id: string) => users.find((u) => u.id === id) }),
+  };
+  g.ui = { notifications: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } };
+  const { handleVouchMessage } = await import('../../src/link/vouch.js');
+  const message = () => ({
+    flags: { 'agent-gateway': { vouch: { nonce: 'N-0123456789' } } },
+    author: { id: 'p2' },
+    delete: vi.fn(async () => undefined),
+  });
+  const attests = () => sockets.flatMap((s) => s.sent.filter((m) => m.type === 'attest'));
+  return {
+    handleVouchMessage,
+    message,
+    attests,
+    n: g.ui.notifications,
+    restore: () => {
+      g.game = saved.game;
+      g.ui = saved.ui;
+    },
+  };
+}
+
+it('an admin GM whose link dropped gets one notConfirmed warn, no attest, no delete', async () => {
+  const h = await vouchHarness();
+  try {
+    token = 'tok';
+    client.start();
+    open();
+    sockets[0]!.recv(welcome({ admin: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0]!.onclose?.();
+    expect(client.isAdmin).toBe(false);
+    const m = h.message();
+    await h.handleVouchMessage(m, client);
+    await h.handleVouchMessage(m, client);
+    expect(h.n.warn).toHaveBeenCalledExactlyOnceWith('L:AGENT_GATEWAY.Pairing.Vouch.notConfirmed');
+    expect(h.n.info).not.toHaveBeenCalled();
+    expect(h.attests()).toEqual([]);
+    expect(m.delete).not.toHaveBeenCalled();
+  } finally {
+    h.restore();
+  }
+});
+
+it('a client never told it is admin stays silent and sends no attest', async () => {
+  const h = await vouchHarness();
+  try {
+    await h.handleVouchMessage(h.message(), client); // never connected
+    token = 'tok';
+    client.start();
+    open();
+    sockets[0]!.recv(welcome({ admin: false }));
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0]!.onclose?.();
+    await h.handleVouchMessage(h.message(), client);
+    expect(h.n.warn).not.toHaveBeenCalled();
+    expect(h.n.info).not.toHaveBeenCalled();
+    expect(h.attests()).toEqual([]);
+  } finally {
+    h.restore();
+  }
+});
+
+it('wasAdmin survives a disconnect and clears on a non-admin welcome and on unpair', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  expect(client.wasAdmin).toBe(false);
+  sockets[0]!.recv(welcome({ admin: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.wasAdmin).toBe(true);
+  sockets[0]!.onclose?.();
+  expect(client.wasAdmin).toBe(true);
+  await vi.advanceTimersByTimeAsync(60_000);
+  open();
+  sockets.at(-1)!.recv(welcome({ admin: false }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.wasAdmin).toBe(false);
+
+  sockets.at(-1)!.recv(welcome({ admin: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.wasAdmin).toBe(true);
+  await client.unpair();
+  expect(client.wasAdmin).toBe(false);
+});

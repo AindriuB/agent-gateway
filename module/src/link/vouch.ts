@@ -50,14 +50,14 @@ function nonceOf(message: any): string | undefined {
 
 /**
  * Admin side: for a flagged message, read the author Foundry set (never a flag or the content),
- * vouch for it over the admin's own link, then delete the message. A client that is not admin, or
+ * vouch for it over the admin's own link, then delete the message. A client that was never admin, or
  * a missing or malformed flag, does nothing.
  */
 export async function handleVouchMessage(
   message: any,
-  client: Pick<LinkClient, 'isAdmin' | 'attest'>,
+  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
 ): Promise<void> {
-  if (!client.isAdmin) return;
+  if (!client.isAdmin && !client.wasAdmin) return;
   const nonce = nonceOf(message);
   if (nonce === undefined) return;
   const authorId = message?.author?.id;
@@ -66,7 +66,8 @@ export async function handleVouchMessage(
   if (!author) return;
   if (handled.has(message)) return;
   handled.add(message);
-  if (!client.attest(nonce, authorId, author.isGM === true)) {
+  // A GM whose link dropped is still told; only a connected admin link can attest.
+  if (!client.isAdmin || !client.attest(nonce, authorId, author.isGM === true)) {
     ui?.notifications?.warn(game.i18n.localize('AGENT_GATEWAY.Pairing.Vouch.notConfirmed'));
     return;
   }
@@ -83,7 +84,9 @@ export async function handleVouchMessage(
 }
 
 /** Register the `createChatMessage` hook on the admin's side. Idempotent callers: call once. */
-export function installVouchHook(client: Pick<LinkClient, 'isAdmin' | 'attest'>): void {
+export function installVouchHook(
+  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
+): void {
   Hooks.on('createChatMessage', (message: unknown) => {
     void handleVouchMessage(message, client);
   });

@@ -72,7 +72,7 @@ describe('admin side', () => {
     delete: vi.fn(async () => undefined),
     ...over,
   });
-  const client = (isAdmin = true) => ({ isAdmin, attest: vi.fn(() => true) });
+  const client = (isAdmin = true) => ({ isAdmin, wasAdmin: isAdmin, attest: vi.fn(() => true) });
 
   it('an admin vouches for the author Foundry set, then deletes the message', async () => {
     const { handleVouchMessage } = await load();
@@ -154,10 +154,11 @@ describe('admin side', () => {
 
     it('warns once when attest fails', async () => {
       const { mod, n } = await setup();
-      const c = { isAdmin: true, attest: vi.fn(() => false) };
+      const c = { isAdmin: false, wasAdmin: true, attest: vi.fn(() => false) };
       const m = message();
       await mod.handleVouchMessage(m, c);
       await mod.handleVouchMessage(m, c);
+      expect(c.attest).not.toHaveBeenCalled();
       expect(n.warn).toHaveBeenCalledExactlyOnceWith('L:AGENT_GATEWAY.Pairing.Vouch.notConfirmed');
       expect(n.info).not.toHaveBeenCalled();
     });
@@ -172,7 +173,7 @@ describe('admin side', () => {
 
   it('does not delete a message whose attest was not sent', async () => {
     const { handleVouchMessage } = await load();
-    const c = { isAdmin: true, attest: vi.fn(() => false) };
+    const c = { isAdmin: true, wasAdmin: true, attest: vi.fn(() => false) };
     const m = message();
     await handleVouchMessage(m, c);
     expect(m.delete).not.toHaveBeenCalled();
