@@ -71,3 +71,11 @@ below. The implementer cites it and does not need to collect it again.
 ## Out of scope
 - Changing limits.ts, server.ts or the log line (task 111).
 - The discovery throttle (88) and per-client limits other than how they interact with this cap.
+
+## Review round 1 — findings
+
+Reviewed HEAD: fb429d3db6a0163a664ba98a1e667801e82822c4
+
+- [P2] gateway/test/http/session-churn.test.ts:237-252 — "a session with a POST in flight is not evicted" still passes when the in-flight guard is removed. Request start sets `e.lastActive = this.now()` (gateway/src/http/server.ts:349), so s[0] becomes most-recently-active and s[1] is the LRU victim with or without `e.inFlight > 0` in pickVictim (server.ts:482). Fix hint: after `until(() => gate.held.length === 1)`, touch s[1..3] (park those calls too or release in order) so s[0] is least-recently-active while still in flight; then a missing guard evicts s[0]. Proof: removing `e.inFlight > 0 ||` at server.ts:482 leaves 4/4 passing. route: implementer
+- [P3, optional] gateway/test/http/session-churn.test.ts:185 — `req.on('error', () => undefined);` right before `req.on('error', reject);` is dead; delete it. route: implementer
+- [NOTE, optional] gateway/test/http/session-churn.test.ts:234 — `stream.close()` only runs if every earlier assertion passes; a failure leaves the SSE request open into afterEach. Test-failure hygiene only.
