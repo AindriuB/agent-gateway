@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 91 done in `docs/plan/done/` (excluding its README.md), 21 active in `docs/plan/tasks/` (2026-10-16).
+Inventory: 92 done in `docs/plan/done/` (excluding its README.md), 20 active in `docs/plan/tasks/` (2026-10-16).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -65,6 +65,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - **111** (HTTP session caps, option B) is done on branch `claude/task-111` (PR #184); archived in `docs/plan/done/`. Caps are 16, 32, 256 (were 4, 16, 64).
   - **116** (headless restart re-invite flake) is the failure on PR #180: `gateway/test/headless/app.test.ts` "reconnects with the stored token and mints no invite" minted a second invite. Diagnose first; the lead is the 50 ms `linkGraceMs` in the test boot helper.
 - **Held until the Mac's task 53 (image upload) merges:** 109 (keep the link alive through short stalls: raise pong tolerance, keep in-flight approvals across a drop; direction from 108), 112 and 44.
+- **109 is in review** (round 1 findings recorded). **112 now depends on 109 and 117**: both 112 and 117 edit `OfflineQueue.enqueue`, so 112 waits for 117 to merge.
+- **0.4.0 release blockers:**
+  - **117** (offline queue refuses `redactArgs` tools such as `image_upload`): fixed in this PR (branch `claude/task-117`, merging `task/117-offline-queue-redact-args`; archived in `docs/plan/done/`). Not a go-public blocker (agreed with the Mac session).
 - **Awaiting Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window), 112 (keep pending approvals when the requesting player logs out or reloads; architecture decision, then an architect pass).
 - **Follow-ups from wave 2:**
   - Wire `e2e-unit` and the e2e `tsc` into `npm run verify`. They are not in it today, which hid the 115 failure on `main`.
