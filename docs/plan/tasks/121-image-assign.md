@@ -188,3 +188,11 @@ Reviewed HEAD: 0ccc2d30bbdd4891e6c2ebffea76dd72c8558412
   route: implementer — use `settle(player, await set(...))` and `humanTimeout(1)`, as the owned-Actor test at :251-262 already does.
   input: native run with the grant in effect; the approver takes more than 25 s (APPROVAL_WAIT_MS, protocol/src/tools/approval-status.ts:9) on the player's `set` on `foreignUuid` → `{status:'pending_approval'}` with `isError` false, so `expect(other.isError).toBe(true)` fails; if the approver denies, the text is a denial instead of `FORBIDDEN`.
 - [NOTE, optional] e2e/image-assign/image-assign.e2e.test.ts:84-123 — If the `core.permissions` key were wrong on v13, the grant would have no effect and the player cases would be skipped with a reason that reads as a v14-only limitation. Cheap hardening: on v13, fail (don't skip) when the grant does not take effect; keep the skip for v14 only.
+
+## Attempt 1 — failed
+
+/verify on HEAD c6f5bd8: tester PASS (`npm run verify` exit 0: 5173 + 2227 vitest, 120 script tests); reviewer REQUEST CHANGES on one acceptance item.
+
+- [ ] "A unit test covers Undo for each target" — partly met. `undoEntry` runs only for v14 `scene_background` (module/test/audit/undo-levels.test.ts:33-99). The cases at module/test/tools/image-assign/image-assign.test.ts:112-133 (actor_portrait, actor_token, token, tile) check only that the old value is in place at snapshot time and the call order; v13 `scene_background` (:153-163) checks only order. Fix: parameterise the undo-levels.test.ts pattern (dispatch the real `set`, then `undoEntry`, assert the previous value is restored) over actor_portrait, actor_token, token, tile and v13 scene_background, inside module/test/tools/image-assign/**.
+- Suggestion (do it): image-assign.test.ts:128-130 — the `lastOptions` check uses `??` across actor, mine and tile, so for token/tile it can pass on the wrong document's options; assert on the matching document per case.
+- Suggestion (optional): dispatch.test.ts:53-59 — if a real approval stage is cheap, assert zero approval requests for `list`.
