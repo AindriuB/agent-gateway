@@ -33,13 +33,14 @@ Foundry wrapper, and raises the tool-count ceiling so all three tools fit.
 - [ ] protocol/src/images/ exports `IMAGE_MIME_TYPES` (`image/png`, `image/jpeg`, `image/webp` only) and `IMAGE_EXTENSIONS` (`.png`, `.jpg`, `.jpeg`, `.webp` only). Neither contains `svg`; a unit test asserts it.
 - [ ] `sniffImage(bytes: Uint8Array)` returns the MIME type for PNG, JPEG and WebP (RIFF....WEBP) magic bytes and `null` otherwise. Unit tests cover each format, SVG text (`<svg`, `<?xml`), GIF, an empty buffer, and a buffer shorter than the signature.
 - [ ] `normalizeDataPath(input: string)` returns a canonical relative path or an error code. It rejects: an empty string, more than 256 characters, a leading `/` or drive letter, any URL scheme (`https:`, `data:`, `file:`), a backslash, a NUL or other control character, a `..` or `.` segment before or after one percent-decoding, an empty segment (`a//b`), and anything else the 52 findings list. Each rejection has a unit test.
+- [ ] `normalizeDataDir(input: string | undefined)` (Amendment 1) validates a directory for browsing. It returns `''` (the canonical Data root, as Foundry reports it with `target: ''`) for `''` or an omitted value, and for every other input runs exactly the checks of `normalizeDataPath`. `/`, `.` and `./` are rejected, not mapped to the root (the 52 findings, Part B rows "Leading `/`" and "Validator list for 120", say to refuse rather than let the server remap to the root). `normalizeDataPath`, which validates image FILE paths, still rejects `''`. Unit tests: `''` and `undefined` give `''`; `/`, `.` and `./` are rejected; `a/b` gives `a/b`; `../a` is rejected; the parent directory of a root-level image (`foo.png`) is `''` and `browseImages` accepts it.
 - [ ] `isImagePath(path)` accepts only `IMAGE_EXTENSIONS`, case-insensitively, after `normalizeDataPath`; `foo.svg`, `foo.png.svg`, `foo.SVG` and `foo` are rejected in tests.
 - [ ] module/src/tools/_image.ts exports a FilePicker resolver for v13 and v14 (per the 52 findings) and `browseImages(user, dir, limit)`, which:
   - refuses a non-GM user without `FILES_BROWSE` with `FORBIDDEN`, using Foundry's server-set user only;
-  - calls `browse` on the `data` source only, after `normalizeDataPath`;
+  - calls `browse` on the `data` source only, after `normalizeDataDir` (not `normalizeDataPath`; Amendment 1), so `''` browses the Data root;
   - returns at most `limit` entries (hard maximum 200) of `dirs` and `isImagePath` files, plus `truncated: boolean`.
 
-  Unit tests use FilePicker stubs and cover a player without `FILES_BROWSE`, a GM, a traversal input that never reaches the stub, and truncation at the cap.
+  Unit tests use FilePicker stubs and cover a player without `FILES_BROWSE`, a GM, a traversal input that never reaches the stub, a `''` input that reaches the stub as the Data root, a `/` input that never reaches the stub, and truncation at the cap.
 - [ ] `npm run verify` passes
 
 ## Out of scope
@@ -47,3 +48,17 @@ Foundry wrapper, and raises the tool-count ceiling so all three tools fit.
 - Changes to link messages, the gateway or MCP results (122)
 - Fetching file bytes over HTTP (123 owns that, in its own file)
 - Raising `TOOL_LIMITS` or `MAX_FRAME_BYTES`
+
+## Amendment 1 (owner, 2026-10-16, from external PR review)
+
+Reason: browsing the Data root had no valid input. `normalizeDataPath` rejects `''`, `/` and `.`
+segments, `browseImages` validated every directory through it, and 121's `list` defaults `dir` to
+the Data root, which Foundry represents as `''` (52 findings, Part B, `..` row: "the Data root
+listing with `target: ''`"). So the default `list` call could never succeed.
+
+Change: a separate directory validator, `normalizeDataDir`, accepts `''` (and an omitted value)
+as the canonical root and otherwise applies every `normalizeDataPath` check; `/`, `.` and `./`
+stay rejected, as the 52 findings require. `browseImages` uses `normalizeDataDir`.
+`normalizeDataPath` is unchanged for file paths and still rejects `''`. The Acceptance list above
+is updated to match. Owns is unchanged (the new function lives in protocol/src/images/**, its
+tests in protocol/test/images/**).
