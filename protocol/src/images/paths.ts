@@ -15,7 +15,6 @@ export type DataPathError =
 export type DataPathResult = { ok: true; path: string } | { ok: false; code: DataPathError };
 
 const fail = (code: DataPathError): DataPathResult => ({ ok: false, code });
-// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const SEGMENT = /^[A-Za-z0-9._ -]+$/;
 const isDot = (s: string): boolean => s === '.' || s === '..';

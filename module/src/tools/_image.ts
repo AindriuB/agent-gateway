@@ -2,7 +2,6 @@
 import { isImagePath, normalizeDataDir } from '@agent-gateway/protocol';
 import { forbid, invalid } from './_write.js';
 
-declare const foundry: any;
 declare const globalThis: any;
 
 export const MAX_BROWSE_ENTRIES = 200;

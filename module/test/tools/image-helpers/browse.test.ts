@@ -5,7 +5,9 @@ import { browseImages, resolveFilePicker } from '../../../src/tools/_image.js';
 afterEach(() => vi.unstubAllGlobals());
 const install = (listing: any = { dirs: [], files: [] }) => {
   const browse = vi.fn(async () => listing);
-  vi.stubGlobal('foundry', { applications: { apps: { FilePicker: { implementation: { browse } } } } });
+  vi.stubGlobal('foundry', {
+    applications: { apps: { FilePicker: { implementation: { browse } } } },
+  });
   return browse;
 };
 const gm = { isGM: true, can: () => true };
@@ -22,7 +24,12 @@ describe('browseImages', () => {
     const browse = install({ dirs: ['a/d'], files: ['a/x.png', 'a/y.svg', 'a/z.JPG'] });
     for (const u of [gm, trusted]) {
       const r = await browseImages(u, 'a', 10);
-      expect(r).toEqual({ dir: 'a', dirs: ['a/d'], files: ['a/x.png', 'a/z.JPG'], truncated: false });
+      expect(r).toEqual({
+        dir: 'a',
+        dirs: ['a/d'],
+        files: ['a/x.png', 'a/z.JPG'],
+        truncated: false,
+      });
     }
     expect(browse).toHaveBeenCalledWith('data', 'a');
   });
