@@ -136,8 +136,20 @@ swap it in under the existing repo name and restore the releases.
       this order. Steps 1-10 are all reversible and nothing in them is visible outside the
       owner's account; step 11 is the single publish gate; steps 12-13 publish (Amendment 1):
       1. OWNER: declare the freeze SHA; stop merging to main; list and close or port open PRs and
-         branches (port with `git format-patch` from the old repo and `git am` onto the new main,
-         excluding internal paths).
+         branches. Before any PR is closed or any branch deleted, every branch to port goes into a
+         self-contained `<backup-dir>/open-branches.bundle` outside the checkout
+         (`git bundle create` with no `^` exclusions, then `git bundle verify`), and the bundle
+         is restored into a scratch repository (`git -C <scratch> fetch <bundle>
+         'refs/heads/*:refs/heads/*'`). For each branch, compare the tip commit id, the
+         `<branch>^{tree}` id and the full `git ls-tree -r --full-tree <branch>` output between
+         the original and the scratch copy, printing one PASS/FAIL line per branch; nothing is
+         closed or deleted until every line is PASS (Amendment 4). Once the rewritten main exists
+         (after step 6), fetch the bundle into a checkout of it under `refs/old/*` and re-apply
+         each branch, excluding internal paths: branches containing merges
+         (`git rev-list --merges <base>..refs/old/<branch>` non-empty) by `git cherry-pick`
+         (`-m 1` for merge commits) or `git rebase --rebase-merges --onto main <base> <branch>`;
+         linear branches may use `git format-patch` piped to `git am`, but only as the carrier.
+         Patches are never the backup.
       2. SCRIPT: fresh `git clone --mirror` of AindriuB/agent-gateway; `filter.sh` (which
          preserves commit-map and ref-map under `ops/go-public/out/<freeze-sha>/`; commit that
          folder to the private companion); `verify.sh --commit-map
@@ -343,3 +355,11 @@ swap it in under the existing repo name and restore the releases.
   only as a transport for re-applying linear work in step 4 and is explicitly not the backup;
   branches containing merges are re-applied by cherry-pick or `git rebase --rebase-merges` from
   the bundle refs.
+- [P2] Owner step 1 ported open PRs and branches with `git format-patch` from the old repo and
+  `git am` onto the new main, which has the same merge-loss problem. Step 1 now carries each
+  branch across as refs from a verified `open-branches.bundle` (no `^` exclusions,
+  `git bundle verify`), compares tip commit id, `^{tree}` id and `git ls-tree -r --full-tree`
+  output against the original in a scratch repository with one PASS/FAIL line per branch before
+  anything is closed or deleted, and re-applies onto the rewritten main by cherry-pick (`-m 1`
+  for merges) or `git rebase --rebase-merges`, keeping patches only as the carrier for linear
+  branches.
