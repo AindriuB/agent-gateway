@@ -183,6 +183,53 @@ describe('mirrored approval rows (migration 014)', () => {
     expect(again.queue.queued(owner)).toHaveLength(3);
   });
 
+  it.each(['denied', 'expired'] as const)(
+    'disconnect detaches a %s alias, keeping its state, and never requeues it',
+    (term) => {
+      const s = open();
+      mirror(s, 't');
+      s.queue.report(owner, 'c1', 't', term, 11);
+      s.queue.disconnected('c1', 20);
+      expect(s.queue.getByAlias(owner, 't')).toMatchObject({
+        state: term,
+        alias_report: term,
+        connection_id: null,
+        orphaned_at: 20,
+      });
+      s.queue.reconcile(owner, 'c2', new Set(['t']), 30);
+      expect(s.queue.getByAlias(owner, 't')).toMatchObject({ state: term, connection_id: null });
+      expect(s.queue.queued(owner)).toEqual([]);
+      expect(s.queue.ownedAliases(owner, 'c2', ['t'])).toEqual([]);
+    },
+  );
+
+  it('the startup sweep detaches terminal aliases left attached by a dead process', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'alias-'));
+    dirs.push(dir);
+    const path = join(dir, 'q.sqlite');
+    const s = open(path);
+    mirror(s, 'd');
+    mirror(s, 'e');
+    s.queue.report(owner, 'c1', 'd', 'denied', 11);
+    s.queue.report(owner, 'c1', 'e', 'expired', 11);
+    s.close();
+    const again = open(path);
+    again.queue.orphanLive(30);
+    again.queue.recover(30);
+    for (const [a, st] of [
+      ['d', 'denied'],
+      ['e', 'expired'],
+    ] as const)
+      expect(again.queue.getByAlias(owner, a)).toMatchObject({
+        state: st,
+        connection_id: null,
+        orphaned_at: 30,
+      });
+    again.queue.reconcile(owner, 'c2', new Set(['d', 'e']), 40);
+    expect(again.queue.queued(owner)).toEqual([]);
+    expect(again.queue.ownedAliases(owner, 'c2', ['d', 'e'])).toEqual([]);
+  });
+
   it('finds an open orphan by tool and args hash for the offline retry', () => {
     const s = open();
     const r = mirror(s);

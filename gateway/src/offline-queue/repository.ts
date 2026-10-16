@@ -79,6 +79,7 @@ export function createQueueRepository(db: DatabaseSync) {
   /**
    * The requester's link is gone: a mirrored approval last reported `pending` becomes an orphan
    * (still pending, no connection); one reported `approved` may have run, so it is `unknown`.
+   * A row already terminal is only detached from the dead connection.
    * With no connection id this sweeps every live mirrored row (gateway start).
    */
   const orphanLive = (now: number, connectionId?: string) => {
@@ -89,6 +90,11 @@ export function createQueueRepository(db: DatabaseSync) {
     ).run(now, now, ...extra);
     db.prepare(
       `UPDATE queued_calls SET orphaned_at=?,connection_id=NULL WHERE ${LIVE_ALIAS} AND state='pending'${by}`,
+    ).run(now, ...extra);
+    // A terminal mirrored row (denied, expired, unknown, ...) keeps its state and result but must
+    // not look attached to a live requester: approval_status answers it from the row, never the module.
+    db.prepare(
+      `UPDATE queued_calls SET orphaned_at=?,connection_id=NULL WHERE ${LIVE_ALIAS} AND state NOT IN ('queued','claimed','pending')${by}`,
     ).run(now, ...extra);
   };
   return {
