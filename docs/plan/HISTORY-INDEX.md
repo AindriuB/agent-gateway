@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-16 | 111 | Session caps 16 per principal, 32 per client key, 256 public total; eviction info log once per principal per 10 min; live-session DELETE exempt from per-client rate; option C declined | `## 2026-10-16 — HTTP session caps for ChatGPT churn (task 111)` |
 | 2026-10-16 | 102, 105, 107 | Offline-queue replies name world and user and the next step; pairing window says "this browser is not paired", ids block collapsed for the operator, one neutral server line; admin GM told an invite needs them online, and sees "confirmation sent" or a link-not-connected warning on vouch | `## 2026-10-16 — Pairing wording, vouch notices and offline-queue text (tasks 102, 105, 107)` |
 | 2026-10-16 | 103 | Consent page leaves `destructive` and `code` unticked; attempt 1 failed for not testing the post | `## 2026-10-16 — Consent page leaves destructive and code unticked (task 103)` |
 | 2026-10-16 | 108 | Spike: the five playtest 1006 closes were the gateway heartbeat terminate (whole 15 s ticks); close reason now `heartbeat-timeout`/`socket-error`; Caddy ruled out; `e2e/link-idle/` harness; approval survives in the module but the agent loses the call | `## 2026-10-16 — Link drop diagnosis (spike, task 108)` |
