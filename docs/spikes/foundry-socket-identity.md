@@ -19,25 +19,21 @@ Two headless Chromium contexts at once in world `test-world` (pf2e 8.6.0), modul
 and the test flag was removed afterwards. The GM registered:
 
 ```js
-game.socket.on('module.agent-gateway', (...args) =>
-  window.__got.push(JSON.parse(JSON.stringify(args))),
-);
-Hooks.on('updateUser', (doc, change, options, userId) =>
-  window.__uu.push({ change, options, userId }),
-);
+game.socket.on('module.agent-gateway', (...args) => window.__got.push(JSON.parse(JSON.stringify(args))));
+Hooks.on('updateUser', (doc, change, options, userId) => window.__uu.push({ change, options, userId }));
 ```
 
-| #   | player1 did                                                           | GM saw                                                                                                          |
-| --- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| 3   | `emit(ch, {from: me, msg:'hello'})`                                   | `argc 2: [{from: player1, msg:'hello'}, "i6YOI2WFj4ZEFtbX"]`                                                    |
-| 3   | `emit(ch, payload, cb)`                                               | same two args; `cb` never fired (see note)                                                                      |
-| 4   | `emit(ch, {from: gm, userId: gm, msg:'forged'})`                      | `[{from: gm, userId: gm, …}, "i6YOI2WFj4ZEFtbX"]`: payload forged, 2nd arg true                                 |
-| 5   | `emit(ch, {msg}, gmId, {userId: gmId})`                               | `argc 2: [{msg}, "i6YOI2WFj4ZEFtbX"]`: extra args dropped                                                       |
-| 5   | `game.socket.auth = {userId: gmId}`, then emit                        | `[{msg}, "i6YOI2WFj4ZEFtbX"]`                                                                                   |
-| 5   | raw `engine.send('42["module.agent-gateway",{…gm…},{userId: gm}]')`   | nothing; the server dropped player1's socket, which reconnected. Later actions were still attributed to player1 |
-| 7   | `game.user.setFlag('agent-gateway','nonce','N-12345')`                | hook `userId "i6YOI2WFj4ZEFtbX"`, `change._stats.lastModifiedBy "i6YOI2WFj4ZEFtbX"`                             |
-| 8   | `game.users.get(gmId).setFlag(…,'X')`                                 | threw `User player1 lacks permission to update User [dJRmsvLjuYrn8GCl]`; no hook                                |
-| 9   | `game.user.update({'flags.agent-gateway.nonce':'Y'}, {userId: gmId})` | `options.userId "dJRmsvLjuYrn8GCl"` (forged pass-through) but 4th arg `userId "i6YOI2WFj4ZEFtbX"`               |
+| # | player1 did | GM saw |
+|---|---|---|
+| 3 | `emit(ch, {from: me, msg:'hello'})` | `argc 2: [{from: player1, msg:'hello'}, "i6YOI2WFj4ZEFtbX"]` |
+| 3 | `emit(ch, payload, cb)` | same two args; `cb` never fired (see note) |
+| 4 | `emit(ch, {from: gm, userId: gm, msg:'forged'})` | `[{from: gm, userId: gm, …}, "i6YOI2WFj4ZEFtbX"]`: payload forged, 2nd arg true |
+| 5 | `emit(ch, {msg}, gmId, {userId: gmId})` | `argc 2: [{msg}, "i6YOI2WFj4ZEFtbX"]`: extra args dropped |
+| 5 | `game.socket.auth = {userId: gmId}`, then emit | `[{msg}, "i6YOI2WFj4ZEFtbX"]` |
+| 5 | raw `engine.send('42["module.agent-gateway",{…gm…},{userId: gm}]')` | nothing; the server dropped player1's socket, which reconnected. Later actions were still attributed to player1 |
+| 7 | `game.user.setFlag('agent-gateway','nonce','N-12345')` | hook `userId "i6YOI2WFj4ZEFtbX"`, `change._stats.lastModifiedBy "i6YOI2WFj4ZEFtbX"` |
+| 8 | `game.users.get(gmId).setFlag(…,'X')` | threw `User player1 lacks permission to update User [dJRmsvLjuYrn8GCl]`; no hook |
+| 9 | `game.user.update({'flags.agent-gateway.nonce':'Y'}, {userId: gmId})` | `options.userId "dJRmsvLjuYrn8GCl"` (forged pass-through) but 4th arg `userId "i6YOI2WFj4ZEFtbX"` |
 
 The GM does not receive its own broadcast. Note on the ack: the server reads the second argument as
 options (`{recipients}`) and the third as the ack, so `emit(ch, data, cb)` passes `cb` as options and
@@ -80,15 +76,15 @@ The server code is minified, so locations are byte offsets; `common/` and `clien
 
 ## What a GM client can verify about another user
 
-| Fact                                                                | Trust                                                                      | Source                                             |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------- |
-| Sender of a `module.*` message (2nd arg)                            | attested                                                                   | verified-live; `sockets.mjs` @783                  |
-| Who made a document change (hook `userId`, `_stats.lastModifiedBy`) | attested                                                                   | verified-live; `server-backend.mjs` @~300          |
-| `options.userId` on a hook                                          | **forgeable**                                                              | verified-live (step 9)                             |
-| Role (`game.users.get(id).role`)                                    | server data, changed only by permitted users                               | verified-live; `user.mjs` L220–238                 |
-| A Player wrote only their own User                                  | enforced                                                                   | verified-live (step 8)                             |
-| `user.active`, idle, scene, cursor                                  | **forgeable**: `userActivity` broadcasts a client-chosen user id unchecked | from-source `activity.mjs` `#r`, `users.mjs` L113+ |
-| Reply to `User#query` comes from that user's client                 | attested                                                                   | from-source `activity.mjs` `#o`                    |
+| Fact | Trust | Source |
+|---|---|---|
+| Sender of a `module.*` message (2nd arg) | attested | verified-live; `sockets.mjs` @783 |
+| Who made a document change (hook `userId`, `_stats.lastModifiedBy`) | attested | verified-live; `server-backend.mjs` @~300 |
+| `options.userId` on a hook | **forgeable** | verified-live (step 9) |
+| Role (`game.users.get(id).role`) | server data, changed only by permitted users | verified-live; `user.mjs` L220–238 |
+| A Player wrote only their own User | enforced | verified-live (step 8) |
+| `user.active`, idle, scene, cursor | **forgeable**: `userActivity` broadcasts a client-chosen user id unchecked | from-source `activity.mjs` `#r`, `users.mjs` L113+ |
+| Reply to `User#query` comes from that user's client | attested | from-source `activity.mjs` `#o` |
 
 ## Candidate proofs for task 36
 
@@ -98,20 +94,20 @@ pairing in a world stays as today: the host owner enters the code the gateway pr
 
 **(a) Socket sender attestation.** The gateway gives the claimant a nonce over the new link; the
 claimant's module emits it on `module.agent-gateway`; the observer reports `(nonce, senderUserId)`, and
-the gateway accepts only if `senderUserId` equals the claimed user. _A malicious Player can_ forge any
-payload field, relay a nonce to an accomplice, or stay silent. _They cannot_ make the 2nd argument
+the gateway accepts only if `senderUserId` equals the claimed user. *A malicious Player can* forge any
+payload field, relay a nonce to an accomplice, or stay silent. *They cannot* make the 2nd argument
 name anyone but themselves. Cost: one ephemeral message, nothing stored in the world.
 
 **(b) Server-checked write.** The claimant's module sets `flags.agent-gateway.nonce` on its own User;
 the observer's `updateUser` hook checks `doc.id === claimed`, the 4th-argument `userId`, and the nonce.
-_Cannot defeat_: writing another User (permission error) or forging the 4th argument. _Can_: put a
+*Cannot defeat*: writing another User (permission error) or forging the 4th argument. *Can*: put a
 fake `options.userId`, so code must never read it. Cost: a world write per pairing (sync, audit noise,
 cleanup), and it fails if the world denies Players updating their own User.
 
 **(c) One-time code shown only in the claimed user's client.** The observer emits a code with
 `{recipients: [claimedUserId]}` (or uses `User#query`); the server delivers it only to that user's
-sockets; the human enters it back at the gateway. _Cannot defeat_: receiving a message addressed to
-another user. _Can_: socially engineer the real user into reading the code out. This also proves a
+sockets; the human enters it back at the gateway. *Cannot defeat*: receiving a message addressed to
+another user. *Can*: socially engineer the real user into reading the code out. This also proves a
 human is present, but needs the claimed user online and a manual step.
 
 **Recommendation: (a)** for the automatic check, with `User#query` as the transport where available,
