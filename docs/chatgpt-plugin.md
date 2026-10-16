@@ -1,10 +1,11 @@
 # Foundry Agent Gateway plugin for ChatGPT
 
-This private plugin connects to Andrew's existing deployment:
+This plugin connects ChatGPT or Codex to your own Foundry Agent Gateway. The package in this
+repository ships with a placeholder URL, `https://gateway.example.invalid/mcp`, so you build it for
+your own gateway (see [Build and inspect](#build-and-inspect)). Your gateway must serve:
 
-- Foundry: <https://foundry.aindriub.app>
-- MCP endpoint: <https://gw.aindriub.app/mcp>
-- OAuth resource metadata: <https://gw.aindriub.app/.well-known/oauth-protected-resource>
+- MCP endpoint: `https://<your-gateway>/mcp`
+- OAuth resource metadata: `https://<your-gateway>/.well-known/oauth-protected-resource`
 
 It supplies a focused Foundry workflow skill and a Streamable HTTP connection.
 The gateway's existing OAuth grants, Foundry permissions and approval controls
@@ -21,10 +22,13 @@ From the repository root, with Node.js 22.13+ and the `zip` and `unzip` command-
 
 ```sh
 node --test scripts/test/chatgpt-plugin.test.mjs
-node scripts/build-chatgpt-plugin.mjs
+node scripts/build-chatgpt-plugin.mjs --gateway-url https://gateway.example.invalid
 unzip -Z1 dist/release/foundry-agent-gateway-chatgpt.zip
 npm run verify
 ```
+
+Replace `https://gateway.example.invalid` with the HTTPS origin of your own gateway. Without
+`--gateway-url` the archive keeps the placeholder and cannot connect to anything.
 
 The archive is `dist/release/foundry-agent-gateway-chatgpt.zip`. It contains exactly:
 
@@ -49,7 +53,7 @@ need explicit validator and test updates. The validator does not certify prose
 or detect every possible secret: review all three source files before saving.
 No credentials, consent codes or world data belong in them.
 
-No icon or custom colors are required for this private package. It does not use
+No icon or custom colors are required for this package. It does not use
 the gateway consent page's branding assets. Packaging is independent of the
 module release script and does not upload anything.
 
@@ -57,7 +61,7 @@ module release script and does not upload anything.
 
 The supported account-save route documented by plugin-creator 0.1.26 is its
 `create_plugin` tool, passing the absolute local ZIP path as `archive`. It saves
-a private plugin in the authenticated account's active workspace, or the personal
+a plugin in the authenticated account's active workspace, or the personal
 account when no workspace is active. Use the returned plugin URL and retain the
 returned plugin and release IDs for updates. Check for an existing Foundry plugin
 first and update it rather than creating duplicates. If an upload result is
@@ -93,7 +97,7 @@ and 40; this document records package-specific steps and evidence only.
 
 ## Connection diagnosis: observed, documented and unverified
 
-**Reported by Andrew:** the gateway works, and Codex registered and used a live
+**Reported by the operator:** the gateway works, and Codex registered and used a live
 OAuth grant. Installing the plugin through ChatGPT settings exposed its skill
 but no Foundry MCP tools in a Chat-mode conversation. This is evidence about
 those observed surfaces. On 2026-10-16 the plugin surfaced only in Codex and not
@@ -128,7 +132,7 @@ would show whether it surfaces there. If the connection is absent or cannot
 authenticate, one could investigate the registered-connection route and the documented
 explicit OAuth declaration. An explicit OAuth declaration is a documented configuration improvement,
 not a proven fix of the Chat-mode symptom. Adding it requires a reviewed
-package/validator/test change and a new private release. No such package or live
+package/validator/test change and a new release. No such package or live
 plugin change has been made by this diagnosis. Plugin acceptance in Work (OAuth, read,
 approved write and revocation) remains untested.
 
@@ -136,23 +140,21 @@ approved write and revocation) remains untested.
 
 As of 2026-10-14:
 
-| Check                        | Evidence                                                                                                                                                                                       |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Public MCP resource          | Planning checked the live metadata and confirmed `https://gw.aindriub.app/mcp`, issuer `https://gw.aindriub.app`, and read/write/destructive/code scopes. This is not authenticated discovery. |
-| Portable schemas             | Both manifests passed the published Agent Plugins 1.0.0 JSON schemas with Python `jsonschema` 4.26.0 (`Draft202012Validator`). Schemas were fetched from their `$schema` URLs on 2026-10-14.   |
-| Package contract             | Local validator v1, Node.js 24.19.0: 10 package tests passed; the built archive contains exactly the three listed files with matching source bytes.                                            |
-| Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                       |
-| Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                             |
-| Private account save         | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                  |
-| ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (Andrew report). Work mode was not verified; host/build not captured.                                                             |
-| Tool discovery and read      | Codex OAuth use reported by Andrew. ChatGPT chat: plugin did not surface (2026-10-16); Work mode unverified. Use the connector guide.                                                          |
-| Approved write               | Pending; Andrew selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                         |
-| Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                           |
+| Check                        | Evidence                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public MCP resource          | Planning checked the live metadata of a running gateway and confirmed its `/mcp` endpoint, issuer, and read/write/destructive/code scopes. This is not authenticated discovery.              |
+| Portable schemas             | Both manifests passed the published Agent Plugins 1.0.0 JSON schemas with Python `jsonschema` 4.26.0 (`Draft202012Validator`). Schemas were fetched from their `$schema` URLs on 2026-10-14. |
+| Package contract             | Local validator v1, Node.js 24.19.0: 10 package tests passed; the built archive contains exactly the three listed files with matching source bytes.                                          |
+| Style                        | ESLint and Prettier passed for the new scripts and JSON.                                                                                                                                     |
+| Full repository gate         | Passed on reviewed commit `74750c5` with Node.js 24.19.0: build, lint, 4,396 regular tests, 2,227 slow tests and 73 script tests (including the 10 package tests).                           |
+| Account save                 | Succeeded 2026-10-14 via `create_plugin`: version 0.1.0, USER / PRIVATE. Installation and OAuth are separate, pending checks.                                                                |
+| ChatGPT host/build and OAuth | Chat-mode install exposed the skill but no Foundry MCP tools (operator report). Work mode was not verified; host/build not captured.                                                         |
+| Tool discovery and read      | Codex OAuth use reported by the operator. ChatGPT chat: plugin did not surface (2026-10-16); Work mode unverified. Use the connector guide.                                                  |
+| Approved write               | Pending; the operator selects a harmless change with Foundry approval enabled. Confirm it remains unapplied before approval and applies only after approval.                                 |
+| Revocation                   | Pending; revoke the test grant in Foundry and confirm that same connection can no longer make an authenticated call.                                                                         |
 
-Private package: [Foundry Agent Gateway](https://chatgpt.com/plugins/plugins_6acfb1accddc8191939dfe027ef9ef5c).
-Plugin ID: `plugins_6acfb1accddc8191939dfe027ef9ef5c`; release ID:
-`pluginrel_6acfb1ae6e7881919154c7aa5f52b95f`. These identify the saved release for
-updates; saving it does not prove installation, OAuth or tool access.
+The saved release has a plugin ID and a release ID, which you retain for updates; saving it does
+not prove installation, OAuth or tool access.
 
 Record redacted outcomes and the host/build used when completing the pending
 checks. Do not store tool payloads, tokens or codes as evidence. Live
@@ -162,14 +164,13 @@ Status); the package remains for Codex.
 ## Self-hosting and updates
 
 For another deployment, first verify its public OAuth resource metadata and
-actual HTTPS `/mcp` endpoint. Change only the URL in `plugins/foundry-agent-gateway/mcp.json`,
-then update the deployment wording in `plugin.json` and these notes. The source
-test currently asserts Andrew's endpoint; deliberately update that assertion for
-your fork. Rerun the package tests, packer, archive inspection and authenticated
+actual HTTPS `/mcp` endpoint. Build with `--gateway-url https://<your-gateway>`; the checked-in
+`plugins/foundry-agent-gateway/mcp.json` keeps the placeholder, and the source test
+asserts it. Rerun the package tests, packer, archive inspection and authenticated
 acceptance. No automatic per-user endpoint setting in ChatGPT is claimed.
 
 The portable format is pinned by the manifests' schema identifiers. Recheck the
 installed plugin-creator package instructions before changing the format or
-saving a new private release. Update the package version intentionally; this
+saving a new release. Update the package version intentionally; this
 standalone package is not wired into the gateway's version-bump/release scripts.
 Public directory submission and workspace-wide sharing are separate work.

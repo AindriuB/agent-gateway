@@ -48,5 +48,6 @@ The whole project shares one version. `module.json` and every `package.json` car
 - Say what changed and why, which tests you ran, and the result of `npm run verify`.
 - Do not add copyrighted rulebook text, premium content or other licensed material, and do not commit secrets, tokens or personal paths.
 - Add or update tests for behaviour you change.
+- Pull request numbers in commit messages from before the repository went public (for example "Merge pull request #179") refer to the private archive, not to pull requests in this repository.
 
 Pull requests from forks get the CI checks. They run without access to repository secrets, so a check that needs a secret will not run for a fork.

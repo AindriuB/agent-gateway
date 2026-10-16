@@ -17,18 +17,15 @@ Caddy gets a TLS certificate for your domain and proxies to the gateway, which s
 
 ```
 cd gateway/docker
-cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION picks the image
-# While the package is private, log in first with a token that has read:packages:
-docker login ghcr.io -u <github-user> --password-stdin   # paste the token on stdin
+cp .env.example .env      # set DOMAIN, FOUNDRY_ORIGIN, ACME_EMAIL; GATEWAY_VERSION: ghcr.io image
 docker compose pull
 docker compose up -d
 docker compose ps         # both services should be running; gateway "healthy"
 curl https://<domain>/status
 ```
 
-To build from source instead of pulling, run `docker compose up -d --build`. Use it until v0.1.0
-is published, or for any version that has no image. Never put the token in a file or on the
-command line; pass it on stdin.
+To build from source instead of pulling, run `docker compose up -d --build`. Use it for any
+version that has no published image.
 
 `/status` shows only the version and uptime.
 
@@ -49,8 +46,8 @@ files at once. To move from the bundled stack, first run `docker compose down` w
 `COMPOSE_FILE` is still unset (the volume is kept), then switch. If you switched first, run
 `docker compose up -d --build --remove-orphans` to remove the old `caddy` container.
 
-To serve the Foundry module's manifest and zip from the same Caddy while the repo is private, see
-"Self-hosted manifest (private testing)" in `docs/releasing.md`.
+To serve the Foundry module's manifest and zip from the same Caddy yourself, see
+"Self-hosted manifest (testing a build)" in `docs/releasing.md`.
 
 1. Put `COMPOSE_FILE=compose.byo-caddy.yaml` in `.env` (with `DOMAIN` and `FOUNDRY_ORIGIN`;
    `ACME_EMAIL` is not needed). Every command in this README then works unchanged, with no `-f`.
