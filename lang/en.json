@@ -163,7 +163,7 @@
         "content": "Agent Gateway pairing request. Your GM confirms this automatically; you do not need to do anything.",
         "noGm": "No GM is online in this world to confirm your pairing. Ask your GM to join, then try again.",
         "failed": "Agent Gateway could not send the pairing request to your GM. Try again.",
-        "confirmed": "Agent Gateway pairing confirmed for {player}.",
+        "confirmed": "Agent Gateway confirmation sent for {player}.",
         "notConfirmed": "A player's Agent Gateway pairing could not be confirmed because your Agent Gateway link is not connected."
       },
       "Address": {
