@@ -1,8 +1,8 @@
 # 53 — Add an image upload tool for maps, portraits and token art
 
 **Repo:** .
-**Status:** Planned — do not start; queued after current workloads (32, 44, and the five gap tasks)
-**Depends on:** 52
+**Status:** Ready to start once 52 and 120 are merged (owner decision, 2026-10-16)
+**Depends on:** 52, 120
 **Owns:**
 - protocol/src/tools/image-upload.ts (new)
 - protocol/src/tools/index.ts (insertion only)
@@ -11,10 +11,11 @@
 - module/src/tools/image-upload.ts (new)
 - module/src/tools/index.ts (insertion only)
 - module/test/tools/image-upload/** (new)
+- module/test/stubs/** (insertion only)
 - e2e/image-upload/** (new)
 - e2e/vitest.e2e.config.ts (insert one `image-upload/**/*.e2e.test.ts` line only)
 
-Overlap: none with 45–51. Like 46 and 47, it inserts into the shared registries.
+Overlap: none with 47-51 or 121-123 apart from the insertion-only shared files above (both registries, validate.test.ts, e2e/vitest.e2e.config.ts). It does not own protocol/test/tools/tool-count.test.ts (120 raises the ceiling) and only imports from protocol/src/images/** and module/src/tools/_image.ts (owned by 120).
 
 ## Goal
 Let an agent upload one image per call into a fixed, server-named location. In the same call it
@@ -25,8 +26,9 @@ This replaces manual file handling when building maps and characters. There is n
 ## Context
 - The task 52 findings file (spikes/image-upload/) supplies the confirmed FilePicker path, permissions, extensions and the usable payload size. Replace the caps below with the spike's numbers if they are lower.
 - protocol/src/link/messages.ts:9 sets `MAX_FRAME_BYTES = 1 MiB`.
-- protocol/test/tools/tool-count.test.ts:6-7: this player tool brings the counts to 24 player and 36 GM, which is exactly the ceiling. The PR must state that.
-- gateway/src/mcp/session.ts:224, :252: results are text content only today.
+- protocol/test/tools/tool-count.test.ts:6-7: today there are 22 player and 34 GM tools; task 120 raises the ceilings so this tool and 121 and 123 all fit.
+- protocol/src/images/** and module/src/tools/_image.ts (task 120): use the shared magic-byte sniffer, MIME allowlist and FilePicker resolver; do not re-implement them.
+- gateway/src/mcp/session.ts:503-515: results are text content only today; 122 adds image blocks, which this tool does not use.
 
 ## Acceptance
 - [ ] A new tool `image_upload` (minRole `player`, category `write`) takes:
@@ -36,7 +38,7 @@ This replaces manual file handling when building maps and characters. There is n
   - optional `sceneUuid` with `setBackground`
 
   There is no URL argument. `conservativeProblems` is `[]`.
-- [ ] Before upload, the decoded bytes must start with the PNG, JPEG or WebP magic bytes that match `mime`, and the raw size must be within the cap. Otherwise INVALID_ARGS. Unit tests cover SVG text, a mismatched magic number, oversize input and bad base64. The module never constructs an Image or canvas from the data (`rg -n "new Image|createImageBitmap|getContext" module/src/tools/image-upload.ts` is empty).
+- [ ] Before upload, the decoded bytes (checked with 120's sniffer) must start with the PNG, JPEG or WebP magic bytes that match `mime`, and the raw size must be within the cap. Otherwise INVALID_ARGS. Unit tests cover SVG text, a mismatched magic number, oversize input and bad base64. The module never constructs an Image or canvas from the data (`rg -n "new Image|createImageBitmap|getContext" module/src/tools/image-upload.ts` is empty).
 - [ ] Storage goes to a fixed per-user directory (`agent-gateway/uploads/<userId>/`) under a server-generated filename (random id plus an extension derived from `mime`). Caller text never reaches the path. Each user has a total byte cap (spike-defined), and exceeding it returns INVALID_ARGS. Unit-tested.
 - [ ] Permissions:
   - A player may upload only when Foundry grants that user `FILES_UPLOAD`.
@@ -50,10 +52,12 @@ This replaces manual file handling when building maps and characters. There is n
   - A player sets the portrait and token of an Actor they own.
   - A player is refused on another user's Actor.
 
-  Temporary documents are removed by exact UUID. Native execution needs Andrew's per-run approval.
+  Temporary documents are removed by exact UUID. Native execution needs the repository owner's per-run approval.
 - [ ] `npm run verify` passes
 
 ## Out of scope
-- MCP image content blocks in gateway results (optional follow-up; gateway/src/mcp/session.ts:224,252)
+- MCP image content blocks in gateway results (task 122) and viewing images (task 123)
+- Browsing or assigning existing files (task 121)
+- Changing protocol/test/tools/tool-count.test.ts, protocol/src/images/** or module/src/tools/_image.ts (task 120; stop and report if a helper is missing)
 - URL fetching, SVG, image resizing or decoding
 - Deleting uploaded files

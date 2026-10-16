@@ -1,0 +1,24 @@
+export default async (page) => page.evaluate(async () => {
+  const FP = foundry.applications.apps.FilePicker.implementation;
+  const out = {};
+  const sm = (r) => r && typeof r === 'object' ? { keys: Object.keys(r), target: r.target, dirs: r.dirs?.length, files: r.files?.length, dirsSample: r.dirs?.slice(0,3), filesSample: r.files?.slice(0,2), extra: Object.fromEntries(Object.entries(r).filter(([k]) => !['dirs','files'].includes(k)).map(([k,v]) => [k, typeof v === 'object' ? JSON.stringify(v).slice(0,100) : v])) } : r;
+  const b = async (src, t, o) => { try { return sm(await FP.browse(src, t, o)); } catch (e) { return { threw: String(e).slice(0, 200) }; } };
+  out.root = await b('data', '');
+  out.dot = await b('data', '.');
+  out.worlds = await b('data', 'worlds');
+  out.ext = await b('data', 'worlds/test-world', { extensions: ['.json'] });
+  out.dotdot = await b('data', '..');
+  out.dotdotSub = await b('data', 'worlds/../..');
+  out.slash = await b('data', '/');
+  out.slashEtc = await b('data', '/etc');
+  out.backslash = await b('data', 'worlds\\test-world');
+  out.pct = await b('data', '%2e%2e');
+  out.pctSub = await b('data', 'worlds/%2e%2e/%2e%2e');
+  out.url = await b('data', 'https://example.com/');
+  out.nul = await b('data', 'worlds\u0000');
+  out.nulMid = await b('data', 'wor\u0000lds');
+  out.badSource = await b('bogus', '');
+  out.publicSrc = await b('public', '');
+  out.s3 = await b('s3', '');
+  return out;
+});
