@@ -32,6 +32,8 @@ async function boot(opts: {
   launcher?: FakeLauncher;
   linkPort?: number;
   noSandbox?: boolean;
+  /** The runner waits this long for a stored-token link before minting; default is short. */
+  linkGraceMs?: number;
 }) {
   const state = opts.state ?? tempState();
   if (!opts.state) cleanups.push(state.cleanup);
@@ -69,7 +71,7 @@ async function boot(opts: {
             status: 200,
           })) as typeof fetch,
         pollMs: 3_600_000,
-        linkGraceMs: 50,
+        linkGraceMs: opts.linkGraceMs ?? 50,
         pairWaitMs: 5_000,
       },
     },
@@ -215,10 +217,14 @@ describe('restart with the same profile', () => {
       'first link',
     );
     expect(launcher.typedCodes).toHaveLength(1);
+    // "link connected" is logged when the gateway accepts the hello; the fake module stores its
+    // token only when the welcome frame reaches it. Stopping before that restarts with no token.
+    const profileDir = launcher.launches[0]!.profileDir;
+    await until(() => launcher.tokenOf(profileDir) !== undefined, 10_000, 'stored token');
     await first.app.stop();
     apps.splice(apps.indexOf(first.app), 1);
 
-    const second = await boot({ serverMode: true, state, launcher, linkPort });
+    const second = await boot({ serverMode: true, state, launcher, linkPort, linkGraceMs: 5_000 });
     await until(
       () => second.lines.some((l) => l.startsWith('link connected')),
       10_000,
