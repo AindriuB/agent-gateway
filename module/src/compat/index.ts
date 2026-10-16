@@ -20,6 +20,18 @@ export function hasSceneLevels(): boolean {
   return typeof foundry?.documents?.BaseLevel === 'function';
 }
 
+/**
+ * The document that holds a Scene's background image: on v14 the Level the scene opens on
+ * (`initialLevel`, else `defaultLevel0000`, else the first Level), or null when there is none;
+ * on v13 the Scene itself. Replaces the `Scene#background` getter, which is removed in v16.
+ */
+export function sceneBackgroundLevel(scene: any): any {
+  if (foundryGeneration() < 14) return scene;
+  const levels = scene?.levels;
+  const list: any[] = Array.isArray(levels?.contents) ? levels.contents : levels ? [...levels] : [];
+  return scene?.initialLevel ?? levels?.get?.('defaultLevel0000') ?? list[0] ?? null;
+}
+
 export function getApplicationV2(): any {
   return foundry.applications.api.ApplicationV2;
 }

@@ -11,6 +11,7 @@ import {
   startLink,
   stopLink,
 } from './link/runtime.js';
+import { installUploadProvisioning } from './tools/_upload-dirs.js';
 import { installStatusIndicator } from './link/status-indicator.js';
 import { installVouchHook } from './link/vouch.js';
 import { onPolicyChange } from './policy/store.js';
@@ -41,6 +42,7 @@ Hooks.once('ready', () => {
   });
   onPolicyChange(refreshToolset);
   installVouchHook(getLinkClient());
+  installUploadProvisioning();
   startLink();
   installStatusIndicator(getLinkClient());
   const g = globalThis as {

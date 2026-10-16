@@ -128,10 +128,51 @@ describe('image_upload storage', () => {
     expect(r.text).toContain('does not delete the uploaded file');
     expect(r.text).not.toContain(b64(PNG));
     expect(uploads[0].dir).toBe('agent-gateway/uploads/p1');
+    // Every level browses fine, so a Player never reaches createDirectory.
+    expect(fp.createDirectory).not.toHaveBeenCalled();
+  });
+  it('gives a Player FORBIDDEN, naming the folder, when their folder is missing', async () => {
+    fp.browse = vi.fn(async (_s: string, dir: string) => {
+      if (dir === 'agent-gateway/uploads/p1') throw new Error('does not exist');
+      return { files: [] };
+    });
+    const r = await call(args());
+    expect(r.error?.code).toBe('FORBIDDEN');
+    expect(r.error.message).toContain('agent-gateway/uploads/p1');
+    expect(r.error.message).toMatch(/GM must create it/);
+    expect(r.error.message).toMatch(/GM must load the world/);
+    expect(fp.createDirectory).not.toHaveBeenCalled();
+    expect(fp.upload).not.toHaveBeenCalled();
+  });
+  it('lets a GM create only the missing levels', async () => {
+    const present = new Set(['agent-gateway']);
+    fp.browse = vi.fn(async (_s: string, dir: string) => {
+      if (!present.has(dir) && dir !== 'agent-gateway/uploads/gm') throw new Error('missing');
+      return { files: [] };
+    });
+    fp.createDirectory = vi.fn(async (_s: string, dir: string) => {
+      present.add(dir);
+    });
+    const r = await call(args(), 'gm');
+    expect(r.error).toBeUndefined();
     expect(fp.createDirectory.mock.calls.map((c: any[]) => c[1])).toEqual([
-      'agent-gateway',
       'agent-gateway/uploads',
-      'agent-gateway/uploads/p1',
+    ]);
+  });
+  it('lets an Assistant create a missing level', async () => {
+    users.asst = { id: 'asst', isGM: false, role: 3, can: () => true };
+    let made = false;
+    fp.browse = vi.fn(async (_s: string, dir: string) => {
+      if (dir === 'agent-gateway/uploads/asst' && !made) throw new Error('missing');
+      return { files: [] };
+    });
+    fp.createDirectory = vi.fn(async () => {
+      made = true;
+    });
+    const r = await call(args(), 'asst');
+    expect(r.error).toBeUndefined();
+    expect(fp.createDirectory.mock.calls.map((c: any[]) => c[1])).toEqual([
+      'agent-gateway/uploads/asst',
     ]);
   });
   it('derives the extension from mime and ignores no caller text', async () => {
