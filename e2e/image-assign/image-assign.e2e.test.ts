@@ -12,7 +12,6 @@ import { RECONNECT_MS, Rig } from '../multi/rig.js';
 // human's approval. Native execution needs the repository owner's per-run approval.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
 
-type Row = Record<string, unknown>;
 type Entry = { path: string; name: string };
 
 // Mirrors module/src/approvals/config.ts APPROVAL_TTL_MS; see e2e/pf2e/pf2e.e2e.test.ts.
