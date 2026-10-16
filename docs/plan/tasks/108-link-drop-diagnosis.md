@@ -64,3 +64,12 @@ own heartbeat termination from a proxy or browser close, because both show as 10
 - Changing heartbeat timing, the module client, or the Caddyfiles (task 109).
 - Editing Andrew's live Caddy config or restarting anything on his server.
 - Any approval persistence change (task 112).
+
+## Findings (implementer report, 2026-10-16, branch task/108-link-drop-diagnosis)
+
+1. All five drops were the gateway's heartbeat terminate. Every Caddy /link duration is a whole number of 15 s ticks plus ~0.1 s handshake (435.1 = 29, 1020.1/1020.2 = 68, 720.1 = 48, 105.1 = 7), and terminate fires only on a tick (server.ts:376-383), after 30-45 s without a pong. A proxy, network or socket-error close would not land on the grid. With this branch the app.ts log line shows `heartbeat-timeout` or `socket-error`.
+2. Live Caddy v2.11.4 has no /link timeouts and did not reload. Locally a Caddy reload closes with a clean 1001, not 1006. Proxy ruled out.
+3. Tab visibility is unknown (no task 87 console capture). The module answers pings in the ws `message` handler (client.ts:854-855), not on a timer, so timer throttling alone should not delay pongs. The likely causes are tab freeze or discard, a blocked main thread, or a >30 s machine or network stall. The operator should capture `document.visibilityState` plus a timestamp at each drop.
+4. Local repro (e2e/link-idle/idle.mjs, caddy:2, stand-in ws server copying the heartbeat): idle for 25 min gave 0 closes; a reload at 10 min gave 1001 on both sides. No 1006 reproduced.
+5. Approval across a drop: the module record survives and is re-presented on reconnect (live.ts:78-83). The gateway fails the in-flight call with WORLD_OFFLINE (registry.ts:82-88), so the agent never gets the outcome. If the drop comes before APPROVAL_WAIT_MS, the agent has no approval id, and its retry creates a duplicate pending record.
+6. Recommendation for 109 (outside the four listed options): document the browser-side cause, and raise the pong tolerance (MAX_MISSED_PONGS or a deadline of about 2 min); keep fast reconnect; deliver the pending approval id and outcome after reconnect, and dedupe on retry. Ruled out: Caddy stream settings, which address no cause; a shorter ping interval, which would make it worse; a module keepalive, which detects but doesn't prevent. Optional hardening: treat any inbound frame as liveness, since `missed` resets only on an app-level pong (server.ts:449-451).
