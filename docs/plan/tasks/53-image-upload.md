@@ -274,3 +274,14 @@ Reviewed HEAD: 119d3998333e1cfc806a12d5aad1415c0ff3d2f5
 - [P1] module/src/tools/image-upload.ts — `resolveActor`/`resolveScene` resolve the target without the GM's agent folder allowlist (`folderAllowed` in module/src/policy/folders.ts, applied by the read tools and module/src/tools/_adapters.ts:93), so an agent can set images on excluded Actors and Scenes.
   route: implementer — apply `folderAllowed(doc, user.isGM === true)` to the target Actor and Scene before any upload or update; refuse identically to a missing document. Fixed in 64f8c05.
 - [P3] module/test/tools/image-upload/upload.test.ts:244 — the test title "snapshots the Scene" contradicted its body; renamed in 64f8c05.
+
+## Review round 4 — findings (relayed from task 123's round 4)
+
+Reviewed HEAD: 028b575
+
+- [P2] `resolveActor` accepted an unlinked token's synthetic Actor uuid (`Scene.S.Token.K.Actor.A`), whose `folder` is the base Actor's, so the folder allowlist was checked against the wrong document. route: implementer → fixed in 1443492: only top-level world Actors are accepted (no `parent`, `isToken !== true`, uuid is `Actor.<id>`); anything else gets the same bare FORBIDDEN as a missing document, before any upload.
+- Test-only: Amendment 3's Level order is now covered by three cases (initial Level; `defaultLevel0000` when not first; first). Fixed in 1443492.
+
+## Amendment 4 (owner, 2026-10-16, from the round 4 re-review)
+
+The Permissions item's "A GM may target any Actor" means any **world** Actor. image_upload refuses a token's synthetic Actor copy for every caller, GMs included, with the same FORBIDDEN as a missing document. To change one token's art a GM uses image_assign's `token` target. Reason: a synthetic copy has no prototype token art of its own, and resolving it to the base Actor would let the folder allowlist be checked against the wrong document.
