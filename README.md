@@ -11,6 +11,7 @@ It runs on your own machine, or on a server for remote clients and several peopl
 - It has no access beyond that user's permissions. It cannot read or change anything the user could not.
 - It supports Foundry v13 and v14 in Pathfinder 2e and D&D 5e worlds.
 - It does no TLS and has no tunnel or share mode. A public URL needs a reverse proxy you run.
+- claude.ai, ChatGPT, the Gemini CLI and the Gemini app have not been verified end to end in this release (see below).
 - Headless agents do not work in the Claude Desktop bundle.
 
 > Agent Gateway is not affiliated with or endorsed by Foundry Gaming LLC. You must own your Foundry licence and any content you use with it.
@@ -54,7 +55,7 @@ Run `npm run pack:module` to write `dist/release/agent-gateway.zip` (unzip it in
 
 1. Install the module and a gateway as above.
 2. **Keep a Foundry browser tab open**, logged in as the user the agent should act as. The agent works through that tab. To run an agent with no tab open, see [the headless guide](docs/guides/headless.md).
-3. **Pair.** The module connects from your tab to `ws://localhost:7420` with no configuration. The gateway makes a one-time pairing code, valid for 10 minutes. It is printed on the gateway's stderr, and it comes back in chat when you ask the agent for `gateway_status` or when a tool call fails because Foundry is not connected. In Foundry, open Configure Settings, then Agent Gateway, then Pair with gateway, enter the code and press Connect. You do this once per browser address.
+3. **Pair.** The module connects from your tab to `ws://localhost:7420` with no configuration. The gateway makes a one-time pairing code, valid for 10 minutes. It is printed on the gateway's stderr, and it comes back in chat when you ask the agent for `gateway_status` or when a tool call fails because Foundry is not connected. Claude Desktop also shows it in the extension's log. In Foundry, open Configure Settings, then Agent Gateway, then Pair with gateway, enter the code and press Connect. You do this once per browser address.
 4. **Connect your client** using the table below, then ask the agent to run `gateway_status` to confirm.
 
 ## Which guide do I need?
@@ -71,7 +72,7 @@ Run `npm run pack:module` to write `dist/release/agent-gateway.zip` (unzip it in
 | A self-hosted, always-on server         | [docs/server-mode.md](docs/server-mode.md)                     |
 | A public HTTPS URL (Caddy or nginx)     | [docs/guides/reverse-proxy.md](docs/guides/reverse-proxy.md)   |
 
-The remote clients (claude.ai, ChatGPT, Gemini) sign in with OAuth. The gateway's OAuth server is tested with its own client and the MCP Inspector; the per-release checks with the real clients are in [docs/compatibility.md](docs/compatibility.md).
+The remote clients (claude.ai, ChatGPT, the Gemini CLI and the Gemini app) sign in with OAuth. **None of them has been run end to end against the per-release checklist in this release**, and each of those guides says so. The gateway's OAuth server is tested with its own client and the MCP Inspector. The one real-client evidence so far is a manual playtest on 2026-10-16 that used a ChatGPT developer-mode custom connector (no plugin) successfully; that is not the checklist. The checklist is in [docs/compatibility.md](docs/compatibility.md).
 
 ## Tool packs
 
@@ -85,7 +86,7 @@ The core is complete and free. Optional tool packs, from the maintainer or other
 
 ## Compatibility
 
-Foundry v13 and v14 (`minimum` 13, `verified` 14). Tested systems are pf2e 8.6.0 and dnd5e 6.0.6 on Foundry 14.369. The Claude Desktop bundle and source installs are verified on macOS and untested on Windows. Details and per-client checks are in [docs/compatibility.md](docs/compatibility.md).
+Foundry v13 and v14 (`minimum` 13, `verified` 14). Tested combinations are pf2e 8.6.0 and dnd5e 6.0.6 on Foundry 14.369, and pf2e 7.12.2 on Foundry 13.351 (see [docs/testing.md](docs/testing.md)). The Claude Desktop bundle and source installs are verified on macOS and untested on Windows. Details and per-client checks are in [docs/compatibility.md](docs/compatibility.md).
 
 ## Contributing
 
