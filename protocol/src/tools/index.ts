@@ -48,6 +48,7 @@ import type { ToolDefinition } from './define.js';
 import { documentGet } from './document-get.js';
 import { documentSearch } from './document-search.js';
 import { worldInfo } from './world-info.js';
+import { imageView } from './image-view.js';
 import { chatRead } from './chat-read.js';
 import { compendiumGet } from './compendium-get.js';
 import { compendiumSearch } from './compendium-search.js';
@@ -70,6 +71,7 @@ export * from './json-schema.js';
 export * from './document-get.js';
 export * from './document-search.js';
 export * from './world-info.js';
+export * from './image-view.js';
 export * from './chat-read.js';
 export * from './compendium-get.js';
 export * from './compendium-search.js';
@@ -94,6 +96,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   combatManage,
   sceneControl,
   worldInfo,
+  imageView,
   documentSearch,
   documentGet,
   compendiumSearch,
