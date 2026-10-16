@@ -28,7 +28,9 @@ if (config.world !== 'test-world' || (version !== 'v13' && version !== 'v14'))
   throw Error('Select a prepared test-world generation');
 const approved = process.env.AGENT_GATEWAY_TASK22_APPROVED === 'exact-fixtures-and-cleanup';
 if (!approved)
-  throw Error('the human approver must approve the exact task22 fixtures and cleanup before this harness runs');
+  throw Error(
+    'The human approver must approve the exact task22 fixtures and cleanup before this harness runs',
+  );
 const fixtureRun = randomBytes(6).toString('hex');
 const evidence = resolve('/private/tmp', `task22-native-${version}-${fixtureRun}`);
 mkdirSync(evidence, { recursive: true });

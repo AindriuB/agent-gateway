@@ -24,7 +24,7 @@ import { createSessionServer } from '../../../../gateway/src/mcp/session.js';
 import { openStore } from '../../../../gateway/src/store/index.js';
 
 if (process.env.AGENT_GATEWAY_TASK21_APPROVED !== 'exact-fixtures-and-cleanup')
-  throw Error('the human approver must first approve the exact task 21 fixture writes and cleanup');
+  throw Error('The human approver must first approve the exact task 21 fixture writes and cleanup');
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const { config, paths } = loadContext();
 if (config.world !== 'test-world') throw Error('Only the prepared fixture world is authorized');
@@ -284,7 +284,7 @@ try {
     }));
     const tag = `Task 21 ${version} ${who} ${fixtureRun}`;
     console.log(
-      `[task21] READY ${version} ${user.name}: four real owner approvals will appear (chat, roll, page create, no-chat roll). the human approver must approve them in Foundry.`,
+      `[task21] READY ${version} ${user.name}: four real owner approvals will appear (chat, roll, page create, no-chat roll). The human approver must approve them in Foundry.`,
     );
     const auditBefore = await gmBrowser.page.evaluate(() => {
       const game = (globalThis as any).game;
