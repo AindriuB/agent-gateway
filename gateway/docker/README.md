@@ -102,19 +102,26 @@ The invite works because `COMPOSE_FILE` is set.
 
 ## Pair each person
 
-Invites arrive with task 68 (not in this build yet). Until then the shared pairing code is
-printed in the log: `docker compose logs gateway | grep "Pairing code:"`.
+Pairing is per browser. Pair the Foundry user first, then sign in the AI client. The full
+explanation, including why a player invite needs a GM online, is in
+[docs/server-mode.md](../../docs/server-mode.md#pairing).
 
-After task 68:
+1. **First GM.** The GM opens Agent Gateway's pairing window in Foundry and sends you the world id
+   and user id from the "Copy my ids" button, which sits in the details block "For the gateway
+   operator: your ids". You run
+   `docker compose exec gateway <cli> --invite <world id> <user id> --admin --origin https://<foundry host>`
+   and send the printed invite privately. It works once and expires after 1 hour. The GM pastes it
+   into the pairing window.
+2. **Players.** The admin GM invites them from Manage access. You can also run
+   `docker compose exec gateway <cli> --invite <world id> <user id>`. A player invite completes only
+   while an admin GM is in the world with Agent Gateway connected; otherwise the player sees "No GM
+   is online".
+3. **Extra GM accounts.** For a dedicated GM user such as a "ChatGPT" GM, use `--invite ... --gm
+--origin ...`. It pairs directly and is not admin.
 
-1. The person opens Agent Gateway's pairing app in Foundry and sends you the world id and user
-   id from its "Copy my ids" line.
-2. You run `docker compose exec gateway <cli> --invite <world id> <user id>` and send them the
-   printed code privately. It works once and expires after 24 hours.
-3. They set the gateway URL to `wss://<domain>/link` and enter the code.
+Re-pairing a lost device needs a new invite, which replaces the old pairing.
 
-Re-pairing a lost device needs a new invite.
-
+- `docker compose exec gateway <cli> --demote <world> <user>` clears a GM's admin flag.
 - `docker compose exec gateway <cli> --revoke-pairing <world> <user>` removes someone and
   cancels their unused invites.
 - `docker compose exec gateway <cli> --cancel-invite <world> <user>` withdraws an unused invite.
