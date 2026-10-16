@@ -275,6 +275,61 @@ describe('image_view handler: folder allowlist', () => {
   });
 });
 
+describe('image_view handler: embedded token Actors', () => {
+  const embedded = (opts: { sceneFolder?: string; hidden?: boolean; isOwner?: boolean } = {}) => {
+    const scene = {
+      documentName: 'Scene',
+      testUserPermission: () => true,
+      ...(opts.sceneFolder ? { folder: { id: opts.sceneFolder } } : {}),
+    };
+    const token = {
+      documentName: 'Token',
+      hidden: opts.hidden === true,
+      isOwner: opts.isOwner === true,
+      parent: scene,
+    };
+    return { 'Scene.S.Token.K.Actor.A': doc({ limited: true, parent: token }) };
+  };
+  const uuid = 'Scene.S.Token.K.Actor.A';
+  const refusedLike = async (user: any, docs: Record<string, any>) => {
+    const { fetchMock } = install(user, { docs });
+    const r = await run({ source: 'actor_portrait', uuid }, user);
+    const missing = await run({ source: 'actor_portrait', uuid: 'Nope.x' }, user);
+    expect(r.error.code).toBe('FORBIDDEN');
+    expect(r).toEqual(missing);
+    expect(fetchMock).not.toHaveBeenCalled();
+  };
+  it.each([
+    ['playerAgents', player],
+    ['gmAgents', gm],
+  ] as const)('refuses on a Scene outside the %s allowlist', async (cls, user) => {
+    folders[cls] = ['ok'];
+    await refusedLike(user, embedded({ sceneFolder: 'other' }));
+  });
+  it('refuses on a hidden token the player does not own', () =>
+    refusedLike(player, embedded({ hidden: true })));
+  it('allows on a hidden token to a GM and to its owner', async () => {
+    for (const [u, d] of [
+      [gm, embedded({ hidden: true })],
+      [player, embedded({ hidden: true, isOwner: true })],
+    ] as const) {
+      install(u, { docs: d });
+      expect((await run({ source: 'actor_portrait', uuid }, u)).images).toHaveLength(1);
+    }
+  });
+  it('allows on an allowed, visible token', async () => {
+    folders.playerAgents = ['ok'];
+    const { fetchMock } = install(player, { docs: embedded({ sceneFolder: 'ok' }) });
+    expect((await run({ source: 'actor_portrait', uuid }, player)).images).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('refuses when the Scene is not viewable', async () => {
+    const docs = embedded();
+    (docs[uuid].parent.parent as any).testUserPermission = () => false;
+    await refusedLike(player, docs);
+  });
+});
+
 describe('image_view handler: path and content checks', () => {
   const invalidCase = async (img: string, user = gm) => {
     const { fetchMock } = install(user, { docs: { 'Actor.a': doc({ img }) } });

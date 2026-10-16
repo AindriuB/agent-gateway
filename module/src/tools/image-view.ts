@@ -20,6 +20,32 @@ const canSee = (doc: any, user: any): boolean =>
   folderAllowed(doc, user.isGM === true) &&
   (user.isGM === true || doc?.testUserPermission?.(user, 'LIMITED') === true);
 
+/**
+ * An Actor is judged by its root world document: a synthetic token Actor (`Scene.S.Token.K.Actor.A`)
+ * answers to its Scene's allowlist and permission and to its token's hidden-or-owner rule, as well
+ * as to its own permission.
+ */
+function actorVisible(actor: any, user: any): boolean {
+  if (actor == null) return false;
+  let root = actor;
+  for (let i = 0; root.parent && i < 20; i++) {
+    root = root.parent;
+    if (
+      user.isGM !== true &&
+      root.documentName === 'Token' &&
+      root.hidden === true &&
+      root.isOwner !== true
+    )
+      return false;
+  }
+  if (root.parent) return false;
+  if (root === actor) return canSee(actor, user);
+  return (
+    canSee(root, user) &&
+    (user.isGM === true || actor.testUserPermission?.(user, 'LIMITED') === true)
+  );
+}
+
 const REFUSED = 'You cannot view this image';
 
 async function load(uuid: unknown, type: string): Promise<any> {
@@ -46,7 +72,7 @@ async function resolveSource(
     case 'actor_portrait':
     case 'actor_token': {
       const actor = await load(args.uuid, 'Actor');
-      if (!canSee(actor, user)) return refuse();
+      if (!actorVisible(actor, user)) return refuse();
       return String(
         (args.source === 'actor_portrait' ? actor.img : actor.prototypeToken?.texture?.src) ?? '',
       );
