@@ -65,7 +65,9 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - **111** (HTTP session caps, option B) is done on branch `claude/task-111` (PR #184); archived in `docs/plan/done/`. Caps are 16, 32, 256 (were 4, 16, 64).
   - **116** (headless restart re-invite flake) is the failure on PR #180: `gateway/test/headless/app.test.ts` "reconnects with the stored token and mints no invite" minted a second invite. Diagnose first; the lead is the 50 ms `linkGraceMs` in the test boot helper.
 - **109** (link keepalive: about 135 s of silence tolerated, any authenticated inbound frame counts as liveness, a retry after a drop rejoins its pending approval in the same tab) is done in PR claude/task-109; archived in `docs/plan/done/`. Not in the go-public freeze's open items any more.
-- **112** is Ready once 109 and 117 merge. **Held until the Mac's task 53 (image upload) merges:** 44.
+- **112** is Ready once 109 and 117 merge; 117 has merged, so 112 waits on this PR only. **Held until the Mac's task 53 (image upload) merges:** 44.
+- **0.4.0 release blockers:**
+  - **117** (offline queue refuses `redactArgs` tools such as `image_upload`): merged (PR #186; archived in `docs/plan/done/`). Not a go-public blocker (agreed with the Mac session).
 - **Awaiting Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window).
 - **Follow-ups from wave 2:**
   - Wire `e2e-unit` and the e2e `tsc` into `npm run verify`. They are not in it today, which hid the 115 failure on `main`.
