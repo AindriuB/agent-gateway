@@ -9,6 +9,7 @@ import {
 import { foundryGeneration, fromUuidCompat } from '../compat/index.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
 import { WriteError, defineWriteHandler, forbid, invalid, owns, trustedUser } from './_write.js';
+import { folderAllowed } from '../policy/folders.js';
 import { actionFields } from './_scene.js';
 import { browseImages } from './_image.js';
 
@@ -65,6 +66,10 @@ async function resolveTarget(user: any, target: NonNullable<Args['target']>, uui
   const doc = await fromUuidCompat(uuid);
   const expect = (name: string): void => {
     if (!doc || doc.documentName !== name) invalid(`The uuid is not a ${name} (target ${target})`);
+    // Embedded documents follow their root; an excluded one answers like a missing uuid.
+    const root = name === 'Token' || name === 'Tile' ? doc.parent : doc;
+    if (!folderAllowed(root, user.isGM === true))
+      invalid(`The uuid is not a ${name} (target ${target})`);
   };
   if (target === 'actor_portrait' || target === 'actor_token') {
     expect('Actor');
