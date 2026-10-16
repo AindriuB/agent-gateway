@@ -8,7 +8,7 @@ import { RECONNECT_MS, Rig } from '../multi/rig.js';
 // and player browsers open; the gateway is bound to one user at a time and swapped once, from the
 // GM to the player. beforeAll uploads a 1x1 PNG as the GM (one approval) and creates, natively in
 // the GM page, an Actor the player owns, an Actor with no permission, an Actor the player can see
-// (LIMITED), and a Scene holding a hidden Token of the LIMITED Actor. afterAll deletes each by its
+// (LIMITED), and a LIMITED Scene holding a hidden Token of the LIMITED Actor. afterAll deletes each by its
 // exact UUID. The uploaded file cannot be deleted through the API: its path is printed for the
 // operator to delete by hand.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
@@ -100,12 +100,13 @@ describe.skipIf(!enabled)('image_view', () => {
         });
       ownedActor = await actor('agent-gateway e2e view owned (temporary)', 3);
       noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
-      // LIMITED (1): the player can see this Actor, so only token.hidden can refuse its Token.
+      // LIMITED (1) on this Actor and on the Scene below: the player can see both, so only
+      // token.hidden can refuse the Token.
       limitedActor = await actor('agent-gateway e2e view limited (temporary)', 1);
-      const sceneUuid = await createDoc(
-        `async () => (await Scene.create({ name: 'agent-gateway e2e view scene (temporary)' })).uuid`,
-        null,
-      );
+      const sceneUuid = await createDoc(`async (d) => (await Scene.create(d)).uuid`, {
+        name: 'agent-gateway e2e view scene (temporary)',
+        ownership: { default: 1 },
+      });
       hiddenToken = await createDoc(
         `async ([sceneUuid, actorUuid, src]) => {
         const scene = await fromUuid(sceneUuid);
