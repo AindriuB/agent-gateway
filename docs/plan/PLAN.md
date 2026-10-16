@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 78 done in `docs/plan/done/` (excluding its README.md), 18 active in `docs/plan/tasks/` (2026-10-15).
+Inventory: 87 done in `docs/plan/done/` (excluding its README.md), 25 active in `docs/plan/tasks/` (2026-10-16).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -56,6 +56,20 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 
 ### 0e. 101 done on branch (PR pending): conformance retry on the gateway 429
 - **101: conformance inspector calls retry on the per-client 429 (branch `task/101-conformance-oauth-rate-retry`, archived in `docs/plan/done/`).** Fixes release gate 3 failing on the Mac. After merge, re-run the 0.3.0 release on the Mac: that run is the proof that a retry turns a 429 into a pass, which Linux cannot show. With 99 and 100 this completes the 0.3.0 unblockers.
+
+### 0f. 0.3.0 playtest fixes (tasks 102-114); wave 1 done on branch `claude/playtest-wave-1`, PR pending
+- **Tasks 102-114 come from the 0.3.0 playtest** (server mode behind Caddy, ChatGPT as the agent, 2026-10-16).
+- **Wave 1 (102, 103, 105, 107, 108, 110; archived in `docs/plan/done/`).** Offline-queue text, unticked destructive/code scopes, pairing-window wording, vouch notices, and two diagnosis spikes. Details in `HISTORY.md` (see the index).
+- **Ready, start after the wave 1 PR merges:** 109 (keep the link alive through short stalls: raise pong tolerance, keep in-flight approvals across a drop; direction from 108) and 111 (HTTP session cap, option B: raise the cap, rate-limit the eviction log line, treat refused DELETEs).
+- **Docs for the next wave:** 113 (lead ChatGPT setup with the developer-mode connector; needs 103 merged) and 114 (GM-vouched invites and `--admin/--gm/--demote` in server-mode docs; needs 105 merged).
+- **Blocked on Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window), 112 (keep pending approvals when the requesting player logs out or reloads; architecture decision, then an architect pass).
+- **Follow-ups from wave 1:**
+  - 388 `GET /mcp` requests returned 401 in the 2026-10-16 live sample (718 GETs in all); the cause is not known. Look at the access log for which principal and when.
+  - Option C for the HTTP limits, more rps for authenticated clients (`PUBLIC_CLIENT_RPS` is 10), was declined for now; 111 takes option B only. Revisit if 429s persist after 111.
+  - A gateway acknowledgement of `attest`, so the vouch notice can say the pairing was actually confirmed (protocol and gateway change; 107's notice says "confirmation sent").
+  - 108 suggested capturing `document.visibilityState` and a timestamp at each link drop (tab-visibility capture) to learn why the module stops answering pings.
+  - 108 optional hardening: treat any inbound frame as liveness, since `missed` resets only on an app-level pong (`gateway/src/link/server.ts:449-451`).
+  - Releases need written notes: the 0.3.0 GitHub release body is a placeholder.
 
 ### 1. ChatGPT plugin
 - **84 (ChatGPT plugin) is run by a separate Codex session.** Two issues are open: the plugin installed through ChatGPT settings appears only in Codex, not in ChatGPT chat; and the 429 sign-in block, fixed by 88 and deployed, which Andrew can retest against the deployed 0.2.0. Task file stays in `docs/plan/tasks/`.
