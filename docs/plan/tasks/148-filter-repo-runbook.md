@@ -120,7 +120,8 @@ swap it in under the existing repo name and restore the releases.
       `verify.sh` run against a local mirror of the current main (not the freeze SHA yet), all
       PASS, or each FAIL explained.
 - [ ] RUNBOOK.md gives the cut-over as numbered steps, each marked **OWNER** or **SCRIPT**, in
-      this order:
+      this order. Steps 1-10 are all reversible and nothing in them is visible outside the
+      owner's account; step 11 is the single publish gate; steps 12-13 publish (Amendment 1):
       1. OWNER: declare the freeze SHA; stop merging to main; list and close or port open PRs and
          branches (port with `git format-patch` from the old repo and `git am` onto the new main,
          excluding internal paths).
@@ -134,23 +135,61 @@ swap it in under the existing repo name and restore the releases.
       6. OWNER: push the rewritten main and tags (`git push origin main` and the tag list
          explicitly; never `--mirror`, never `--force` to the archive).
       7. OWNER: re-create releases with `gh release create v0.3.0 -R AindriuB/agent-gateway
-         --title "Agent Gateway 0.3.0" --notes-file … --latest <assets>`; check
-         `curl -sIL https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`
-         returns 200 once public, and that module.json's `download` URL resolves.
+         --title "Agent Gateway 0.3.0" --notes-file … --latest <assets>`; while the repo is
+         private, check them with `gh release view` and `gh release download` (authenticated).
       8. OWNER: repo settings: enable private vulnerability reporting (SECURITY.md relies on it),
          Actions "Require approval for first-time contributors", branch protection on main
          requiring the `test` check, Issues on, Discussions per preference.
       9. OWNER: GHCR package `foundry-agent-gateway`: connect it to the new repo (Package
-         settings, Manage Actions access, give the new repo write) and set visibility to
-         **public**; check `docker pull ghcr.io/aindriub/foundry-agent-gateway:0.3.0` without
-         login.
-      10. OWNER: flip AindriuB/agent-gateway to **public**; re-run step 7's curl.
-      11. OWNER: on each machine, re-clone or re-point local checkouts (`git remote set-url`),
-          run 147's `link.sh`, and delete old worktrees whose branches are pre-rewrite.
-      12. Then cut 0.4.0 from the public repo with the normal release script (separate work).
-- [ ] RUNBOOK.md has a rollback section: until step 10, deleting the new repo and renaming the
-      archive back restores the old state; after step 10, visibility can be flipped back but
-      clones made in the meantime cannot be recalled.
+         settings, Manage Actions access, give the new repo write). Visibility stays **private**;
+         check an authenticated `docker pull ghcr.io/aindriub/foundry-agent-gateway:0.3.0`.
+      10. OWNER + SCRIPT: pre-publish check. Fresh `git clone --mirror` of the pushed private
+          AindriuB/agent-gateway and re-run `verify.sh <original-mirror> <that clone>`: all PASS.
+          Confirm the package's version list holds nothing that should not go public.
+      11. OWNER: **PUBLISH GATE.** Andrew explicitly confirms, in writing in the cut-over PR or
+          issue, that steps 1-10 passed and that he is publishing. This is the point of no return:
+          nothing after it can be fully rolled back, because clones, forks and pulled images made
+          after it cannot be recalled. No step before the gate makes anything public.
+      12. OWNER: flip AindriuB/agent-gateway to **public**; check
+          `curl -sIL https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`
+          returns 200, and that module.json's `download` URL resolves.
+      13. OWNER: set the GHCR package visibility to **public**; check
+          `docker pull ghcr.io/aindriub/foundry-agent-gateway:0.3.0` without login. Last, because
+          GitHub documents package visibility as one-way (public cannot be set back to private).
+      14. OWNER: migrate each machine's local checkouts (see the migration acceptance item below).
+          `git remote set-url` alone is not a migration and the runbook must say so.
+      15. Then cut 0.4.0 from the public repo with the normal release script (separate work).
+- [ ] RUNBOOK.md's step 14 is a local-checkout migration that never silently discards local work
+      and never uses `git stash` (Amendment 1). An existing checkout is still on the original
+      history with the internal docs tracked, so 147's `link.sh` refuses there (its targets exist
+      as regular files); every `.claude/worktrees/*` and other `git worktree list` entry on an
+      existing checkout also points at the old history. For each machine:
+      1. Inventory, per clone and per worktree (`git worktree list`): uncommitted changes
+         (`git status --porcelain`), branches with commits not on the old origin/main
+         (`git log --branches --not origin/main --oneline`), and stashes (`git stash list`, read
+         only).
+      2. Preserve: commit uncommitted changes to a `wip/<name>` branch in that worktree; export
+         every unpushed branch and every existing stash entry as patches
+         (`git format-patch origin/main..<branch> -o <backup-dir>/<branch>/`,
+         `git stash show -p stash@{N} > <backup-dir>/stash-N.patch`) to a folder outside the
+         checkout; list the folder and confirm it is non-empty for each item in the inventory.
+      3. Replace: fresh `git clone https://github.com/AindriuB/agent-gateway` into a new directory
+         (preferred), or, only once step 2 is confirmed, `git fetch` the new remote and
+         `git reset --hard origin/main` in the main checkout after removing each old worktree with
+         `git worktree remove` and deleting its pre-rewrite branch. The old checkout directory is
+         kept (renamed) until Andrew deletes it.
+      4. Run 147's `link.sh` in the new checkout and in each new worktree; re-apply preserved work
+         with `git am`/`git apply` onto the new main, excluding internal paths.
+- [ ] RUNBOOK.md has a rollback section (Amendment 1):
+      - Before the publish gate (steps 1-10): delete the new private AindriuB/agent-gateway,
+        rename the archive back to AindriuB/agent-gateway, and re-point the GHCR package's Actions
+        access to it. This fully restores the old state; nothing was ever public.
+      - After the gate, rollback is partial and the section says so plainly. Repo: flip it back to
+        private (public forks detach and stay public); clones made meanwhile cannot be recalled.
+        GHCR package: GitHub does not allow a public package to be made private again, so
+        rollback is deleting the affected versions (or the whole package) and re-publishing them
+        privately under new tags; GitHub may refuse to delete public versions above its download
+        threshold without a support request. Images already pulled cannot be recalled.
 - [ ] Nothing is pushed, renamed or created on GitHub by the implementer
       (`gh api` calls in scripts are read-only, and the scripts refuse to run `git push`).
 
@@ -177,3 +216,18 @@ swap it in under the existing repo name and restore the releases.
 - Whether the hosted `gw.aindriub.app` / `dl.aindriub.app` URLs in older commits of the plugin
   files and docs should also be replaced. Default: keep; they are public service hostnames, not
   personal data.
+
+## Amendments
+
+### Amendment 1 (from external PR review, 2026-10-16)
+
+- [P2] Step 11 let an existing local checkout just `git remote set-url`. That checkout stays on
+  the original history with the internal docs tracked, so 147's `link.sh` refuses (its targets
+  exist). Replaced by step 14 plus the migration acceptance item: inventory, preserve via WIP
+  branches and patches (never `git stash`), then fresh clone or hard reset, then `link.sh`,
+  covering every worktree including `.claude/worktrees/*`.
+- [P2] The rollback promised restoration "until step 10", but step 9 had already made the GHCR
+  package public. Reordered: every reversible step (rename, private create, push, releases,
+  settings, package link, re-verify) comes first, then a single OWNER publish gate (step 11),
+  then repo public (12) and package public (13). The rollback section now says what is and is
+  not reversible after the gate, including the package.
