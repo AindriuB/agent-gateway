@@ -1,9 +1,9 @@
 # Releasing
 
-A release is one local command. GitHub Actions runs only on `v*` tags (the tests, then the
-server-mode image; see "Publishing the image") and on demand from "Run workflow" (the tests
-only). It never runs on pull requests or on `main`, so local `npm run verify` is the PR gate.
-Quench and remote OAuth conformance are not gates yet.
+A release is one local command. GitHub Actions runs the tests on pull requests, on pushes to
+`main` and on `v*` tags. Only a `v*` tag also builds and pushes the server-mode image (see
+"Publishing the image"); "Run workflow" runs the tests only. Running `npm run verify` locally
+before you push is still expected. Quench and remote OAuth conformance are not gates yet.
 
 ```
 npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
@@ -41,7 +41,7 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
 image. GHCR is the registry, and the tag workflow below does the pushing.
 
 The script never publishes the draft, never tags and never pushes. The version bump is left
-uncommitted: commit it on a branch and open a PR for Andrew. Land ONLY that version-bump PR
+uncommitted: commit it on a branch and open a PR for the maintainer. Land ONLY that version-bump PR
 before publishing the draft. If anything else lands on `main` first, re-run the release,
 because the tag is created from `main`'s HEAD at publish time.
 
@@ -51,9 +51,14 @@ before retrying.
 ## Publishing the image
 
 `.github/workflows/ci.yml` builds and pushes the image when a `v*` tag is pushed. It runs the
-tests first and checks that the tag matches the repo version, so bump the version on `main`
-(the release PR) before tagging. "Run workflow" on a branch or tag only runs the tests and
-never publishes; a failed publish is retried with "Re-run jobs" on the tag run. To publish by hand:
+tests first and checks that the tag matches the repo version. "Run workflow" on a branch or tag
+only runs the tests and never publishes; a failed publish is retried with "Re-run jobs" on the
+tag run. Before tagging:
+
+1. Bump the version on `main` (the release PR).
+2. Update `CHANGELOG.md` in that same PR: move this release's entries out of Unreleased under
+   the new version heading.
+3. Tag and push. To publish by hand:
 
 ```
 git tag v<version> <commit on main>
@@ -66,13 +71,12 @@ prerelease tag such as `v0.1.0-rc.1` gets its exact version and `sha-*` but neve
 The image is multi-arch (amd64, arm64); the extra `unknown/unknown` entries in
 `docker buildx imagetools inspect` are provenance attestations and are expected.
 
-The package is private. To pull it on a VPS, run `docker login ghcr.io` with a GitHub token
-that has `read:packages`. Both Compose files in `gateway/docker/` pull
+The package is public, so pulls need no login. Both Compose files in `gateway/docker/` pull
 `ghcr.io/aindriub/foundry-agent-gateway:${GATEWAY_VERSION}` by default, and `bump-version` keeps
 `GATEWAY_VERSION` in `.env.example` at the repo version. Pulls fail until v0.1.0 is published;
 use `docker compose up -d --build` until then.
 
-## Stops that need Andrew's explicit go-ahead
+## Stops that need the maintainer's explicit go-ahead
 
 - Publishing the draft GitHub release.
 - `npm publish` (the real one).
@@ -84,11 +88,10 @@ use `docker compose up -d --build` until then.
 resolves once a release is published; a draft does not count. Until then the Foundry install
 by manifest URL fails with a 404.
 
-## Self-hosted manifest (private testing)
+## Self-hosted manifest (testing a build)
 
-While the repo is private, the `releases/latest/download/module.json` URL returns 404, so Foundry
-cannot install the module from it. To test an install from a manifest URL, serve the files
-yourself:
+To test an install from a manifest URL before a release is published, or to test an unreleased
+build, serve the files yourself:
 
 1. Build and pack with your own base URL:
    `npm run build && node scripts/pack-module.mjs --base-url https://dl.example.org/agent-gateway`.
@@ -111,8 +114,8 @@ yourself:
 
    There is no `browse`, so there is no directory listing. If Caddy runs in a container, `/srv/dl`
    must be a folder mounted into it, for example read-only through an uncommitted
-   `compose.override.yaml`. Andrew's Caddy already mounts a site folder, so he serves `/srv/site/dl`
-   and returns the landing page's 404 for `/dl` itself.
+   `compose.override.yaml`.
+
 4. Check `curl -sI https://dl.example.org/agent-gateway/module.json` returns 200. In Foundry
    Setup, go to Add-on Modules, Install Module, and paste the manifest URL.
 
@@ -127,31 +130,37 @@ the source (a link or a quote of the reply). The release script counts a questio
 when its `Answer` line is not blank.
 
 ### 1. May paid packs be sold outside Premium Content while the core is listed?
+
 - Answer:
 - Date:
 - Source:
 
 ### 2. What is the Premium Content fee, and do code-only modules fit it?
+
 - Answer:
 - Date:
 - Source:
 
 ### 3. Does each pack need the "AI Tools" tag and its own attestation?
+
 - Answer:
 - Date:
 - Source:
 
 ### 4. Do agents reading compendium or game-system data trip the other-modules context rule?
+
 - Answer:
 - Date:
 - Source:
 
 ### 5. Is minified or obfuscated code acceptable in premium packs?
+
 - Answer:
 - Date:
 - Source:
 
 ### 6. What consent UI satisfies the runtime-code rule for agent-run macros?
+
 - Answer:
 - Date:
 - Source:

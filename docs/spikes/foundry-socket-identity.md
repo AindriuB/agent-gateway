@@ -48,7 +48,7 @@ game.socket.io.engine.send('42["module.agent-gateway",{"userId":"<gm>"},{"userId
 await game.user.update({ 'flags.agent-gateway.nonce': 'Y' }, { userId: gmId });
 ```
 
-## Why it holds (from source, the v14.369 server in the homelab container)
+## Why it holds (from source, the v14.369 server in a container)
 
 The server code is minified, so locations are byte offsets; `common/` and `client/` have lines.
 
@@ -119,7 +119,7 @@ If no trusted observer is online, the claim stays pending, like an approval with
 
 ## v13
 
-v13 pending: no homelab v13 instance yet. Re-check on v13: the `handleCustomSocket` signature and the
+v13 pending: no v13 instance yet. Re-check on v13: the `handleCustomSocket` signature and the
 appended sender id; whether handshake `auth` is ignored; hook `userId` versus `options.userId`; the
 `#canUpdate` own-User rule; and whether `CONFIG.queries` and `User#query` exist (if not, fall back to
 (a) with a plain socket message).

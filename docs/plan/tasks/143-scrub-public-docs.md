@@ -74,3 +74,13 @@ personal names, home paths, private hostnames, homelab details, internal workflo
 - docs/plan/**, docs/workflow.md, docs/conventions.md (moved private by 147, not edited here).
 - Test files and screenshots (144). e2e/** (owned by the open image tasks).
 - Rewriting history: these strings remain in older commits until task 148.
+
+## Review round 1 — findings
+
+Reviewed HEAD: bbe3e17ded20a0a6beb642491f357cc504619266
+
+- [P2] docs/releasing.md:3-5 — intro still says CI "never runs on pull requests or on `main`, so local `npm run verify` is the PR gate", contradicting docs/dev.md:13 and task 145. route: implementer — reword to 145's triggers: tests run on pull requests, pushes to `main` and `v*` tags; only a `v*` tag also builds and pushes the image; "Run workflow" runs tests only; local verify still expected before pushing.
+- [STYLE] docs/releasing.md:56 — 130-char prose line in a file wrapped at ~100 (.prettierrc printWidth 100). route: implementer.
+- [P3] docs/architecture.md — after removing "Planned (MVP B)", the built headless runner is never mentioned. route: implementer — one bullet naming gateway/src/headless/ (runner logs in as an agent user with its own Chromium; no GM tab needed), migration 013, link to guides/headless.md.
+- [NOTE] Acceptance asks for a step "update CHANGELOG.md"; make it a numbered step, not a sentence inside another paragraph.
+- [NOTE, accepted residual] docs/testing.md and docs/spikes/foundry-socket-identity.md name `foundry.local` / `foundry13.local` / `test-world`: these are the e2e harness's documented defaults and generic test names; changing them is outside Owns.

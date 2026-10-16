@@ -8,7 +8,7 @@ The `.mcpb` and from-source installs are verified on macOS and untested on Windo
 
 ## Install the extension (.mcpb)
 
-1. Build it in your clone (see the [README quick start](../../README.md#quick-start); you need git access to the private repository and Node 22.13 or newer): `npm install`, `npm run build`, then `npm run pack:mcpb`. The file is `dist/release/foundry-agent-gateway.mcpb`.
+1. Build it in your clone (see the [README quick start](../../README.md#quick-start); you need Node 22.13 or newer): `npm install`, `npm run build`, then `npm run pack:mcpb`. The file is `dist/release/foundry-agent-gateway.mcpb`.
 2. Double-click it to open it with Claude Desktop, or go to Settings, then Extensions, and drag the file in. Confirm the install.
 3. Leave the settings alone. The extension has only three, all optional and advanced: the link port (default 7420), the HTTP port (default 7421) and the log level. There is no Foundry URL and no role setting. Your Foundry user's role decides which tools you get.
 
