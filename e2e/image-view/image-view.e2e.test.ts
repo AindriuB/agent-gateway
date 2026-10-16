@@ -53,16 +53,146 @@ async function bounded<T>(phase: string, ms: number, p: Promise<T>): Promise<T> 
   }
 }
 
+/**
+ * Read-only recorder installed in the GM page before any call: the module exposes neither its
+ * approval manager nor its controller, so pending requests are seen the way an outside listener
+ * sees them (the module hook payloads and the module socket), plus the persisted queue.
+ * Function source for evalGm.
+ */
+const GM_PROBE_INSTALL = `() => {
+  if (window.__agProbe) return true;
+  const shape = (p) => ({
+    id: p && p.id, tool: p && p.tool, local: p && p.local, agentId: p && p.agentId,
+    sessionId: p && p.sessionId, approver: p && p.approver, category: p && p.category,
+    argKeys: p && p.args && typeof p.args === 'object' ? Object.keys(p.args) : [],
+    argBytes: p && p.args && typeof p.args === 'object'
+      ? Object.fromEntries(Object.entries(p.args).map(([k, v]) => [k, typeof v === 'string' ? v.length : JSON.stringify(v ?? null).length]))
+      : null,
+    at: Date.now(),
+  });
+  const probe = { requested: [], resolved: [], socket: [] };
+  Hooks.on('agentGateway.approvalRequested', (p) => { probe.requested.push(shape(p)); });
+  Hooks.on('agentGateway.approvalResolved', (p) => { probe.resolved.push({ id: p && p.id, status: p && p.status, local: p && p.local, at: Date.now() }); });
+  game.socket.on('module.agent-gateway', (d, sender) => {
+    probe.socket.push({ t: d && d.t, id: d && d.id, sender, at: Date.now() });
+  });
+  window.__agProbe = probe;
+  return true;
+}`;
+
+/** Read-only dump of the GM page's approval UI state (task 150 diagnosis). Function source for evalGm. */
+const GM_APPROVAL_STATE = `async () => {
+  const out = {};
+  const probe = window.__agProbe;
+  const bytes = (v) => typeof v === 'string' ? v.length : JSON.stringify(v ?? null).length;
+  const reviewable = (value) => {
+    const stack = [{ value, depth: 0 }]; const seen = new WeakSet(); let nodes = 0; let chars = 0;
+    while (stack.length) {
+      const job = stack.pop();
+      if (++nodes > 20000 || job.depth > 64) return false;
+      if (typeof job.value === 'string') chars += job.value.length;
+      if (chars > 1000000) return false;
+      if (job.value !== null && typeof job.value === 'object') {
+        if (seen.has(job.value)) return false;
+        seen.add(job.value);
+        for (const key in job.value) {
+          if (!Object.hasOwn(job.value, key)) continue;
+          chars += key.length;
+          if (stack.length >= 20000 || chars > 1000000) return false;
+          stack.push({ value: job.value[key], depth: job.depth + 1 });
+        }
+      }
+    }
+    return true;
+  };
+  try {
+    out.isGM = game.user?.isGM === true;
+    out.user = { id: game.user?.id, active: game.user?.active };
+    out.hookRequested = probe ? probe.requested : 'probe not installed';
+    out.hookResolved = probe ? probe.resolved : null;
+    out.socketSeen = probe ? probe.socket.slice(-20) : null;
+    try {
+      const all = JSON.parse(localStorage.getItem('agent-gateway.' + game.world?.id + '.approvalQueue') || '{}');
+      const mine = Array.isArray(all[game.user?.id]) ? all[game.user.id] : [];
+      out.storedQueueUsers = Object.keys(all);
+      out.storedOwn = mine.map((r) => ({
+        id: r.id, tool: r.tool, status: r.status, approver: r.approver, agentId: r.agentId,
+        sessionId: r.sessionId, requesterId: r.requesterId, agentOwnerId: r.agentOwnerId,
+        argKeys: r.args && typeof r.args === 'object' ? Object.keys(r.args) : [],
+        argBytes: r.args && typeof r.args === 'object' ? Object.fromEntries(Object.entries(r.args).map(([k, v]) => [k, bytes(v)])) : null,
+        reviewable: reviewable(r.args),
+      }));
+    } catch (e) { out.storedQueueError = String(e && e.message); }
+    const ev = Hooks.events || {};
+    const describe = (name) => (ev[name] || []).map((h) => ({ id: h.id, once: h.once, src: String(h.fn).slice(0, 80) }));
+    out.hooks = { requested: describe('agentGateway.approvalRequested'), resolved: describe('agentGateway.approvalResolved'), updateUser: (ev.updateUser || []).length };
+    const ctl = (ev['agentGateway.approvalResolved'] || []).find((h) => /this\\.refresh\\(\\)/.test(String(h.fn)));
+    out.controllerInstalled = !!ctl;
+    const apps = [];
+    const seenApps = new Set();
+    const add = (a, via) => {
+      if (!a || seenApps.has(a)) return;
+      seenApps.add(a);
+      const label = String(a.id) + ' ' + String(a.constructor && a.constructor.name) + ' ' + String(a.options && a.options.id);
+      if (!/approv|agent-gateway/i.test(label)) return;
+      const el = a.element;
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      const cs = el ? getComputedStyle(el) : null;
+      apps.push({
+        via, id: a.id, cls: a.constructor && a.constructor.name, rendered: a.rendered, state: a.state,
+        minimized: a.minimized,
+        position: a.position ? { left: a.position.left, top: a.position.top, width: a.position.width, height: a.position.height, zIndex: a.position.zIndex } : null,
+        connected: el ? el.isConnected : null,
+        rect: r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null,
+        display: cs ? cs.display : null, visibility: cs ? cs.visibility : null, opacity: cs ? cs.opacity : null,
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+        groups: Array.isArray(a.groups) ? a.groups.map((g) => ({ id: g.id, requests: g.requests.map((q) => q.id) })) : undefined,
+        page: a.page,
+        articles: el ? el.querySelectorAll('article[data-request]').length : null,
+      });
+    };
+    for (const a of foundry.applications.instances.values()) add(a, 'instances');
+    for (const a of Object.values(ui.windows || {})) add(a, 'ui.windows');
+    out.apps = apps;
+    out.appCount = { instances: foundry.applications.instances.size, windows: Object.keys(ui.windows || {}).length };
+    out.dom = Array.from(document.querySelectorAll('[id*=approval], .ag-approval')).slice(0, 6).map((e) => ({ tag: e.tagName, id: e.id, cls: String(e.className).slice(0, 60) }));
+    const errs = [];
+    const onRej = (e2) => errs.push('unhandledrejection: ' + String(e2.reason && (e2.reason.stack || e2.reason)).slice(0, 500));
+    const origErr = console.error;
+    console.error = (...a) => { errs.push('console.error: ' + a.map((x) => String((x && x.stack) || x)).join(' ').slice(0, 500)); };
+    window.addEventListener('unhandledrejection', onRej);
+    try {
+      if (ctl) ctl.fn();
+      await new Promise((r) => setTimeout(r, 1500));
+    } catch (e) {
+      errs.push('threw: ' + String((e && (e.stack || e)) || e).slice(0, 500));
+    } finally {
+      window.removeEventListener('unhandledrejection', onRej);
+      console.error = origErr;
+    }
+    out.refreshAgain = { called: !!ctl, errors: errs };
+    out.appsAfterRefresh = Array.from(foundry.applications.instances.values()).filter((a) => /approv|agent-gateway/i.test(String(a.id))).map((a) => ({ id: a.id, rendered: a.rendered, state: a.state, articles: a.element ? a.element.querySelectorAll('article[data-request]').length : null }));
+  } catch (e) {
+    out.probeError = String((e && (e.stack || e)) || e).slice(0, 500);
+  }
+  return JSON.stringify(out);
+}`;
+
 /** The longest settle() polls: the approval TTL plus a minute, so a lost approval fails by name. */
 const SETTLE_MAX_MS = APPROVAL_TTL_MS + 60_000;
 
 /** Settles an approval on the gateway that made the call. */
-async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResult> {
+async function settle(
+  gateway: GatewayProcess,
+  r: CallResult,
+  dumpGm?: () => Promise<string>,
+): Promise<CallResult> {
   if (r.structured?.status !== 'pending_approval') return r;
   const id = String(r.structured.id);
   const started = Date.now();
   let last = '';
   let lastBeat = started;
+  let dumped = false;
   while (Date.now() - started < SETTLE_MAX_MS) {
     const current = await bounded(
       `approval_status ${id}`,
@@ -78,6 +208,14 @@ async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResul
       log(`approval ${id} still ${status} after ${Math.round((Date.now() - started) / 1000)} s`);
     }
     if (Date.now() - lastBeat >= 60_000) lastBeat = Date.now();
+    if (!dumped && dumpGm && status === 'pending' && Date.now() - started >= 60_000) {
+      dumped = true;
+      try {
+        log(`GM approval state: ${(await dumpGm()).slice(0, 4000)}`);
+      } catch (e) {
+        log(`GM approval state: dump failed: ${String(e).slice(0, 300)}`);
+      }
+    }
     if (status === 'approved' && typeof current.structured?.result === 'string')
       return {
         ...current,
@@ -157,6 +295,9 @@ describe.skipIf(!enabled)('image_view', () => {
       bound = gmUser;
       const gw = await as(gmUser);
       log(`gateway bound to ${gmUser}`);
+      await evalGm<boolean>(GM_PROBE_INSTALL, null).catch((e: unknown) =>
+        log(`GM approval probe install failed: ${String(e).slice(0, 200)}`),
+      );
       const first = await bounded(
         'image_upload call (no approval wait; the module answers within about 25 s)',
         90_000,
@@ -169,7 +310,7 @@ describe.skipIf(!enabled)('image_view', () => {
         log(
           `WAITING for the GM to approve image_upload ${String(first.structured.id)} in the GM window`,
         );
-      const up = await settle(gw, first);
+      const up = await settle(gw, first, () => evalGm<string>(GM_APPROVAL_STATE, null));
       log(`image_upload settled: isError=${String(up.isError)}`);
       const parsed = parseImageUploadText(up.text);
       if (!up.isError && parsed) uploaded.push(parsed.path);
