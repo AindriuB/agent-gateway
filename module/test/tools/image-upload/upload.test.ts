@@ -44,7 +44,8 @@ const doc = (uuid: string, kind: string, extra: any = {}) => {
 beforeEach(() => {
   const g = globalThis as any;
   users = {
-    p1: { id: 'p1', isGM: false, can: (p: string) => p === 'FILES_UPLOAD' },
+    p1: { id: 'p1', isGM: false, can: (p: string) => p === 'FILES_UPLOAD' || p === 'FILES_BROWSE' },
+    nobrowse: { id: 'nobrowse', isGM: false, can: (p: string) => p === 'FILES_UPLOAD' },
     noup: { id: 'noup', isGM: false, can: () => false },
     gm: { id: 'gm', isGM: true, can: () => true },
   };
@@ -163,6 +164,16 @@ describe('image_upload permissions', () => {
     const r = await call(args(), 'noup');
     expect(r.error?.code).toBe('FORBIDDEN');
     expect(fp.upload).not.toHaveBeenCalled();
+  });
+  it('refuses a player with FILES_UPLOAD but without FILES_BROWSE, naming it', async () => {
+    const r = await call(args(), 'nobrowse');
+    expect(r.error?.code).toBe('FORBIDDEN');
+    expect(r.error.message).toContain('FILES_BROWSE');
+    expect(fp.upload).not.toHaveBeenCalled();
+  });
+  it('refuses a player with no FILES_UPLOAD, naming it', async () => {
+    const r = await call(args(), 'noup');
+    expect(r.error.message).toContain('FILES_UPLOAD');
   });
   it('refuses a player on an Actor they do not own, before uploading', async () => {
     doc('Actor.other', 'Actor', { owners: new Set(['p2']) });

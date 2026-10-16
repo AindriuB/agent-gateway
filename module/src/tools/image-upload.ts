@@ -109,6 +109,8 @@ export const imageUploadHandler = defineWriteHandler({
     // Permissions. Identity is the server-set user only.
     if (!user.isGM && user.can?.('FILES_UPLOAD') !== true)
       forbid('Uploading files requires the FILES_UPLOAD permission');
+    if (!user.isGM && user.can?.('FILES_BROWSE') !== true)
+      forbid('Uploading files requires the FILES_BROWSE permission to enforce the upload quota');
     if (!user.isGM && args.sceneUuid) forbid('Only a GM may set a Scene background');
     if (!USER_ID.test(String(user.id))) invalid('The current user id cannot name a directory');
 
