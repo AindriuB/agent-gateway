@@ -79,6 +79,7 @@ export function startApprovals(): void {
   getLinkClient().onState?.((s) => {
     const now = s.kind === 'connected';
     if (now && !wasConnected) m.representAll();
+    if (!now && wasConnected) m.linkDropped();
     wasConnected = now;
   });
   m.representAll();

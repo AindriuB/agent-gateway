@@ -32,6 +32,10 @@ interface Waiter {
   next: () => Promise<DispatchResult>;
   /** Finish the waiting call; ignored once it has already returned. */
   finish(result: DispatchResult): void;
+  /** The call has already returned (its wait ran out, or it was answered). */
+  finished: boolean;
+  /** The link dropped while this call waited, so whoever made it is no longer listening. */
+  orphaned: boolean;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -407,6 +411,11 @@ export class ApprovalManager {
       return this.resumeApproved(ctx, next);
     }
 
+    // A retry of a call that is still waiting (the link dropped and the agent asked again) joins
+    // the existing record instead of creating a second one.
+    const existing = replayOf(ctx) ? undefined : this.findOpenFor(ctx);
+    if (existing) return this.wait(existing, ctx, next);
+
     const open = [...this.records.values()].filter(
       (r) => r.status === 'pending' && r.agentId === ctx.agent.id,
     );
@@ -438,6 +447,36 @@ export class ApprovalManager {
     this.scheduleExpiry(record);
     this.persist();
 
+    return this.wait(record, ctx, next, true);
+  }
+
+  /** The open record, if any, that this very call is already waiting on. */
+  private findOpenFor(ctx: OpContext): ApprovalRecord | undefined {
+    for (const r of this.records.values()) {
+      if (r.status !== 'pending' || r.replay || !this.bindsTo(r, ctx)) continue;
+      // A call that is still waiting on a live link is a second, separate call: it gets its own.
+      const w = this.waiters.get(r.id);
+      if (!w || w.finished || w.orphaned) return r;
+    }
+    return undefined;
+  }
+
+  /** The link dropped: calls waiting now have lost their caller, and a retry may take over. */
+  linkDropped(): void {
+    for (const w of this.waiters.values()) w.orphaned = true;
+  }
+
+  /**
+   * Wait for a record to be answered, for up to the wait time. A call that joins a record takes
+   * the waiter over from the earlier call, whose link is gone; it is the one that runs on approval.
+   */
+  private wait(
+    record: ApprovalRecord,
+    ctx: OpContext,
+    next: () => Promise<DispatchResult>,
+    announce = false,
+  ): Promise<DispatchResult> {
+    this.waiters.get(record.id)?.finish(this.pendingResult(record.id));
     return new Promise<DispatchResult>((resolve) => {
       let done = false;
       const timer = this.env.setTimer(
@@ -447,14 +486,18 @@ export class ApprovalManager {
       const waiter: Waiter = {
         ctx,
         next,
+        finished: false,
+        orphaned: false,
         finish: (result) => {
           if (done) return;
           done = true;
+          waiter.finished = true;
           this.env.clearTimer(timer);
           resolve(result);
         },
       };
       this.waiters.set(record.id, waiter);
+      if (!announce) return;
       // Hooks and socket replies can resolve synchronously: the caller must already be waiting.
       this.env.callHook(HOOK_REQUESTED, {
         ...this.toPayload(record),
