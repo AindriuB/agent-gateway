@@ -30,7 +30,7 @@ export function idsClipboardText(): string {
 }
 
 /** Server mode wording says "invite"; local mode keeps the existing "pairing code" strings. */
-export function describeState(s: LinkState, serverMode = false): string {
+export function describeState(s: LinkState, serverMode = false, unpaired = false): string {
   const i18n = game.i18n;
   const invalid = serverMode
     ? 'AGENT_GATEWAY.Pairing.Server.pairingInvalid'
@@ -52,15 +52,23 @@ export function describeState(s: LinkState, serverMode = false): string {
       if (s.reason === 'PAIRING_REQUIRED') return i18n.localize(required);
       if (s.reason === 'PAIRING_UNCONFIRMED')
         return i18n.localize('AGENT_GATEWAY.Pairing.Vouch.unconfirmed');
-      return s.reason === 'PAIRING_INVALID'
-        ? i18n.localize(invalid)
-        : i18n.localize('AGENT_GATEWAY.Link.state.disconnected');
+      if (s.reason === 'PAIRING_INVALID') return i18n.localize(invalid);
+      return i18n.localize(
+        unpaired && s.reason === undefined
+          ? 'AGENT_GATEWAY.Pairing.Unpaired.status'
+          : 'AGENT_GATEWAY.Link.state.disconnected',
+      );
   }
 }
 
 /** The client and world gateway settings, resolved to the address the link will use. */
 function currentGateway(): GatewayResolution {
   return readGatewayResolution((key) => game.settings.get(NS, key));
+}
+
+/** An address is set (own or world default) but this user has no credential for it in this browser. */
+function isUnpaired(res: GatewayResolution): boolean {
+  return res.source !== 'default' && getLinkClient().hasCurrentGatewayToken?.() !== true;
 }
 
 /** The address line: what the window is trying to reach, in display-safe form. */
@@ -130,7 +138,7 @@ export function createPairingApp(): any {
       return {
         // A stored legacy default reads as "inherit" while the world default applies.
         gatewayUrl: raw.trim() === LEGACY_DEFAULT_URL && res.source === 'world' ? '' : raw,
-        status: describeState(state, serverMode),
+        status: describeState(state, serverMode, isUnpaired(res)),
         address: describeAddress(state, res),
         serverMode,
         codeLabel: i18n.localize(
@@ -148,6 +156,11 @@ export function createPairingApp(): any {
           res.worldInvalid && game.user?.isGM
             ? i18n.localize('AGENT_GATEWAY.Pairing.Address.worldInvalid')
             : '',
+        idsHint: i18n.localize(
+          game.user?.isGM
+            ? 'AGENT_GATEWAY.Pairing.CopyIds.hint'
+            : 'AGENT_GATEWAY.Pairing.CopyIds.playerHint',
+        ),
         idsText: game.i18n.format('AGENT_GATEWAY.Pairing.CopyIds.label', {
           world: currentIds().worldId,
           user: currentIds().userId,
@@ -165,7 +178,7 @@ export function createPairingApp(): any {
       const res = currentGateway();
       const state = getLinkClient().state;
       const el = this.element?.querySelector?.('[data-role="status"]');
-      if (el) el.textContent = describeState(state, isServerModeUrl(res.url));
+      if (el) el.textContent = describeState(state, isServerModeUrl(res.url), isUnpaired(res));
       const addr = this.element?.querySelector?.('[data-role="address"]');
       if (addr) addr.textContent = describeAddress(state, res);
       // Unpair follows the link state too, by toggling `hidden` so the typed form values survive.
