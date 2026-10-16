@@ -271,3 +271,10 @@ Reviewed HEAD: 156852e
   The tests must fail when the gate is replaced by `holdWhile(() => false)` or when the REPLACED branch is removed. route: implementer
 - [P3] service.ts:85 and :227-232: don't delete early reports on disconnect. Let them expire by their own 30 s bound, and apply them to a row inserted as an orphan too. route: implementer
 - [P3] live.ts:87: the REPLACED warning also fires on pairing revocation and store failures (same 1000/'replaced' close). Reword it neutrally: "Agent Gateway: this tab's link was closed; its pending approvals were moved to the gateway and will be asked again where you are connected." It stays an English literal for now; lang/ is a follow-up. route: implementer
+
+## Amendment 6 (orchestrator ruling, 2026-10-16): don't withdraw records the gateway never mirrored
+
+Amendment 5 as built withdraws every listed record that isn't confirmed. That includes records the gateway never mirrored: redactArgs or image tools, rows skipped at a queue cap, and calls made to an older gateway. Such records used to survive a same-tab blip (task 109) and now don't. No other tab can hold a copy of a record the gateway never stored, so keeping it can't cause a double run.
+- `approvalOwnership` carries two lists: `ids` (owned by this connection: keep and release) and `unknown` (listed aliases for which the gateway has no row at all for this (world, user, agent): keep and release, with the pre-112 behaviour). The module withdraws only the listed aliases that appear in neither list, meaning ones the gateway knows but that belong elsewhere or are already resolved or requeued.
+- The 10 s timeout still withdraws everything, which fails safe.
+- Tests: an image_upload record held through a blip is kept and runs once after the reply; the stale-tab scenario still runs X exactly once; an alias whose row was requeued to another tab is withdrawn.
