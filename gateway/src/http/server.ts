@@ -15,8 +15,10 @@ import type { HttpToken } from './token.js';
 import { clientKey, loopbackAuthority } from './client-key.js';
 import { publicHostMatches } from './public-url.js';
 import {
+  BoundedMap,
   CountWindows,
   DISCOVERY_WINDOW_MS,
+  EVICTION_LOG_WINDOW_MS,
   FAILED_AUTH_WINDOW_MS,
   FailureWindows,
   MAX_DISCOVERY_PER_CLIENT,
@@ -84,6 +86,8 @@ export interface HttpServerOptions {
   now?: () => number;
   /** One line per evicted session. Never carries a grant id, session id, IP or client key. */
   log?: (line: string) => void;
+  /** Eviction lines beyond the one-per-principal-per-window info line. Dropped when unset. */
+  logDebug?: (line: string) => void;
 }
 
 interface Entry {
@@ -134,6 +138,9 @@ export class HttpServer {
   private readonly publicHost: string | undefined;
   private readonly publicOrigin: string | undefined;
   private readonly authenticate: (req: IncomingMessage) => HttpPrincipal | undefined;
+
+  /** When each principal last got an info-level eviction line. */
+  private readonly lastEvictionInfo = new BoundedMap<number>();
 
   constructor(private readonly o: HttpServerOptions) {
     this.now = o.now ?? Date.now;
@@ -333,7 +340,14 @@ export class HttpServer {
       );
       return send(res, 401, 'unauthorized');
     }
-    if (this.isPublic && this.clientRate.exceeded(client)) {
+    // Cleanup is never refused: a DELETE on a live session of this principal skips the per-client
+    // rate. An unknown or foreign session id is not exempt, so fake DELETEs still count.
+    const sidHeader = req.headers['mcp-session-id'];
+    const cleanup =
+      req.method === 'DELETE' &&
+      typeof sidHeader === 'string' &&
+      this.sessions.get(sidHeader)?.principalKey === principal.key;
+    if (this.isPublic && !cleanup && this.clientRate.exceeded(client)) {
       res.setHeader('retry-after', '1');
       return send(res, 429, 'too many requests');
     }
@@ -497,7 +511,13 @@ export class HttpServer {
         ? 'local'
         : 'other';
     const idle = Math.max(0, Math.round(this.now() - e.lastActive));
-    this.o.log?.(`http session evicted: principal=${kind} reason=${reason} idle_ms=${idle}`);
+    const line = `http session evicted: principal=${kind} reason=${reason} idle_ms=${idle}`;
+    const t = this.now();
+    const last = this.lastEvictionInfo.get(principalKey);
+    if (last === undefined || t - last >= EVICTION_LOG_WINDOW_MS) {
+      this.lastEvictionInfo.set(principalKey, t);
+      this.o.log?.(line);
+    } else this.o.logDebug?.(line);
   }
 
   /** Read and parse a JSON body; replies and returns undefined when it cannot. */

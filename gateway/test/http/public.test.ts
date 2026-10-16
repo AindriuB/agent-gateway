@@ -229,7 +229,7 @@ describe('per-client limits', () => {
     const { port } = await setup({
       publicUrl: PUBLIC,
       trustProxy: true,
-      maxSessions: 64,
+      maxSessions: 80,
       now: (() => {
         let t = 1_000_000;
         return () => (t += 100);
@@ -247,13 +247,102 @@ describe('per-client limits', () => {
         initBody,
       );
     // One principal never hits the client cap: it replaces its own idle sessions.
-    for (let i = 0; i < 6; i++) expect((await init('203.0.113.9', 'p')).status).toBe(200);
-    expect(http?.sessionCount).toBe(4);
-    // Four other principals fill the client key; a fifth is refused there, not elsewhere.
-    for (let p = 0; p < 4; p++)
-      for (let i = 0; i < 4; i++) expect((await init('203.0.113.20', `o${p}`)).status).toBe(200);
+    for (let i = 0; i < 20; i++) expect((await init('203.0.113.9', 'p')).status).toBe(200);
+    expect(http?.sessionCount).toBe(16);
+    // Two other principals fill the client key; a fifth is refused there, not elsewhere.
+    for (let p = 0; p < 2; p++)
+      for (let i = 0; i < 16; i++) expect((await init('203.0.113.20', `o${p}`)).status).toBe(200);
     expect((await init('203.0.113.20', 'fifth')).status).toBe(503);
     expect((await init('203.0.113.21', 'fifth')).status).toBe(200);
+  });
+
+  describe('DELETE /mcp is exempt from the per-client rate for a live session of the same principal', () => {
+    const rawMethod = (
+      port: number,
+      method: string,
+      headers: Record<string, string>,
+      body?: string,
+    ): Promise<{ status: number; sid: string | undefined }> =>
+      new Promise((resolve, reject) => {
+        const req = request(
+          {
+            host: '127.0.0.1',
+            port,
+            path: '/mcp',
+            method,
+            headers: {
+              host: 'gw.example.com',
+              ...(body === undefined
+                ? {}
+                : {
+                    'content-type': 'application/json',
+                    accept: 'application/json, text/event-stream',
+                  }),
+              ...headers,
+            },
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () =>
+              resolve({
+                status: res.statusCode ?? 0,
+                sid: res.headers['mcp-session-id'] as string | undefined,
+              }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end(body);
+      });
+
+    it('lets a live DELETE through at the limit, still counts unknown ones, and limits POSTs', async () => {
+      const { port } = await setup({
+        publicUrl: PUBLIC,
+        trustProxy: true,
+        authenticate: (req) => ({
+          key: `oauth:${String(req.headers['x-principal'] ?? 'p')}`,
+          selector: { worldId: 'w1', userId: 'u1' },
+        }),
+        now: () => 5_000_000,
+      });
+      const ip = { 'x-forwarded-for': '203.0.113.9' };
+      // The frozen clock puts every request in one second. Open two sessions (2 requests).
+      const a = await rawMethod(port, 'POST', { ...ip, 'x-principal': 'p' }, initBody);
+      const b = await rawMethod(port, 'POST', { ...ip, 'x-principal': 'p' }, initBody);
+      expect([a.status, b.status]).toEqual([200, 200]);
+      expect(http?.sessionCount).toBe(2);
+      // Exhaust the rest of the allowance with junk POSTs.
+      for (let i = 0; i < 8; i++)
+        expect((await rawMethod(port, 'POST', { ...ip, 'x-principal': 'p' }, '{')).status).toBe(
+          400,
+        );
+      expect((await rawMethod(port, 'POST', { ...ip, 'x-principal': 'p' }, '{')).status).toBe(429);
+      // A DELETE on a live session of the same principal still works, and the count drops.
+      const del = (sid: string, who = 'p') =>
+        rawMethod(port, 'DELETE', { ...ip, 'x-principal': who, 'mcp-session-id': sid });
+      expect((await del(a.sid!)).status).toBe(200);
+      expect(http?.sessionCount).toBe(1);
+      // A POST from the same client key in the same second is still refused.
+      expect((await rawMethod(port, 'POST', { ...ip, 'x-principal': 'p' }, '{')).status).toBe(429);
+      // An unknown session id and another principal's session are counted: 429 here.
+      expect((await del('no-such-session')).status).toBe(429);
+      expect((await del(b.sid!, 'someone-else')).status).toBe(429);
+      expect(http?.sessionCount).toBe(1);
+    });
+
+    it('an unknown-session DELETE is a 404 while the client is under its rate', async () => {
+      const { port } = await setup({
+        publicUrl: PUBLIC,
+        trustProxy: true,
+        authenticate: () => ({ key: 'oauth:p', selector: { worldId: 'w1', userId: 'u1' } }),
+        now: () => 5_000_000,
+      });
+      const r = await rawMethod(port, 'DELETE', {
+        'x-forwarded-for': '203.0.113.9',
+        'mcp-session-id': 'no-such-session',
+      });
+      expect(r.status).toBe(404);
+    });
   });
 
   it('caps the request rate per client key in public mode', async () => {
