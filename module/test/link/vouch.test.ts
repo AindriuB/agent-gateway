@@ -20,6 +20,7 @@ async function load() {
   const g = globalThis as any;
   g.game.i18n = { localize: (k: string) => `L:${k}`, format: (k: string) => k };
   g.game.users = Object.assign([...users], { get: (id: string) => users.find((u) => u.id === id) });
+  g.ui = { notifications: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } };
   created = [];
   g.ChatMessage = { create: vi.fn(async (d: any) => created.push(d)) };
   hooks = new Map();
@@ -30,6 +31,7 @@ async function load() {
 afterEach(() => {
   stub?.uninstall();
   delete (globalThis as any).ChatMessage;
+  delete (globalThis as any).ui;
   vi.restoreAllMocks();
 });
 
@@ -128,6 +130,44 @@ describe('admin side', () => {
     await handleVouchMessage(m, c);
     expect(c.attest).not.toHaveBeenCalled();
     expect(m.delete).not.toHaveBeenCalled();
+  });
+
+  describe('notifications', () => {
+    const setup = async () => {
+      const mod = await load();
+      const g = globalThis as any;
+      g.game.i18n.format = (k: string, d: any) => `F:${k}:${d.player}`;
+      return { mod, n: g.ui.notifications };
+    };
+    it('a successful vouch notifies once, naming the Foundry author, even on re-entry', async () => {
+      const { mod, n } = await setup();
+      const c = client();
+      const m = message({ content: 'I am Other', author: { id: 'p2' } });
+      await mod.handleVouchMessage(m, c);
+      await mod.handleVouchMessage(m, c);
+      expect(n.info).toHaveBeenCalledExactlyOnceWith(
+        'F:AGENT_GATEWAY.Pairing.Vouch.confirmed:Other',
+      );
+      expect(n.warn).not.toHaveBeenCalled();
+      expect(c.attest).toHaveBeenCalledTimes(1);
+    });
+
+    it('warns once when attest fails', async () => {
+      const { mod, n } = await setup();
+      const c = { isAdmin: true, attest: vi.fn(() => false) };
+      const m = message();
+      await mod.handleVouchMessage(m, c);
+      await mod.handleVouchMessage(m, c);
+      expect(n.warn).toHaveBeenCalledExactlyOnceWith('L:AGENT_GATEWAY.Pairing.Vouch.notConfirmed');
+      expect(n.info).not.toHaveBeenCalled();
+    });
+
+    it('a non-admin client shows nothing', async () => {
+      const { mod, n } = await setup();
+      await mod.handleVouchMessage(message(), client(false));
+      expect(n.info).not.toHaveBeenCalled();
+      expect(n.warn).not.toHaveBeenCalled();
+    });
   });
 
   it('does not delete a message whose attest was not sent', async () => {

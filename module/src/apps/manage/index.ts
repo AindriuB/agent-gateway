@@ -16,6 +16,7 @@ import {
   adminGrantRows,
   grantUsers,
   inviteRows,
+  nameFor,
   pairingRows,
   type AdminGrantRow,
   type GrantUserRow,
@@ -190,11 +191,12 @@ export function inviteLink(code: string): string {
  * Show a new invite code once, in a dialog. Everything interpolated is escaped. The code is held
  * only by this dialog: it is not logged, notified, stored or kept for the next render.
  */
-export function showInviteCode(code: string): void {
+export function showInviteCode(code: string, playerName = ''): void {
   const i18n = game.i18n;
   const link = inviteLink(code);
   const content =
     `<p>${escapeHtml(i18n.localize('AGENT_GATEWAY.Manage.codeIntro'))}</p>` +
+    `<p>${escapeHtml(i18n.format('AGENT_GATEWAY.Manage.codeNeedsGm', { player: playerName }))}</p>` +
     `<p><input type="text" readonly class="agent-gateway-invite-link" value="${escapeHtml(link)}"></p>` +
     `<p><button type="button" class="agent-gateway-copy">${escapeHtml(i18n.localize('AGENT_GATEWAY.Manage.copy'))}</button></p>` +
     `<p class="notes">${escapeHtml(i18n.localize('AGENT_GATEWAY.Manage.codeOnce'))}</p>`;
@@ -299,7 +301,7 @@ export function createManageApp(): any {
           userId,
           TTL_CHOICES.some((t) => t.ms === ttl) ? ttl : DEFAULT_TTL_MS,
         );
-        showInviteCode(made.code);
+        showInviteCode(made.code, nameFor(playerChoices(), userId));
       } catch (e) {
         ui.notifications.warn(game.i18n.localize(failureKey(e)));
       }

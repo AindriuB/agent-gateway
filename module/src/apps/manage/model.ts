@@ -8,6 +8,8 @@ export interface InviteRow {
   /** One of the protocol's invite statuses. */
   statusKey: string;
   canCancel: boolean;
+  /** Open invites only: the GM's browser must be online to confirm the pairing. */
+  needsGm: boolean;
 }
 
 export interface PairingRow {
@@ -78,6 +80,7 @@ export function inviteRows(
     status: statusLabel(i.status),
     statusKey: i.status,
     canCancel: i.status === 'unused',
+    needsGm: i.status === 'unused',
   }));
 }
 

@@ -4,10 +4,14 @@ import type { LinkClient } from './client.js';
 declare const game: any;
 declare const Hooks: any;
 declare const ChatMessage: any;
+declare const ui: any;
 
 const NS = 'agent-gateway';
 const FLAG_KEY = 'vouch';
 const MAX_NONCE = 200;
+
+/** Messages already handled here, so a re-fired hook never notifies twice. */
+const handled = new WeakSet<object>();
 
 /** Ids of the GM users who are logged in now; the only recipients of a vouch whisper. */
 export function activeGmIds(): string[] {
@@ -60,7 +64,17 @@ export async function handleVouchMessage(
   if (typeof authorId !== 'string' || authorId === '') return;
   const author = game.users?.get?.(authorId);
   if (!author) return;
-  if (!client.attest(nonce, authorId, author.isGM === true)) return;
+  if (handled.has(message)) return;
+  handled.add(message);
+  if (!client.attest(nonce, authorId, author.isGM === true)) {
+    ui?.notifications?.warn(game.i18n.localize('AGENT_GATEWAY.Pairing.Vouch.notConfirmed'));
+    return;
+  }
+  ui?.notifications?.info(
+    game.i18n.format('AGENT_GATEWAY.Pairing.Vouch.confirmed', {
+      player: String(author.name ?? authorId),
+    }),
+  );
   try {
     await message.delete();
   } catch {
