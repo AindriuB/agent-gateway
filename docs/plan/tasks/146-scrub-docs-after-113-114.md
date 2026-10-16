@@ -53,16 +53,19 @@ repo gets its GitHub Sponsors and Ko-fi funding links.
 
 ## Acceptance
 
-- [ ] `rg -n -i "andrew|aindriub|private" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example | sed -E 's#ghcr\.io/aindriub/foundry-agent-gateway##g' | rg -i "andrew|aindriub|private"`
+- [ ] With `P='andrew|aindriub|private (repo|repository|package|marketplace|plugin|deployment)|while [^.]*\bprivate\b|\b(is|are|stays|remains) private\b'`,
+      `rg -n -i "$P" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example | sed -E 's#ghcr\.io/aindriub/foundry-agent-gateway##g' | rg -i "$P"`
       prints nothing (Decided Q6; Amendment 2). The `sed` deletes only the kept GHCR image name
       (`ghcr.io/aindriub/foundry-agent-gateway`, e.g. gateway/docker/.env.example:7), so the
       image name passes, while any other hit on the same line or elsewhere still fails:
-      `foundry.aindriub.app`, `gw.aindriub.app`, any other `aindriub.app` host, "Andrew", the old
-      email and every "private". Do not use a line-dropping `rg -v` instead: it would hide an
-      `aindriub.app` host sharing a line with the image name. "private" here includes ChatGPT's
-      own "private plugin" wording and "printed code privately" (gateway/docker/README.md:113 on
-      main, 2026-10-16); reword those (e.g. "saved to your own account", "keep the printed code to
-      yourself") rather than weakening the check.
+      `foundry.aindriub.app`, `gw.aindriub.app`, any other `aindriub.app` host, "Andrew" and the
+      old email. Do not use a line-dropping `rg -v` instead: it would hide an `aindriub.app` host
+      sharing a line with the image name. The "private" part catches only private-hosting
+      wording ("private plugin", "private package", "private repository", "while the repo is
+      private", "the package is private"); ordinary uses such as "printed code privately"
+      (gateway/docker/README.md:113 on main, 2026-10-16), "save privately" or ChatGPT's
+      "USER / PRIVATE" label pass and need no rewording. `$P` is a single word in both bash and
+      zsh, so the command runs as written.
 - [ ] docs/chatgpt-plugin.md says the package ships with a placeholder URL and shows how to build
       one for your own gateway with `--gateway-url https://gateway.example.invalid`;
       `rg -c "gateway\.example\.invalid" docs/chatgpt-plugin.md` is at least 1. It has no "hosted
@@ -148,8 +151,16 @@ repo gets its GitHub Sponsors and Ko-fi funding links.
 - [P2, external review] The scrub acceptance `rg -n -i "andrew|aindriub|private" …` could never
   pass: gateway/docker/.env.example:7 holds `ghcr.io/aindriub/foundry-agent-gateway`, which this
   task keeps. The check now deletes exactly that image name with `sed` before re-matching, so the
-  image name passes while `aindriub.app` hosts, "Andrew", the old email and "private" still fail,
-  even on the same line. The Out-of-scope re-run on other docs now lists the kept public
+  image name passes while `aindriub.app` hosts, "Andrew" and the old email still fail, even on
+  the same line.
+- Owner decision: the "private" part is narrowed to private-hosting wording,
+  `private (repo|repository|package|marketplace|plugin|deployment)`, `while … private` and
+  `is/are/stays/remains private`. Ordinary "private"/"privately" (e.g. "printed code privately",
+  gateway/docker/README.md:113) passes and needs no rewording. Tested on main's three files: it
+  still flags README.md:21 and :52, the "private plugin"/"private package" lines of
+  docs/chatgpt-plugin.md and every Andrew/aindriub.app line; it passes README.md:113, the
+  `.env.example` image line, "Save privately" and "USER / PRIVATE"; it fails the samples "private
+  plugin" and "private repository". The Out-of-scope re-run on other docs now lists the kept public
   identity (GHCR image, github.com/AindriuB/agent-gateway URLs, the Sponsors and Ko-fi links,
   author "AindriuB") as non-hits.
 - Owner decision: GitHub Sponsors is set up alongside Ko-fi. `.github/FUNDING.yml` is now exactly
