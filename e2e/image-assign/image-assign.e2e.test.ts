@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { CallResult } from '../lib/gateway.js';
+import { foundryVersion } from '../lib/browser.js';
+import type { CallResult, GatewayProcess } from '../lib/gateway.js';
 import { loadContext } from '../lib/context.js';
-import { openUserSession, type UserSession } from '../lib/session.js';
+import { RECONNECT_MS, Rig } from '../multi/rig.js';
 
 // Opt-in: set AGENT_GATEWAY_E2E_IMAGE=1. Runs on whichever Foundry (v13 or v14) the test bed
-// serves. The suite creates its own temporary scene, tile and two actors (one the player owns,
-// one the player does not) and removes each by exact UUID in afterAll. Every `set` needs the
+// serves. One Rig keeps the GM and player browsers open; the gateway is bound to one user at a
+// time and swapped only when a test needs the other. The suite creates its own temporary scene,
+// tile and two actors (one the player owns, one the player does not) natively in the GM page and
+// removes each by exact UUID there in afterAll. Every `set` needs the
 // human's approval. Native execution needs the repository owner's per-run approval.
 const enabled = process.env.AGENT_GATEWAY_E2E_IMAGE === '1';
 
@@ -15,13 +18,15 @@ type Entry = { path: string; name: string };
 // Mirrors module/src/approvals/config.ts APPROVAL_TTL_MS; see e2e/pf2e/pf2e.e2e.test.ts.
 const APPROVAL_TTL_MS = 60 * 60_000;
 const humanTimeout = (approvals: number): number => approvals * APPROVAL_TTL_MS + 5 * 60_000;
-const UUID_RE = /\b(?:Actor|Scene)\.[A-Za-z0-9]{16}\b/;
+/** A test that may swap the gateway once on top of its approvals. */
+const swapTimeout = (approvals: number): number => humanTimeout(approvals) + RECONNECT_MS;
 
-async function settle(session: UserSession, r: CallResult): Promise<CallResult> {
+/** Settles an approval on the gateway that made the call. */
+async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResult> {
   if (r.structured?.status !== 'pending_approval') return r;
   const id = String(r.structured.id);
   for (;;) {
-    const current = await session.gateway.call('approval_status', { id });
+    const current = await gateway.call('approval_status', { id });
     if (current.isError) throw new Error(`approval_status ${id} failed: ${current.text}`);
     const status = current.structured?.status;
     if (status === 'approved' && typeof current.structured?.result === 'string')
@@ -37,24 +42,42 @@ async function settle(session: UserSession, r: CallResult): Promise<CallResult> 
 }
 
 describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
-  let gm: UserSession;
-  let player: UserSession;
+  let rig: Rig | undefined;
+  let gmUser = '';
+  let playerUser = '';
+  let bound: string | undefined;
+  let version = '';
   let image: string | undefined;
   let sceneUuid: string | undefined;
   let tileUuid: string | undefined;
   let ownedUuid: string | undefined;
   let foreignUuid: string | undefined;
-  const residue: string[] = [];
+  /** Every temporary document, by the exact UUID recorded at creation. */
+  const created: string[] = [];
   // The world's core `permissions` setting (role lists per permission), snapshotted by the GM.
   let permissionSnapshot: Record<string, number[]> | undefined;
   let grantSkipReason: string | undefined;
 
+  const pageOf = (user: string) => rig!.users.get(user)!.browser.page;
+  const evalGm = <T>(fn: string, arg: unknown): Promise<T> =>
+    pageOf(gmUser).evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>;
+  /** The gateway bound to `user`; swaps only when the binding differs. */
+  const as = async (user: string): Promise<GatewayProcess> => {
+    if (bound !== user) {
+      bound = undefined; // a swap that fails partway leaves the binding unknown
+      await rig!.swap(user);
+      bound = user;
+    }
+    return rig!.gateway!;
+  };
+
   /** Breadth-first search of the Data tree for any image, bounded in depth and calls. */
   async function findImage(): Promise<string> {
+    const gw = await as(gmUser);
     const queue: string[] = [''];
     for (let calls = 0; queue.length > 0 && calls < 40; calls++) {
       const dir = queue.shift()!;
-      const r = await gm.gateway.call('image_assign', { action: 'list', dir });
+      const r = await gw.call('image_assign', { action: 'list', dir });
       if (r.isError) continue;
       const files = (r.structured?.files ?? []) as Entry[];
       if (files.length > 0) return files[0]!.path;
@@ -63,23 +86,15 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     throw new Error('no image found in the Foundry Data files');
   }
 
-  const evalGm = <T>(fn: string, arg: unknown): Promise<T> =>
-    gm.browser.page.evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>;
-
-  const createActor = async (name: string, ownership: Row): Promise<string> => {
-    const made = await settle(
-      gm,
-      await gm.gateway.call('document_create', {
-        type: 'Actor',
-        data: JSON.stringify({ name, type: 'character', ownership }),
-      }),
-    );
-    expect(made.isError, made.text).toBe(false);
-    const uuid = (made.structured?.uuid as string | undefined) ?? UUID_RE.exec(made.text)?.[0];
+  /** Creates a document natively in the GM page and records its UUID for afterAll. */
+  const createDoc = async (expr: string, arg: unknown): Promise<string> => {
+    const uuid = await evalGm<string>(expr, arg);
     expect(typeof uuid).toBe('string');
-    residue.push(uuid!);
-    return uuid!;
+    created.push(uuid);
+    return uuid;
   };
+  const createActor = (name: string, ownership: Row): Promise<string> =>
+    createDoc(`async (d) => (await Actor.create(d)).uuid`, { name, type: 'character', ownership });
 
   const PERMISSIONS = `game.settings.get('core', 'permissions')`;
   const writePermissions = (value: Record<string, number[]>): Promise<void> =>
@@ -87,7 +102,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   const browseRoles = (): number[] => permissionSnapshot?.FILES_BROWSE ?? [2, 3, 4];
   /** Waits for the player's own client to see its FILES_BROWSE permission become `want`. */
   const playerCanBrowse = (want: boolean): Promise<boolean> =>
-    player.browser.page.evaluate(
+    pageOf(playerUser).evaluate(
       `(async (want) => {
         for (let i = 0; i < 40; i++) {
           if (game.user.can('FILES_BROWSE') === want) return true;
@@ -110,8 +125,12 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   beforeAll(async () => {
     if (!enabled) return;
     const ctx = loadContext();
-    gm = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
-    player = await openUserSession(ctx.config, ctx.paths, ctx.config.playerUser);
+    gmUser = ctx.config.gmUser;
+    playerUser = ctx.config.playerUser;
+    rig = new Rig(ctx);
+    await rig.open(gmUser, [gmUser, playerUser]);
+    bound = gmUser;
+    version = await foundryVersion(pageOf(gmUser));
     image = await findImage();
     // Players lack FILES_BROWSE by default (Trusted+), so grant it for the run; afterAll restores.
     permissionSnapshot = await evalGm<Record<string, number[]>>(
@@ -121,68 +140,80 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     expect(permissionSnapshot, 'core.permissions setting').toBeTypeOf('object');
     if (!(await grantBrowse())) {
       // On v13 the Player role can be granted browse, so a failed grant means a wrong key.
-      if (!gm.foundryVersion.startsWith('14'))
+      if (!version.startsWith('14'))
         throw new Error(
-          `FILES_BROWSE grant to role 1 had no effect on Foundry ${gm.foundryVersion}; check the core.permissions key`,
+          `FILES_BROWSE grant to role 1 had no effect on Foundry ${version}; check the core.permissions key`,
         );
-      grantSkipReason = `Foundry ${gm.foundryVersion} did not grant FILES_BROWSE to the Player role (role 1)`;
+      grantSkipReason = `Foundry ${version} did not grant FILES_BROWSE to the Player role (role 1)`;
     }
     // A scene and tile have no tool to create them, so the GM browser makes them natively.
-    sceneUuid = await evalGm<string>(
+    sceneUuid = await createDoc(
       `async () => (await Scene.create({ name: 'agent-gateway e2e image (temporary)' })).uuid`,
       null,
     );
-    tileUuid = await evalGm<string>(
+    tileUuid = await createDoc(
       `async (u) => { const s = await fromUuid(u); const [t] = await s.createEmbeddedDocuments('Tile', [{ x: 0, y: 0, width: 100, height: 100 }]); return t.uuid; }`,
       sceneUuid,
     );
     ownedUuid = await createActor('agent-gateway e2e image owned (temporary)', { default: 3 });
     foreignUuid = await createActor('agent-gateway e2e image foreign (temporary)', { default: 0 });
-  }, humanTimeout(2));
+  }, 15 * 60_000);
 
   afterAll(async () => {
     const failures: string[] = [];
-    if (gm && permissionSnapshot) {
+    const gmOpen = rig?.users.has(gmUser) === true;
+    if (gmOpen && permissionSnapshot) {
       try {
         await writePermissions(permissionSnapshot);
+        const back = await evalGm<unknown>(
+          `async () => JSON.parse(JSON.stringify(${PERMISSIONS}))`,
+          null,
+        );
+        expect(back, 'permissions restored to the snapshot').toEqual(permissionSnapshot);
       } catch (e) {
-        failures.push(`permissions: ${e instanceof Error ? e.message : String(e)}`);
+        failures.push(
+          `RESIDUE: file permissions were not restored: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
-    if (gm) {
-      try {
-        if (sceneUuid)
-          await evalGm(`async (u) => { await (await fromUuid(u)).delete(); }`, sceneUuid);
-      } catch (e) {
-        failures.push(`Scene ${String(sceneUuid)}: ${e instanceof Error ? e.message : String(e)}`);
-      }
-      for (const uuid of residue) {
+    if (created.length && !gmOpen)
+      failures.push(
+        `RESIDUE: temporary documents ${created.join(', ')} may still exist: no GM page`,
+      );
+    if (gmOpen) {
+      // Reverse order, so the embedded Tile goes before its Scene.
+      for (const uuid of [...created].reverse()) {
         try {
-          const del = await settle(gm, await gm.gateway.call('document_delete', { uuids: [uuid] }));
-          if (del.isError) throw new Error(del.text);
+          await evalGm(`async (u) => { await (await fromUuid(u))?.delete(); }`, uuid);
         } catch (e) {
-          failures.push(`${uuid}: ${e instanceof Error ? e.message : String(e)}`);
+          failures.push(
+            `RESIDUE: temporary document ${uuid} may still exist: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
     }
-    for (const s of [player, gm])
-      try {
-        await s?.close();
-      } catch (e) {
-        failures.push(`close: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    if (failures.length > 0) throw new Error(`RESIDUE: ${failures.join('; ')}`);
-  }, humanTimeout(3));
+    try {
+      await rig?.close();
+    } catch (e) {
+      failures.push(`RESIDUE: close: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '));
+  }, 15 * 60_000);
 
   beforeEach((ctx) => {
     if (!enabled) ctx.skip();
   });
 
-  const set = (s: UserSession, target: string, uuid: string | undefined) =>
-    s.gateway.call('image_assign', { action: 'set', path: image, target, uuid });
+  /** Calls image_assign set as `user` and settles on the gateway that made the call. */
+  const set = async (user: string, target: string, uuid: string | undefined) => {
+    const gw = await as(user);
+    return settle(gw, await gw.call('image_assign', { action: 'set', path: image, target, uuid }));
+  };
 
+  // GM tests first, then the player tests, so the gateway swaps once.
   it('GM lists a directory', async () => {
-    const r = await gm.gateway.call('image_assign', { action: 'list' });
+    const gw = await as(gmUser);
+    const r = await gw.call('image_assign', { action: 'list' });
     expect(r.isError, r.text).toBe(false);
     expect(r.structured).toHaveProperty('files');
     expect(r.structured).toHaveProperty('dirs');
@@ -191,12 +222,12 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   it(
     'GM sets a temporary scene background and tile texture',
     async () => {
-      const bg = await settle(gm, await set(gm, 'scene_background', sceneUuid));
+      const bg = await set(gmUser, 'scene_background', sceneUuid);
       expect(bg.isError, bg.text).toBe(false);
       expect(
         await evalGm<string>(`async (u) => (await fromUuid(u)).background.src`, sceneUuid),
       ).toBe(image);
-      const tile = await settle(gm, await set(gm, 'tile', tileUuid));
+      const tile = await set(gmUser, 'tile', tileUuid);
       expect(tile.isError, tile.text).toBe(false);
       expect(await evalGm<string>(`async (u) => (await fromUuid(u)).texture.src`, tileUuid)).toBe(
         image,
@@ -208,7 +239,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
   it(
     'v14: Undo of the GM scene_background set restores the Level previous background.src',
     async (ctx) => {
-      if (!gm.foundryVersion.startsWith('14')) return ctx.skip();
+      if (!version.startsWith('14')) return ctx.skip();
       const levelBackground = `async (u) => { const s = await fromUuid(u); const l = s.initialLevel ?? s.levels.contents[0]; return [l.uuid, l.background?.src ?? null]; }`;
       // The earlier test left the image in place; reset the Level natively so Undo has a different
       // value to restore, and read it back as the expected "previous".
@@ -221,7 +252,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
         sceneUuid,
       );
       expect(previous).not.toBe(image);
-      const done = await settle(gm, await set(gm, 'scene_background', sceneUuid));
+      const done = await set(gmUser, 'scene_background', sceneUuid);
       expect(done.isError, done.text).toBe(false);
       const [, now] = await evalGm<[string, string | null]>(levelBackground, sceneUuid);
       expect(now).toBe(image);
@@ -257,7 +288,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
     async (ctx) => {
       needGrant(ctx);
       for (const target of ['actor_portrait', 'actor_token']) {
-        const r = await settle(player, await set(player, target, ownedUuid));
+        const r = await set(playerUser, target, ownedUuid);
         expect(r.isError, r.text).toBe(false);
       }
       const read = await evalGm<[string, string]>(
@@ -266,33 +297,33 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       );
       expect(read).toEqual([image, image]);
     },
-    humanTimeout(2),
+    swapTimeout(2),
   );
 
   it(
     'a player is refused on another user Actor for ownership, not for FILES_BROWSE',
     async (ctx) => {
       needGrant(ctx);
-      const other = await settle(player, await set(player, 'actor_portrait', foreignUuid));
+      const other = await set(playerUser, 'actor_portrait', foreignUuid);
       expect(other.isError).toBe(true);
       expect(other.text).toContain('FORBIDDEN');
       expect(other.text).toMatch(/own/i);
       expect(other.text).not.toContain('FILES_BROWSE');
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 
   it(
     'a player is refused on GM-only targets',
     async (ctx) => {
       needGrant(ctx);
-      const tile = await settle(player, await set(player, 'tile', tileUuid));
+      const tile = await set(playerUser, 'tile', tileUuid);
       expect(tile.isError).toBe(true);
       expect(tile.text).toContain('FORBIDDEN');
       expect(tile.text).toMatch(/GM/);
       expect(tile.text).not.toContain('FILES_BROWSE');
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 
   it(
@@ -304,7 +335,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       });
       try {
         expect(await playerCanBrowse(false)).toBe(true);
-        const r = await settle(player, await set(player, 'actor_portrait', ownedUuid));
+        const r = await set(playerUser, 'actor_portrait', ownedUuid);
         expect(r.isError).toBe(true);
         expect(r.text).toContain('FORBIDDEN');
         expect(r.text).toContain('FILES_BROWSE');
@@ -312,7 +343,7 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
         await grantBrowse();
       }
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 
   it('the permission setting round-trips: restoring the snapshot reads back equal', async () => {

@@ -1,32 +1,36 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { parseImageUploadText } from '@agent-gateway/protocol/tools';
-import type { CallResult } from '../lib/gateway.js';
+import { foundryVersion } from '../lib/browser.js';
+import type { CallResult, GatewayProcess } from '../lib/gateway.js';
 import { loadContext } from '../lib/context.js';
-import { openUserSession, type UserSession } from '../lib/session.js';
+import { RECONNECT_MS, Rig } from '../multi/rig.js';
 
 // Opt-in: set AGENT_GATEWAY_E2E_UPLOAD=1. Run once against v14 and once against v13 (--foundry).
 // The Player role lacks FILES_UPLOAD and FILES_BROWSE by default, so the suite snapshots the world's
 // `core.permissions` setting as the GM, grants both to the PLAYER role for the run, and restores the
 // exact snapshot in afterAll (asserting the read-back equals it). If the grant never takes effect
 // (e.g. v14 requiredRoles), the player cases skip with a reason naming the Foundry version.
-// The suite creates temporary Actors and a Scene as the GM and deletes exactly those UUIDs in
-// afterAll. Uploaded files cannot be deleted through the API: every uploaded path is printed at the
+// One Rig holds the GM and player browsers open for the whole suite; the gateway is bound to one
+// user at a time and swapped only when a test needs the other. The suite creates temporary Actors
+// and a Scene natively in the GM page and deletes exactly those UUIDs there in afterAll. Uploaded files cannot be deleted through the API: every uploaded path is printed at the
 // end for the operator to delete from agent-gateway/uploads/<userId>/. Every write needs approval.
 const enabled = process.env.AGENT_GATEWAY_E2E_UPLOAD === '1';
 
 const APPROVAL_TTL_MS = 60 * 60_000;
 const humanTimeout = (approvals: number): number => approvals * APPROVAL_TTL_MS + 5 * 60_000;
-const UUID_RE = /\b(?:Actor|Scene)\.[A-Za-z0-9]{16}\b/;
+/** A test that may swap the gateway once on top of its approvals. */
+const swapTimeout = (approvals: number): number => humanTimeout(approvals) + RECONNECT_MS;
 
 // A valid 1x1 PNG.
 const PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-async function settle(session: UserSession, r: CallResult): Promise<CallResult> {
+/** Settles an approval on the gateway that made the call. */
+async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResult> {
   if (r.structured?.status !== 'pending_approval') return r;
   const id = String(r.structured.id);
   for (;;) {
-    const current = await session.gateway.call('approval_status', { id });
+    const current = await gateway.call('approval_status', { id });
     if (current.isError) throw new Error(`approval_status ${id} failed: ${current.text}`);
     const status = current.structured?.status;
     if (status === 'approved' && typeof current.structured?.result === 'string')
@@ -42,8 +46,10 @@ async function settle(session: UserSession, r: CallResult): Promise<CallResult> 
 }
 
 describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
-  let gm: UserSession;
-  let player: UserSession;
+  let rig: Rig | undefined;
+  let gmUser = '';
+  let playerUser = '';
+  let bound: string | undefined;
   const created: string[] = [];
   let sceneUuid: string;
   let ownedActor: string;
@@ -52,15 +58,25 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
   let grantSkipReason: string | undefined;
   const uploaded: string[] = [];
 
+  const pageOf = (user: string) => rig!.users.get(user)!.browser.page;
   const evalGm = <T>(fn: string, arg: unknown): Promise<T> =>
-    gm.browser.page.evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>;
+    pageOf(gmUser).evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>;
+  /** The gateway bound to `user`; swaps only when the binding differs. */
+  const as = async (user: string): Promise<GatewayProcess> => {
+    if (bound !== user) {
+      bound = undefined; // a swap that fails partway leaves the binding unknown
+      await rig!.swap(user);
+      bound = user;
+    }
+    return rig!.gateway!;
+  };
   const writePermissions = (value: Record<string, number[]>): Promise<void> =>
     evalGm<void>(`async (v) => { await game.settings.set('core', 'permissions', v); }`, value);
   const roles = (name: string): number[] =>
     snapshot?.[name] ?? (name === 'FILES_UPLOAD' ? [3, 4] : [2, 3, 4]);
   /** Waits (about 10 s) for the player's own client to report both permissions as wanted. */
   const playerHas = (upload: boolean, browse: boolean): Promise<boolean> =>
-    player.browser.page.evaluate(
+    pageOf(playerUser).evaluate(
       `(async ([u, b]) => {
         const ok = () => game.user.can('FILES_UPLOAD') === u && game.user.can('FILES_BROWSE') === b;
         for (let i = 0; i < 40 && !ok(); i++) await new Promise((r) => setTimeout(r, 250));
@@ -83,10 +99,11 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
   const needGrant = (ctx: { skip: (reason?: string) => never }): void => {
     if (grantSkipReason) ctx.skip(grantSkipReason);
   };
-  const upload = async (who: UserSession, extra: Record<string, unknown>): Promise<CallResult> => {
+  const upload = async (user: string, extra: Record<string, unknown>): Promise<CallResult> => {
+    const gw = await as(user);
     let r = await settle(
-      who,
-      await who.gateway.call('image_upload', { data: PNG_B64, mime: 'image/png', ...extra }),
+      gw,
+      await gw.call('image_upload', { data: PNG_B64, mime: 'image/png', ...extra }),
     );
     // After a long approval wait only the result text survives: recover the details from it.
     const parsed = parseImageUploadText(r.text);
@@ -97,34 +114,32 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
     return r;
   };
 
-  const create = async (type: string, data: Record<string, unknown>): Promise<string> => {
-    const r = await settle(
-      gm,
-      await gm.gateway.call('document_create', { type, data: JSON.stringify(data) }),
-    );
-    expect(r.isError, r.text).toBe(false);
-    const uuid =
-      (typeof r.structured?.uuid === 'string' ? r.structured.uuid : undefined) ??
-      UUID_RE.exec(r.text)?.[0];
+  /** Creates a document natively in the GM page and records its UUID for afterAll. */
+  const create = async (cls: string, data: Record<string, unknown>): Promise<string> => {
+    const uuid = await evalGm<string>(`async (d) => (await ${cls}.create(d)).uuid`, data);
     expect(typeof uuid).toBe('string');
-    created.push(uuid!);
-    return uuid!;
+    created.push(uuid);
+    return uuid;
   };
 
   beforeAll(async () => {
     if (!enabled) return;
     const ctx = loadContext();
-    gm = await openUserSession(ctx.config, ctx.paths, ctx.config.gmUser);
-    player = await openUserSession(ctx.config, ctx.paths, ctx.config.playerUser);
+    gmUser = ctx.config.gmUser;
+    playerUser = ctx.config.playerUser;
+    rig = new Rig(ctx);
+    await rig.open(gmUser, [gmUser, playerUser]);
+    bound = gmUser;
     snapshot = await evalGm<Record<string, number[]>>(
       `async () => JSON.parse(JSON.stringify(game.settings.get('core', 'permissions')))`,
       null,
     );
     expect(snapshot, 'core.permissions setting').toBeTypeOf('object');
     if (!(await setGrant(true, true))) {
-      const reason = `Foundry ${gm.foundryVersion} did not grant FILES_UPLOAD and FILES_BROWSE to the Player role (role 1)`;
+      const version = await foundryVersion(pageOf(gmUser));
+      const reason = `Foundry ${version} did not grant FILES_UPLOAD and FILES_BROWSE to the Player role (role 1)`;
       // v13 has no requiredRoles limit, so a failed grant there means a wrong core.permissions key.
-      if (String(gm.foundryVersion).startsWith('13')) throw new Error(reason);
+      if (version.startsWith('13')) throw new Error(reason);
       grantSkipReason = reason;
     }
     sceneUuid = await create('Scene', { name: 'agent-gateway e2e upload scene (temporary)' });
@@ -139,11 +154,12 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       type: 'character',
       ownership: { default: 0 },
     });
-  }, humanTimeout(3));
+  }, 15 * 60_000);
 
   afterAll(async () => {
-    let failure: unknown;
-    if (gm && snapshot) {
+    const failures: string[] = [];
+    const gmOpen = rig?.users.has(gmUser) === true;
+    if (gmOpen && snapshot) {
       try {
         await writePermissions(snapshot);
         const back = await evalGm<unknown>(
@@ -152,79 +168,88 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
         );
         expect(back, 'permissions restored to the snapshot').toEqual(snapshot);
       } catch (e) {
-        failure = new Error(
+        failures.push(
           `RESIDUE: file permissions were not restored: ${e instanceof Error ? e.message : String(e)}`,
         );
+      }
+    }
+    if (created.length && !gmOpen)
+      failures.push(
+        `RESIDUE: temporary documents ${created.join(', ')} may still exist: no GM page`,
+      );
+    if (gmOpen) {
+      for (const uuid of [...created].reverse()) {
+        try {
+          await evalGm(`async (u) => { await (await fromUuid(u))?.delete(); }`, uuid);
+        } catch (e) {
+          failures.push(
+            `RESIDUE: temporary document ${uuid} may still exist: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
       }
     }
     if (uploaded.length)
       console.log(`UPLOADED FILES (delete by hand from the Data folder):\n${uploaded.join('\n')}`);
     try {
-      if (created.length) {
-        const del = await settle(
-          gm,
-          await gm.gateway.call('document_delete', { uuids: [...created] }),
-        );
-        if (del.isError) throw new Error(del.text);
-      }
+      await rig?.close();
     } catch (e) {
-      failure ??= new Error(
-        `RESIDUE: temporary documents ${created.join(', ')} may still exist: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
+      failures.push(`RESIDUE: close: ${e instanceof Error ? e.message : String(e)}`);
     }
-    for (const s of [gm, player]) {
-      try {
-        await s?.close();
-      } catch (e) {
-        failure ??= e;
-      }
-    }
-    if (failure) throw failure;
-  }, humanTimeout(1));
+    if (failures.length > 0) throw new Error(failures.join('; '));
+  }, 15 * 60_000);
 
   beforeEach((ctx) => {
     if (!enabled) ctx.skip();
   });
 
+  // GM test first, then the player tests, so the gateway swaps once.
   it(
     'a GM uploads a PNG and sets a temporary scene background',
     async () => {
-      const r = await upload(gm, { sceneUuid, setBackground: true });
+      const r = await upload(gmUser, { sceneUuid, setBackground: true });
       expect(r.isError, r.text).toBe(false);
       expect(String(r.structured?.path)).toMatch(/^agent-gateway\/uploads\/[A-Za-z0-9]+\/.+\.png$/);
       expect(r.structured?.updated).toEqual([sceneUuid]);
       expect(r.text).toContain('does not delete the uploaded file');
-      const got = await gm.gateway.call('document_get', { uuid: sceneUuid });
-      expect(JSON.stringify(got.structured ?? got.text)).toContain(String(r.structured?.path));
+      const got = await evalGm<string>(
+        `async (u) => JSON.stringify((await fromUuid(u)).toObject())`,
+        sceneUuid,
+      );
+      expect(got).toContain(String(r.structured?.path));
     },
-    humanTimeout(2),
+    swapTimeout(2),
   );
 
   it(
     'a player sets the portrait and token of an Actor they own',
     async (ctx) => {
       needGrant(ctx);
-      const r = await upload(player, { actorUuid: ownedActor, setPortrait: true, setToken: true });
+      const r = await upload(playerUser, {
+        actorUuid: ownedActor,
+        setPortrait: true,
+        setToken: true,
+      });
       expect(r.isError, r.text).toBe(false);
       expect(r.structured?.updated).toEqual([ownedActor]);
-      const got = await gm.gateway.call('document_get', { uuid: ownedActor });
-      expect(JSON.stringify(got.structured ?? got.text)).toContain(String(r.structured?.path));
+      const got = await evalGm<string>(
+        `async (u) => JSON.stringify((await fromUuid(u)).toObject())`,
+        ownedActor,
+      );
+      expect(got).toContain(String(r.structured?.path));
     },
-    humanTimeout(2),
+    swapTimeout(2),
   );
 
   it(
     "a player is refused on another user's Actor by the ownership rule",
     async (ctx) => {
       needGrant(ctx);
-      const r = await upload(player, { actorUuid: foreignActor, setPortrait: true });
+      const r = await upload(playerUser, { actorUuid: foreignActor, setPortrait: true });
       expect(r.isError, r.text).toBe(true);
       expect(r.text).toContain('FORBIDDEN');
       expect(r.text).not.toMatch(/FILES_/);
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 
   it(
@@ -233,7 +258,7 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       needGrant(ctx);
       try {
         expect(await setGrant(false, true), 'FILES_UPLOAD removal took effect').toBe(true);
-        const r = await upload(player, { actorUuid: ownedActor, setPortrait: true });
+        const r = await upload(playerUser, { actorUuid: ownedActor, setPortrait: true });
         expect(r.isError, r.text).toBe(true);
         expect(r.text).toContain('FORBIDDEN');
         expect(r.text).toContain('FILES_UPLOAD');
@@ -241,7 +266,7 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
         await setGrant(true, true);
       }
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 
   it(
@@ -250,7 +275,7 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
       needGrant(ctx);
       try {
         expect(await setGrant(true, false), 'FILES_BROWSE removal took effect').toBe(true);
-        const r = await upload(player, { actorUuid: ownedActor, setPortrait: true });
+        const r = await upload(playerUser, { actorUuid: ownedActor, setPortrait: true });
         expect(r.isError, r.text).toBe(true);
         expect(r.text).toContain('FORBIDDEN');
         expect(r.text).toContain('FILES_BROWSE');
@@ -258,6 +283,6 @@ describe('image_upload (set AGENT_GATEWAY_E2E_UPLOAD=1)', () => {
         await setGrant(true, true);
       }
     },
-    humanTimeout(1),
+    swapTimeout(1),
   );
 });
