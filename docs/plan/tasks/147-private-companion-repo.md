@@ -1,7 +1,8 @@
 # 147 — Move the internal process docs to a private companion repo
 
 **Repo:** new private repo `AindriuB/agent-gateway-internal` (Decided Q8; created by the owner), seeded from this repo
-**Depends on:** 140, 141, 142, 143, 144, 145, 146, playtest tasks 109, 111, 112, 113, 114, and image tasks 53, 121, 123 merged to `main`
+**Depends on:** 140, 141, 142, 143, 144, 145, 146, playtest tasks 109, 110, 111, 113, 114, and image tasks 53, 121, 123 merged to `main` (not 112;
+  Amendment 2)
 **Owns:**
 - the whole companion repo (new): CLAUDE.md, AGENTS.md, PROJECT.md, docs/plan/**,
   docs/workflow.md, docs/conventions.md as extracted, plus link.sh, README.md and
@@ -10,7 +11,7 @@
   here.
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16. Sequential: runs after the
-whole cleanup wave, the open playtest tasks and the image wave have merged, at a **freeze SHA**
+whole cleanup wave, the playtest tasks named in Q9 and the image wave have merged, at a **freeze SHA**
 of `main` that the owner declares (no merges to `main` between this task's extraction and 148's
 push). Recorded decisions:
 - Decision 1 (Andrew, 2026-10-16): internal process docs move to a private companion repo, not the
@@ -22,9 +23,12 @@ push). Recorded decisions:
 - Q8 — Decided (owner, 2026-10-16): the companion is a NEW private repo
   `AindriuB/agent-gateway-internal`. The renamed archive `agent-gateway-private` (task 148) stays
   frozen as-is and is not the docs home.
-- Q9 — Decided (owner, 2026-10-16): the freeze SHA is cut only after 146 AND the open playtest
-  tasks 109-114 (109, 111, 112, 113, 114; 110 is done) have merged to `main`, so nothing needs
-  porting by patch. This is a precondition, checked below before extraction.
+- Q9 — Decided (owner, 2026-10-16; amended 2026-10-16, Amendment 2): the freeze SHA is cut only
+  after 146 plus 109, 110, 111, 113 and 114 have merged to `main`. This is a precondition,
+  checked below before extraction. Going public does NOT wait for 112.
+- 112 (persist pending approvals, decided as option A) lands in the public repo after it goes
+  public. If its branch exists at freeze time, it is marked "port" rather than blocking, and it
+  is ported by bundle per 148 Amendment 4's procedure (148 runbook step 1).
 - Q6 — Decided (owner, 2026-10-16): the hosted gw.aindriub.app build steps live in the companion
   (`ops/hosted-build.md`), not in the public docs/chatgpt-plugin.md (146).
 - Q15 — Decided (owner, 2026-10-16): the per-connection frame budget (T17) and capability
@@ -58,11 +62,13 @@ and they never show up as untracked or committed files in the public repo.
 - [ ] **Freeze precondition (Q9).** Before extraction, the PR quotes the output of
       `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
       `git fetch origin && git branch -r --no-merged origin/main`, and of
-      `git log --oneline origin/main | rg -e '#?(146|109|111|112|113|114)\b'` showing a merge for
-      each of 146, 109, 111, 112, 113 and 114. No open PR and no unmerged branch carries any of
+      `git log --oneline origin/main | rg -e '#?(146|109|110|111|113|114)\b'` showing a merge for
+      each of 146, 109, 110, 111, 113 and 114. No open PR and no unmerged branch carries any of
       those tasks (branch names `claude/task-<id>` or titles naming the id), and each remaining
       open PR or unmerged branch is listed with the owner's word "abandon" or "port" next to it.
-      If any of the six is unmerged, the task stops and reports; it does not extract.
+      An open PR or unmerged branch for 112 does not block: it is listed and marked "port"
+      (Amendment 2). If any of the six is unmerged, the task stops and reports; it does not
+      extract.
 - [ ] The companion repo's history is produced by `git filter-repo` on a fresh clone of this repo
       at the freeze SHA, keeping only `CLAUDE.md`, `AGENTS.md`, `PROJECT.md`, `docs/plan/`,
       `docs/workflow.md`, `docs/conventions.md` (each `--path`), with the same mailmap as 148. The
@@ -99,15 +105,17 @@ and they never show up as untracked or committed files in the public repo.
 - Editing CONTRIBUTING.md or any public doc (140, 142, 143, 146).
 - The agent-kit (`~/.claude`, the untracked `.claude/` worktree scripts): teaching them to run
   `link.sh` for new worktrees is a change in that repo; report it as a follow-up.
-- Porting open branches (148's runbook covers it; by Q9 none of 109-114 or 146 needs porting).
+- Porting open branches (148's runbook covers it; by Q9 none of 146, 109, 110, 111, 113 or 114
+  needs porting; 112, if open, is ported by bundle there).
 - The frame budget (T17) and `welcome` capability negotiation (follow-ups, Q15).
 
 ## Owner questions
 
 - Q8 companion name — Decided (owner, 2026-10-16): a NEW private repo
   `AindriuB/agent-gateway-internal`; `agent-gateway-private` stays frozen as-is.
-- Q9 freeze SHA — Decided (owner, 2026-10-16): the owner declares it only after 140-146,
-  109-114 and 53, 121, 123 are merged, checked by the freeze-precondition acceptance item.
+- Q9 freeze SHA — Decided (owner, 2026-10-16; amended by Amendment 2): the owner declares it only
+  after 140-146, 109, 110, 111, 113, 114 and 53, 121, 123 are merged, checked by the
+  freeze-precondition acceptance item. 112 is not a precondition.
 
 ## Amendments
 
@@ -119,3 +127,15 @@ and they never show up as untracked or committed files in the public repo.
 - Q6: the hosted build steps removed from the public doc by 146 land here as
   `ops/hosted-build.md`.
 - Q15: T17 frame budget and `welcome` capability negotiation recorded as non-prerequisites.
+
+### Amendment 2 (owner decision, Andrew, 2026-10-16)
+
+- Going public does NOT wait for homelab task 112 (persist pending approvals, now decided as
+  option A). Q9's freeze precondition changes from "146 and 109-114" to "146 plus 109, 110, 111,
+  113 and 114" in Depends on, the Q9 decision, the freeze-precondition acceptance item (the
+  `rg` check and the list of six) and the Q9 owner-question entry. Supersedes the Q9 line of
+  Amendment 1.
+- 112 lands in the public repo after it goes public. If its branch exists at freeze time, it is
+  marked "port" rather than blocking, and it is ported by bundle per 148 Amendment 4's procedure
+  (148 runbook step 1: verified `open-branches.bundle`, re-applied onto the rewritten main by
+  cherry-pick or `git rebase --rebase-merges`, never by patches alone).

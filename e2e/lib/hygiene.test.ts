@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT } from './gateway.js';
@@ -13,6 +13,16 @@ function walk(dir: string): string[] {
 const sources = [...walk(join(REPO_ROOT, 'e2e')), ...walk(join(REPO_ROOT, 'scripts'))].filter(
   (p) => !p.endsWith('.test.ts'),
 );
+
+// The conformance runner (tasks 40, 101) drives MCP Inspector by design; exempt only these files.
+const INSPECTOR_ALLOWLIST = [
+  'scripts/conformance.sh',
+  'scripts/lib/inspector-retry.sh',
+  'scripts/release.mjs',
+  'scripts/test/conformance-retry.test.mjs',
+  'scripts/test/release.test.mjs',
+  'scripts/test/docker-release.test.mjs',
+];
 
 describe('harness source hygiene', () => {
   it('has sources to scan', () => expect(sources.length).toBeGreaterThan(10));
@@ -42,8 +52,15 @@ describe('harness source hygiene', () => {
     }
   });
 
-  it('does not use MCP Inspector or write inside the repo', () => {
+  it('has every Inspector allowlist entry on disk', () => {
+    for (const rel of INSPECTOR_ALLOWLIST) {
+      expect(existsSync(join(REPO_ROOT, rel)), `${rel} is allowlisted but missing`).toBe(true);
+    }
+  });
+
+  it('does not mention MCP Inspector outside the conformance runner', () => {
     for (const f of sources) {
+      if (INSPECTOR_ALLOWLIST.includes(f.slice(REPO_ROOT.length + 1))) continue;
       const text = readFileSync(f, 'utf8');
       expect(text.toLowerCase().includes('inspector'), f).toBe(false);
     }
