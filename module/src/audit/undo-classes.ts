@@ -30,6 +30,7 @@ export const UNDO_EMBEDDED: readonly string[] = [
   'TableResult',
   'PlaylistSound',
   'Card',
+  'Level',
 ];
 
 /** The class of the document a uuid names, and of its root; null for a uuid undo will not handle. */

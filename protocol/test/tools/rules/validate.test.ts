@@ -138,6 +138,7 @@ describe('validateArgs', () => {
     inventory: { actorUuid: 'Actor.example' },
     conditions: { actorUuid: 'Actor.example' },
     character_build: { actorUuid: 'Actor.example' },
+    image_assign: { action: 'list' },
     macro_run: { macroUuid: 'Macro.example' },
     script_run: { source: 'return 1;' },
     table_roll: { tableUuid: 'RollTable.example' },

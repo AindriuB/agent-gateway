@@ -16,12 +16,23 @@
 - module/test/stubs/** (insertion only)
 - e2e/image-assign/** (new)
 - e2e/vitest.e2e.config.ts (insert one `image-assign/**/*.e2e.test.ts` line in the e2e-live include list only)
+- module/src/audit/undo-classes.ts (insertion only: one `'Level'` entry in `UNDO_EMBEDDED`, nothing in `UNDO_CLASSES`; added by Amendment 2)
+- module/test/audit/undo-levels.test.ts (new; added by Amendment 2. No test file covers undo-classes.ts directly today; this follows the `undo-combat.test.ts` (48) and `undo-regions.test.ts` (51) naming)
 
 Overlap: only the insertion-only shared files above, also inserted into by 53 and 123. No other
 open task owns module/src/ops/context.ts or module/test/ops/context.test.ts; task 48 cites
 context.ts:16-21 (the destructive classification) read-only, and that cite moves if this
 task's insertion lands above it, so insert after the `character_build` rule (after line 21). Uses
 protocol/src/images/** and module/src/tools/_image.ts (owned by 120) without editing them.
+
+Overlap on module/src/audit/undo-classes.ts (Amendment 2): no task in 102-114 owns it or
+module/test/audit/** (112 lists audit/undo as out of scope). Open, queued tasks that do:
+44 owns all of module/src/audit/** and module/test/audit/**; 48 inserts `Combat` and
+`Combatant`; 51 inserts `Region` and `RegionBehavior` into `UNDO_EMBEDDED`; 47 cites
+undo-classes.ts:5-33 read-only. All four are queued ("do not start"), so none is in flight
+today. If any starts before this task merges, this task is the one that waits or rebases. Append
+`'Level'` as the last `UNDO_EMBEDDED` entry (after `'Card'`); 48 and 51 then rebase onto a
+one-line insertion, and 47's cite becomes 5-34.
 
 ## Goal
 Let an agent find an image that already exists in Foundry's `data` files and set it as an Actor
@@ -58,6 +69,10 @@ may act on any.
   Unit tests cover a player without `FILES_BROWSE`, a player on a non-owned Actor, a player on another user's token, and a player sending `scene_background` and `tile`.
 - [ ] One `set` call is one approval and one audit entry, showing `path`, `target` and `uuid`. The update is snapshotted with `callOptions`, and Undo restores the previous value. A unit test covers Undo for each target.
 - [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_IMAGE=1`): a GM lists a directory and sets a temporary scene background and tile texture; a player sets the portrait and token art of an Actor they own; a player is refused on another user's Actor. Temporary documents are removed by exact UUID. Native execution needs the repository owner's per-run approval.
+- [ ] (Amendment 2) `UNDO_EMBEDDED` in module/src/audit/undo-classes.ts contains `'Level'`; the diff to that file is that one inserted line and nothing else. `undoClasses('Scene.S.Level.L')` returns `{ root: 'Scene', own: 'Level' }`.
+- [ ] (Amendment 2) module/test/audit/undo-levels.test.ts: a `scene_background` `set` on v14 (the background lives on `Scene.<id>.Level.<id>`, updated through `updateEmbeddedDocuments('Level', ...)`) produces an audit target for the Level that is undoable, with the prior value snapshotted; running Undo on that entry restores the Level's `background.src` to the value it had before the `set`.
+- [ ] (Amendment 2) Every other class's undo behaviour is unchanged: the existing module/test/audit/** tests pass unmodified, and no file under module/test/audit/ other than the new undo-levels.test.ts appears in the diff.
+- [ ] (Amendment 2) The native e2e in e2e/image-assign/** asserts, on v14, that Undo of the GM's `scene_background` `set` restores the Level's previous `background.src`. It is written in this task but still not run without the repository owner's per-run approval.
 - [ ] `npm run verify` passes
 
 ## Out of scope
@@ -66,6 +81,7 @@ may act on any.
 - Creating, moving or deleting files or directories
 - Any other change to module/src/ops/context.ts (no edits to existing rules, `prepareContext`, `withPreparation` or `effectiveCategory`), or to module/src/ops/dispatch.ts
 - Editing protocol/test/tools/tool-count.test.ts, protocol/src/images/** or module/src/tools/_image.ts (120; stop and report if a helper is missing)
+- (Amendment 2) Any other change under module/src/audit/** or module/test/audit/** (44 owns them): no other class added to `UNDO_CLASSES` or `UNDO_EMBEDDED` (`Combat`/`Combatant` are 48's, `Region`/`RegionBehavior` are 51's), and no edits to undo.ts, undo-restoration.ts, stage.ts or witness.ts. If restoring a Level needs more than the one-line insertion, stop and report.
 
 ## Amendment 1 (owner, 2026-10-16, from external PR review)
 
@@ -81,3 +97,102 @@ rewritten to the real `handler.prepare` mechanism.
 Reason, finding 2: browsing the Data root had no valid input (`normalizeDataPath` rejects `''`,
 and Foundry names the root `''`). Task 120 Amendment 1 adds `normalizeDataDir`; `list`'s default
 `dir` and `set`'s parent-directory check now use it.
+
+## Amendment 2 (owner, 2026-10-16)
+
+Decision: Undo must restore a v14 scene background. On v14 the background lives on the embedded
+Level document (`Scene.<id>.Level.<id>`), updated through `updateEmbeddedDocuments('Level', ...)`.
+module/src/audit/undo-classes.ts lists no `Level` in `UNDO_CLASSES` or `UNDO_EMBEDDED`, so
+`undoClasses()` returns null for that uuid and Undo of the change most likely does nothing.
+Change: Owns gains an insertion-only edit to undo-classes.ts (`'Level'` in `UNDO_EMBEDDED`; the
+root `Scene` is already in `UNDO_CLASSES`) and the new module/test/audit/undo-levels.test.ts.
+Acceptance gains the Level undo unit test, the unchanged-behaviour check for every other class,
+and the v14 Undo assertion in the native e2e (still not run without owner approval). Overlap with
+44, 47, 48 and 51 is recorded under Owns.
+
+### Accepted residuals (owner, 2026-10-16; review should not flag these)
+
+- (a) A parent directory with more than 200 entries cannot be confirmed. `browseImages` caps at
+  200 (task 120), so `set` of a file in such a directory returns `INVALID_ARGS` with
+  "directory too large to confirm".
+- (b) The e2e suite creates the temporary Scene and Tile through the GM page, because
+  `document_create` does not support those types.
+- (c) `set` reads the value back after the update and fails if Foundry did not store the path.
+  This is the deliberate guard against the v14 `scene.update` no-op, not redundant code.
+
+## Amendment 3 (owner, 2026-10-16, from review round 1)
+
+Reason: on the documented test bed player1 is role PLAYER (1) and `FILES_BROWSE` defaults to
+Trusted (2) on v13 and v14 (spikes/image-upload/findings.md:63-64). Every player `set` is refused
+with FORBIDDEN "Assigning an image requires the FILES_BROWSE permission"
+(module/src/tools/image-assign.ts:103) before ownership is checked. So the native player tests
+cannot pass, and "a player is refused on another user's Actor" passes only on that browse
+refusal, because the regex `/FORBIDDEN|own/` matches the code.
+
+Decision: the native e2e suite grants the file permission itself and restores it afterwards.
+
+- In `beforeAll`, as the GM, snapshot the world's file permission configuration. This is the core
+  `permissions` setting, or whichever setting holds `FILES_BROWSE` on v13 and v14. The 52 findings
+  record that the test world's setting equals the defaults (findings.md:63) but do not name the
+  key, so confirm the key on each version before relying on it. Then grant `FILES_BROWSE` to the
+  PLAYER role (1) for the run.
+- In `afterAll`, always restore the exact snapshot, even when a test fails. A test reads the
+  setting back and asserts it deep-equals the snapshot.
+- The player ownership tests run with browse granted. "A player is refused on another user's
+  Actor" asserts the ownership refusal specifically: code `FORBIDDEN`, and a message about
+  ownership that does not mention `FILES_BROWSE`.
+- A separate native test runs with the grant removed and asserts the player gets `FORBIDDEN` with
+  a message naming `FILES_BROWSE`.
+- If v14 refuses to grant `FILES_BROWSE` to the Player role (v14's `requiredRoles` is `[3,4]` for
+  browse, findings.md:63), the player cases are skipped on v14 with a stated reason, not failed.
+- These setting changes apply only to the e2e test worlds and are restored after the run. The
+  native run still needs the repository owner's per-run approval.
+
+Owns: unchanged. `e2e/image-assign/**` already covers the e2e test and any helper this needs
+(for example `e2e/image-assign/permissions.ts`). Do not edit `e2e/lib/**` or another suite's
+files for this.
+
+Acceptance additions:
+- [ ] (Amendment 3) e2e/image-assign/** `beforeAll` snapshots the file permission setting as the
+  GM and grants `FILES_BROWSE` to role 1. `afterAll` restores the snapshot unconditionally (a
+  `finally`, or an `afterAll` that does not depend on test outcome), and a test asserts the
+  read-back value deep-equals the snapshot.
+- [ ] (Amendment 3) "A player is refused on another user's Actor" asserts `code === 'FORBIDDEN'`
+  and a message about ownership that does not contain `FILES_BROWSE`. The `/FORBIDDEN|own/`
+  regex is gone.
+- [ ] (Amendment 3) A native test with the grant removed asserts the player's `set` returns
+  `FORBIDDEN` with a message containing `FILES_BROWSE`.
+- [ ] (Amendment 3) If the v14 grant to role 1 does not take effect, the player cases are
+  skipped on v14 with a stated reason (`it.skip`/`ctx.skip` with a message), not failed.
+
+## Review round 1 — findings
+
+- [P2] e2e/image-assign/image-assign.e2e.test.ts:216-242. On the documented test bed the native
+  player tests cannot pass, and the refusal test passes for the wrong reason. player1 is role
+  PLAYER with `FILES_BROWSE` false on v13 and v14 (spikes/image-upload/findings.md:63-64; v14
+  `requiredRoles` for browse is `[3,4]`), so `set` returns FORBIDDEN "Assigning an image requires
+  the FILES_BROWSE permission" (module/src/tools/image-assign.ts:103). "A player is refused on
+  another user's Actor" passes only on that refusal, because `/FORBIDDEN|own/` matches the code,
+  so ownership is never shown natively. Route: orchestrator. Settled by Amendment 3.
+- [NOTE] module/test/tools/image-assign/image-assign.test.ts:120-142. "snapshot and undo data"
+  checks snapshot order and `callOptions` for `actor_portrait`, `actor_token`, `token` and
+  `tile`, but never runs `undoEntry`. Only the v14 Level path runs a real Undo. Recorded for the
+  acceptance reviewer to weigh against "A unit test covers Undo for each target"; not decided
+  here.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 0ccc2d30bbdd4891e6c2ebffea76dd72c8558412
+
+- [P2] e2e/image-assign/image-assign.e2e.test.ts:266-305 — The three new player refusal tests call `set(player, …)` and assert `isError`, `FORBIDDEN` and the message immediately, without `settle()` and without `humanTimeout`. The checks they target (FILES_BROWSE at module/src/tools/image-assign.ts:103, GM-only at :106, ownership at :80) run inside the handler, which module/src/ops/dispatch.ts calls only after the stage chain including approval ("Every `set` needs the human's approval"). Each refused call first opens an approval request; if nobody answers within APPROVAL_WAIT_MS it returns `pending_approval`, so the ownership, GM-only and no-FILES_BROWSE assertions are never reached.
+  route: implementer — use `settle(player, await set(...))` and `humanTimeout(1)`, as the owned-Actor test at :251-262 already does.
+  input: native run with the grant in effect; the approver takes more than 25 s (APPROVAL_WAIT_MS, protocol/src/tools/approval-status.ts:9) on the player's `set` on `foreignUuid` → `{status:'pending_approval'}` with `isError` false, so `expect(other.isError).toBe(true)` fails; if the approver denies, the text is a denial instead of `FORBIDDEN`.
+- [NOTE, optional] e2e/image-assign/image-assign.e2e.test.ts:84-123 — If the `core.permissions` key were wrong on v13, the grant would have no effect and the player cases would be skipped with a reason that reads as a v14-only limitation. Cheap hardening: on v13, fail (don't skip) when the grant does not take effect; keep the skip for v14 only.
+
+## Attempt 1 — failed
+
+/verify on HEAD c6f5bd8: tester PASS (`npm run verify` exit 0: 5173 + 2227 vitest, 120 script tests); reviewer REQUEST CHANGES on one acceptance item.
+
+- [ ] "A unit test covers Undo for each target" — partly met. `undoEntry` runs only for v14 `scene_background` (module/test/audit/undo-levels.test.ts:33-99). The cases at module/test/tools/image-assign/image-assign.test.ts:112-133 (actor_portrait, actor_token, token, tile) check only that the old value is in place at snapshot time and the call order; v13 `scene_background` (:153-163) checks only order. Fix: parameterise the undo-levels.test.ts pattern (dispatch the real `set`, then `undoEntry`, assert the previous value is restored) over actor_portrait, actor_token, token, tile and v13 scene_background, inside module/test/tools/image-assign/**.
+- Suggestion (do it): image-assign.test.ts:128-130 — the `lastOptions` check uses `??` across actor, mine and tile, so for token/tile it can pass on the wrong document's options; assert on the matching document per case.
+- Suggestion (optional): dispatch.test.ts:53-59 — if a real approval stage is cheap, assert zero approval requests for `list`.
