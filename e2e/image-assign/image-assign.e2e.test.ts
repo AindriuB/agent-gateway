@@ -68,7 +68,15 @@ describe('image_assign (set AGENT_GATEWAY_E2E_IMAGE=1)', () => {
       await rig!.swap(user);
       bound = user;
     }
-    return rig!.gateway!;
+    const gw = rig!.gateway!;
+    const info = await gw.call('world_info');
+    expect(info.isError, `world_info as ${user}: ${info.text}`).toBe(false);
+    expect(info.structured?.userName, `gateway is bound to the wrong user: ${info.text}`).toBe(user);
+    expect(
+      ['GAMEMASTER', 'ASSISTANT'].includes(String(info.structured?.userRole)),
+      `isGM mismatch for ${user} (role ${String(info.structured?.userRole)})`,
+    ).toBe(user === gmUser);
+    return gw;
   };
 
   /** Breadth-first search of the Data tree for any image, bounded in depth and calls. */

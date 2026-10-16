@@ -242,6 +242,7 @@ describe.skipIf(!enabled)('image_view', () => {
   let noPermActor: string;
   let limitedActor: string;
   let hiddenToken: string;
+  let bgScene: string;
   const created: string[] = [];
   const uploaded: string[] = [];
 
@@ -262,7 +263,15 @@ describe.skipIf(!enabled)('image_view', () => {
       bound = user;
       log(`gateway bound to ${user}`);
     }
-    return rig!.gateway!;
+    const gw = rig!.gateway!;
+    const info = await gw.call('world_info');
+    expect(info.isError, `world_info as ${user}: ${info.text}`).toBe(false);
+    expect(info.structured?.userName, `gateway is bound to the wrong user: ${info.text}`).toBe(user);
+    expect(
+      ['GAMEMASTER', 'ASSISTANT'].includes(String(info.structured?.userRole)),
+      `isGM mismatch for ${user} (role ${String(info.structured?.userRole)})`,
+    ).toBe(user === gmUser);
+    return gw;
   };
   /** Creates a document natively in the GM page and records its UUID for afterAll. */
   const createDoc = async (expr: string, arg: unknown): Promise<string> => {
@@ -370,6 +379,26 @@ describe.skipIf(!enabled)('image_view', () => {
       }`,
         [sceneUuid, limitedActor, probePath],
       );
+      // A Scene whose background is the uploaded PNG: v14 reads the Level the tools use
+      // (initialLevel, then defaultLevel0000, then the first Level), v13 scene.background.src.
+      bgScene = await createDoc(
+        `async ([name, src]) => {
+          const scene = await Scene.create({ name });
+          if (game.release.generation >= 14) {
+            const levels = scene.levels.contents;
+            const level =
+              (scene.initialLevel && scene.levels.get(scene.initialLevel)) ||
+              scene.levels.get('defaultLevel0000') ||
+              levels[0];
+            if (!level) throw new Error('the temporary Scene has no Level');
+            await level.update({ 'background.src': src });
+          } else {
+            await scene.update({ 'background.src': src });
+          }
+          return scene.uuid;
+        }`,
+        ['agent-gateway e2e view background scene (temporary)', probePath],
+      );
     },
     humanTimeout(1) + RECONNECT_MS,
   );
@@ -404,11 +433,11 @@ describe.skipIf(!enabled)('image_view', () => {
   }, 15 * 60_000);
 
   // GM tests first, then the player tests, so the gateway swaps once.
-  it('a GM views the active scene background as one image block', async () => {
+  it('a GM views a temporary scene background as one image block', async () => {
     const gw = await as(gmUser);
     const r = await gw.call('image_view', {
       source: 'scene_background',
-      uuid: requireUuids(ctx).activeScene,
+      uuid: bgScene,
     });
     expect(r.isError, r.text).toBe(false);
     expect(blocks(r.raw).filter((b) => b.type === 'image')).toHaveLength(1);
@@ -440,9 +469,12 @@ describe.skipIf(!enabled)('image_view', () => {
       ['actor_portrait', noPermActor],
     ] as const) {
       const r = await gw.call('image_view', { source, uuid });
-      expect(r.isError).toBe(true);
-      expect(r.text).toContain('FORBIDDEN');
-      expect(blocks(r.raw).some((b) => b.type === 'image')).toBe(false);
+      expect(r.isError, `${source} must be refused for ${playerUser}; got: ${r.text}`).toBe(true);
+      expect(r.text, `${source} refusal text: ${r.text}`).toContain('FORBIDDEN');
+      expect(
+        blocks(r.raw).some((b) => b.type === 'image'),
+        `${source} returned an image block: ${r.text}`,
+      ).toBe(false);
     }
   });
 });
