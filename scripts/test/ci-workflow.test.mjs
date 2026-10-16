@@ -178,6 +178,11 @@ describe('ci.yml hygiene', () => {
     assert.ok(Number(image.match(/^ {4}timeout-minutes: (\d+)$/m)?.[1]) <= 60);
     assert.equal(wf.match(/concurrency:/g).length, 1);
     assert.equal(wf.match(/^concurrency:$/gm).length, 1);
+    assert.equal(
+      top('concurrency').trimEnd(),
+      '  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}\n' +
+        "  cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    );
     const groups = [...wf.matchAll(/^ {2}group: (.*)$/gm)].map((m) => m[1]);
     assert.deepEqual(groups, [
       '${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}',
