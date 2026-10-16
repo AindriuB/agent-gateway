@@ -2,7 +2,7 @@
 
 **Repo:** .
 **Status:** Ready to start once 52 and 120 are merged (owner decision, 2026-10-16)
-**Depends on:** 52, 120
+**Depends on:** 52, 120, 121 (Amendment 2 only: `Level` in the undo classes; see Amendment 1)
 **Owns:**
 - protocol/src/tools/image-upload.ts (new)
 - protocol/src/tools/index.ts (insertion only)
@@ -14,8 +14,17 @@
 - module/test/stubs/** (insertion only)
 - e2e/image-upload/** (new)
 - e2e/vitest.e2e.config.ts (insert one `image-upload/**/*.e2e.test.ts` line only)
+- protocol/src/tools/define.ts (Amendment 1: one optional `redactArgs` field on `ToolDefinition` only)
+- module/src/ops/registry-class.ts (Amendment 1: the same optional field on `RegistryEntry`, so `ToolInfo` carries it; nothing else)
+- module/src/ops/core-tools.ts (Amendment 1: copy the field in `coreEntry` at `:6-22` only)
+- module/src/ops/redact.ts (new; Amendment 1)
+- module/src/approvals/manager.ts (Amendment 1: only the hash and stored args in `request` at `:376` and `:418`, and the hash in `bindsTo` at `:290`)
+- module/src/audit/stage.ts (Amendment 1: the `boundedJson(ctx.args)` call in `record` at `:314` only)
+- module/test/ops/redact.test.ts (new; Amendment 1)
+- module/test/approvals/redaction.test.ts (new; Amendment 1)
+- module/test/audit/redaction.test.ts (new; Amendment 1)
 
-Overlap: none with 47-51 or 121-123 apart from the insertion-only shared files above (both registries, validate.test.ts, e2e/vitest.e2e.config.ts). It does not own protocol/test/tools/tool-count.test.ts (120 raises the ceiling) and only imports from protocol/src/images/** and module/src/tools/_image.ts (owned by 120).
+Overlap (before Amendment 1): none with 47-51 or 121-123 apart from the insertion-only shared files above (both registries, validate.test.ts, e2e/vitest.e2e.config.ts). It does not own protocol/test/tools/tool-count.test.ts (120 raises the ceiling) and only imports from protocol/src/images/** and module/src/tools/_image.ts (owned by 120).
 
 ## Goal
 Let an agent upload one image per call into a fixed, server-named location. In the same call it
@@ -39,14 +48,14 @@ This replaces manual file handling when building maps and characters. There is n
 
   There is no URL argument. `conservativeProblems` is `[]`.
 - [ ] Before upload, the decoded bytes (checked with 120's sniffer) must start with the PNG, JPEG or WebP magic bytes that match `mime`, and the raw size must be within the cap. Otherwise INVALID_ARGS. Unit tests cover SVG text, a mismatched magic number, oversize input and bad base64. The module never constructs an Image or canvas from the data (`rg -n "new Image|createImageBitmap|getContext" module/src/tools/image-upload.ts` is empty).
-- [ ] Storage goes to a fixed per-user directory (`agent-gateway/uploads/<userId>/`) under a server-generated filename (random id plus an extension derived from `mime`). Caller text never reaches the path. Each user has a total byte cap (spike-defined), and exceeding it returns INVALID_ARGS. Unit-tested.
+- [ ] Storage goes to a fixed per-user directory (`agent-gateway/uploads/<userId>/`) under a server-generated filename (`<24 hex random>-<decoded bytes>.<ext>`, extension derived from `mime`; Amendment 1). Caller text never reaches the path. Each user has a total byte cap of 64 MiB, `IMAGE_UPLOAD_USER_QUOTA_BYTES = 64 * 1024 * 1024` in protocol/src/tools/image-upload.ts (Amendment 1; was 8 MiB), and exceeding it returns INVALID_ARGS. Unit-tested, including an upload that fits under 64 MiB but would have exceeded 8 MiB.
 - [ ] Permissions:
   - A player may upload only when Foundry grants that user `FILES_UPLOAD`.
   - A player may set only `img` and `prototypeToken.texture.src`, and only on an Actor they OWN.
   - A GM may target any Actor and a scene background (`sceneUuid`).
 
   Identity comes only from the server-set user. Unit tests cover a player with no upload permission, a player on a non-owned Actor, and a player sending `sceneUuid`.
-- [ ] One call means one approval and one audit entry. The approval and audit show size, mime, SHA-256 and target fields, never the base64 payload. Actor and Scene updates are snapshotted and carry `callOptions`, and Undo restores the previous `img`/texture/background. The uploaded file itself is not deleted by Undo, and the result says so.
+- [ ] One call means one approval and one audit entry. The approval and audit show size, mime, SHA-256 and target fields, never the base64 payload (mechanism and tests: Amendment 1). Actor and Scene updates are snapshotted and carry `callOptions`, and Undo restores the previous `img`/texture/background. The uploaded file itself is not deleted by Undo, and the result says so.
 - [ ] Native acceptance on v14 and v13 (`AGENT_GATEWAY_E2E_UPLOAD=1`):
   - A GM uploads a PNG and sets a temporary scene background.
   - A player sets the portrait and token of an Actor they own.
@@ -61,3 +70,115 @@ This replaces manual file handling when building maps and characters. There is n
 - Changing protocol/test/tools/tool-count.test.ts, protocol/src/images/** or module/src/tools/_image.ts (task 120; stop and report if a helper is missing)
 - URL fetching, SVG, image resizing or decoding
 - Deleting uploaded files
+
+## Amendment 1 (owner, 2026-10-16)
+
+### A. Payload redaction is in scope
+
+Today the approval and audit views would show the payload. The audit record stores
+`boundedJson(ctx.args)` (module/src/audit/stage.ts:314, module/src/audit/record.ts:34-87), which
+keeps the first `argsString` characters of every string, so the start of the base64 `data`
+appears. The approval record stores `ctx.args` whole (module/src/approvals/manager.ts:418). It is
+persisted to client storage, relayed to GMs over the socket (`toPayload`, `:210-224`, `:690`),
+exposed on the `agentGateway.approvalRequested` hook (`:449`, `:809`) and rendered by
+module/src/apps/approval/index.ts:63 and `:73`. A payload of about 700 KiB also fails `reviewable`
+(module/src/apps/approval/model.ts:8), so the dialog shows "too large" and refuses Approve
+(module/src/apps/approval/controller.ts:77). Handlers cannot fix this themselves:
+`OpHandler.admit` (module/src/ops/dispatch.ts:108-137) is the only hook that rewrites args and it
+requires a native GM, and `prepare` is pure.
+
+Add a minimal core mechanism:
+
+- A tool definition may declare `redactArgs: readonly string[]`, the top-level base64 fields to
+  redact (protocol/src/tools/define.ts). `coreEntry` copies it into the registry entry. Pack tools
+  cannot declare it. `image_upload` declares `['data']`.
+- module/src/ops/redact.ts exports a pure, synchronous function that takes a tool's registry info
+  and args, and returns a review view. Each declared field is replaced by
+  `{ redacted: true, bytes, sha256 }`, where `bytes` is the decoded length and `sha256` is the hex
+  SHA-256 of the **decoded bytes**. A field that is not valid base64 becomes
+  `{ redacted: true, chars }` and its text is never included. For a tool that declares nothing, the
+  function returns its input unchanged (the same reference). It must work without `crypto.subtle`,
+  which Foundry served over plain http does not have (module/src/approvals/canonical.ts:24-27). Use
+  a pure-JS byte hash that sits beside `sha256Hex` in redact.ts, or that redact.ts exports; do not
+  edit canonical.ts.
+- The approval manager computes `hash` and stores `args` from the redacted view (`:376`, `:418`)
+  and compares `bindsTo` against `callHash(ctx.tool, redacted(ctx.args))` (`:290`). The stored,
+  persisted, relayed, hooked and rendered args are therefore all redacted, and the remote check
+  `argsHash === callHash(tool, args)` (`:769`) and the load check (`:103`) still hold without being
+  edited. The binding still covers the payload because the view contains its SHA-256. Execution
+  still uses the live `ctx.args`, never the record (`:502`).
+- The audit stage records `boundedJson(redacted(ctx.args))` (stage.ts:314).
+- This applies to every caller role, player and GM alike.
+
+Acceptance (Amendment 1):
+- [ ] module/test/approvals/redaction.test.ts drives an `image_upload` call through the approval
+  manager as a player and as a GM, with a payload whose base64 contains a unique marker substring
+  of at least 64 characters. The marker, and every 16-character window of the base64, is absent
+  from `JSON.stringify` of: the stored record, the persisted storage value, the emitted
+  `approval.request` frame, both `approvalRequested` hook payloads, and `requestView(...)`. The
+  request is `reviewable` and can be approved.
+- [ ] module/test/audit/redaction.test.ts shows the same absence in the submitted audit record's
+  `args`, which contains `"bytes":<decoded length>` and the SHA-256.
+- [ ] module/test/ops/redact.test.ts asserts that `sha256` equals the SHA-256 of the decoded bytes
+  (a known vector, e.g. the bytes `abc` encoded as `YWJj` give `ba7816bf...15ad`), and that it is
+  not the hash of the base64 text.
+- [ ] Unchanged elsewhere: for every core tool other than `image_upload` in `TOOLS`, and for a
+  pack tool, the redaction function returns its input (`toBe`), `callHash` is unchanged, and the
+  audit `boundedJson` text equals the pre-change text for a fixed sample of args (test).
+- [ ] An approval granted for one payload does not bind a call with a different payload (a
+  different `sha256`) (test).
+- [ ] The `sha256` that `image_upload` returns equals the one shown in its approval and audit. The
+  tool uses the same synchronous hash, so it no longer depends on `crypto.subtle`
+  (module/src/tools/image-upload.ts:35-38 today).
+
+Overlap from these Owns additions:
+- **109** (Ready) owns module/src/approvals/manager.ts for the pending-record lookup and waiter
+  reattachment. The regions are different but in the same file: do not run 53 and 109 in parallel.
+  Whichever merges second rebases.
+- **112** (BLOCKED on decision) provisionally owns module/src/approvals/** and
+  module/test/approvals/**. It depends on 109 and is not started. If it is unblocked while 53 is
+  open, it must follow 53, and its persistence must keep storing the redacted args.
+- **44** (Queued) owns module/src/audit/** and module/test/audit/**, which include stage.ts:314
+  and the new module/test/audit/redaction.test.ts. 44 is not in flight. If it starts first, 53
+  follows it.
+- **122** owns module/src/ops/types.ts (insertion). 53 deliberately does not touch types.ts: the
+  declaration lives on the tool definition, not on `OpHandler`. There is no overlap.
+- **121** owns module/src/ops/context.ts and, by its Amendment 2, module/src/audit/undo-classes.ts.
+  53 touches neither.
+- **18** owns module/src/ops/stages.ts (insertions), which 53 does not touch. No other open task
+  owns protocol/src/tools/define.ts, module/src/ops/registry-class.ts, module/src/ops/core-tools.ts
+  or module/src/ops/redact.ts.
+- Open 102-114 range: only 109 and 112 above. 104, 106, 111, 113 and 114 own gateway, link and docs
+  files that 53 does not touch.
+
+### B. Per-user quota is 64 MiB
+
+`IMAGE_UPLOAD_USER_QUOTA_BYTES` becomes `64 * 1024 * 1024`. It was implemented as 8 MiB. The
+storage acceptance item above is updated.
+
+### C. Accepted design (do not flag in review)
+
+- Filenames are `<24 hex random>-<decoded bytes>.<ext>`. The size is in the name so the quota can be
+  computed from `browse`, which returns no sizes.
+- The quota check needs `FILES_BROWSE`. A player with `FILES_UPLOAD` but not `FILES_BROWSE` gets
+  FORBIDDEN.
+- A file in the user's directory whose name does not parse counts at the 512 KiB per-file cap
+  (`IMAGE_UPLOAD_MAX_BYTES`).
+- On v14 the scene background is set with `scene.updateEmbeddedDocuments('Level', ...)` on the
+  scene's first Level. On v13 it is set with `scene.update({'background.src'})`.
+
+### D. Undo of the v14 Level background depends on 121
+
+Undo restores a v14 background only if `Level` is in the undo classes. Task 121's Amendment 2 adds
+it to module/src/audit/undo-classes.ts, which 53 does not own. 53 now depends on 121 for that
+change. If 53 has to merge first, the v14 scene-background Undo check in the native acceptance is
+deferred until 121 merges, and the PR must say so. The v13 path and the Actor portrait and token
+Undo do not depend on 121.
+
+### Out of scope (Amendment 1)
+- Redacting nested or array fields, and anything beyond base64 strings
+- Pack tools declaring `redactArgs`
+- The gateway's offline queue (gateway/src/offline-queue/**), which stores call args so it can
+  replay them (owned by 112 if it proceeds), and gateway logs
+- Editing module/src/apps/approval/**, module/src/audit/record.ts or
+  module/src/approvals/canonical.ts. The redacted view reaches them through the paths above.
