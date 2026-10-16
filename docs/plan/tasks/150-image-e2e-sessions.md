@@ -175,3 +175,22 @@ Source: the headed v14 run of image-view (2/4 passed), then a read-only diagnosi
 2. **[P2] The scene background test assumes a background that doesn't exist.** "a GM views the active scene background as one image block" uses the world's active scene. On v14 that scene's Level background is null.
    - Create a temporary Scene in beforeAll whose background is the uploaded PNG. On v14 set it on the Level the tools use: `initialLevel`, then `defaultLevel0000`, then the first Level, as image_upload does. On v13 set `scene.background.src`.
    - Point the test at that Scene, and record it in `created` for cleanup.
+
+## Review round 5 — findings
+
+Source: v14 image-view run 5, which was identity-checked and bound as player1, then a read-only diagnosis.
+
+**Cause:** pf2e 8.6.0's `ActorPF2e.createDocuments` forces `ownership.default = LIMITED` on every `character` and `familiar` Actor at creation, overriding whatever ownership the caller passed. So a `character` created with `{ default: 0 }` is really LIMITED. This is not a product leak.
+
+1. **[P1] The no-permission Actor isn't.**
+   - image-view's no-permission Actor is created as `character`, so player1 legitimately has LIMITED on it.
+   - Create it as `type: 'npc'` (pf2e keeps an npc's given ownership) or update `ownership.default` to 0 after creating it.
+   - Apply the same fix to the "foreign" or other-user Actors in image-assign and image-upload that are meant to have no permission.
+2. **[P1] Permission fixtures need a precondition check.**
+   - In beforeAll, for every permission fixture in all three suites, check on the player's own page that the player's real level is what the test assumes:
+     - OWNER true for the owned Actor;
+     - LIMITED false for the no-permission Actor;
+     - LIMITED true but OWNER false for the limited Actor;
+     - `hidden` true and `isOwner` false for the hidden token.
+   - Fail with a clear "fixture is not <level> for the player" error.
+3. **[P3] Comments.** Fix the `default: 0` comments on the owned Actors, and image-view's header comment (lines 7-13), which doesn't list the new background Scene.
