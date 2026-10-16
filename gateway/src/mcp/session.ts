@@ -260,11 +260,13 @@ export function createSessionServer(opts: SessionServerOptions): Server {
   };
 
   const listed = (conn: LinkConnection | undefined) => [
-    ...visibleFor(conn).map(({ definition: t }) => ({
+    ...visibleFor(conn).map(({ definition: t, core }) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema as { type: 'object' },
-      outputSchema: projectOutputSchema(t.outputSchema),
+      ...(core?.mcpOutputSchema === false
+        ? {}
+        : { outputSchema: projectOutputSchema(t.outputSchema) }),
     })),
     statusToolListing,
   ];

@@ -17,6 +17,8 @@ export interface ToolDefinition<
   readonly description: string;
   readonly input: I;
   readonly output: O;
+  /** `false`: the gateway lists this tool without an MCP `outputSchema` (it returns no `structuredContent`). */
+  readonly mcpOutputSchema?: false;
 }
 
 export function defineTool<I extends z.ZodObject, O extends z.ZodObject>(

@@ -187,7 +187,7 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
     try {
       const res = await dispatch(call, user);
       if (isOpError(res)) report('denied', `${res.error.code}: ${res.error.message}`);
-      else if (res.structured.status === 'pending_approval')
+      else if (res.structured?.status === 'pending_approval')
         report('pending', 'Awaiting fresh once approval; nothing executed');
       else report('approved', res.text, false);
     } catch {

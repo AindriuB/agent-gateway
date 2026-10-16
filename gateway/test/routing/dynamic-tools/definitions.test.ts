@@ -94,18 +94,28 @@ describe('dynamic definitions', () => {
     });
     expect(list).toHaveLength(TOOLS.length + 2); // plus the pack tool and gateway_status
     expect(list.slice(0, TOOLS.length)).toEqual(
-      TOOLS.map((t) => ({
-        name: t.name,
-        description: t.description,
-        ...toJsonSchema(t),
-        outputSchema: {
-          type: 'object',
-          anyOf: [
-            toJsonSchema(t).outputSchema,
-            expect.objectContaining({ required: ['status', 'id'], additionalProperties: false }),
-          ],
-        },
-      })),
+      TOOLS.map((t) => {
+        const { outputSchema, ...schemas } = toJsonSchema(t);
+        return {
+          name: t.name,
+          description: t.description,
+          ...schemas,
+          ...(t.mcpOutputSchema === false
+            ? {}
+            : {
+                outputSchema: {
+                  type: 'object',
+                  anyOf: [
+                    outputSchema,
+                    expect.objectContaining({
+                      required: ['status', 'id'],
+                      additionalProperties: false,
+                    }),
+                  ],
+                },
+              }),
+        };
+      }),
     );
     expect(list.at(-2)?.description).toBe(
       '[Third-party tool pack demo: demo-pack 1.0.0] Fixture pack tool',

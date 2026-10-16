@@ -162,6 +162,7 @@ describe('validateArgs', () => {
     events_poll: {},
     events_history: { since: '2026-01-01T00:00:00Z' },
     world_info: {},
+    image_view: { source: 'file', path: 'agent-gateway/example.png' },
     document_search: { type: 'Actor' },
     document_get: { uuid: 'Actor.example' },
     compendium_search: { query: 'test' },
