@@ -127,3 +127,31 @@ Change: this replaces the old "reject any `%`" rule and the `[A-Za-z0-9._ -]` se
   `x.svg` and `x%2Esvg`.
 
 The Acceptance list above is updated to match. Owns is unchanged.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 5378a1690cb95af7641aee68438d66802cfeffcc (full-branch review against Amendment 2; the code commits predate the amendment).
+
+- [P1] protocol/src/images/paths.ts:49 — `normalizeDataPath` rejects any `%` (`fail('PERCENT')`). Foundry returns paths in percent-encoded form, so every path with a space, `@` or non-ASCII character is refused. Through `isImagePath` this also makes `browseImages` silently drop those files.
+  route: implementer — Amendment 2 / Acceptance item `normalizeDataPath`: decode each segment once, normalize to NFC, apply the per-segment rejection rules, re-encode with `encodeURIComponent`, and use the encoded form as the canonical path.
+  input: `normalizeDataPath('Token%20Art/Goblin%201.png')` → `{ok:false, code:'PERCENT'}`; the expected result is `{ok:true, path:'Token%20Art/Goblin%201.png'}`. A browse stub returning `{dirs:['Token%20Art'], files:['Token%20Art/Goblin%201.png']}` for dir `'Token Art'` gives `files: []`. `normalizeDataPath('ag%20enc%20%C3%A9.png')` → PERCENT. `normalizeDataPath('@types')` → BAD_CHARACTER, but it should give `%40types`.
+- [P2] protocol/src/images/paths.ts:19,51 — the `SEGMENT` whitelist accepts segments made only of dots and/or spaces, which Amendment 2 requires rejecting.
+  route: implementer — Amendment 2 segment rule.
+  input: `normalizeDataPath('...')` → ok; `normalizeDataPath(' ')` → ok; `normalizeDataPath('a/.. /b')` → ok. All three must be rejected.
+- [P2] protocol/src/images/paths.ts:34-35 — the length check runs on the raw input, not on the canonical (encoded) form, and the code does no NFC normalization.
+  route: implementer — Acceptance: a canonical form longer than 256 characters is rejected; an NFD `é` must give the NFC canonical form `%C3%A9`.
+  input: a raw 200-character path of `é` → accepted once encoding is added (the canonical form is 1200 characters). An NFD `é` currently gets BAD_CHARACTER instead of `%C3%A9`.
+- [P2] module/src/tools/_image.ts:41-43 — directory entries returned by `browse()` are passed through with only a `typeof === 'string'` check and are never validated.
+  route: implementer — Acceptance: "validates each returned entry with the same functions".
+  input: browse stub returns `{dirs:['../secret', '/etc', 'https://x'], files:[]}` → all three come back to the caller unchanged in `dirs`.
+- [P2] module/src/tools/_image.ts:19-24,50-55 — `BrowseResult` returns bare strings, with no decoded display name per entry. The code has no round-trip check, and no fallback that compares decoded+NFC forms and keeps Foundry's string.
+  route: implementer — Acceptance `browseImages`: "each as a canonical path plus a decoded display name", and the round-trip and never-double-encode rules.
+  input: any browse result → entries have no display name. Once encoding is added, an entry like `a(1).png`, which Foundry returns unencoded and `encodeURIComponent` leaves as-is, has no defined handling.
+- [P2] protocol/test/images/images.test.ts:41-71 and module/test/tools/image-helpers/browse.test.ts — the tests encode the superseded contract and lack every test Amendment 2 requires.
+  - They assert `'a%20b.png'` → PERCENT and `'a/é.png'` → BAD_CHARACTER.
+  - Missing tests: raw and encoded `Token Art` paths giving the same canonical path; `ag%20enc%20%C3%A9.png` accepted and NFD input giving NFC; `%2520`, a literal `%` and `%E0%A4` rejected; `a/.. /b`, ` ` and `...` rejected; `@types` → `%40types`; `isImagePath` rejecting `x.svg` and `x%2Esvg`; a browse stub returning encoded entries in a `Token Art` folder.
+  route: implementer — Acceptance test lists (Amendment 2).
+- [P3, optional] module/src/tools/_image.ts:26-28 — the doc comment says to pass `game.user`, but the task's NOTE iii names `trustedUser(ctx)` from module/src/tools/_write.ts, so the comment points callers at the wrong helper.
+  route: implementer — Acceptance optional NOTE iii.
+  input: a caller following the comment passes `game.user`, skipping `trustedUser`'s check that ctx.user matches game.user.
+- [NOTE, optional] module/src/tools/_image.ts:40 — errors thrown by `browse()` (for example "does not exist") come out as a plain `Error`, not a `WriteError`. Mapping them is optional (NOTE ii).
