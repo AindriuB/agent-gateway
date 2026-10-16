@@ -66,3 +66,12 @@ knowledge of the private repo, Andrew's deployment or the internal planning docs
 - CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, CHANGELOG.md (task 140).
 - Funding badges or links (an owner question in task 140).
 - module.json and package.json fields (task 141).
+
+## Review round 1 — findings
+
+Reviewed HEAD: 2c807a72c4934ea2920e4c4d80fc167b9bc87d41
+
+- [P2] README.md:74 — the rewrite drops the old README's plain statement that the remote clients (claude.ai, ChatGPT, Gemini CLI, Gemini app) have not been run end to end; "the per-release checks with the real clients are in docs/compatibility.md" reads as "these checks exist and pass". Every remote guide on main says it "has not been run end to end … and is not ticked" (docs/guides/chatgpt.md:5, gemini-app.md:5, gemini-cli.md:5, claude-ai.md:5).
+  route: implementer — say plainly which clients are not verified end to end in this release. Owner evidence that may be stated precisely: on 2026-10-16 a ChatGPT developer-mode custom connector (no plugin) was used successfully in a manual playtest; that is not the per-release checklist.
+- [NOTE, optional] README.md:88 — the tested system versions come from docs/testing.md and docs/guides/headless.md, not docs/compatibility.md; docs/testing.md:91 also records v13.351 / PF2e 7.12.2.
+- [NOTE, optional] README.md:57 — the old note that Claude Desktop also shows the pairing code in the extension's log was dropped.

@@ -1,60 +1,101 @@
-# agent-gateway
+# Agent Gateway
 
-A Foundry VTT module and MCP gateway that give an AI agent permissioned access to a running world. You bring the AI client; the product ships no model and holds no model keys. The core is free and MIT-licensed.
+Agent Gateway lets an AI assistant work inside your Foundry VTT world. It has two parts: a Foundry module that runs in your browser tab, and a gateway, a small program that speaks the Model Context Protocol (MCP) to your AI client. The agent acts in your world as one real Foundry user, with that user's permissions, and the GM approves changes according to a policy. You bring the AI client; the product ships no model and holds no model keys. It is free and MIT-licensed.
 
-It runs on your own machine, or on a server for remote clients and several people. See [What this release does not do](#what-this-release-does-not-do).
+It runs on your own machine, or on a server for remote clients and several people.
 
-> Pre-release: not yet published. Install from source.
+## What it can and cannot do
+
+- It acts as a real Foundry user. Your Foundry user's role decides which tools the agent gets; there is no role setting in the gateway.
+- Writes need GM approval, according to the approval policy. Tools from third-party packs are tagged in approval prompts.
+- It has no access beyond that user's permissions. It cannot read or change anything the user could not.
+- It supports Foundry v13 and v14 in Pathfinder 2e and D&D 5e worlds.
+- It does no TLS and has no tunnel or share mode. A public URL needs a reverse proxy you run.
+- claude.ai, ChatGPT, the Gemini CLI and the Gemini app have not been verified end to end in this release (see below).
+- Headless agents do not work in the Claude Desktop bundle.
+
+> Agent Gateway is not affiliated with or endorsed by Foundry Gaming LLC. You must own your Foundry licence and any content you use with it.
+
+## Install
+
+Install the module first, then one way of running the gateway.
+
+### 1. The Foundry module
+
+In Foundry, open Add-on Modules, choose Install Module, and paste this into the Manifest URL field:
+
+```
+https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json
+```
+
+Then enable Agent Gateway in a Pathfinder 2e or D&D 5e world.
+
+### 2. The gateway
+
+Choose one:
+
+- **Claude Desktop bundle.** Download `foundry-agent-gateway.mcpb` from the [latest release](https://github.com/AindriuB/agent-gateway/releases/latest) and open it with Claude Desktop. See the [Claude Desktop guide](docs/guides/claude-desktop.md).
+- **npm.** Run `npx foundry-agent-gateway`, or add that command to your MCP client. It needs Node 22.13 or newer. See [`foundry-agent-gateway` on npm](https://www.npmjs.com/package/foundry-agent-gateway).
+- **Docker.** The image is `ghcr.io/aindriub/foundry-agent-gateway`. No login is needed to pull it. For an always-on server, see [server mode](docs/server-mode.md).
+
+### 3. Or build from source
+
+You need git and Node 22.13 or newer.
+
+```
+git clone https://github.com/AindriuB/agent-gateway.git
+cd agent-gateway
+npm install
+npm run build
+```
+
+Run `npm run pack:module` to write `dist/release/agent-gateway.zip` (unzip it into `<Foundry Data>/modules/agent-gateway`), and `npm run pack:mcpb` to write `dist/release/foundry-agent-gateway.mcpb`. The gateway itself starts with `node gateway/dist/bin/cli.js`.
 
 ## Quick start
 
-1. **Build from source.** You need git access to the private repository and Node 22.13 or newer.
+1. Install the module and a gateway as above.
+2. **Keep a Foundry browser tab open**, logged in as the user the agent should act as. The agent works through that tab. To run an agent with no tab open, see [the headless guide](docs/guides/headless.md).
+3. **Pair.** The module connects from your tab to `ws://localhost:7420` with no configuration. The gateway makes a one-time pairing code, valid for 10 minutes. It is printed on the gateway's stderr, and it comes back in chat when you ask the agent for `gateway_status` or when a tool call fails because Foundry is not connected. Claude Desktop also shows it in the extension's log. In Foundry, open Configure Settings, then Agent Gateway, then Pair with gateway, enter the code and press Connect. You do this once per browser address.
+4. **Connect your client** using the table below, then ask the agent to run `gateway_status` to confirm.
 
-   ```
-   git clone https://github.com/AindriuB/agent-gateway.git
-   cd agent-gateway
-   npm install
-   npm run build
-   ```
+## Which guide do I need?
 
-2. **Install the module.** Run `npm run pack:module`. It writes `dist/release/agent-gateway.zip`. Unzip it into a folder named `agent-gateway` inside your Foundry Data folder, so that `<Foundry Data>/modules/agent-gateway/module.json` exists, then restart Foundry. (For development you can instead link the repository folder there; `module.json` is at the repository root and Foundry loads `dist/module/main.js`.) Then **enable it** in a Pathfinder 2e or D&D 5e world. It supports Foundry v13 and v14 (`minimum` 13, `verified` 14 in `module.json`). Tested systems are pf2e 8.6.0 and dnd5e 6.0.6 on Foundry 14.369.
-3. **Keep a Foundry browser tab open**, logged in as the user the agent should act as. The agent works through that tab and acts with that user's permissions. To run an agent with no tab open, see [the headless guide](docs/guides/headless.md).
-4. **Start the gateway**, by one of these:
-   - Run `node <repo>/gateway/dist/bin/cli.js`, where `<repo>` is your clone. In practice your AI client starts it for you; see the guides.
-   - Or run `npm run pack:mcpb` and install the `dist/release/foundry-agent-gateway.mcpb` file it writes into Claude Desktop.
-5. **Pair.** The module connects from your browser tab to `ws://localhost:7420` with no configuration. The gateway makes a one-time pairing code that is valid for 10 minutes. You can get it three ways: it is printed on the gateway's stderr, it comes back in chat when you ask the agent for `gateway_status` (or when a tool call fails because Foundry is not connected), and Claude Desktop also shows it in the extension's log. In Foundry, open Configure Settings, then Agent Gateway, then Pair with gateway, enter the code and press Connect. You do this once per browser address. Your Foundry user's role decides which tools the agent gets; there is no role setting in the gateway.
-6. **Connect your client**, and ask the agent to run `gateway_status` to confirm:
-   - [Claude Desktop](docs/guides/claude-desktop.md)
-   - [Claude Code](docs/guides/claude-code.md)
+| You use                                 | Read                                                           |
+| --------------------------------------- | -------------------------------------------------------------- |
+| Claude Desktop                          | [docs/guides/claude-desktop.md](docs/guides/claude-desktop.md) |
+| Claude Code                             | [docs/guides/claude-code.md](docs/guides/claude-code.md)       |
+| claude.ai                               | [docs/guides/claude-ai.md](docs/guides/claude-ai.md)           |
+| ChatGPT                                 | [docs/guides/chatgpt.md](docs/guides/chatgpt.md)               |
+| Gemini CLI                              | [docs/guides/gemini-cli.md](docs/guides/gemini-cli.md)         |
+| Gemini app                              | [docs/guides/gemini-app.md](docs/guides/gemini-app.md)         |
+| An agent with no browser tab (headless) | [docs/guides/headless.md](docs/guides/headless.md)             |
+| A self-hosted, always-on server         | [docs/server-mode.md](docs/server-mode.md)                     |
+| A public HTTPS URL (Caddy or nginx)     | [docs/guides/reverse-proxy.md](docs/guides/reverse-proxy.md)   |
 
-Licensed MIT.
-
-## Remote and server mode
-
-Beyond the local quick start, the gateway can be reached from the web and from other clients:
-
-- [Reverse proxy](docs/guides/reverse-proxy.md): serve the gateway at a public HTTPS URL with Caddy or nginx. The gateway never does TLS itself.
-- [Server mode and Docker](docs/server-mode.md): an always-on gateway for several people, with operator invites, in a Compose stack ([steps](gateway/docker/README.md)).
-- Remote clients, signing in with OAuth: [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md) and [the Gemini app](docs/guides/gemini-app.md). Their per-release checks are in [docs/compatibility.md](docs/compatibility.md) and none of them has been run.
-- [Headless agents](docs/guides/headless.md): an agent user the gateway logs in itself, so no browser tab needs to stay open. Local mode (stdio, or HTTP with the static bearer) reaches one when bound with `--world` and `--user`, and so did server mode without a public URL over HTTP with the bearer; with a public URL (as the Compose stack sets it) the stdio clients run did not reach one, but a remote OAuth client reached a stored agent added with `--owner` (run with a scripted client, not the claude.ai, ChatGPT or Gemini connectors), whose owner approves the consent code in the owner's Foundry window. The grant survives a gateway restart, since the runner reconnects with its stored token, and ends when the agent re-pairs (`headless add`, `headless remove`, redeeming a new invite, a takeover, or the runner losing its pairing token).
-
-## What this release does not do
-
-There are no native installers; the gateway is not published yet, so you build it from source or build the Docker image locally. Headless agents do not work in the `.mcpb` bundle. The gateway does no TLS and has no tunnel or share mode, so a public URL needs a reverse proxy you run. The remote-client connections (claude.ai, ChatGPT, Gemini) have not been tried with the real clients: none of the manual per-client checks in [docs/compatibility.md](docs/compatibility.md) has been run. The automated conformance run tests the gateway's OAuth server with its own client and the MCP Inspector, not with those clients.
-
-The `.mcpb` and from-source installs are verified on macOS and untested on Windows in this release.
+The remote clients (claude.ai, ChatGPT, the Gemini CLI and the Gemini app) sign in with OAuth. **None of them has been run end to end against the per-release checklist in this release**, and each of those guides says so. The gateway's OAuth server is tested with its own client and the MCP Inspector. The one real-client evidence so far is a manual playtest on 2026-10-16 that used a ChatGPT developer-mode custom connector (no plugin) successfully; that is not the checklist. The checklist is in [docs/compatibility.md](docs/compatibility.md).
 
 ## Tool packs
 
-The core is complete and free. Optional tool packs, from Andrew or from others, add more tools. A pack is a separate Foundry module, and installing one means trusting its author with full access to whatever your Foundry user can do. Tools that come from a pack appear with a "Third-party tool pack" tag in approval prompts. Pack authors start at [docs/packs/README.md](docs/packs/README.md).
+The core is complete and free. Optional tool packs, from the maintainer or others, add more tools. A pack is a separate Foundry module, and installing one means trusting its author with full access to whatever your Foundry user can do. Tools that come from a pack appear with a "Third-party tool pack" tag in approval prompts. Pack authors start at [docs/packs/README.md](docs/packs/README.md).
 
-## More
+## Security and privacy
 
-- [Claude Desktop guide](docs/guides/claude-desktop.md)
-- [Claude Code guide](docs/guides/claude-code.md)
-- [claude.ai](docs/guides/claude-ai.md), [ChatGPT](docs/guides/chatgpt.md), [Gemini CLI](docs/guides/gemini-cli.md), [Gemini app](docs/guides/gemini-app.md)
-- [Reverse proxy](docs/guides/reverse-proxy.md), [server mode](docs/server-mode.md) and [headless agents](docs/guides/headless.md)
 - [Security model](docs/security.md)
 - [Privacy statement](docs/privacy.md)
-- [Local development](docs/dev.md) and [conventions](docs/conventions.md)
-- [Design](docs/plan/specs/2026-10-09-agent-gateway.md)
+- [Reporting a vulnerability](SECURITY.md)
+
+## Compatibility
+
+Foundry v13 and v14 (`minimum` 13, `verified` 14). Tested combinations are pf2e 8.6.0 and dnd5e 6.0.6 on Foundry 14.369, and pf2e 7.12.2 on Foundry 13.351 (see [docs/testing.md](docs/testing.md)). The Claude Desktop bundle and source installs are verified on macOS and untested on Windows. Details and per-client checks are in [docs/compatibility.md](docs/compatibility.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). For a local development setup, see [docs/dev.md](docs/dev.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## Licence
+
+[MIT](LICENSE).
