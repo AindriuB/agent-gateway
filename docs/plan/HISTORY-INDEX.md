@@ -20,6 +20,7 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-16 | 117 | OfflineQueue.enqueue refuses core tools with non-empty redactArgs (image_upload) while offline with WORLD_OFFLINE; nothing stored; 0.4.0 release blocker | `## 2026-10-16 — Offline queue refuses redactArgs tools (task 117)` |
 | 2026-10-16 | 111 | Session caps 16 per principal, 32 per client key, 256 public total; eviction info log once per principal per 10 min; live-session DELETE exempt from per-client rate; option C declined | `## 2026-10-16 — HTTP session caps for ChatGPT churn (task 111)` |
 | 2026-10-16 | 113, 114, 115 (closes 84) | ChatGPT docs lead with the developer-mode connector; server-mode docs cover GM-vouched invites and `--admin/--gm/--demote`; hygiene Inspector check allowlists the conformance runner; task 84 closed | `## 2026-10-16 — ChatGPT connector docs, vouch and flag docs, hygiene scope (tasks 113, 114, 115)` |
 | 2026-10-16 | 102, 105, 107 | Offline-queue replies name world and user and the next step; pairing window says "this browser is not paired", ids block collapsed for the operator, one neutral server line; admin GM told an invite needs them online, and sees "confirmation sent" or a link-not-connected warning on vouch | `## 2026-10-16 — Pairing wording, vouch notices and offline-queue text (tasks 102, 105, 107)` |
