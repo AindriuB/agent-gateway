@@ -6,7 +6,7 @@ import {
   normalizeDataPath,
   type ImageAssignOutput,
 } from '@agent-gateway/protocol';
-import { foundryGeneration, fromUuidCompat } from '../compat/index.js';
+import { foundryGeneration, fromUuidCompat, sceneBackgroundLevel } from '../compat/index.js';
 import type { DispatchResult, OpHandler } from '../ops/types.js';
 import { WriteError, defineWriteHandler, forbid, invalid, owns, trustedUser } from './_write.js';
 import { folderAllowed } from '../policy/folders.js';
@@ -88,15 +88,11 @@ async function resolveTarget(user: any, target: NonNullable<Args['target']>, uui
   return doc;
 }
 
-/** v14 stores a scene background on its Level; v13 on the Scene itself. */
-function sceneLevel(scene: any): any {
-  const levels = scene.levels;
-  const level =
-    scene.initialLevel ??
-    levels?.get?.('defaultLevel0000') ??
-    (levels?.size === 1 ? levels.contents[0] : null);
-  if (!level) invalid('The scene has no level to hold a background');
-  return level;
+/** The document that holds the background: a v14 Level, or the v13 Scene. */
+function sceneHolder(scene: any): any {
+  const holder = sceneBackgroundLevel(scene);
+  if (!holder) invalid('The scene has no level to hold a background');
+  return holder;
 }
 
 const permissionText = /permission|lacks|not allowed|forbidden/i;
@@ -123,12 +119,12 @@ const setHandler = defineWriteHandler({
       update = { 'prototypeToken.texture.src': path };
       read = () => doc.prototypeToken?.texture?.src;
     } else if (target === 'scene_background' && foundryGeneration() >= 14) {
-      holder = sceneLevel(doc);
+      holder = sceneHolder(doc);
       update = { _id: holder.id, 'background.src': path };
-      read = () => doc.background?.src;
+      read = () => holder.background?.src;
     } else if (target === 'scene_background') {
       update = { 'background.src': path };
-      read = () => doc.background?.src;
+      read = () => sceneHolder(doc).background?.src;
     } else {
       update = { 'texture.src': path };
       read = () => doc.texture?.src;

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isImagePath, normalizeDataPath, sniffImage } from '@agent-gateway/protocol';
-import { fromUuidCompat } from '../compat/index.js';
+import { fromUuidCompat, sceneBackgroundLevel } from '../compat/index.js';
 import type { OpHandler } from '../ops/types.js';
 import { folderAllowed } from '../policy/folders.js';
 import { inlineText } from '../serialise/index.js';
@@ -87,7 +87,9 @@ async function resolveSource(
     case 'scene_background': {
       const scene = await load(args.uuid, 'Scene');
       if (!canSee(scene, user)) return refuse();
-      return String(scene.background?.src ?? '');
+      const src = String(sceneBackgroundLevel(scene)?.background?.src ?? '');
+      if (src === '') return invalid('The scene has no background image');
+      return src;
     }
     default:
       if (user.isGM !== true && user.can?.('FILES_BROWSE') !== true)

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { imageAssignHandler } from '../../../src/tools/image-assign.js';
 import { ctxFor, gm, noBrowse, player, setup } from './fixtures.js';
 
@@ -171,7 +171,37 @@ describe('image_assign snapshot and undo data', () => {
       [{ _id: 'defaultLevel0000', 'background.src': 'art/a.png' }],
       ctx.callOptions,
     );
-    expect(f.docs.scene.background.src).toBe('art/a.png');
+    expect(f.docs.level.background.src).toBe('art/a.png');
+    expect(f.docs.scene.background.src).toBe('old-bg.png');
+  });
+  it('scene_background on v14 reads back the initialLevel, not the first Level', async () => {
+    const init: any = { ...f.docs.level, id: 'init', uuid: 'Scene.s.Level.init', background: {} };
+    init.update = f.docs.level.update;
+    const scene = f.docs.scene;
+    scene.levels = Object.assign(
+      new Map([
+        ['defaultLevel0000', f.docs.level],
+        ['init', init],
+      ]),
+      { contents: [f.docs.level, init] },
+    );
+    scene.initialLevel = init;
+    scene.updateEmbeddedDocuments = vi.fn(async (_n: string, rows: any[]) => {
+      init.background.src = rows[0]['background.src'];
+      return [init];
+    });
+    const ctx = ctxFor(
+      gm,
+      { action: 'set', path: 'art/a.png', target: 'scene_background', uuid: 'Scene.s' },
+      f.snapshot,
+    );
+    await imageAssignHandler(ctx);
+    expect(scene.updateEmbeddedDocuments).toHaveBeenCalledWith(
+      'Level',
+      [{ _id: 'init', 'background.src': 'art/a.png' }],
+      ctx.callOptions,
+    );
+    expect(f.docs.level.background.src).toBeNull();
   });
   it('scene_background on v13 updates the Scene', async () => {
     f.restore();
