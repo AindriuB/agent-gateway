@@ -1,15 +1,19 @@
 import {
+  MAX_FRAME_BYTES,
   PROTOCOL_VERSION,
+  ResultMessage,
   parseLinkMessage,
+  protocolAtLeast,
   type ErrorCode,
   type LinkMessage,
+  type ResultImage,
 } from '@agent-gateway/protocol/link';
 
 export type HelloMessage = Extract<LinkMessage, { type: 'hello' }>;
 export type CallMessage = Extract<LinkMessage, { type: 'call' }>;
 
 export type CallResult =
-  | { ok: true; text: string; structured?: unknown }
+  | { ok: true; text: string; structured?: unknown; images?: ResultImage[] }
   | { ok: false; code: ErrorCode; message: string };
 export type CallHandler = (call: CallMessage) => Promise<CallResult> | CallResult;
 
@@ -200,6 +204,8 @@ export class LinkClient {
   }
   /** The `gatewayVersion` from `welcome`; null while not connected. */
   gatewayVersion: string | null = null;
+  /** The `protocolVersion` from `welcome`; gates features a older gateway would refuse. */
+  private gatewayProtocol: string | null = null;
   private readonly grantRequests = new Map<
     string,
     {
@@ -760,6 +766,7 @@ export class LinkClient {
         this.welcomeHeadless = msg.headless === true;
         this.welcomeOwner = msg.headless === true ? (msg.ownerUserId ?? null) : null;
         this.gatewayVersion = msg.gatewayVersion;
+        this.gatewayProtocol = msg.protocolVersion;
         const id = this.deps.getIdentity();
         const token = this.authSource === 'unstored' ? undefined : this.tokenFor(url)?.token;
         this.eventResume = token
@@ -925,13 +932,36 @@ export class LinkClient {
     try {
       const res = await this.onCall(call);
       if (res.ok) {
-        reply({
+        const canSendImages = protocolAtLeast(this.gatewayProtocol, '7.1.0');
+        const hasImages = !!res.images && res.images.length > 0;
+        const frame: LinkMessage = {
           type: 'result',
           id: call.id,
           ok: true,
-          text: res.text,
+          text:
+            hasImages && !canSendImages
+              ? `${res.text}\n(image omitted: the gateway is too old to receive images)`
+              : res.text,
           ...(res.structured !== undefined ? { structured: res.structured } : {}),
-        });
+          ...(hasImages && canSendImages ? { images: res.images } : {}),
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(frame)).length;
+        // An oversize or malformed frame would close the whole link, so refuse this one call instead.
+        const invalid = (message: string): void =>
+          reply({ type: 'error', id: call.id, code: 'INVALID_ARGS', message });
+        if (bytes > MAX_FRAME_BYTES && frame.type === 'result' && frame.images) {
+          invalid(`Result frame is ${bytes} bytes, over the ${MAX_FRAME_BYTES}-byte limit`);
+        } else {
+          const checked = ResultMessage.safeParse(frame);
+          if (checked.success) reply(frame);
+          else {
+            // Issue paths and codes only: zod messages and inputs could echo image data.
+            const where = checked.error.issues
+              .map((i) => `${i.path.join('.') || 'frame'} (${i.code})`)
+              .join(', ');
+            invalid(`Result frame failed validation: ${where}`);
+          }
+        }
       } else {
         reply({ type: 'error', id: call.id, code: res.code, message: res.message });
       }
@@ -1049,6 +1079,7 @@ export class LinkClient {
       this.welcomeHeadless = false;
       this.welcomeOwner = null;
       this.gatewayVersion = null;
+      this.gatewayProtocol = null;
       for (const [id, p] of this.grantRequests) {
         clearTimeout(p.timer);
         this.grantRequests.delete(id);

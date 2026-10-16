@@ -42,6 +42,7 @@ export default defineConfig({
             'pf2e-embed/**/*.e2e.test.ts',
             'pf2e-choices/**/*.e2e.test.ts',
             'image-upload/**/*.e2e.test.ts',
+            'image-assign/**/*.e2e.test.ts',
           ],
           testTimeout: 120_000,
           hookTimeout: 240_000,

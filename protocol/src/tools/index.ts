@@ -8,6 +8,8 @@ import { inventory } from './inventory.js';
 export * from './inventory.js';
 import { conditions } from './conditions.js';
 import { characterBuild } from './character-build.js';
+import { imageAssign } from './image-assign.js';
+export * from './image-assign.js';
 export * from './conditions.js';
 export * from './character-build.js';
 import { eventsPoll } from './events-poll.js';
@@ -81,6 +83,7 @@ export const TOOLS: readonly ToolDefinition[] = [
   inventory,
   conditions,
   characterBuild,
+  imageAssign,
 
   macroRun,
   scriptRun,

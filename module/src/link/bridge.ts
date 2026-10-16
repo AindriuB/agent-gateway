@@ -97,7 +97,12 @@ export function installBridge(client: LinkClient, deps: Partial<BridgeDeps> = {}
       user,
     );
     if (isOpError(res)) return { ok: false, code: res.error.code, message: res.error.message };
-    return { ok: true, text: res.text, structured: res.structured };
+    return {
+      ok: true,
+      text: res.text,
+      structured: res.structured,
+      ...(res.images ? { images: res.images } : {}),
+    };
   };
   client.onCall = handler;
   const guards = new Map<string, ReplayReceipts>();

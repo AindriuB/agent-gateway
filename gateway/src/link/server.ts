@@ -458,10 +458,11 @@ export class LinkServer {
           break;
         case 'result':
           conn.settle(msg.id, {
-            ok:
-              msg.structured === undefined
-                ? { text: msg.text }
-                : { text: msg.text, structured: msg.structured },
+            ok: {
+              text: msg.text,
+              ...(msg.structured === undefined ? {} : { structured: msg.structured }),
+              ...(msg.images ? { images: msg.images } : {}),
+            },
           });
           break;
         case 'error':

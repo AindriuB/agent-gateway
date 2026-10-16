@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { TOOL_LIMITS } from '../tools/limits.js';
 import type { AnnouncedTool } from '../tools/pack.js';
 import { ErrorCode } from './errors.js';
+import { IMAGE_MIME_TYPES } from '../images/sniff.js';
 
 export const MAX_FRAME_BYTES = 1024 * 1024;
 
@@ -71,12 +72,26 @@ export const CallMessage = z.strictObject({
   args: z.record(z.string(), z.unknown()),
 });
 
+/** Raw image cap (512 KiB) from the task 52 findings; its base64 form is at most this many chars. */
+export const MAX_RESULT_IMAGE_BASE64_CHARS = Math.ceil((512 * 1024) / 3) * 4;
+
+export const ResultImage = z.strictObject({
+  mimeType: z.enum(IMAGE_MIME_TYPES),
+  data: z
+    .string()
+    .max(MAX_RESULT_IMAGE_BASE64_CHARS)
+    .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)
+    .min(4),
+});
+export type ResultImage = z.infer<typeof ResultImage>;
+
 export const ResultMessage = z.strictObject({
   type: z.literal('result'),
   id: z.string(),
   ok: z.literal(true),
   text: z.string(),
   structured: z.unknown().optional(),
+  images: z.array(ResultImage).max(1).optional(),
 });
 
 export const ErrorMessage = z.strictObject({
