@@ -262,3 +262,15 @@ Reviewed HEAD: 475542e0acfa6e555fb9fbc5a186eddb0c1abf18
   route: implementer — on v14, snapshot the actual Level document (`Scene.<id>.Level.<id>`) before the update, as task 121's image_assign does; on v13 keep the Scene snapshot. Add a unit test that runs the real dispatch, then `undoEntry`, and asserts the v14 Level background is restored (pattern: module/test/audit/undo-levels.test.ts).
 - [P2] e2e/image-upload/upload.e2e.test.ts:25-40 — When approval takes longer than APPROVAL_WAIT_MS (25 s), `settle` returns the approved result as text only (`approval_status` carries `result` but not the structured `path`/`updated`), so a successful upload fails its assertions and its file is missing from the cleanup report.
   route: implementer — recover the completed upload's details before asserting and recording the path, e.g. parse them from the result text, or have the tool's text first line carry the path in a stable form. Record every uploaded path for cleanup either way, and add a unit-level test of the parsing.
+
+## Amendment 3 (owner, 2026-10-16, from review round 2 re-review)
+
+Amendment 1 C's "on the scene's first Level" becomes: on v14 the background is set on, and snapshotted from, the scene's **initial Level, else `defaultLevel0000`, else the first Level**, the same selection task 121's image_assign uses (module/src/tools/image-assign.ts:89-90). The Level a scene opens on is the one whose background users see. The re-review flagged this as DRIFT; the owner chose to keep it.
+
+## Review round 3 — findings (external review of the sibling #172, applied here)
+
+Reviewed HEAD: 119d3998333e1cfc806a12d5aad1415c0ff3d2f5
+
+- [P1] module/src/tools/image-upload.ts — `resolveActor`/`resolveScene` resolve the target without the GM's agent folder allowlist (`folderAllowed` in module/src/policy/folders.ts, applied by the read tools and module/src/tools/_adapters.ts:93), so an agent can set images on excluded Actors and Scenes.
+  route: implementer — apply `folderAllowed(doc, user.isGM === true)` to the target Actor and Scene before any upload or update; refuse identically to a missing document. Fixed in 64f8c05.
+- [P3] module/test/tools/image-upload/upload.test.ts:244 — the test title "snapshots the Scene" contradicted its body; renamed in 64f8c05.
