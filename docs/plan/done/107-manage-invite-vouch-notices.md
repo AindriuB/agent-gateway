@@ -59,3 +59,57 @@ invite, and when their browser confirms or cannot confirm a player's pairing.
 The vouch success notice says "confirmation sent for {player}" instead of "pairing confirmed for
 {player}"; the acceptance item and Out of scope are updated to match. Reason: the notice fires when
 `attest` is sent (module/src/link/client.ts:443-446), not when the gateway accepts it.
+
+## Amendment 2 (2026-10-16, external PR review)
+**Finding (P2, confirmed in code).** The acceptance item at `:40-43` (an admin GM whose link is not
+connected gets a warn) is unmet. module/src/link/vouch.ts:60 begins `if (!client.isAdmin) return;`,
+but `LinkClient.isAdmin` is `this.admin && this._state.kind === 'connected'`
+(module/src/link/client.ts:428-430), and `setState` clears `this.admin` on any non-connected state
+(client.ts:1036-1040). So when the admin GM's link is down, `handleVouchMessage` returns before
+`attest` and the `notConfirmed` warn never fires. The test stub `{ isAdmin: true, attest: () => false }`
+(module/test/link/vouch.test.ts:157, :175) describes a state a real client cannot reach.
+
+**Change.** Separate "should this client be told" from live authorisation.
+- `LinkClient` gains a read-only getter `wasAdmin` and the private field it reads. It is true when
+  the most recent `welcome` said `admin: true` (set beside client.ts:751), survives disconnect
+  (`setState` does not clear it), and is cleared only by a later `welcome` with `admin: false` or by
+  unpair / token clear (client.ts:588-592 and any other path that sets the token to null).
+  `isAdmin` and the `attest` guard (client.ts:443-446: `isAdmin` and a socket) are unchanged, so only
+  a connected admin link can attest.
+- `handleVouchMessage` (its `client` parameter widens to `Pick<LinkClient, 'isAdmin' | 'wasAdmin' |
+  'attest'>`):
+  - connected admin (`isAdmin`): behaves as today;
+  - not connected but `wasAdmin`: shows the `notConfirmed` warn once per message (the same
+    `handled` WeakSet dedupe), does not call `attest`, and does not delete the message;
+  - otherwise (never admin, a non-admin GM, or a player): returns silently, as today.
+
+**Acceptance (replaces the item at `:40-43`; the others stand).**
+- [ ] `LinkClient.wasAdmin` exists, is read-only, and is the only addition to
+      module/src/link/client.ts besides its backing field and the lines that set and clear it
+      (diff check).
+- [ ] The stub case at vouch.test.ts:157 is replaced by a test that drives a real `LinkClient`
+      through the existing harness in module/test/link/client.test.ts (fake sockets,
+      `welcome({ admin: true })` as at `:836`): connect, admin welcome, disconnect, then deliver a
+      vouch message. It asserts exactly one `ui.notifications.warn` with
+      `AGENT_GATEWAY.Pairing.Vouch.notConfirmed`, no `attest` frame on any socket, and no `delete`
+      of the message, including when the same message is delivered twice.
+- [ ] A test with a real `LinkClient` that never received an admin welcome (non-admin welcome, and
+      never connected) shows no notification and sends no `attest` frame.
+- [ ] A test shows `wasAdmin` is false after a later `welcome` with `admin: false` and after
+      `unpair()`.
+- [ ] The stub at vouch.test.ts:175 is updated to a shape a real client can reach (or folded into
+      the test above).
+- [ ] `npm run verify` passes.
+
+**Owns additions.**
+- module/src/link/client.ts — the `wasAdmin` getter, its backing field, and the set/clear lines only.
+- module/test/link/client.test.ts — new tests only, if the real-client cases live there; otherwise
+  they go in module/test/link/vouch.test.ts (already owned) and may import the harness.
+
+**Conflict check.** No open task owns module/src/link/client.ts: 109 lists it only as context
+(`:854-855`) and puts it out of scope; 111, 113 and 114 own gateway and docs files only; 112 is
+blocked on a decision and its provisional Owns do not include it; 106 puts client.ts out of scope.
+None owns module/test/link/client.test.ts.
+
+**Out of scope.** Changing `isAdmin`, the `attest` guard, or what the gateway does with `attest`;
+queueing the vouch until the link reconnects.
