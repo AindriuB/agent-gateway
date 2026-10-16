@@ -182,3 +182,63 @@ Undo do not depend on 121.
   replay them (owned by 112 if it proceeds), and gateway logs
 - Editing module/src/apps/approval/**, module/src/audit/record.ts or
   module/src/approvals/canonical.ts. The redacted view reaches them through the paths above.
+
+## Amendment 2 (owner, 2026-10-16)
+
+### Why
+
+Task 121's review found that the native player e2e cannot pass on the documented test bed.
+player1 has role PLAYER (1), and the world's defaults put `FILES_BROWSE` at Trusted (2) and
+`FILES_UPLOAD` at Assistant (3) (spikes/image-upload/findings.md:63-64). `image_upload` needs
+`FILES_UPLOAD`, and its quota check also needs `FILES_BROWSE` (Amendment 1 C). The owner chose
+the same fix for both suites: grant, then restore. Task 121's Amendment 3 records it for
+121's e2e; this amendment mirrors it for e2e/image-upload/**, which is already in Owns. No other
+file is added to Owns.
+
+### The native suite (e2e/image-upload/**)
+
+- **Snapshot, then grant.** In `beforeAll`, as the GM, read the world's file-permission setting
+  and keep the exact value. Task 121 assumes the key is `core.permissions` and asserts that it
+  reads back as an object; do the same, and confirm the key on the native run. Then grant
+  `FILES_UPLOAD` and `FILES_BROWSE` to the PLAYER role for the run.
+- **Always restore.** In `afterAll`, restore the exact snapshot whether or not the tests passed,
+  then read the setting back and assert that it equals the snapshot.
+- **Wait for the grant.** In the player's browser, poll `game.user.can('FILES_UPLOAD')` and
+  `game.user.can('FILES_BROWSE')` until both are true, bounded at about 10 s. If they never become
+  true (for example because v14's `requiredRoles` blocks granting them to a Player), skip the
+  player cases with a stated reason that names the Foundry version. Do not fail them.
+- **Ownership refusal is specific.** With the grant in place, "a player is refused on another
+  user's Actor" asserts the OWNERSHIP refusal: FORBIDDEN, with a message that does not mention any
+  `FILES_*` permission.
+- **Missing-permission cases.** Add separate native tests that each remove one grant, and re-grant
+  in a `finally` block:
+  - without `FILES_UPLOAD`: FORBIDDEN, with a message naming `FILES_UPLOAD`;
+  - with `FILES_UPLOAD` but without `FILES_BROWSE`: FORBIDDEN, with a message naming
+    `FILES_BROWSE` (the quota rule).
+- **Uploaded files.** Files uploaded during the native run land under
+  `agent-gateway/uploads/<userId>/`. Foundry's API cannot delete files, so the operator deletes
+  them afterwards. The run report lists every uploaded path.
+- The native run still needs the repository owner's per-run approval.
+
+Acceptance (Amendment 2):
+- [ ] e2e/image-upload/** snapshots the file-permission setting in `beforeAll`, asserts it reads
+  back as an object, grants `FILES_UPLOAD` and `FILES_BROWSE` to PLAYER, and in `afterAll` restores
+  the snapshot and asserts the read-back equals it (visible in the diff).
+- [ ] The player cases wait, bounded at about 10 s, for both `game.user.can` checks in the
+  player's browser, and skip with a reason naming the Foundry version if the grant never takes
+  effect.
+- [ ] The non-owned-Actor case asserts FORBIDDEN with a message that matches no `FILES_`
+  permission name.
+- [ ] Two separate native tests cover the missing `FILES_UPLOAD` and the missing `FILES_BROWSE`
+  refusals, each asserting FORBIDDEN and the named permission, each re-granting in `finally`.
+- [ ] The native run report confirms the `core.permissions` key (or names the actual key), states
+  which player cases ran or were skipped on v14 and v13, and lists the uploaded file paths for the
+  operator to delete.
+
+### Out of scope (Amendment 2)
+- Changing world permission settings anywhere outside the native e2e run, or leaving the grant in
+  place after it
+- Changing `image_upload`'s permission rules; the unit-tested behaviour in the Permissions
+  acceptance item and Amendment 1 C stands
+- Deleting uploaded files from code
+- Task 121's e2e (its own Amendment 3)
