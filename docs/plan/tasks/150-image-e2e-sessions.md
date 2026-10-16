@@ -138,3 +138,28 @@ Source: the headed native e2e run on Foundry 14.369, after review round 1.
    - **So:** the product guard is fine. The difference is the test fixture, which creates the Actor with `ownership: { default: 3 }` only.
    - **Fix:** create the owned Actor with explicit per-user OWNER for the player user (and default 0), in both suites, as the real world does. Then wait until the player's client sees the Actor with `testUserPermission(game.user, 'OWNER') === true` before calling the tool.
    - **Assertions:** keep the foreign-Actor refusal tests. Make the upload one assert the reason text, as the assign one already does.
+
+## Amendment 1
+
+Date: 2026-10-16. Owner decision (Andrew, in chat).
+
+- image-view's owned Actor (e2e/image-view/image-view.e2e.test.ts, the `actor(..., 3)` call
+  around line 101) is no longer created with `ownership: { default: 3 }`. It is created with
+  explicit per-user OWNER for the player user, and `default: 0`.
+- After creating it, the test waits until the player's client reports
+  `testUserPermission(game.user, 'OWNER') === true` for that Actor, the same as the upload and
+  assign suites do after review round 2.
+- Reason: on Foundry 14.369 the default-only fixture failed the owned-Actor tests in upload and
+  assign. Review round 2 has the probe evidence.
+- This supersedes the Acceptance line that says the player-owned Actor uses
+  `ownership.default: 3`.
+- The no-permission Actor (0) and the LIMITED Actor (1) are unchanged.
+
+## Review round 3 — findings
+
+- [P2] e2e/image-view/image-view.e2e.test.ts beforeAll, the owned Actor (`actor(..., 3)` around
+  line 101) — still created with `ownership: { default: 3 }`, which fails on Foundry 14.369 (see
+  review round 2). route: implementer — per Amendment 1, create it with explicit per-user OWNER
+  for the player user and `default: 0`, then wait until the player's client reports
+  `testUserPermission(game.user, 'OWNER') === true` before the tests use it, as in the upload
+  and assign suites. Leave the 0 and LIMITED (1) Actors as they are.
