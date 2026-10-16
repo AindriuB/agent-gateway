@@ -1,13 +1,15 @@
 # 140 — Add the public community files: SECURITY, CODE_OF_CONDUCT, CONTRIBUTING, CHANGELOG, templates
 
 **Repo:** .
-**Depends on:** none
+**Depends on:** 145
 **Owns:**
 - SECURITY.md (new)
 - CODE_OF_CONDUCT.md (new)
 - CONTRIBUTING.md (new)
 - CHANGELOG.md (new)
-- .github/ISSUE_TEMPLATE/** (new)
+- .github/ISSUE_TEMPLATE/bug_report.yml (new)
+- .github/ISSUE_TEMPLATE/feature_request.yml (new)
+- .github/ISSUE_TEMPLATE/config.yml (new)
 - .github/pull_request_template.md (new)
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16 from Andrew's decisions of
@@ -21,6 +23,11 @@ that date. Recorded decisions that apply here:
   especially around copyrighted material.
 - Decision 7: the Ascend-derived CSS values in `gateway/src/oauth/consent/style.ts` are approved
   to stay public (Andrew, 2026-10-16). No code change; see Scribe items.
+
+**Sequencing (Amendment 1):** depends on 145. `scripts/test/ci-workflow.test.mjs` (owned by 145)
+rejects any file under `.github/` that is not on its allowlist; on `main` before 145 it allows
+only `ci.yml`. This task can be implemented in parallel with 145, but its `npm run verify` passes
+only once 145 has merged, so 140 merges after 145 (rebase on `main` first).
 
 ## Goal
 
@@ -90,8 +97,8 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
       tools will be added at release time; say so in the PR). Below it is one
       `## Earlier releases` section summarising 0.1.0, 0.1.1, 0.2.0 and 0.3.0 in two to five
       bullets each, user-facing only (no task numbers, no PR numbers, no internal names).
-- [ ] `.github/ISSUE_TEMPLATE/` holds a bug report form and a feature request form (YAML issue
-      forms) and a `config.yml` with `blank_issues_enabled: false` and a contact link to the
+- [ ] `.github/ISSUE_TEMPLATE/` holds exactly three files: `bug_report.yml` and
+      `feature_request.yml` (YAML issue forms) and a `config.yml` with `blank_issues_enabled: false` and a contact link to the
       security advisory URL for vulnerabilities. The bug form asks for Foundry version, game system
       and version, module version, gateway version, how the gateway runs (Claude Desktop bundle,
       npm, Docker), the AI client, and steps; it carries a checkbox stating the reporter has not
@@ -100,15 +107,20 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
 - [ ] `.github/pull_request_template.md` asks for what and why, how it was tested, `npm run verify`
       result, and Foundry versions tried, with checkboxes for "no copyrighted content added" and
       "no secrets or personal paths".
+- [ ] The files this task adds under `.github/` are exactly `ISSUE_TEMPLATE/bug_report.yml`,
+      `ISSUE_TEMPLATE/feature_request.yml`, `ISSUE_TEMPLATE/config.yml` and
+      `pull_request_template.md`, matching the allowlist in task 145's ci-workflow test
+      (`git diff --name-only main -- .github` lists those four paths and nothing else).
 - [ ] No `.github/FUNDING.yml` is added (decided, owner 2026-10-16): `test ! -e .github/FUNDING.yml`
       succeeds after the change.
 - [ ] No file in this task contains `Andrew`, `aindriub.app`, `homelab`, `/Users/`, `/home/` or an
       email address (`rg -n -i 'andrew|aindriub\.app|homelab|/Users/|/home/|@[a-z0-9-]+\.[a-z]' SECURITY.md CODE_OF_CONDUCT.md CONTRIBUTING.md CHANGELOG.md .github/ISSUE_TEMPLATE .github/pull_request_template.md` prints nothing).
-- [ ] `npm run verify` exits 0.
+- [ ] `npm run verify` exits 0 on a branch rebased onto a `main` that includes task 145.
 
 ## Out of scope
 
-- `.github/workflows/ci.yml` (task 145) and `.github/FUNDING.yml` (decided, owner 2026-10-16: not
+- `.github/workflows/ci.yml` and `scripts/test/ci-workflow.test.mjs` (task 145; if the allowlist
+  looks wrong, stop and report rather than editing the test), and `.github/FUNDING.yml` (decided, owner 2026-10-16: not
   added at all).
 - README.md (task 142) and every file under `docs/` (tasks 143 and 146), including adding the
   CHANGELOG step to docs/releasing.md.
@@ -129,3 +141,14 @@ releases. Issues and PRs arrive in a shape a maintainer can act on.
 - Decision 7 (Andrew, 2026-10-16): the Ascend-derived style values in `CONSENT_CSS`
   (`gateway/src/oauth/consent/style.ts`) are approved to be public. Close PLAN.md's "Approve the
   Ascend style values going public" action and the matching prerequisite in the Go public item.
+
+## Amendments
+
+### Amendment 1 (from external PR review, 2026-10-16)
+
+- [P1] `scripts/test/ci-workflow.test.mjs:171-175` asserts `ci.yml` is the only file under
+  `.github`, and this task neither owned that test nor depended on the task that does, so its
+  `npm run verify` could never pass. Task 145 (owner of the test) now replaces that assertion with
+  an exact allowlist; this task depends on 145 and merges after it, though it can be implemented
+  in parallel. Owns and acceptance now name the four `.github` files exactly, matching 145's
+  allowlist.

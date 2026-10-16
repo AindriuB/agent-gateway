@@ -8,9 +8,12 @@
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16. Andrew's decision 8 asked
 whether fork CI belongs in this set: it does. Contributors need checks on their PRs from day one,
-CONTRIBUTING.md (140) promises them, and the change is two files with no overlap. Task 81 limited
-CI to tags and manual dispatch while the repo was private (Actions minutes); public repos run
-standard runners free, so that reason lapses.
+CONTRIBUTING.md (140) promises them. Task 81 limited CI to tags and manual dispatch while the
+repo was private (Actions minutes); public repos run standard runners free, so that reason lapses.
+
+**Sequencing (Amendment 1):** 145 has no dependencies and is in the first wave. Task 140 depends
+on 145: 140 adds files under `.github/` that this task's test must allowlist, so 140 can be
+implemented in parallel but merges after 145.
 
 ## Goal
 
@@ -45,12 +48,38 @@ building and pushing the GHCR image exactly as today.
       `pull_request`, for `push` to `main` and for `workflow_dispatch` (test asserts the exact
       condition string `github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')`).
 - [ ] `actions/checkout` in the `test` job sets `persist-credentials: false`.
-- [ ] A `concurrency` group keyed on the workflow and PR number (or ref) with
-      `cancel-in-progress: true` for pull requests only, so tag builds and `main` pushes are never
-      cancelled.
+- [ ] ci.yml has exactly one top-level `concurrency` block, with exactly these two lines and no
+      job-level `concurrency`, so pull requests cancel superseded runs and tag builds and `main`
+      pushes are never cancelled:
+      ```yaml
+      concurrency:
+        group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+        cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      ```
 - [ ] ci-workflow.test.mjs is updated to assert the new trigger set, the forbidden triggers, the
-      secret-free test job, the persist-credentials setting and the unchanged image gate; its
-      other assertions still pass unchanged.
+      secret-free test job, the persist-credentials setting and the unchanged image gate.
+- [ ] In ci-workflow.test.mjs's "sets timeouts and never cancels tag runs" test (currently
+      :158-163), the two bans `assert.doesNotMatch(wf, /^\s*concurrency:/m)` and
+      `assert.doesNotMatch(wf, /cancel-in-progress:/)` are replaced by assertions that `concurrency:`
+      occurs exactly once in the file, at column 0; that the `group:` value is exactly
+      `${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}`; and that
+      `cancel-in-progress:` occurs exactly once with the exact value
+      `${{ github.event_name == 'pull_request' }}` (so a literal `true` fails the test). The two
+      timeout assertions in that test are unchanged.
+- [ ] The "is the only file under .github" test (currently :171-176) is replaced by one that
+      collects every file under `.github/` recursively as a POSIX path relative to `.github/`
+      (not the bare basename) and asserts that the list contains `workflows/ci.yml` and that
+      every entry is in exactly this allowlist (a constant in the test, sorted):
+      `ISSUE_TEMPLATE/bug_report.yml`, `ISSUE_TEMPLATE/config.yml`,
+      `ISSUE_TEMPLATE/feature_request.yml`, `pull_request_template.md`, `workflows/ci.yml`.
+      This is task 140's file list exactly. The test passes both before 140 merges (only
+      `workflows/ci.yml`) and after. Adding `.github/FUNDING.yml`, a second workflow (any other
+      file under `workflows/`), or any other file under `.github/` fails it; the PR shows this by
+      temporarily adding `.github/FUNDING.yml` and `.github/workflows/x.yml` locally and quoting
+      the two failures.
+- [ ] Apart from the trigger, permission, persist-credentials and image-gate assertions above and
+      the two edits just listed, every other assertion in ci-workflow.test.mjs is unchanged
+      (`git diff` on that file touches no other `it(...)` block).
 - [ ] `npm run verify` exits 0.
 
 ## Out of scope
@@ -60,9 +89,25 @@ building and pushing the GHCR image exactly as today.
   contributors" for fork workflows, branch protection requiring the `test` check.
 - Running live Foundry e2e in CI.
 - Any other workflow (CodeQL, dependabot, release automation): not in this set.
+- The issue templates and PR template themselves (task 140); this task only allowlists their paths.
 
 ## Owner questions
 
 - CI triggers — Decided (owner, 2026-10-16): run on pull requests (forks included, no secrets,
   never `pull_request_target`), on push to `main`, and on `v*` tags. The image job stays
   tag-only.
+
+## Amendments
+
+### Amendment 1 (from external PR review, 2026-10-16)
+
+- [P1] The acceptance required a PR-only `cancel-in-progress` concurrency group but also said the
+  test's other assertions "still pass unchanged", while ci-workflow.test.mjs:161-162 bans
+  `concurrency:` and `cancel-in-progress:` outright. Following the plan, `npm run verify` failed.
+  Replaced with explicit edits: the bans become an assertion of the exact concurrency block this
+  task adds (group on workflow plus PR number or ref; cancel only when the event is
+  `pull_request`).
+- [P1] ci-workflow.test.mjs:171-175 asserts `ci.yml` is the only file under `.github`, so task
+  140's issue and PR templates could never pass verify. This task (which owns the test) replaces
+  it with an exact relative-path allowlist matching 140's file list; `FUNDING.yml` and any second
+  workflow still fail. Task 140 now depends on 145 and merges after it.
