@@ -131,3 +131,11 @@ Reviewed HEAD: e9e2f6f6ab67f5d39c4eec9a921ef2343f2d1b01
 
 - [P1] module/src/tools/image-view.ts:16 — `canSee` admits Actors and Scenes on native ownership (and everything for GM agents) without the GM's agent folder allowlist, so an agent that knows an excluded Actor uuid can read its portrait or prototype-token art, which document_get refuses. Scene backgrounds and placed-token images have the same bypass. Read handlers enforce folders via `folderAllowed` (module/src/policy/folders.ts); the setting is "Folders agents may read" (lang/en.json:78).
   route: implementer — apply the class-specific allowlist to the source's root world document before fetching (the parent Scene for tokens); refuse identically to a missing uuid. Fixed in 0fe8f18.
+
+## Review round 4 — findings
+
+Reviewed HEAD: 2fbeac5a097d1384683a206bff60fb2e6261cfff
+
+- [P2] module/src/tools/image-view.ts:47-52 — the actor_portrait/actor_token allowlist check reads the loaded Actor's own folder, not its ROOT world document, so a synthetic token-Actor uuid (`Scene.S.Token.K.Actor.A`) escapes the Scene's allowlist, and for non-GMs skips the Scene permission and `token.hidden` checks (only the Actor's own testUserPermission is consulted). document-get.ts:171-178 walks `parent` to the root first.
+  route: implementer — walk `doc.parent` to the root before `folderAllowed` (as `readable()` in document-get.ts does); for an embedded synthetic Actor, apply the root Scene's permission test and the owning token's hidden/owner rule as well. Add a test with an embedded Actor uuid on an excluded Scene, and one on a hidden token the player does not own.
+  input: `gmAgents = ['ok']`; base Actor A in folder `ok`; Scene S in folder `secret` with unlinked token K of A; `image_view {source:'actor_portrait', uuid:'Scene.S.Token.K.Actor.A'}` → image returned (incl. any token-delta `img`), while document_get on the same uuid reads as missing.
