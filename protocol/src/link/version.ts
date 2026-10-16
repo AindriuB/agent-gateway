@@ -3,8 +3,9 @@ import type { ErrorCode } from './errors.js';
 /**
  * v7 adds the GM-vouched pairing flow (pairingChallenge, attest) and the welcome admin flag.
  * 7.1 adds the optional `images` array on `result` frames.
+ * 7.2 adds the module-to-gateway `approvalState` frame (task 112).
  */
-export const PROTOCOL_VERSION = '7.1.0';
+export const PROTOCOL_VERSION = '7.2.0';
 
 export type CompatResult = { ok: true } | { ok: false; code: ErrorCode; message: string };
 
