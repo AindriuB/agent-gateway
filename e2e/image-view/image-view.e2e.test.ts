@@ -98,7 +98,29 @@ describe.skipIf(!enabled)('image_view', () => {
           img: probePath,
           ownership: { default: ownership },
         });
-      ownedActor = await actor('agent-gateway e2e view owned (temporary)', 3);
+      // As in the real world: explicit per-user OWNER for the player, default 0 (NONE).
+      ownedActor = await createDoc(
+        `async (d) => { const u = game.users.getName(d.player); if (!u) throw new Error('no player user ' + d.player); return (await Actor.create({ name: d.name, type: 'character', img: d.img, ownership: { default: 0, [u.id]: 3 } })).uuid; }`,
+        {
+          name: 'agent-gateway e2e view owned (temporary)',
+          player: playerUser,
+          img: probePath,
+        },
+      );
+      // The player's own client must see the Actor as OWNER before any tool call.
+      expect(
+        await rig.users.get(playerUser)!.browser.page.evaluate(
+          `(async (uuid) => {
+            for (let i = 0; i < 40; i++) {
+              const a = await fromUuid(uuid);
+              if (a && a.testUserPermission(game.user, 'OWNER') === true) return true;
+              await new Promise((r) => setTimeout(r, 250));
+            }
+            return false;
+          })(${JSON.stringify(ownedActor)})`,
+        ),
+        'player client sees the owned Actor as OWNER',
+      ).toBe(true);
       noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
       // LIMITED (1) on this Actor and on the Scene below: the player can see both, so only
       // token.hidden can refuse the Token.
