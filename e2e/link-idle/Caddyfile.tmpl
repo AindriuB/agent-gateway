@@ -1,0 +1,15 @@
+{
+	auto_https off
+	admin 127.0.0.1:__ADMIN__
+}
+
+:__PORT__ {
+	# Same routing as gateway/docker/Caddyfile, over plain HTTP for the local run.
+	handle /link* {
+		reverse_proxy 127.0.0.1:__LINK__
+	}
+	handle {
+		reverse_proxy 127.0.0.1:__MCP__
+	}
+	__MARK__
+}
