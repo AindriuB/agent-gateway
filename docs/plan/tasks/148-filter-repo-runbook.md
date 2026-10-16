@@ -72,7 +72,14 @@ swap it in under the existing repo name and restore the releases.
     path or email (checked on main).
   - `.github/FUNDING.yml` existed early in main's history (`github: AindriuB`,
     `ko_fi: AindriuB`; added c117d4d, removed 5f8ed04) and 146 adds a new one
-    (`ko_fi: aindriub`). Both stay (Q13).
+    (`github: AindriuB` then `ko_fi: aindriub`, 146 Amendment 2). Both stay (Q13): the old one is
+    kept in history as is, the new one is in the tree.
+  - Kept public identity, never a personal-string hit: the GHCR image
+    `ghcr.io/aindriub/foundry-agent-gateway`; module.json's `url`, `manifest` and `download` URLs
+    on `https://github.com/AindriuB/agent-gateway`; `"authors": [{ "name": "AindriuB" }]` in
+    module.json and `"author": "AindriuB"` in package.json; the FUNDING.yml handles and README's
+    `https://github.com/sponsors/AindriuB` and `https://ko-fi.com/aindriub` links (146); the
+    rewritten identity `AindriuB <3417729+AindriuB@users.noreply.github.com>` (Q10).
   - Screenshot blobs: whatever 144 reported (possibly none).
 - Refs: tags v0.1.0, v0.1.0-rc.2, v0.1.1, v0.2.0, v0.3.0 are ancestors of main; v0.1.0-rc.1 is
   not (a scratch commit). Releases on GitHub: "Agent Gateway 0.3.0" (published, Latest, assets
@@ -138,10 +145,17 @@ swap it in under the existing repo name and restore the releases.
          `ASCEND_PATH = '` followed by a non-placeholder, `All rights reserved` in marks.ts).
          The first name "Andrew" alone is not a pattern: it stays in LICENSE by decision 6.
          By Q13/Q14, `patterns.txt` contains no pattern that matches `gw.aindriub.app`,
-         `dl.aindriub.app`, `AindriuB`/`aindriub` on its own, or either FUNDING.yml content.
-         verify.sh runs a pattern self-test before the scan and fails it unless the patterns
-         match none of `https://gw.aindriub.app/mcp`, `https://dl.aindriub.app/x.zip`,
-         `github: AindriuB`, `ko_fi: AindriuB`, `ko_fi: aindriub`, and match each of
+         `dl.aindriub.app`, `AindriuB`/`aindriub` on its own, either FUNDING.yml content, or
+         any of the kept public identity listed in Context. verify.sh runs a pattern self-test
+         before the scan, using the same matcher and case rule as the scan, and fails it unless
+         the patterns match none of `https://gw.aindriub.app/mcp`,
+         `https://dl.aindriub.app/x.zip`, `github: AindriuB`, `ko_fi: AindriuB`,
+         `ko_fi: aindriub`, `https://github.com/sponsors/AindriuB`,
+         `https://ko-fi.com/aindriub`, `ghcr.io/aindriub/foundry-agent-gateway:0.3.0`,
+         `https://github.com/AindriuB/agent-gateway/releases/latest/download/module.json`,
+         `https://github.com/AindriuB/agent-gateway/releases/download/v0.3.0/agent-gateway.zip`,
+         `"authors": [{ "name": "AindriuB" }]`, `"author": "AindriuB"` and
+         `AindriuB <3417729+AindriuB@users.noreply.github.com>`, and match each of
          `/home/andrew/x`, `/Users/Andrew/x`, `aindriubannister@gmail.com` and `homelab`.
       4. **Identity.** Every author and committer in the rewritten repo is
          `AindriuB <3417729+AindriuB@users.noreply.github.com>` or `GitHub <noreply@github.com>`
@@ -418,3 +432,18 @@ swap it in under the existing repo name and restore the releases.
   gains a pattern self-test so they never count as failures while personal paths, the old email
   and the homelab name still do.
 - Q15: T17 frame budget and `welcome` capability negotiation recorded as non-prerequisites.
+
+### Amendment 6 (external review and owner decision, 2026-10-16)
+
+- [P2, external review] 146's scrub `rg` could never pass because it also matched the kept GHCR
+  image name. Checked here for the same trap: check 3's patterns did not hit the kept public
+  identity, but the self-test only proved it for the hostnames and FUNDING.yml handles. Context
+  now lists the kept public identity (GHCR image, module.json URLs on
+  github.com/AindriuB/agent-gateway, author "AindriuB", FUNDING handles, the Sponsors and Ko-fi
+  links, the Q10 noreply identity), and the self-test must show the patterns match none of it,
+  with the same matcher and case rule as the scan, while personal paths, the old email and
+  "homelab" still match. `gw.`/`dl.aindriub.app` stay non-failures here by Q14.
+- Owner decision (146 Amendment 2): the new `.github/FUNDING.yml` is `github: AindriuB` then
+  `ko_fi: aindriub`, and README links `https://github.com/sponsors/AindriuB`. Context updated;
+  both are in the self-test's must-not-match list. Q13 still refers to the old FUNDING.yml in
+  history (c117d4d to 5f8ed04), kept as is.

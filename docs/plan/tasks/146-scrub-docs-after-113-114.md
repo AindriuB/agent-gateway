@@ -27,7 +27,7 @@ Start only after both have merged to `main`, and after 141 (which adds the plugi
 The ChatGPT plugin doc and the Docker README read correctly for a stranger on a public repo: no
 "Andrew's deployment", no hosted URL, and no "while the package is private, log in" step. The
 last leftovers that name the owner go, CONTRIBUTING.md explains the pre-public PR numbers, and the
-repo gets its Ko-fi funding link.
+repo gets its GitHub Sponsors and Ko-fi funding links.
 
 ## Context
 
@@ -53,8 +53,16 @@ repo gets its Ko-fi funding link.
 
 ## Acceptance
 
-- [ ] `rg -n -i "andrew|aindriub|private" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example`
-      prints nothing (Decided Q6).
+- [ ] `rg -n -i "andrew|aindriub|private" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example | sed -E 's#ghcr\.io/aindriub/foundry-agent-gateway##g' | rg -i "andrew|aindriub|private"`
+      prints nothing (Decided Q6; Amendment 2). The `sed` deletes only the kept GHCR image name
+      (`ghcr.io/aindriub/foundry-agent-gateway`, e.g. gateway/docker/.env.example:7), so the
+      image name passes, while any other hit on the same line or elsewhere still fails:
+      `foundry.aindriub.app`, `gw.aindriub.app`, any other `aindriub.app` host, "Andrew", the old
+      email and every "private". Do not use a line-dropping `rg -v` instead: it would hide an
+      `aindriub.app` host sharing a line with the image name. "private" here includes ChatGPT's
+      own "private plugin" wording and "printed code privately" (gateway/docker/README.md:113 on
+      main, 2026-10-16); reword those (e.g. "saved to your own account", "keep the printed code to
+      yourself") rather than weakening the check.
 - [ ] docs/chatgpt-plugin.md says the package ships with a placeholder URL and shows how to build
       one for your own gateway with `--gateway-url https://gateway.example.invalid`;
       `rg -c "gateway\.example\.invalid" docs/chatgpt-plugin.md` is at least 1. It has no "hosted
@@ -73,24 +81,29 @@ repo gets its Ko-fi funding link.
       messages from before the repository went public (for example "Merge pull request #179")
       refer to the private archive, not to pull requests in this repository (Decided Q12);
       `rg -c "private archive" CONTRIBUTING.md` prints `1` (148 checks this).
-- [ ] `printf 'ko_fi: aindriub\n' | cmp - .github/FUNDING.yml` exits 0 (Decided, owner
-      2026-10-16; reverses 140, see Amendment 1).
+- [ ] `.github/FUNDING.yml` is exactly two lines, `github: AindriuB` then `ko_fi: aindriub`:
+      `printf 'github: AindriuB\nko_fi: aindriub\n' | cmp - .github/FUNDING.yml` exits 0 (Decided,
+      owner 2026-10-16; reverses 140, see Amendments 1 and 2).
 - [ ] The diff of scripts/test/ci-workflow.test.mjs is exactly one added line, `'FUNDING.yml',`,
       directly before `'ISSUE_TEMPLATE/bug_report.yml',`; every other assertion is unchanged. The
       PR quotes a local, uncommitted run with a temporary `.github/workflows/x.yml` in which the
       allowlist test fails with `workflows/x.yml is not allowlisted`.
-- [ ] README.md's "## Contributing" section gains one line, `Support the project on
+- [ ] README.md's "## Contributing" section gains one line, `Support the project through
+      [GitHub Sponsors](https://github.com/sponsors/AindriuB) or
       [Ko-fi](https://ko-fi.com/aindriub).` (diff: that line plus a blank separator, nothing
-      removed). Planner proposal, not an owner decision; drop this item and the README.md Owns
-      line if the owner declines it in review.
+      removed; Amendment 2).
 - [ ] `npm run test:scripts` passes and `npm run verify` exits 0.
 
 ## Out of scope
 
 - docs/guides/chatgpt.md, docs/compatibility.md, docs/server-mode.md, docs/guides/headless.md:
   checked clean of personal strings at 84aa248 except `ghcr.io/aindriub/…` image names, which are
-  correct and stay. Re-run the `rg` above on them after 113/114 merge; if new hits appear, report
-  them rather than editing.
+  correct and stay. Re-run the check above on them after 113/114 merge. The kept public identity
+  is not a hit: the GHCR image name, `https://github.com/AindriuB/agent-gateway` and its
+  `/releases/…`, `/issues` and `/blob/…` URLs (module.json's manifest and download), the
+  `github.com/sponsors/AindriuB` and `ko-fi.com/aindriub` links, and the author name "AindriuB".
+  If any other hit appears (an `aindriub.app` host, a personal path, the old email, "homelab",
+  "Andrew"), report it rather than editing.
 - Compose files, image names, `.env.example` values.
 - Anything 141 owns (plugins, build scripts, docs/claude-plugin.md) and 143 owns (docs/releasing.md).
 - The hosted gw.aindriub.app build steps: they go to the companion repo in 147, not here.
@@ -107,7 +120,9 @@ repo gets its Ko-fi funding link.
   rewritten history; the one-line note goes in CONTRIBUTING.md, made by this task because 140 is
   already merged. 148 checks for it.
 - Funding — Decided (owner, 2026-10-16): add `.github/FUNDING.yml` with `ko_fi: aindriub`
-  (https://ko-fi.com/aindriub). Reverses 140's "no FUNDING.yml".
+  (https://ko-fi.com/aindriub). Reverses 140's "no FUNDING.yml". Extended (owner, 2026-10-16,
+  Amendment 2): GitHub Sponsors is set up too, so the file is `github: AindriuB` then
+  `ko_fi: aindriub`, and the README line links both.
 
 ## Amendments
 
@@ -127,3 +142,18 @@ repo gets its Ko-fi funding link.
 - Proposed (planner): one "Support the project" line in README.md linking the Ko-fi page. README.md
   is a merged-task file no open task owns, so it is in Owns as a one-line insertion.
 - 147's freeze SHA waits for this task to merge (Q9).
+
+### Amendment 2 (external review and owner decision, 2026-10-16)
+
+- [P2, external review] The scrub acceptance `rg -n -i "andrew|aindriub|private" …` could never
+  pass: gateway/docker/.env.example:7 holds `ghcr.io/aindriub/foundry-agent-gateway`, which this
+  task keeps. The check now deletes exactly that image name with `sed` before re-matching, so the
+  image name passes while `aindriub.app` hosts, "Andrew", the old email and "private" still fail,
+  even on the same line. The Out-of-scope re-run on other docs now lists the kept public
+  identity (GHCR image, github.com/AindriuB/agent-gateway URLs, the Sponsors and Ko-fi links,
+  author "AindriuB") as non-hits.
+- Owner decision: GitHub Sponsors is set up alongside Ko-fi. `.github/FUNDING.yml` is now exactly
+  `github: AindriuB` then `ko_fi: aindriub` (the `printf … | cmp` check matches); the README line
+  links both GitHub Sponsors and Ko-fi and is an owner decision, no longer a planner proposal. The
+  ci-workflow allowlist entry stays `'FUNDING.yml'`. 148's verify.sh self-test is updated so the
+  new FUNDING.yml content and the Sponsors link never count as personal strings.
