@@ -226,6 +226,20 @@ describe('ownedAliases', () => {
   });
 });
 
+describe('unknownAliases', () => {
+  it('lists the aliases this owner has no row for, whatever the row state', () => {
+    const s = open();
+    mirror(s, 'live');
+    mirror(s, 'done');
+    s.queue.report(owner, 'c1', 'done', 'approved', 11);
+    mirror(s, 'theirs', 'c1', 10, other);
+    expect(s.queue.unknownAliases(owner, ['live', 'done', 'theirs', 'never'])).toEqual([
+      'theirs',
+      'never',
+    ]);
+  });
+});
+
 describe('carriesImage', () => {
   const png = Buffer.from('89504e470d0a1a0a0000000000', 'hex').toString('base64');
   it.each([

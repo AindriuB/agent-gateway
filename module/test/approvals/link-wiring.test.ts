@@ -12,7 +12,7 @@ let runtimeLink: any = {};
 /** A fake link client: records what the approval wiring sends, in order, and lets a test drive it. */
 function fakeLink(log: string[]) {
   let onState: (s: { kind: string; reason?: string }) => void = () => {};
-  let onOwnership: (ids: string[]) => void = () => {};
+  let onOwnership: (ids: string[], unknown: string[]) => void = () => {};
   return {
     sent: [] as any[],
     onState(fn: typeof onState) {
@@ -27,7 +27,7 @@ function fakeLink(log: string[]) {
       return true;
     },
     state: (kind: string, reason?: string) => onState({ kind, reason }),
-    ownership: (ids: string[]) => onOwnership(ids),
+    ownership: (ids: string[], unknown: string[] = []) => onOwnership(ids, unknown),
   };
 }
 
@@ -124,6 +124,29 @@ describe('approval wiring through the link state', () => {
     expect(link.sent).toEqual([]);
   });
 
+  it('a record the gateway never mirrored (unknown list) is kept through a blip and runs once', async () => {
+    const { p1, link, log, id, done, handler } = await setup();
+    link.state('disconnected', 'ERROR');
+    p1.manager.resolveApproval(id, { decision: 'approve' });
+    link.state('connected');
+    log.length = 0;
+    link.ownership([], [id]); // no gateway row at all, e.g. an image_upload approval
+    expect(await done).toMatchObject({ text: 'ran' });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(log).toEqual(['approved', 'run']);
+  });
+
+  it('an alias the gateway knows but does not own (requeued elsewhere) is still withdrawn', async () => {
+    const { p1, link, id, handler } = await setup();
+    link.state('disconnected', 'ERROR');
+    p1.manager.resolveApproval(id, { decision: 'approve' });
+    link.state('connected');
+    link.ownership([], ['some-other-id']);
+    await settle();
+    expect(p1.manager.pendingApprovalIds()).toEqual([]);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('no ownership reply within the wait withdraws everything', async () => {
     const { hub, p1, link, notes, handler, id } = await setup();
     link.state('disconnected', 'ERROR');
@@ -178,7 +201,7 @@ describe('approval wiring through the link state', () => {
 describe('startApprovals', () => {
   it('wires the link: the pending list goes out on connect and ownership replies are listened for', () => {
     let state: (s: { kind: string }) => void = () => {};
-    let ownership: (ids: string[]) => void = () => {};
+    let ownership: (ids: string[], unknown: string[]) => void = () => {};
     const sent: any[] = [];
     runtimeLink = {
       onState: (fn: typeof state) => (state = fn),
@@ -195,7 +218,7 @@ describe('startApprovals', () => {
       startApprovals();
       state({ kind: 'connected' });
       expect(sent).toEqual([{ ids: [] }]);
-      expect(() => ownership([])).not.toThrow();
+      expect(() => ownership([], [])).not.toThrow();
     } finally {
       delete (globalThis as any).game;
       delete (globalThis as any).Hooks;

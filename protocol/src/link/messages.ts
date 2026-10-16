@@ -390,7 +390,10 @@ export const ApprovalStateMessage = z
  */
 export const ApprovalOwnershipMessage = z.strictObject({
   type: z.literal('approvalOwnership'),
+  /** Owned by this connection: keep and release. */
   ids: z.array(z.string().min(1).max(64)).max(MAX_APPROVAL_STATE_IDS),
+  /** Listed aliases the gateway holds no row for at all (never mirrored): keep, as before 112. */
+  unknown: z.array(z.string().min(1).max(64)).max(MAX_APPROVAL_STATE_IDS).optional(),
 });
 
 // Insertion-only: later tasks add schemas above and members below.

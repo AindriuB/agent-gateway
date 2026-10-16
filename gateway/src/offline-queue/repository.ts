@@ -370,6 +370,21 @@ export function createQueueRepository(db: DatabaseSync) {
         .all(...ownerArgs(o), connectionId, ...ids) as unknown as { a: string }[];
       return rows.map((r) => r.a);
     },
+    /** The listed aliases for which this owner has no row at all (never mirrored). */
+    unknownAliases(o: QueueOwner, ids: readonly string[]): string[] {
+      if (!ids.length) return [];
+      const marks = ids.map(() => '?').join(',');
+      const known = new Set(
+        (
+          db
+            .prepare(
+              `SELECT approval_alias a FROM queued_calls WHERE ${scope} AND approval_alias IN (${marks})`,
+            )
+            .all(...ownerArgs(o), ...ids) as unknown as { a: string }[]
+        ).map((r) => r.a),
+      );
+      return ids.filter((id) => !known.has(id));
+    },
     /** Apply a held report to a row that was inserted already orphaned. */
     reportOrphan(
       o: QueueOwner,

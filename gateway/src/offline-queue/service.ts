@@ -252,7 +252,8 @@ export class OfflineQueue {
       // Tell the module which of its records this connection now owns, before anything is replayed.
       const owned = this.store.queue.ownedAliases(owner, c.id, msg.ids);
       try {
-        c.send(JSON.stringify({ type: 'approvalOwnership', ids: owned }));
+        const unknown = this.store.queue.unknownAliases(owner, msg.ids);
+        c.send(JSON.stringify({ type: 'approvalOwnership', ids: owned, unknown }));
       } catch {
         /* A dead socket is handled by the close path; the module withdraws on its own timeout. */
       }

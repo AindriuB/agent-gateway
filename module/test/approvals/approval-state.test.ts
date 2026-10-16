@@ -202,11 +202,14 @@ describe('the link client gate', () => {
     const old = await connected('7.1.0');
     expect(old.client.sendApprovalState({ ids: [] })).toBe(false);
     const { socket, client } = await connected(PROTOCOL_VERSION);
-    const got: string[][] = [];
-    client.onApprovalOwnership((ids) => got.push(ids));
+    const got: string[][][] = [];
+    client.onApprovalOwnership((ids, unknown) => got.push([ids, unknown]));
     expect(client.sendApprovalState({ ids: ['a'] })).toBe(true);
-    socket.recv({ type: 'approvalOwnership', ids: ['a'] });
+    socket.recv({ type: 'approvalOwnership', ids: ['a'], unknown: ['b'] });
     socket.recv({ type: 'approvalOwnership', ids: [] });
-    expect(got).toEqual([['a'], []]);
+    expect(got).toEqual([
+      [['a'], ['b']],
+      [[], []],
+    ]);
   });
 });

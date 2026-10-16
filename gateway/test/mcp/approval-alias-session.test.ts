@@ -428,10 +428,17 @@ describe('mirrored pending approvals', () => {
     browsers.push(re.tc);
     re.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
     // Another user claims u1's alias in its own list: it is never confirmed to them.
+    await m2.tc.next('approvalOwnership'); // the reply to its first (empty) list
     m2.tc.send({ type: 'approvalState', ids: ['alias-1', 'nope'] });
-    expect(await m2.tc.next('approvalOwnership')).toMatchObject({ ids: [] });
+    expect(await m2.tc.next('approvalOwnership')).toMatchObject({
+      ids: [],
+      unknown: ['alias-1', 'nope'],
+    });
     await capable(re, ['alias-1', 'not-held']);
-    expect(await re.tc.next('approvalOwnership')).toMatchObject({ ids: ['alias-1'] });
+    expect(await re.tc.next('approvalOwnership')).toMatchObject({
+      ids: ['alias-1'],
+      unknown: ['not-held'],
+    });
   });
 
   it('a stale tab is not confirmed: X runs once, in the tab that took it over', async () => {
@@ -456,7 +463,8 @@ describe('mirrored pending approvals', () => {
     browsers.push(a.tc);
     a.tc.send({ type: 'toolset', tools: definitions, eventReadAllowed: true });
     await capable(a, ['alias-1']);
-    expect(await a.tc.next('approvalOwnership')).toMatchObject({ ids: [] });
+    // The gateway knows X (it was requeued and run elsewhere): not owned, not unknown.
+    expect(await a.tc.next('approvalOwnership')).toMatchObject({ ids: [], unknown: [] });
     await new Promise((r) => setTimeout(r, 50));
     expect(a.tc.messages.some((x) => x.type === 'queuedCalls')).toBe(false);
     expect(store.queue.getByAlias(owner(m), 'alias-1')).toMatchObject({ state: 'approved' });

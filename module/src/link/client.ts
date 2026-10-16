@@ -384,9 +384,9 @@ export class LinkClient {
     this.sendMessage({ type: 'approvalState', ...msg });
     return true;
   }
-  private readonly ownershipListeners = new Set<(ids: string[]) => void>();
-  /** The gateway's reply to the pending list: which approval ids this connection owns. */
-  onApprovalOwnership(fn: (ids: string[]) => void): () => void {
+  private readonly ownershipListeners = new Set<(ids: string[], unknown: string[]) => void>();
+  /** The gateway's reply to the pending list: ids this connection owns, and ids it has no row for. */
+  onApprovalOwnership(fn: (ids: string[], unknown: string[]) => void): () => void {
     this.ownershipListeners.add(fn);
     return () => this.ownershipListeners.delete(fn);
   }
@@ -864,7 +864,7 @@ export class LinkClient {
       }
       case 'approvalOwnership':
         if (this.socket !== origin || this._state.kind !== 'connected') break;
-        for (const fn of this.ownershipListeners) fn(msg.ids);
+        for (const fn of this.ownershipListeners) fn(msg.ids, msg.unknown ?? []);
         break;
       case 'consentCode':
         if (this.socket !== origin || this._state.kind !== 'connected') break;

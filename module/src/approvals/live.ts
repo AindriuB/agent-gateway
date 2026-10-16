@@ -74,7 +74,7 @@ export interface ApprovalLink {
   sendApprovalState?(
     msg: { id: string; state: 'pending' | 'approved' | 'denied' | 'expired' } | { ids: string[] },
   ): boolean | void;
-  onApprovalOwnership?(fn: (ids: string[]) => void): unknown;
+  onApprovalOwnership?(fn: (ids: string[], unknown: string[]) => void): unknown;
 }
 
 /**
@@ -98,7 +98,7 @@ export function wireApprovalLink(
   let everConnected = false;
   // Approvals given while the link is down wait for it: the gateway must hear of them first.
   m.holdWhile(() => everConnected && !wasConnected);
-  link.onApprovalOwnership?.((ids) => m.confirmOwnership(ids));
+  link.onApprovalOwnership?.((ids, unknown) => m.confirmOwnership(ids, unknown));
   link.onState?.((s) => {
     const now = s.kind === 'connected';
     if (s.kind === 'disconnected' && s.reason === 'REPLACED' && m.withdrawPending() > 0) moved();

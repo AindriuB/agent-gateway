@@ -43,6 +43,8 @@ describe('approvalState frame', () => {
     expect(ok({ type: 'approvalOwnership', ids: [] })).toBe(true);
     expect(ok({ type: 'approvalOwnership', ids: ['a'.repeat(64)] })).toBe(true);
     expect(ok({ type: 'approvalOwnership', ids: ['a'.repeat(65)] })).toBe(false);
+    expect(ok({ type: 'approvalOwnership', ids: [], unknown: ['a'] })).toBe(true);
+    expect(ok({ type: 'approvalOwnership', ids: [], unknown: ['a'.repeat(65)] })).toBe(false);
     expect(ok({ type: 'approvalOwnership' })).toBe(false);
     expect(ok({ type: 'approvalOwnership', ids: [], extra: 1 })).toBe(false);
     expect(

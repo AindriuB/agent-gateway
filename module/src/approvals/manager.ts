@@ -669,10 +669,11 @@ export class ApprovalManager {
    * The gateway's reply: keep the records it lists, withdraw the other mirrored ones with nothing
    * run or reported, then release the held answers and re-present what is still ours.
    */
-  confirmOwnership(ids: readonly string[]): void {
+  confirmOwnership(ids: readonly string[], unknown: readonly string[] = []): void {
     if (!this.awaiting) return;
     this.stopAwaiting();
-    const owned = new Set(ids);
+    // Owned here, or never mirrored (no other tab can hold a copy): keep. Anything else is not ours.
+    const owned = new Set([...ids, ...unknown]);
     const n = this.withdrawPending((r) => !owned.has(r.id));
     if (n) this.ownershipCallback?.(n);
     this.representAll();
