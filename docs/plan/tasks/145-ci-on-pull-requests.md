@@ -53,7 +53,7 @@ building and pushing the GHCR image exactly as today.
       pushes are never cancelled:
       ```yaml
       concurrency:
-        group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+        group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
         cancel-in-progress: ${{ github.event_name == 'pull_request' }}
       ```
 - [ ] ci-workflow.test.mjs is updated to assert the new trigger set, the forbidden triggers, the
@@ -62,7 +62,7 @@ building and pushing the GHCR image exactly as today.
       :158-163), the two bans `assert.doesNotMatch(wf, /^\s*concurrency:/m)` and
       `assert.doesNotMatch(wf, /cancel-in-progress:/)` are replaced by assertions that `concurrency:`
       occurs exactly once in the file, at column 0; that the `group:` value is exactly
-      `${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}`; and that
+      `${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`; and that
       `cancel-in-progress:` occurs exactly once with the exact value
       `${{ github.event_name == 'pull_request' }}` (so a literal `true` fails the test). The two
       timeout assertions in that test are unchanged.
@@ -114,4 +114,10 @@ building and pushing the GHCR image exactly as today.
 
 ### Amendment 2 (owner, 2026-10-16, from review round 1)
 
-The concurrency group becomes `${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}` (was `|| github.ref`). Reason (review NOTE): with a per-ref group, GitHub keeps one running and one pending run per group, so a burst of main pushes A, B, C lets C replace B's pending run and commit B gets no CI result. Keyed per commit, every main push, tag and manual run has its own group and is never cancelled; PRs still cancel superseded runs (same PR number, `cancel-in-progress` true only for pull_request). The test pins the new exact group string.
+The concurrency group becomes `${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}` (was `|| github.ref`). Reason (review NOTE): with a per-ref group, GitHub keeps one running and one pending run per group, so a burst of main pushes A, B, C lets C replace B's pending run and commit B gets no CI result. Keyed per commit, every main push, tag and manual run has its own group and is never cancelled; PRs still cancel superseded runs (same PR number, `cancel-in-progress` true only for pull_request). The test pins the new exact group string.
+
+### Amendment 3 (from external PR review on #175, 2026-10-16)
+
+[P2] With `|| github.sha`, a main push, a `v*` tag push and a manual dispatch for the **same commit** share one concurrency group. GitHub keeps one running and one pending run per group and replaces the pending one even with `cancel-in-progress: false`, so a manual dispatch can replace a pending tag run and the image is never published (the manual run skips the image job). This breaks the "tag builds are never cancelled" requirement.
+
+The group becomes `${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}`. PRs keep the PR number (superseded PR runs still cancel); every other run gets its own unique `run_id`, so it never shares a group and is never replaced or cancelled. The test pins the new exact block; the earlier `github.ref` and `github.sha` strings each fail it.
