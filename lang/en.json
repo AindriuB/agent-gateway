@@ -152,7 +152,7 @@
         "invalid": "That is not a valid invite. Paste the whole invite exactly as you received it, or ask for a new one."
       },
       "Server": {
-        "line": "This is a shared gateway. Ask your GM or the gateway operator for an invite, and send them your ids with the button below.",
+        "line": "Paste the invite your GM or the gateway operator sends you here.",
         "pairingRequired": "This gateway has not issued a token to this client. Ask your GM or the gateway operator for an invite and paste it above.",
         "pairingInvalid": "The invite was not accepted. It may have expired or been used. Ask for a new invite and try again.",
         "codeRequired": "Paste the invite from your GM or the gateway operator."
@@ -176,7 +176,12 @@
       "code": "Pairing code",
       "codeHint": "The code the gateway printed when it started.",
       "connect": "Connect",
+      "Unpaired": {
+        "status": "This browser is not paired for this user. Pairing is per browser, so a pairing made on another computer does not carry over. Paste an invite from your GM here."
+      },
       "CopyIds": {
+        "summary": "For the gateway operator: your ids",
+        "playerHint": "A player is normally invited by their GM from Manage access and does not need these ids. Only send them if the gateway operator asks.",
         "label": "Your ids: world {world}, user {user}",
         "button": "Copy my ids",
         "hint": "On a shared gateway, send these two ids to the operator. They create a one-time invite for exactly this world and user; enter that invite above as the pairing code.",

@@ -14,9 +14,12 @@
   </div>
   <div class="form-group agent-gateway-copy-ids">
     {{#if serverMode}}<p class="hint" data-role="server">{{serverLine}}</p>{{/if}}
-    <p data-role="ids">{{idsText}}</p>
-    <button type="button" data-action="copyIds"><i class="fa-solid fa-copy"></i> {{localize "AGENT_GATEWAY.Pairing.CopyIds.button"}}</button>
-    <p class="hint">{{localize "AGENT_GATEWAY.Pairing.CopyIds.hint"}}</p>
+    <details data-role="ids-block">
+      <summary>{{localize "AGENT_GATEWAY.Pairing.CopyIds.summary"}}</summary>
+      <p data-role="ids">{{idsText}}</p>
+      <button type="button" data-action="copyIds"><i class="fa-solid fa-copy"></i> {{localize "AGENT_GATEWAY.Pairing.CopyIds.button"}}</button>
+      <p class="hint" data-role="ids-hint">{{idsHint}}</p>
+    </details>
   </div>
   <p class="hint" data-role="one-pairing">{{onePairingNotice}}</p>
   <div class="form-group agent-gateway-unpair" data-role="unpair"{{#unless paired}} hidden{{/unless}}>

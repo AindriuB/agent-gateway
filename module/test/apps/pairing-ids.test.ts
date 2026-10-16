@@ -72,6 +72,8 @@ it('warns when the clipboard is unavailable', async () => {
 it('the template wires the line and the button, and every string is localized', () => {
   expect(template).toContain('{{idsText}}');
   expect(template).toContain('data-action="copyIds"');
+  expect(template).toMatch(/<details[^>]*>\s*<summary>[\s\S]*data-role="ids"[\s\S]*<\/details>/);
+  expect(template).toContain('{{idsHint}}');
   const used = [...template.matchAll(/localize "(AGENT_GATEWAY\.Pairing\.CopyIds\.\w+)"/g)].map(
     (m) => m[1]!,
   );
@@ -79,6 +81,8 @@ it('the template wires the line and the button, and every string is localized', 
   for (const key of [
     ...used,
     'AGENT_GATEWAY.Pairing.CopyIds.copied',
+    'AGENT_GATEWAY.Pairing.CopyIds.playerHint',
+    'AGENT_GATEWAY.Pairing.CopyIds.hint',
     'AGENT_GATEWAY.Pairing.CopyIds.failed',
   ]) {
     const v = key.split('.').reduce((o: any, k) => o?.[k], lang);
