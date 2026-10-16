@@ -23,14 +23,49 @@ const PNG_B64 =
 const blocks = (raw: unknown): Array<{ type: string }> =>
   ((raw as { content?: Array<{ type: string }> }).content ?? []) as Array<{ type: string }>;
 
+const log = (msg: string): void => console.log(`[image-view] ${msg}`);
+
+/** Rejects with an error naming `phase` if `p` has not settled within `ms`; never waits forever. */
+async function bounded<T>(phase: string, ms: number, p: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`[image-view] phase "${phase}" did not finish within ${ms} ms`)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The longest settle() polls: the approval TTL plus a minute, so a lost approval fails by name. */
+const SETTLE_MAX_MS = APPROVAL_TTL_MS + 60_000;
+
 /** Settles an approval on the gateway that made the call. */
 async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResult> {
   if (r.structured?.status !== 'pending_approval') return r;
   const id = String(r.structured.id);
-  for (;;) {
-    const current = await gateway.call('approval_status', { id });
+  const started = Date.now();
+  let last = '';
+  let lastBeat = started;
+  while (Date.now() - started < SETTLE_MAX_MS) {
+    const current = await bounded(
+      `approval_status ${id}`,
+      90_000,
+      gateway.call('approval_status', { id }),
+    );
     if (current.isError) throw new Error(`approval_status ${id} failed: ${current.text}`);
-    const status = current.structured?.status;
+    const status = String(current.structured?.status);
+    if (status !== last) {
+      log(`approval ${id} status ${last || '(first poll)'} -> ${status}`);
+      last = status;
+    } else if (Date.now() - lastBeat >= 60_000) {
+      log(`approval ${id} still ${status} after ${Math.round((Date.now() - started) / 1000)} s`);
+    }
+    if (Date.now() - lastBeat >= 60_000) lastBeat = Date.now();
     if (status === 'approved' && typeof current.structured?.result === 'string')
       return {
         ...current,
@@ -38,9 +73,12 @@ async function settle(gateway: GatewayProcess, r: CallResult): Promise<CallResul
         text: String(current.structured.result),
       };
     if (status === 'denied' || status === 'expired' || status === 'unknown')
-      throw new Error(`approval ${id} ended ${String(status)}: ${current.text}`);
+      throw new Error(`approval ${id} ended ${status}: ${current.text}`);
     await new Promise((res) => setTimeout(res, 1000));
   }
+  throw new Error(
+    `[image-view] phase "waiting for approval ${id}" did not finish within ${SETTLE_MAX_MS} ms (last status ${last})`,
+  );
 }
 
 describe.skipIf(!enabled)('image_view', () => {
@@ -58,13 +96,21 @@ describe.skipIf(!enabled)('image_view', () => {
   const uploaded: string[] = [];
 
   const evalGm = <T>(fn: string, arg: unknown): Promise<T> =>
-    rig!.users.get(gmUser)!.browser.page.evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>;
+    bounded(
+      'GM page evaluate',
+      60_000,
+      rig!.users
+        .get(gmUser)!
+        .browser.page.evaluate(`(${fn})(${JSON.stringify(arg)})`) as Promise<T>,
+    );
   /** The gateway bound to `user`; swaps only when the binding differs. */
   const as = async (user: string): Promise<GatewayProcess> => {
     if (bound !== user) {
       bound = undefined; // a swap that fails partway leaves the binding unknown
-      await rig!.swap(user);
+      log(`swapping the gateway to ${user}`);
+      await bounded(`gateway swap to ${user}`, RECONNECT_MS + 60_000, rig!.swap(user));
       bound = user;
+      log(`gateway bound to ${user}`);
     }
     return rig!.gateway!;
   };
@@ -73,19 +119,39 @@ describe.skipIf(!enabled)('image_view', () => {
     const uuid = await evalGm<string>(expr, arg);
     expect(typeof uuid).toBe('string');
     created.push(uuid);
+    log(`created ${uuid}`);
     return uuid;
   };
 
   beforeAll(
     async () => {
       rig = new Rig(ctx);
-      await rig.open(gmUser, [gmUser, playerUser]);
+      log(`rig open: gateway bound to ${gmUser}, joining ${gmUser} and ${playerUser}`);
+      await bounded(
+        'rig open (gateway, browsers, welcomes)',
+        RECONNECT_MS + 150_000,
+        rig.open(gmUser, [gmUser, playerUser]),
+      );
+      log(
+        `browsers welcomed: ${[...rig.users].map(([k, u]) => `${k}=${u.frames.welcomes}`).join(', ')}`,
+      );
       bound = gmUser;
       const gw = await as(gmUser);
-      const up = await settle(
-        gw,
-        await gw.call('image_upload', { data: PNG_B64, mime: 'image/png' }),
+      log(`gateway bound to ${gmUser}`);
+      const first = await bounded(
+        'image_upload call (no approval wait; the module answers within about 25 s)',
+        90_000,
+        gw.call('image_upload', { data: PNG_B64, mime: 'image/png' }),
       );
+      log(
+        `image_upload sent: isError=${String(first.isError)} status=${String(first.structured?.status)} approval id=${String(first.structured?.id)}${first.isError ? ` text=${first.text.slice(0, 200)}` : ''}`,
+      );
+      if (first.structured?.status === 'pending_approval')
+        log(
+          `WAITING for the GM to approve image_upload ${String(first.structured.id)} in the GM window`,
+        );
+      const up = await settle(gw, first);
+      log(`image_upload settled: isError=${String(up.isError)}`);
       const parsed = parseImageUploadText(up.text);
       if (!up.isError && parsed) uploaded.push(parsed.path);
       expect(up.isError, up.text).toBe(false);
@@ -108,8 +174,11 @@ describe.skipIf(!enabled)('image_view', () => {
         },
       );
       // The player's own client must see the Actor as OWNER before any tool call.
-      expect(
-        await rig.users.get(playerUser)!.browser.page.evaluate(
+      log('OWNER wait: the player client must see the owned Actor');
+      const ownerSeen = await bounded(
+        'OWNER wait (player client)',
+        60_000,
+        rig.users.get(playerUser)!.browser.page.evaluate(
           `(async (uuid) => {
             for (let i = 0; i < 40; i++) {
               const a = await fromUuid(uuid);
@@ -118,9 +187,10 @@ describe.skipIf(!enabled)('image_view', () => {
             }
             return false;
           })(${JSON.stringify(ownedActor)})`,
-        ),
-        'player client sees the owned Actor as OWNER',
-      ).toBe(true);
+        ) as Promise<boolean>,
+      );
+      log(`OWNER wait done: ${String(ownerSeen)}`);
+      expect(ownerSeen, 'player client sees the owned Actor as OWNER').toBe(true);
       noPermActor = await actor('agent-gateway e2e view no-permission (temporary)', 0);
       // LIMITED (1) on this Actor and on the Scene below: the player can see both, so only
       // token.hidden can refuse the Token.
