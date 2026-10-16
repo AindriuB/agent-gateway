@@ -1,24 +1,35 @@
 # 147 — Move the internal process docs to a private companion repo
 
-**Repo:** new private repo `AindriuB/agent-gateway-internal` (name pending Andrew; created by him), seeded from this repo
-**Depends on:** 140, 141, 142, 143, 144, 145, 146, and image tasks 53, 121, 123 merged to `main`
+**Repo:** new private repo `AindriuB/agent-gateway-internal` (Decided Q8; created by the owner), seeded from this repo
+**Depends on:** 140, 141, 142, 143, 144, 145, 146, playtest tasks 109, 111, 112, 113, 114, and image tasks 53, 121, 123 merged to `main`
 **Owns:**
 - the whole companion repo (new): CLAUDE.md, AGENTS.md, PROJECT.md, docs/plan/**,
-  docs/workflow.md, docs/conventions.md as extracted, plus link.sh and README.md (new)
+  docs/workflow.md, docs/conventions.md as extracted, plus link.sh, README.md and
+  ops/hosted-build.md (new)
 - in this repo: nothing. The files leave the public history in task 148, not by a delete commit
   here.
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16. Sequential: runs after the
-whole cleanup wave and the image wave have merged, at a **freeze SHA** of `main` that Andrew
-declares (no merges to `main` between this task's extraction and 148's push). Recorded decisions:
+whole cleanup wave, the open playtest tasks and the image wave have merged, at a **freeze SHA**
+of `main` that the owner declares (no merges to `main` between this task's extraction and 148's
+push). Recorded decisions:
 - Decision 1 (Andrew, 2026-10-16): internal process docs move to a private companion repo, not the
   public tree: `docs/plan/**` (PLAN, HISTORY, HISTORY-INDEX, tasks, done, specs, mvp-b-threats),
   CLAUDE.md, AGENTS.md, PROJECT.md, docs/workflow.md, docs/conventions.md.
 - On conventions.md: its contributor-facing content is useful, so task 140 published it as
   CONTRIBUTING.md. The private conventions.md keeps only the agent-facing rules and points at
   CONTRIBUTING.md for the rest.
-- The companion is a new docs-only repo, separate from `agent-gateway-private` (the renamed,
-  frozen archive of the original, task 148), unless Andrew answers otherwise.
+- Q8 — Decided (owner, 2026-10-16): the companion is a NEW private repo
+  `AindriuB/agent-gateway-internal`. The renamed archive `agent-gateway-private` (task 148) stays
+  frozen as-is and is not the docs home.
+- Q9 — Decided (owner, 2026-10-16): the freeze SHA is cut only after 146 AND the open playtest
+  tasks 109-114 (109, 111, 112, 113, 114; 110 is done) have merged to `main`, so nothing needs
+  porting by patch. This is a precondition, checked below before extraction.
+- Q6 — Decided (owner, 2026-10-16): the hosted gw.aindriub.app build steps live in the companion
+  (`ops/hosted-build.md`), not in the public docs/chatgpt-plugin.md (146).
+- Q15 — Decided (owner, 2026-10-16): the per-connection frame budget (T17) and capability
+  negotiation in `welcome` are not prerequisites for going public or for 0.4.0; they stay
+  follow-ups.
 
 ## Goal
 
@@ -38,15 +49,32 @@ and they never show up as untracked or committed files in the public repo.
   outside this repo.
 - package.json:17 — the `lint` glob excludes `docs/plan/**`; harmless once the path is a symlink.
 - Git: `<git-common-dir>/info/exclude` is shared by every worktree of a clone and is never pushed.
+- docs/chatgpt-plugin.md:3-7 before 146 merges (e.g. at e8f0a64): the foundry.aindriub.app and
+  gw.aindriub.app endpoints, the source for `ops/hosted-build.md`; scripts/build-chatgpt-plugin.mjs:2
+  for the `--gateway-url` usage.
 
 ## Acceptance
 
+- [ ] **Freeze precondition (Q9).** Before extraction, the PR quotes the output of
+      `gh pr list -R AindriuB/agent-gateway --state open --json number,title,headRefName` and
+      `git fetch origin && git branch -r --no-merged origin/main`, and of
+      `git log --oneline origin/main | rg -e '#?(146|109|111|112|113|114)\b'` showing a merge for
+      each of 146, 109, 111, 112, 113 and 114. No open PR and no unmerged branch carries any of
+      those tasks (branch names `claude/task-<id>` or titles naming the id), and each remaining
+      open PR or unmerged branch is listed with the owner's word "abandon" or "port" next to it.
+      If any of the six is unmerged, the task stops and reports; it does not extract.
 - [ ] The companion repo's history is produced by `git filter-repo` on a fresh clone of this repo
       at the freeze SHA, keeping only `CLAUDE.md`, `AGENTS.md`, `PROJECT.md`, `docs/plan/`,
       `docs/workflow.md`, `docs/conventions.md` (each `--path`), with the same mailmap as 148. The
       exact command is in the companion README. `git log --oneline -- docs/plan/PLAN.md | wc -l` in
       the companion equals the same count in the original at the freeze SHA.
-- [ ] The companion tree lists exactly those paths plus `link.sh` and `README.md`.
+- [ ] The companion tree lists exactly those paths plus `link.sh`, `README.md` and
+      `ops/hosted-build.md` (148 adds `ops/go-public/` later).
+- [ ] `ops/hosted-build.md` gives the exact hosted ChatGPT plugin build command
+      (`node scripts/build-chatgpt-plugin.mjs --gateway-url https://gw.aindriub.app`) and the
+      hosted endpoints from the pre-146 docs/chatgpt-plugin.md:3-7 (Foundry URL, MCP endpoint,
+      OAuth resource metadata URL); `rg -n "aindriub\.app" docs/chatgpt-plugin.md` on the public main
+      prints nothing.
 - [ ] `link.sh <public-checkout>` creates symlinks in the checkout for the six paths, adds the six
       names to `$(git -C <checkout> rev-parse --git-common-dir)/info/exclude` once (idempotent),
       refuses with exit 1 and no change if any target exists as a regular file or directory, and
@@ -61,8 +89,9 @@ and they never show up as untracked or committed files in the public repo.
       insertion-only list and agent-only rules, with a pointer to CONTRIBUTING.md.
 - [ ] Companion README says what the repo is, how to link it, and that it must stay private.
 - [ ] Nothing in this repo changes (empty diff on the public repo).
-- [ ] No push is done by the implementer. Andrew creates the private repo and pushes
-      (owner action).
+- [ ] No push is done by the implementer. The owner creates `AindriuB/agent-gateway-internal`
+      as a new private repo and pushes (owner action). Nothing is pushed to, renamed in or
+      changed on `agent-gateway-private`.
 
 ## Out of scope
 
@@ -70,11 +99,23 @@ and they never show up as untracked or committed files in the public repo.
 - Editing CONTRIBUTING.md or any public doc (140, 142, 143, 146).
 - The agent-kit (`~/.claude`, the untracked `.claude/` worktree scripts): teaching them to run
   `link.sh` for new worktrees is a change in that repo; report it as a follow-up.
-- Porting open branches (148's runbook covers it).
+- Porting open branches (148's runbook covers it; by Q9 none of 109-114 or 146 needs porting).
+- The frame budget (T17) and `welcome` capability negotiation (follow-ups, Q15).
 
 ## Owner questions
 
-- Companion name: `agent-gateway-internal` proposed. Or reuse the renamed archive
-  `agent-gateway-private` as the live docs home (one fewer repo, but it also carries the full
-  pre-rewrite code)?
-- Freeze SHA: Andrew declares it once 140-146 and 53, 121, 123 are merged.
+- Q8 companion name — Decided (owner, 2026-10-16): a NEW private repo
+  `AindriuB/agent-gateway-internal`; `agent-gateway-private` stays frozen as-is.
+- Q9 freeze SHA — Decided (owner, 2026-10-16): the owner declares it only after 140-146,
+  109-114 and 53, 121, 123 are merged, checked by the freeze-precondition acceptance item.
+
+## Amendments
+
+### Amendment 1 (owner answers, 2026-10-16)
+
+- Q8: repo name fixed; the archive is frozen and is not the docs home.
+- Q9: freeze waits for 146 and playtest tasks 109-114; added to Depends on and as a checked
+  precondition listing open PRs and unmerged branches.
+- Q6: the hosted build steps removed from the public doc by 146 land here as
+  `ops/hosted-build.md`.
+- Q15: T17 frame budget and `welcome` capability negotiation recorded as non-prerequisites.

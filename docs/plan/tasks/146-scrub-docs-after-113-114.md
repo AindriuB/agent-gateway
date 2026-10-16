@@ -7,17 +7,27 @@
 - gateway/docker/README.md
 - gateway/docker/.env.example (comments only)
 - scripts/test/docker-byo-caddy.test.mjs (the `describe('README', …)` block at :102-125 only)
+- e2e/pf2e-choices/spike.e2e.test.ts (the comment on line 5 only)
+- CONTRIBUTING.md (one-line insertion in "## Pull requests" only; 140 is merged, no open task
+  owns it)
+- README.md (one "Support the project" line in "## Contributing" only; 142 is merged, no open
+  task owns it)
+- .github/FUNDING.yml (new)
+- scripts/test/ci-workflow.test.mjs (insert `'FUNDING.yml',` into the `allowed` list of the
+  "keeps .github to the allowlisted files" test only; 145 is merged, no open task owns it)
 
 **Status:** Part of the go-public set (140-148), planned 2026-10-16. Kept apart from 143 because
 open tasks 113 (`docs/chatgpt-plugin.md`) and 114 (`gateway/docker/README.md`) own these files.
 Start only after both have merged to `main`, and after 141 (which adds the plugin
-`--gateway-url` flag this doc must describe).
+`--gateway-url` flag this doc must describe). 147's freeze waits for this task to merge
+(Amendment 1).
 
 ## Goal
 
 The ChatGPT plugin doc and the Docker README read correctly for a stranger on a public repo: no
-"Andrew's deployment", the hosted URLs presented only as an example of a build-time choice, and no
-"while the package is private, log in" step.
+"Andrew's deployment", no hosted URL, and no "while the package is private, log in" step. The
+last leftovers that name the owner go, CONTRIBUTING.md explains the pre-public PR numbers, and the
+repo gets its Ko-fi funding link.
 
 ## Context
 
@@ -27,29 +37,53 @@ The ChatGPT plugin doc and the Docker README read correctly for a stranger on a 
 - scripts/build-chatgpt-plugin.mjs — the `--gateway-url` flag added by 141.
 - gateway/docker/README.md:21-22 — "While the package is private, log in first with a token that
   has read:packages" and the `docker login` line; :52-53 "while the repo is private" pointer to
-  the releasing.md section that 143 retitles.
+  the releasing.md section that 143 retitled.
 - gateway/docker/.env.example:7 — image comment; check for "private".
 - scripts/test/docker-byo-caddy.test.mjs:102-117 — asserts the docker README contains `ghcr.io`,
   `read:packages` and `--password-stdin`; these assertions encode the private-package login and
   change with it.
-- docs/releasing.md — 143's new heading name for the self-hosted manifest section.
+- docs/releasing.md — 143's heading name for the self-hosted manifest section.
+- e2e/pf2e-choices/spike.e2e.test.ts:5 — "needs Andrew's per-run approval"; no task owns
+  e2e/pf2e-choices/.
+- CONTRIBUTING.md:44-52 — the "## Pull requests" section (from 140).
+- README.md:91-93 — the "## Contributing" section (from 142).
+- scripts/test/ci-workflow.test.mjs:200-215 — the `.github` allowlist test (from 145); the
+  `allowed` array is sorted, so `'FUNDING.yml'` goes first, before
+  `'ISSUE_TEMPLATE/bug_report.yml'`.
 
 ## Acceptance
 
-- [ ] `rg -n -i "andrew|aindriub\.app|private" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example`
-      prints nothing except, in docs/chatgpt-plugin.md, a "Hosted build" example command using
-      `--gateway-url https://gw.aindriub.app` if Andrew wants the hosted build documented publicly
-      (default: use `https://gw.example.org` and keep the aindriub command out of the public tree).
-- [ ] docs/chatgpt-plugin.md says the package ships with a placeholder URL and how to build one for
-      your own gateway with `--gateway-url`; the live-verification notes describe the operator,
-      not a named person.
-- [ ] gateway/docker/README.md: `docker compose pull` needs no login; the login lines are removed
-      or moved to an optional note for a private fork; the self-hosted manifest pointer names 143's
-      heading.
+- [ ] `rg -n -i "andrew|aindriub|private" docs/chatgpt-plugin.md gateway/docker/README.md gateway/docker/.env.example`
+      prints nothing (Decided Q6).
+- [ ] docs/chatgpt-plugin.md says the package ships with a placeholder URL and shows how to build
+      one for your own gateway with `--gateway-url https://gateway.example.invalid`;
+      `rg -c "gateway\.example\.invalid" docs/chatgpt-plugin.md` is at least 1. It has no "hosted
+      build" section. The live-verification notes describe "the operator", not a named person.
+- [ ] gateway/docker/README.md: `docker compose pull` needs no login; the `docker login` and
+      `read:packages` lines are removed (no "private fork" note); the self-hosted manifest
+      pointer names 143's heading in docs/releasing.md.
 - [ ] docker-byo-caddy.test.mjs's README test asserts `ghcr.io`, `GATEWAY_VERSION` and `--build`
       and no longer requires `read:packages` or `--password-stdin`; it asserts the README does not
       contain "While the package is private". The rest of the file is unchanged (diff).
-- [ ] `npm run verify` exits 0.
+- [ ] `sed -n 5p e2e/pf2e-choices/spike.e2e.test.ts` contains "needs the maintainer's per-run"
+      and `rg -n Andrew e2e/pf2e-choices/spike.e2e.test.ts` prints nothing; the diff of that file
+      is that one line.
+- [ ] CONTRIBUTING.md gains exactly one line under "## Pull requests" (diff: one added line, plus
+      a blank separator if needed, nothing removed) saying that pull request numbers in commit
+      messages from before the repository went public (for example "Merge pull request #179")
+      refer to the private archive, not to pull requests in this repository (Decided Q12);
+      `rg -c "private archive" CONTRIBUTING.md` prints `1` (148 checks this).
+- [ ] `printf 'ko_fi: aindriub\n' | cmp - .github/FUNDING.yml` exits 0 (Decided, owner
+      2026-10-16; reverses 140, see Amendment 1).
+- [ ] The diff of scripts/test/ci-workflow.test.mjs is exactly one added line, `'FUNDING.yml',`,
+      directly before `'ISSUE_TEMPLATE/bug_report.yml',`; every other assertion is unchanged. The
+      PR quotes a local, uncommitted run with a temporary `.github/workflows/x.yml` in which the
+      allowlist test fails with `workflows/x.yml is not allowlisted`.
+- [ ] README.md's "## Contributing" section gains one line, `Support the project on
+      [Ko-fi](https://ko-fi.com/aindriub).` (diff: that line plus a blank separator, nothing
+      removed). Planner proposal, not an owner decision; drop this item and the README.md Owns
+      line if the owner declines it in review.
+- [ ] `npm run test:scripts` passes and `npm run verify` exits 0.
 
 ## Out of scope
 
@@ -59,3 +93,37 @@ The ChatGPT plugin doc and the Docker README read correctly for a stranger on a 
   them rather than editing.
 - Compose files, image names, `.env.example` values.
 - Anything 141 owns (plugins, build scripts, docs/claude-plugin.md) and 143 owns (docs/releasing.md).
+- The hosted gw.aindriub.app build steps: they go to the companion repo in 147, not here.
+- Any other e2e/** comment, any other CONTRIBUTING.md, README.md or ci-workflow.test.mjs change,
+  and any other `.github` file.
+- The 145 workflow, CHANGELOG.md.
+
+## Owner questions
+
+- Q6 — Decided (owner, 2026-10-16): the public docs/chatgpt-plugin.md uses the neutral
+  `gateway.example.invalid` example only. The hosted gw.aindriub.app build steps move to the
+  companion repo (task 147), not the public doc.
+- Q12 — Decided (owner, 2026-10-16): "Merge pull request #NNN" messages stay unchanged in the
+  rewritten history; the one-line note goes in CONTRIBUTING.md, made by this task because 140 is
+  already merged. 148 checks for it.
+- Funding — Decided (owner, 2026-10-16): add `.github/FUNDING.yml` with `ko_fi: aindriub`
+  (https://ko-fi.com/aindriub). Reverses 140's "no FUNDING.yml".
+
+## Amendments
+
+### Amendment 1 (owner answers, 2026-10-16)
+
+- Q6: the hosted-build example is dropped from the public doc; `gateway.example.invalid` is the
+  only example, and the `rg` acceptance now has no exception.
+- The docker README's login lines are removed outright; the earlier "or moved to a private-fork
+  note" option conflicted with the `rg … private` check.
+- Added the unowned leftover e2e/pf2e-choices/spike.e2e.test.ts:5 ("needs Andrew's per-run …"
+  becomes "needs the maintainer's per-run …").
+- Q12: added the CONTRIBUTING.md one-line note on pre-public PR numbers.
+- Funding: reverses task 140's decision ("No `.github/FUNDING.yml` is added", 140 acceptance and
+  owner questions) and 145's use of `FUNDING.yml` as an example of an unlisted file. The owner
+  now wants https://ko-fi.com/aindriub linked. This task adds `.github/FUNDING.yml` and allowlists
+  it in 145's test; any other unlisted `.github` file must still fail.
+- Proposed (planner): one "Support the project" line in README.md linking the Ko-fi page. README.md
+  is a merged-task file no open task owns, so it is in Owns as a one-line insertion.
+- 147's freeze SHA waits for this task to merge (Q9).
