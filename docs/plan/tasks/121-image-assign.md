@@ -179,3 +179,12 @@ Acceptance additions:
   `tile`, but never runs `undoEntry`. Only the v14 Level path runs a real Undo. Recorded for the
   acceptance reviewer to weigh against "A unit test covers Undo for each target"; not decided
   here.
+
+## Review round 2 — findings
+
+Reviewed HEAD: 0ccc2d30bbdd4891e6c2ebffea76dd72c8558412
+
+- [P2] e2e/image-assign/image-assign.e2e.test.ts:266-305 — The three new player refusal tests call `set(player, …)` and assert `isError`, `FORBIDDEN` and the message immediately, without `settle()` and without `humanTimeout`. The checks they target (FILES_BROWSE at module/src/tools/image-assign.ts:103, GM-only at :106, ownership at :80) run inside the handler, which module/src/ops/dispatch.ts calls only after the stage chain including approval ("Every `set` needs the human's approval"). Each refused call first opens an approval request; if nobody answers within APPROVAL_WAIT_MS it returns `pending_approval`, so the ownership, GM-only and no-FILES_BROWSE assertions are never reached.
+  route: implementer — use `settle(player, await set(...))` and `humanTimeout(1)`, as the owned-Actor test at :251-262 already does.
+  input: native run with the grant in effect; the approver takes more than 25 s (APPROVAL_WAIT_MS, protocol/src/tools/approval-status.ts:9) on the player's `set` on `foreignUuid` → `{status:'pending_approval'}` with `isError` false, so `expect(other.isError).toBe(true)` fails; if the approver denies, the text is a denial instead of `FORBIDDEN`.
+- [NOTE, optional] e2e/image-assign/image-assign.e2e.test.ts:84-123 — If the `core.permissions` key were wrong on v13, the grant would have no effect and the player cases would be skipped with a reason that reads as a v14-only limitation. Cheap hardening: on v13, fail (don't skip) when the grant does not take effect; keep the skip for v14 only.
