@@ -645,9 +645,15 @@ export class ApprovalManager {
    * and re-present nothing. With no reply within `ms`, withdraw every mirrored record (the
    * gateway's row is authoritative and is asked again). `withdrawn` hears how many were withdrawn.
    */
-  expectOwnership(ms: number, withdrawn?: (n: number) => void): void {
+  expectOwnership(
+    ms: number,
+    withdrawn?: (n: number) => void,
+    /** The ids sent with the list: only these can be judged by the reply. */
+    listed: readonly string[] = [],
+  ): void {
     this.stopAwaiting();
     this.awaiting = true;
+    this.listedIds = new Set(listed);
     this.awaitTimer = this.env.setTimer(() => {
       if (!this.awaiting) return;
       this.awaiting = false;
@@ -658,6 +664,7 @@ export class ApprovalManager {
     this.ownershipCallback = withdrawn;
   }
   private ownershipCallback?: (n: number) => void;
+  private listedIds = new Set<string>();
 
   private stopAwaiting(): void {
     if (this.awaitTimer !== undefined) this.env.clearTimer(this.awaitTimer);
@@ -674,7 +681,8 @@ export class ApprovalManager {
     this.stopAwaiting();
     // Owned here, or never mirrored (no other tab can hold a copy): keep. Anything else is not ours.
     const owned = new Set([...ids, ...unknown]);
-    const n = this.withdrawPending((r) => !owned.has(r.id));
+    // Only what was listed is judged: a record created since the list went out is untouched.
+    const n = this.withdrawPending((r) => this.listedIds.has(r.id) && !owned.has(r.id));
     if (n) this.ownershipCallback?.(n);
     this.representAll();
     this.releaseHeld();

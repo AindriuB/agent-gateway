@@ -147,6 +147,25 @@ describe('approval wiring through the link state', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('a record created while waiting for the reply is not judged by it, and its approval runs once', async () => {
+    const { p1, link, call, handler, log } = (await setup()) as any;
+    p1.manager.withdrawPending(); // leave nothing pending, so the next list is empty
+    link.state('disconnected', 'ERROR');
+    link.state('connected');
+    expect(link.sent.at(-1)).toEqual({ ids: [] });
+    const y = call('write_thing', { id: 'y' }); // created after the list went out
+    await settle();
+    const yId = p1.manager.pendingApprovalIds()[0];
+    expect(p1.manager.resolveApproval(yId, { decision: 'approve' })).toBe(true); // inside the window
+    await settle();
+    expect(handler).not.toHaveBeenCalled();
+    log.length = 0;
+    link.ownership([], []);
+    expect(await y).toMatchObject({ text: 'ran' });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(log).toEqual(['approved', 'run']);
+  });
+
   it('no ownership reply within the wait withdraws everything', async () => {
     const { hub, p1, link, notes, handler, id } = await setup();
     link.state('disconnected', 'ERROR');

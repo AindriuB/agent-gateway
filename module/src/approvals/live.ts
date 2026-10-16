@@ -105,8 +105,9 @@ export function wireApprovalLink(
     if (now && !wasConnected) {
       everConnected = true;
       wasConnected = true;
-      const sent = link.sendApprovalState?.({ ids: m.pendingApprovalIds() });
-      if (sent) m.expectOwnership(OWNERSHIP_WAIT_MS, moved);
+      const ids = m.pendingApprovalIds();
+      const sent = link.sendApprovalState?.({ ids });
+      if (sent) m.expectOwnership(OWNERSHIP_WAIT_MS, moved, ids);
       else {
         // A gateway that cannot mirror never replies: behave as before it existed.
         m.representAll();
