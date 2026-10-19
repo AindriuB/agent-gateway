@@ -83,3 +83,9 @@ or none in time).
 - docs/** and CHANGELOG.md (scribe and release; the PR must say this is protocol 7.3.0 and that
   module and gateway stay compatible in both directions).
 - module/src/tools/**, gateway/src/http/**, and the heartbeat code in server.ts (:45-50, :354-390).
+
+## Review round 1 — findings
+
+1. **[P2] The unknown-nonce test can't see a stray frame.** gateway/test/link/attest-result.test.ts:72-77. `flush()` waits for 'pong' through `nextOf`, which skips frames of other types. So an `attestResult` sent for an unknown nonce passes the test. Fix: send a ping, then assert that the *very next* frame is the pong (`a.send(ping)` followed by `expect(await a.next()).toMatchObject({type:'pong'})`, as the 7.2 case at :91-93 does).
+2. **[P2] "Exactly one `attestResult`" isn't checked.** In the paired case (:58), the trailing `flush` has the same flaw, and the refused case (:62-70) checks nothing after its frame. Fix: after the expected `attestResult`, use the same ping, then next-frame-is-pong assertion, so any second `attestResult` fails the test.
+3. **[P2] The vouch notices don't check the player name.** module/test/link/vouch.test.ts:203-272: the new tests use the default `format: (k) => k`, which drops `{player}`. Fix: use `format = (k, d) => \`F:${k}:${d.player}\`` with an author whose name differs from anything in the message content, and assert the author's name in the paired, refused, timeout, disconnect and 7.2 notices.

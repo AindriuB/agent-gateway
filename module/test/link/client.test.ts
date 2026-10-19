@@ -256,7 +256,7 @@ it.each([
     open();
     const socket = sockets[0]!;
     expect(socket.sent).toHaveLength(1);
-    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '7.2.0' });
+    expect(socket.sent[0]).toMatchObject({ type: 'hello', protocolVersion: '7.3.0' });
     // An older gateway uses the same major check before authentication or welcome.
     const compatibility = checkCompat(legacy, socket.sent[0].protocolVersion);
     if (compatibility.ok) throw new Error('Legacy gateway must reject v5');
@@ -1006,4 +1006,28 @@ it('wasAdmin clears when the gateway rejects the used token, so a later vouch wa
   } finally {
     h.restore();
   }
+});
+
+it('attestResult resolves the matching wait; an unmatched nonce is ignored; disconnect resolves null', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome({ admin: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  const w = client.expectAttestResult('N1')!;
+  sockets[0]!.recv({ type: 'attestResult', nonce: 'other', outcome: 'refused' });
+  sockets[0]!.recv({ type: 'attestResult', nonce: 'N1', outcome: 'paired' });
+  await expect(w.result).resolves.toBe('paired');
+  const w2 = client.expectAttestResult('N2')!;
+  client.stop();
+  await expect(w2.result).resolves.toBeNull();
+});
+
+it('expectAttestResult is null for a gateway older than 7.3', async () => {
+  token = 'tok';
+  client.start();
+  open();
+  sockets[0]!.recv(welcome({ admin: true, protocolVersion: '7.2.0' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(client.expectAttestResult('N1')).toBeNull();
 });

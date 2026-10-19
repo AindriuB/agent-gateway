@@ -78,6 +78,15 @@ The remote clients (claude.ai, ChatGPT, the Gemini CLI and the Gemini app) sign 
 
 The core is complete and free. Optional tool packs, from the maintainer or others, add more tools. A pack is a separate Foundry module, and installing one means trusting its author with full access to whatever your Foundry user can do. Tools that come from a pack appear with a "Third-party tool pack" tag in approval prompts. Pack authors start at [docs/packs/README.md](docs/packs/README.md).
 
+## Image tools
+
+`image_upload`, `image_assign` and `image_view` let an agent upload, assign and look at images. A few things need setting up in Foundry first:
+
+- A player needs the Foundry permissions "Upload files" and "Browse file explorer" (World Settings, Configure Permissions). A GM needs neither.
+- Foundry only lets an Assistant or GM create folders, so the active GM's browser creates `agent-gateway/uploads/<userId>` for each user who may upload. It does this when a GM loads the world and whenever permissions change, so a GM must be logged in for a newly permitted player's first upload to work.
+- Do not mark the `agent-gateway` folder private.
+- The Foundry module and the gateway must both be 0.4.0 or later for pending approvals to survive a logout or dropped connection.
+
 ## Security and privacy
 
 - [Security model](docs/security.md)
