@@ -53,7 +53,8 @@ Notes on the two live candidates:
   evidence we hold shows a 30 s or longer task, so this is plausible, not proven.
 - A frozen tab explains both windows, but the probe forces the freeze through CDP. Whether Chrome
   would freeze a page with an open WebSocket on its own was not verified here. Whether a real
-  user's browser froze the GM tab is unknown; the playtest logs hold no `visibilityState` or lifecycle data.
+  user's browser froze the GM tab is unknown;
+  the playtest logs hold no `visibilityState` or lifecycle data.
 - A machine sleep, or a network stall over 30 s, looks the same from the gateway's side as either
   of the above and cannot be separated from them with the data in hand.
 
@@ -76,8 +77,8 @@ Add a diagnostic first, then decide. Do not change heartbeat constants.
 
 The probe's `frozen` scenario (10 s, `node spikes/link-drops/probe.mjs frozen 10`) read the page
 clocks before the freeze and after resume: 10015 ms of wall time passed and `Date.now()` and
-`performance.now()` drifted apart by only 0.3 ms (one run), so a clock-drift check cannot detect a freeze. After a freeze the server also sees a 1001
-close and no queued ping is delivered, so a check inside the `ping` handler never runs in the
+`performance.now()` drifted apart by only 0.3 ms (one run), so a clock-drift check cannot detect a freeze. After a freeze the server also sees a
+1001 close and no queued ping is delivered, so a check inside the `ping` handler never runs in the
 frozen case. The diagnostic therefore uses signals that survive a freeze.
 
 Proposed (described, not made; both files belong to task 157), all in `module/src/link/client.ts`:
