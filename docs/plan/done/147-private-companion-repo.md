@@ -139,3 +139,6 @@ and they never show up as untracked or committed files in the public repo.
   marked "port" rather than blocking, and it is ported by bundle per 148 Amendment 4's procedure
   (148 runbook step 1: verified `open-branches.bundle`, re-applied onto the rewritten main by
   cherry-pick or `git rebase --rebase-merges`, never by patches alone).
+
+## Superseded (owner, 2026-10-19)
+Not executed. Andrew made the repo public without the history rewrite and kept the internal docs in the repo. The companion repo was retired by the owner on 2026-10-19. See HISTORY.md, "Repository made public without a history rewrite".
