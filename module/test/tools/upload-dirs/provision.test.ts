@@ -72,7 +72,7 @@ describe('GM upload provisioning', () => {
     installUploadProvisioning();
     await provisioningIdle();
     fp.createDirectory.mockClear();
-    hooks.updateUser!();
+    hooks.updateUser!({}, { role: 2 });
     await provisioningIdle();
     expect(fp.createDirectory).not.toHaveBeenCalled();
   });
@@ -112,11 +112,77 @@ describe('GM upload provisioning', () => {
       await provisioningIdle();
       return runs() > before;
     };
-    expect(await bump(() => hooks.updateUser!())).toBe(true);
+    expect(await bump(() => hooks.updateUser!({}, { role: 2 }))).toBe(true);
     expect(await bump(() => hooks.createUser!())).toBe(true);
     expect(await bump(() => hooks.updateSetting!({ key: 'core.permissions' }))).toBe(true);
     expect(await bump(() => hooks.createSetting!({ key: 'core.permissions' }))).toBe(true);
     expect(await bump(() => hooks.updateSetting!({ key: 'core.other' }))).toBe(false);
+  });
+});
+
+describe('updateUser trigger and election', () => {
+  it('runs only for an own role or permissions key in changed', async () => {
+    installUploadProvisioning();
+    await provisioningIdle();
+    const bump = async (changed: unknown): Promise<boolean> => {
+      const before = fp.browse.mock.calls.length;
+      hooks.updateUser!({}, changed);
+      await provisioningIdle();
+      return fp.browse.mock.calls.length > before;
+    };
+    expect(await bump({ role: 2 })).toBe(true);
+    expect(await bump({ permissions: { FILES_UPLOAD: true } })).toBe(true);
+    for (const c of [
+      { flags: { a: 1 } },
+      { color: '#ff0000' },
+      { character: 'abc' },
+      { name: 'x' },
+      undefined,
+      null,
+      'role',
+      5,
+      Object.create({ role: 1 }),
+    ])
+      expect(await bump(c)).toBe(false);
+  });
+  it('never throws from hooks for odd changed values', () => {
+    installUploadProvisioning();
+    for (const c of [null, 'x', undefined, 42])
+      expect(() => hooks.updateUser!({}, c)).not.toThrow();
+    expect(hooks.updateUser!({}, null)).toBeUndefined();
+  });
+  it('with two GMs online only the active GM creates folders', async () => {
+    const gmA = { id: 'gmA', isGM: true, can: () => true };
+    const gmB = { id: 'gmB', isGM: true, can: () => true };
+    const shared = [gmA, gmB, { id: 'p1', isGM: false, can: () => true }];
+    const client = async (me: any) => {
+      vi.resetModules();
+      const cfp = {
+        browse: vi.fn(async () => {
+          throw new Error('missing');
+        }),
+        createDirectory: vi.fn(async () => {}),
+      };
+      const g = globalThis as any;
+      g.game = {
+        user: me,
+        users: { contents: shared, activeGM: gmA },
+        release: { generation: 14 },
+      };
+      g.Hooks = { on: vi.fn() };
+      g.foundry = { applications: { apps: { FilePicker: { implementation: cfp } } } };
+      const mod = await import('../../../src/tools/_upload-dirs.js');
+      mod.installUploadProvisioning();
+      await mod.provisioningIdle();
+      return cfp;
+    };
+    const a = await client(gmA);
+    const b = await client(gmB);
+    expect(a.createDirectory.mock.calls.map((c: any[]) => c[1])).toContain(
+      'agent-gateway/uploads/p1',
+    );
+    expect(b.createDirectory).not.toHaveBeenCalled();
+    expect(b.browse).not.toHaveBeenCalled();
   });
 });
 
@@ -137,7 +203,7 @@ describe('upload dir review fixes', () => {
       return origBrowse(...a);
     });
     installUploadProvisioning();
-    for (let i = 0; i < 5; i++) hooks['updateUser']!();
+    for (let i = 0; i < 5; i++) hooks['updateUser']!({}, { role: 2 });
     await Promise.resolve();
     release();
     await provisioningIdle();

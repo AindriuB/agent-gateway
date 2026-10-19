@@ -38,6 +38,7 @@ ${body}`;
 const stub = `#!/usr/bin/env bash
 echo "$(basename "$0") $*" >> "$STUB_LOG"
 case "$(basename "$0") $*" in
+  npm\\ run\\ test:e2e*) printf '  upload: 3 passed, 0 failed, 0 skipped\\n  image-assign: 2 passed, 0 failed, 0 skipped\\n  image-view: 1 passed, 0 failed, 0 skipped\\n';;
   "npm run test:conformance") echo "conformance: ok (inspector 2.10.1, stdio, http, oauth)";;
   npm\\ pack*) echo tgz > "\${@: -1}/foundry-agent-gateway-$(node -p "require('./gateway/package.json').version").tgz";;
 esac

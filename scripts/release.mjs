@@ -1,4 +1,4 @@
-// Local release: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--push-image] [--root <dir>]
+// Local release: node scripts/release.mjs <version> [--allow-missing-v13] [--allow-skipped-image] [--publish-npm] [--push-image] [--root <dir>]
 // Bumps the version, runs every gate, builds the three artefacts into dist/release/, prints their
 // SHA-256, then asks for `yes` before creating a DRAFT GitHub release and a dry-run npm publish.
 // It never publishes the draft, never pushes and never tags. See docs/releasing.md.
@@ -11,7 +11,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const USAGE =
-  'release: usage: node scripts/release.mjs <version> [--allow-missing-v13] [--publish-npm] [--push-image] [--root <dir>]';
+  'release: usage: node scripts/release.mjs <version> [--allow-missing-v13] [--allow-skipped-image] [--publish-npm] [--push-image] [--root <dir>]';
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 // Same text as V13_SKIP_MESSAGE in e2e/lib/args.ts (a test keeps them equal); other SKIP: lines are fine.
 const V13_SKIP_MESSAGE = 'SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)';
@@ -25,6 +25,7 @@ function die(msg, code = 1) {
 const args = process.argv.slice(2);
 let root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 let allowMissingV13 = false;
+let allowSkippedImage = false;
 let publishNpm = false;
 let pushImage = false;
 const positional = [];
@@ -34,6 +35,7 @@ for (let i = 0; i < args.length; i++) {
     if (args[i + 1] === undefined) die(USAGE.slice(9));
     root = path.resolve(args[++i]);
   } else if (a === '--allow-missing-v13') allowMissingV13 = true;
+  else if (a === '--allow-skipped-image') allowSkippedImage = true;
   else if (a === '--publish-npm') publishNpm = true;
   else if (a === '--push-image') pushImage = true;
   else if (a.startsWith('--')) die(USAGE.slice(9));
@@ -110,14 +112,34 @@ function shown(u) {
     return '<unparseable url>';
   }
 }
-function gate(name, npmArgs, ok, info) {
+// The native image suites are opt-in; both e2e gates switch them on, and a suite that printed no
+// summary line or passed nothing counts as skipped.
+const IMAGE_ENV = { AGENT_GATEWAY_E2E_IMAGE: '1', AGENT_GATEWAY_E2E_UPLOAD: '1' };
+const IMAGE_SUITES = ['upload', 'image-assign', 'image-view'];
+const imageSkips = [];
+function checkImageSuites(gateName, out) {
+  const passed = new Map();
+  for (const l of out.split('\n')) {
+    const m =
+      /^ {2}(upload|image-assign|image-view): (\d+) passed, (\d+) failed, (\d+) skipped$/.exec(l);
+    if (m) passed.set(m[1], Number(m[2]));
+  }
+  const missing = IMAGE_SUITES.filter((s) => !(passed.get(s) > 0));
+  if (missing.length === 0) return;
+  const names = missing.join(', ');
+  if (!allowSkippedImage) die(`gate failed: ${gateName} image suites skipped: ${names}`);
+  notes.push(`${gateName} image suites SKIPPED: ${names} (--allow-skipped-image)`);
+  imageSkips.push(`${gateName.replace(/^e2e /, '')}: ${names}`);
+}
+function gate(name, npmArgs, ok, info, opts) {
   console.log(`\n== gate: ${name} ==`);
   if (info) console.log(info);
-  const r = run('npm', npmArgs);
+  const r = run('npm', npmArgs, opts);
   process.stdout.write(r.stdout ?? '');
   process.stderr.write(r.stderr ?? '');
   if (r.status !== 0) die(`gate failed: ${name}`);
   if (ok && !ok(r.stdout ?? '')) die(`gate failed: ${name} (expected output missing)`);
+  if (name === 'e2e v14') checkImageSuites(name, r.stdout ?? '');
 }
 gate('verify', ['run', 'verify']);
 gate('test:scripts', ['run', 'test:scripts']);
@@ -129,13 +151,16 @@ gate(
   ['run', 'test:e2e', '--', '--foundry', 'v14'],
   undefined,
   `e2e v14: url ${shown(v14Url)}, state ${v14State}`,
+  { env: { ...process.env, ...IMAGE_ENV } },
 );
 console.log('\n== gate: e2e v13 ==');
 console.log(`e2e v13: url ${v13Url ? shown(v13Url) : 'not set'}, state ${v13State}`);
+let v13Ran = true;
 {
   const r = run('npm', ['run', 'test:e2e', '--', '--foundry', 'v13'], {
     env: {
       ...process.env,
+      ...IMAGE_ENV,
       AGENT_GATEWAY_E2E_STATE_DIR: v13State,
       ...(v13Url ? { AGENT_GATEWAY_E2E_V13_URL: v13Url } : {}),
     },
@@ -146,7 +171,9 @@ console.log(`e2e v13: url ${v13Url ? shown(v13Url) : 'not set'}, state ${v13Stat
   if ((r.stdout ?? '').split('\n').some((l) => l.startsWith(V13_SKIP_MESSAGE))) {
     if (!allowMissingV13) die('gate failed: v13 was skipped (pass --allow-missing-v13 to accept)');
     notes.push('v13 e2e gate was SKIPPED (--allow-missing-v13)');
+    v13Ran = false;
   }
+  if (v13Ran) checkImageSuites('e2e v13', r.stdout ?? '');
 }
 
 // 4. Artefacts.
@@ -263,8 +290,13 @@ if (publishNpm) {
 console.log('\nSummary:');
 console.log(`  version: ${version}`);
 console.log(`  draft release v${version} created; NOT published`);
-const v13Summary = notes.length > 0 ? 'SKIPPED (--allow-missing-v13)' : `passed (${shown(v13Url)})`;
+const v13Summary = !v13Ran ? 'SKIPPED (--allow-missing-v13)' : `passed (${shown(v13Url)})`;
 console.log(`  v13 e2e: ${v13Summary}`);
+console.log(
+  imageSkips.length > 0
+    ? `  image e2e: SKIPPED (${imageSkips.join('; ')})`
+    : `  image e2e: ran (${v13Ran ? 'v14, v13' : 'v14'})`,
+);
 console.log(`  Ask Foundry checklist: ${answered} of ${total} answered`);
 console.log('  The version bump is uncommitted in this tree; open a PR for it.');
 finish(0);
