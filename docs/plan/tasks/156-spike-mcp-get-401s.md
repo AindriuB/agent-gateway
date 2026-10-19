@@ -52,3 +52,13 @@ if anything, to change.
 - Any edit under `gateway/src/**`, `module/**` or `protocol/**`, including log lines.
 - The session caps and rate limits (tasks 95, 110, 111; option C stays declined).
 - docs/** (scribe records the findings).
+
+## Review round 1 — findings
+
+1. **[P3] The 429 sentence contradicts task 110.** spikes/mcp-get-401/findings.md:32-33. Rewrite it as a hedged hypothesis, and list all three 429 sources: the failed-auth limiter (bearer present), the discovery limiter (no bearer, server.ts:331-335) and `PUBLIC_CLIENT_RPS` (authenticated only). Add the 429 body text to "Sample to gather", since it tells the sources apart.
+2. **[P3] Two citations are off by one.** `authenticate` is at gateway/src/oauth/server.ts:206, not 207. The `WWW-Authenticate` header is set at gateway/src/http/server.ts:337 (the block runs 337-341), not 338.
+3. **[Data] Add the orchestrator's log sample.** This answers acceptance item 1. It comes from the hosted gateway's Caddy access logs, last 96 h, gathered read-only on 2026-10-19 as counts only (no header values were read or printed):
+   - `/mcp` by method and status: GET 401 = 2333, GET 200 = 97, GET 404 = 38, GET 429 = 43, GET 308 = 3, GET with no status (cancelled) = 91; POST 200 = 781, POST 202 = 136, POST 401 = 533, POST 400 = 20, POST 429 = 57, POST 404 = 2; DELETE 200 = 108, DELETE 401 = 4, DELETE 404 = 1.
+   - Of the 2333 GET 401s, 2331 had NO Authorization header and only 2 had one. 2327 had no `Mcp-Session-Id`. The user agent was `codex-mcp-client` for all 2333.
+   - For the 2 GET 401s that carried a header, the time since the same client IP's last successful POST to the token endpoint was under 55 min for one and 55-65 min for the other.
+   Conclusion to record: the 401s are ChatGPT's client opening the GET stream without a bearer token, not token expiry. Per the findings' own rule ("if the sample shows no header was sent, make no change"), recommend no gateway change. At most, optionally make the discovery 401 cheaper or quieter.
