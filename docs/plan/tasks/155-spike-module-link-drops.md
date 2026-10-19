@@ -65,3 +65,9 @@ whether anything more should be done.
 4. **[P3] A claim isn't backed by the probe.** findings.md:62-64 says the module saw 1001/1006 on resume and reconnected in about 2 s. The probe has no reconnect logic and logs nothing on the page side. Say that only the stand-in server saw the 1001, and cite `backoffDelay` (module/src/link/client.ts:159-165, first retry at 1 s) for the reconnect timing.
 5. **[P3] The probe leaks Chrome profiles.** probe.mjs:50 creates a profile directory with `mkdtempSync` and never removes it. Remove it on exit.
 6. **[NOTE, do it] Discard and freeze are mixed up.** findings.md:41: the discard row cites Chrome's freeze exclusion for pages with open connections. Correct it, or mark the statement as unverified and about freezing.
+
+## Review round 2 — findings
+
+1. **[P2] The freeze-drift figure can't be reproduced.** findings.md:75-78 cites "0.5 ms drift over a 10 s freeze", but that came from the round-1 reviewer's measurement, which isn't committed. Add a drift readout to the probe's `frozen` scenario: record the page's `Date.now()` and `performance.now()` just before the freeze and just after resume, and print the wall time and the drift. Run it, then cite that run's own figures in the findings. If the readout can't be added, attribute the figure to the round-1 review and say probe.mjs doesn't measure it.
+2. **[STYLE] Two lines are too long, and one line is orphaned.** findings.md:22 and :53 run past 100 columns; wrap them, along with the orphaned line after "split;" in the "Which signal separates which candidate" paragraph.
+3. **[NOTE, do it] One discard statement isn't marked as unverified.** findings.md:43: mark "A discarded page loses its socket and reconnects on reload" as unverified, like the sentence before it.
