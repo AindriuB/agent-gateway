@@ -52,3 +52,24 @@ if anything, to change.
 - Any edit under `gateway/src/**`, `module/**` or `protocol/**`, including log lines.
 - The session caps and rate limits (tasks 95, 110, 111; option C stays declined).
 - docs/** (scribe records the findings).
+
+## Review round 1 — findings
+
+1. **[P3] The 429 sentence contradicts task 110.** spikes/mcp-get-401/findings.md:32-33. Rewrite it as a hedged hypothesis, and list all three 429 sources: the failed-auth limiter (bearer present), the discovery limiter (no bearer, server.ts:331-335) and `PUBLIC_CLIENT_RPS` (authenticated only). Add the 429 body text to "Sample to gather", since it tells the sources apart.
+2. **[P3] Two citations are off by one.** `authenticate` is at gateway/src/oauth/server.ts:206, not 207. The `WWW-Authenticate` header is set at gateway/src/http/server.ts:337 (the block runs 337-341), not 338.
+3. **[Data] Add the orchestrator's log sample.** This answers acceptance item 1. It comes from the hosted gateway's Caddy access logs, last 96 h, gathered read-only on 2026-10-19 as counts only (no header values were read or printed):
+   - `/mcp` by method and status: GET 401 = 2333, GET 200 = 97, GET 404 = 38, GET 429 = 43, GET 308 = 3, GET with no status (cancelled) = 91; POST 200 = 781, POST 202 = 136, POST 401 = 533, POST 400 = 20, POST 429 = 57, POST 404 = 2; DELETE 200 = 108, DELETE 401 = 4, DELETE 404 = 1.
+   - Of the 2333 GET 401s, 2331 had NO Authorization header and only 2 had one. 2327 had no `Mcp-Session-Id`. The user agent was `codex-mcp-client` for all 2333.
+   - For the 2 GET 401s that carried a header, the time since the same client IP's last successful POST to the token endpoint was under 55 min for one and 55-65 min for the other.
+   Conclusion to record: the 401s are ChatGPT's client opening the GET stream without a bearer token, not token expiry. Per the findings' own rule ("if the sample shows no header was sent, make no change"), recommend no gateway change. At most, optionally make the discovery 401 cheaper or quieter.
+
+## Review round 2 — findings
+
+1. **[STYLE] Two headings run past 100 columns.** findings.md:64 and :72: wrap them at 100 columns, like the rest of the file.
+2. **[P3] The 429 body text can't separate all three sources.** findings.md:56-58 and :136-137: the discovery limiter and `PUBLIC_CLIENT_RPS` both reply `too many requests`. Say that the body text together with whether an `Authorization` header was present tells the three apart, not the body text alone.
+3. **[P3] Stale text contradicts the new conclusion.** Candidate 2's "Against" still says "unproven either way" (:74-75); line 58 says the sample is "below" when it is above; and "Pinned behaviour" (:148) still refers to "the recommended change", although the recommendation is now no change. Update all three.
+
+## Review round 3 — findings
+
+1. **[STYLE]** spikes/mcp-get-401/findings.md:78 is 101 columns long. Wrap it at 100 columns.
+2. **[NOTE, optional]** In the RFC 6750 bullet, the phrase "the strongest reason candidate 1 produces many 401s" should read as a conditional, because the sample rules candidate 1 out.
