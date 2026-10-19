@@ -72,3 +72,32 @@ is proved with the stubbed `npm` in the script tests.
 
 1. **[P3] A `reset()` helper does nothing.** scripts/test/release.test.mjs:324-327, and its call at :382: `beforeEach` already gives every test a fresh repo. Delete both.
 2. **[NOTE, do it] The stub ignores `FAIL_GATE` on the v14 gate.** In scripts/test/release.test.mjs:48-51 the stub `npm` no longer honours `FAIL_GATE` for `run test:e2e -- --foundry v14`. Restore it, so a future test can fail the v14 gate.
+
+## Amendment 1 — owner decision (Andrew, 2026-10-19)
+
+**Owns** gains:
+- scripts/test/docker-release.test.mjs (limited to its stub `npm`, the `stub` string at :38-46)
+
+That stub must print passing summary lines for the three image suites (`upload`, `image-assign`,
+`image-view`) on both e2e gates (`run test:e2e -- --foundry v14` and the v13 run), in the same
+`  <suite>: <n> passed, 0 failed, 0 skipped` form that the stub in scripts/test/release.test.mjs
+already prints. The tests in docker-release.test.mjs must keep running with the image check on:
+do not add `--allow-skipped-image` to their `release([...])` calls, and do not change the tests
+themselves.
+
+Added acceptance:
+- [ ] `node --test scripts/test/docker-release.test.mjs` passes with no change outside its stub.
+
+Reason: the stub prints no image suite lines, so 152's new skip gate aborts the release with
+`e2e v14 image suites skipped` before it reaches the docker step these tests exercise.
+
+## Verify attempt 1 — failed
+
+1. scripts/test/docker-release.test.mjs:88-98 ("builds and tags the image locally and pushes
+   nothing", assertion at :91): exit status non-zero; the release stops at
+   `gate failed: e2e v14 image suites skipped: upload, image-assign, image-view` and never runs
+   `docker build`.
+2. scripts/test/docker-release.test.mjs:100-105 ("fails the release when the image build fails",
+   assertion at :104): stderr has the image-suite skip abort, not `docker build failed`.
+
+Fix: Amendment 1 above.
