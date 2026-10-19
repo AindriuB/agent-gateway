@@ -82,3 +82,14 @@ The reviewer asked for changes. The orchestrator ruled on each point:
 - **Paragraph fill short of 100 columns:** not a defect. No conventions rule sets a fill width, and code review accepted it. Leave it.
 - **FIX [P2] The `discarded` result contradicts its own probe.** spikes/link-drops/probe.mjs:34-37: the ping interval is never cleared when the socket closes. After a discard, pings pile up in `pending` and the probe reports a silence of about `secs`, while findings.md:44 says "Immediate close, no silence". Clear the interval on close, and stop counting pings sent after close. Rerun `discarded`, and make the findings row match the output.
 - **FIX [P3] The probe can pick the wrong blank page.** probe.mjs:90-92: `find(t => t.url === 'about:blank')` can pick Chrome's initial target. Use the targetId that createTarget returns.
+
+## Review round 4 — findings
+
+Source: an external review of PR #200, forwarded by Andrew.
+
+1. **[P2] Network stalls are counted as long tasks.** spikes/link-drops/findings.md:103. A visible page can keep running normally through a 30-45 s network stall. When delivery resumes, the ping handler sees a large gap, no clock drift and no freeze event, which is exactly the combination the recommendation attributes to a long Foundry task. Heartbeat termination shows who closed the connection, not why frames stopped arriving. Fix:
+   - Before blaming a long Foundry task, the diagnostic must require a matching main-thread long-task observation (a `PerformanceObserver` for `longtask`, or an equivalent check of event-loop lag sampled by the page).
+   - A gap with no long task, no freeze event and no clock drift is classed as "network or transport stall, unresolved".
+   - Keep network stalls as an open candidate in the results table, not ruled out.
+   - Update the "which signal separates which candidate" text to match.
+   - If you add a long-task readout to the probe's `blocked` scenario, cite its output.
