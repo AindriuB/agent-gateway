@@ -20,6 +20,12 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-19 | 152 | Release gates turn on the image e2e suites for v14 and v13 and abort if upload, image-assign or image-view did not pass; `--allow-skipped-image`; docker-release stub amended | `## 2026-10-19 — Release gates run the image e2e suites and abort when they skip (task 152)` |
+| 2026-10-19 | 153 | `verify` runs `test:e2e-unit` and `typecheck:e2e` before `test:scripts`; about 5 s added | `## 2026-10-19 — `npm run verify` runs the e2e unit tests and the e2e type check (task 153)` |
+| 2026-10-19 | 154 | `updateUser` provisions only on own `role`/`permissions` change; two-GM test shows only the active GM provisions | `## 2026-10-19 — Upload provisioning: two-GM test and a narrower `updateUser` trigger (task 154)` |
+| 2026-10-19 | 157 | Protocol 7.3.0 `attestResult` (paired/refused) tells the vouching GM the outcome; 10 s wait, falls back to "confirmation sent"; external review: notice no longer waits on message deletion | `## 2026-10-19 — Vouching GM is told whether the gateway accepted the pairing (task 157, protocol 7.3.0)` |
+| 2026-10-19 | 156 | Spike: 2331 of 2333 GET /mcp 401s had no Authorization header (ChatGPT client opens GET without a bearer); no gateway change; pinning test | `## 2026-10-19 — Spike: ChatGPT's GET /mcp 401s are requests with no bearer token (task 156)` |
+| 2026-10-19 | 155 | Spike: freeze, long task, hidden and discarded probed; network stalls stay unresolved after external review; recommends a module diagnostic (freeze/resume, onclose timings, longtask observer) | `## 2026-10-19 — Spike: what stops the module answering link pings (task 155)` |
 | 2026-10-19 | 147, 148 (superseded) | Repo made public with full history and internal docs kept; gitleaks 8.30.1 clean; private vuln reporting on, `test` required, GHCR public; companion repo and filter-repo runbook never used; companion retired | `## 2026-10-19 — Repository made public without a history rewrite (tasks 147, 148 superseded)` |
 | 2026-10-17 | none (release) | 0.4.0 tagged 2026-10-16 at 39b27bf; GitHub release and npm published 2026-10-17; GHCR 0.4.0, 0.4, latest | `## 2026-10-17 — Release 0.4.0 published` |
 | 2026-10-16 | 150 | Image e2e suites on the multi-user Rig; pf2e LIMITED default ownership fixtures; 6 review rounds; live v14 4/4, 8/8, 5/5 | `## 2026-10-16 — Image e2e suites run on the multi-user Rig (task 150)` |

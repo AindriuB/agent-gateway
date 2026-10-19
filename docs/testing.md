@@ -1,6 +1,6 @@
 # End-to-end testing
 
-The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It is separate from `npm test` and `npm run verify`, which never run it. It needs a machine with Chrome or Chromium and access to the Foundry instance (the Mac test bed).
+The e2e suite drives a real Foundry (browser, module, gateway, MCP client). It is separate from `npm test` and `npm run verify`, which never run it (verify does run the harness's offline checks, below). It needs a machine with Chrome or Chromium and access to the Foundry instance (the Mac test bed).
 
 ## Prerequisites
 
@@ -40,7 +40,9 @@ Foundry user names are matched against the join screen exactly first, then case-
 
 On a fresh world, pair only the GM first (`npm run test:e2e:setup -- --only dev-gm`), run the owner-approved seed, then pair the players (`npm run test:e2e:setup -- --only Player1 --only Player2 --player2`). Use the exact configured user names in `--only`; the example spelling may differ from your world. Seed enables player agents for the fixtures, so pairing a fresh player before seeding can fail the setup `world_info` probe with `FORBIDDEN`. All pairing codes remain human-entered. Ensure the owned-character prerequisite above exists before the read suites.
 
-Offline checks of the harness itself (no browser, no Foundry): `npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`, then `npx tsc -p e2e/tsconfig.json --noEmit` and `npx eslint e2e`.
+Offline checks of the harness itself (no browser, no Foundry): `npm run test:e2e-unit` (`npx vitest run --config e2e/vitest.e2e.config.ts --project e2e-unit`) and `npm run typecheck:e2e` (`npx tsc -p e2e/tsconfig.json --noEmit`). Both run inside `npm run verify`, before `test:scripts`; `npx eslint e2e` is covered by verify's `lint`. Keep `e2e-unit` out of the root vitest config and `npm test`.
+
+The release script (`npm run release`) runs the e2e gates itself with the opt-in image suites switched on (`AGENT_GATEWAY_E2E_IMAGE=1`, `AGENT_GATEWAY_E2E_UPLOAD=1`). It aborts if `upload`, `image-assign` or `image-view` did not pass, unless `--allow-skipped-image` is given; see `docs/releasing.md`. The upload suite leaves its files under `agent-gateway/uploads/<userId>/` for the operator to delete.
 
 ## State directory
 
