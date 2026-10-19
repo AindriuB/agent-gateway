@@ -56,3 +56,45 @@ whether anything more should be done.
   task 157 in this wave; propose the change in the findings instead.
 - Changing heartbeat constants (109's decision).
 - docs/** (scribe records the findings).
+
+## Review round 1 — findings
+
+1. **[P2] The recommended diagnostic can't detect a freeze.** spikes/link-drops/findings.md:69-79. A forced 10 s freeze shows 0.5 ms drift between `Date.now()` and `performance.now()`, so the clock-drift rule would class a freeze as a long task. After a freeze the server sees a 1001 close and no queued ping is ever delivered, so a check inside the ping `message` handler never runs for the frozen case. Rework the recommendation to use signals that survive a freeze: document `freeze`/`resume` events, and logging in `onclose` the time since the last inbound frame and the last ping. Keep the clock-drift check only for the long-task and sleep case. State which signal separates which candidate.
+2. **[P3] The probe summary undercounts silences.** spikes/link-drops/probe.mjs:115-127: `maxGapMs` covers only answered pings, so `frozen` and `discarded` print 0 and `min Infinity max -Infinity`. Report the age of the oldest unanswered ping (or the silence length) as well.
+3. **[P3] The hidden row reports the wrong quantity.** findings.md:37 says the "worst gap equalled the 5 s ping interval", but the probe measures time from ping to pong (about 1 ms). Report what the probe actually measured.
+4. **[P3] A claim isn't backed by the probe.** findings.md:62-64 says the module saw 1001/1006 on resume and reconnected in about 2 s. The probe has no reconnect logic and logs nothing on the page side. Say that only the stand-in server saw the 1001, and cite `backoffDelay` (module/src/link/client.ts:159-165, first retry at 1 s) for the reconnect timing.
+5. **[P3] The probe leaks Chrome profiles.** probe.mjs:50 creates a profile directory with `mkdtempSync` and never removes it. Remove it on exit.
+6. **[NOTE, do it] Discard and freeze are mixed up.** findings.md:41: the discard row cites Chrome's freeze exclusion for pages with open connections. Correct it, or mark the statement as unverified and about freezing.
+
+## Review round 2 — findings
+
+1. **[P2] The freeze-drift figure can't be reproduced.** findings.md:75-78 cites "0.5 ms drift over a 10 s freeze", but that came from the round-1 reviewer's measurement, which isn't committed. Add a drift readout to the probe's `frozen` scenario: record the page's `Date.now()` and `performance.now()` just before the freeze and just after resume, and print the wall time and the drift. Run it, then cite that run's own figures in the findings. If the readout can't be added, attribute the figure to the round-1 review and say probe.mjs doesn't measure it.
+2. **[STYLE] Two lines are too long, and one line is orphaned.** findings.md:22 and :53 run past 100 columns; wrap them, along with the orphaned line after "split;" in the "Which signal separates which candidate" paragraph.
+3. **[NOTE, do it] One discard statement isn't marked as unverified.** findings.md:43: mark "A discarded page loses its socket and reconnects on reload" as unverified, like the sentence before it.
+
+## Review round 3 — findings
+
+1. **[STYLE] Two paragraphs are filled unevenly.** Refill the "A frozen tab explains both windows" bullet (findings.md:54-57) and the "The probe's `frozen` scenario" paragraph (:79-83) to 100 columns, with no short orphan lines. Do not change the wording.
+
+## Verify attempt 1 — failed
+
+The reviewer asked for changes. The orchestrator ruled on each point:
+- **Paragraph fill short of 100 columns:** not a defect. No conventions rule sets a fill width, and code review accepted it. Leave it.
+- **FIX [P2] The `discarded` result contradicts its own probe.** spikes/link-drops/probe.mjs:34-37: the ping interval is never cleared when the socket closes. After a discard, pings pile up in `pending` and the probe reports a silence of about `secs`, while findings.md:44 says "Immediate close, no silence". Clear the interval on close, and stop counting pings sent after close. Rerun `discarded`, and make the findings row match the output.
+- **FIX [P3] The probe can pick the wrong blank page.** probe.mjs:90-92: `find(t => t.url === 'about:blank')` can pick Chrome's initial target. Use the targetId that createTarget returns.
+
+## Review round 4 — findings
+
+Source: an external review of PR #200, forwarded by Andrew.
+
+1. **[P2] Network stalls are counted as long tasks.** spikes/link-drops/findings.md:103. A visible page can keep running normally through a 30-45 s network stall. When delivery resumes, the ping handler sees a large gap, no clock drift and no freeze event, which is exactly the combination the recommendation attributes to a long Foundry task. Heartbeat termination shows who closed the connection, not why frames stopped arriving. Fix:
+   - Before blaming a long Foundry task, the diagnostic must require a matching main-thread long-task observation (a `PerformanceObserver` for `longtask`, or an equivalent check of event-loop lag sampled by the page).
+   - A gap with no long task, no freeze event and no clock drift is classed as "network or transport stall, unresolved".
+   - Keep network stalls as an open candidate in the results table, not ruled out.
+   - Update the "which signal separates which candidate" text to match.
+   - If you add a long-task readout to the probe's `blocked` scenario, cite its output.
+
+## Review round 5 — findings
+
+1. **[STYLE] One line is over the limit.** findings.md:110 is 118 columns. Wrap it at 100 or fewer.
+2. **[P3] The network is still called ruled out in two places.** findings.md:48 and :67-69. Rename the old "Network or proxy … Ruled out by 108" row to the proxy only (for example "Proxy (Caddy timeouts or reload)"). Add the network or transport stall to the ranking paragraph as an open candidate, and remove "(excluded by 108)" from any wording that covers the network as a whole. Wording only.
