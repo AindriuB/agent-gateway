@@ -87,6 +87,11 @@ describe('test job', () => {
     const pkg = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8'));
     assert.ok(pkg.scripts.verify.endsWith('npm run test:scripts'));
   });
+  it('runs the e2e unit tests and e2e type check through verify', () => {
+    const pkg = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8'));
+    assert.match(pkg.scripts.verify, /npm run test:e2e-unit/);
+    assert.match(pkg.scripts.verify, /npm run typecheck:e2e/);
+  });
   it('never mentions live suites', () => {
     assert.doesNotMatch(wf, /test:e2e|e2e\.sh|test:conformance|conformance\.sh/);
   });
