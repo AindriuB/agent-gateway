@@ -522,3 +522,6 @@ swap it in under the existing repo name and restore the releases.
   GitHub CI. Step 15 notes CI must be enabled before tagging v0.4.0 or no GHCR image is built.
   The rollback section keeps `ci` disabled on the archive and disables it again on a
   post-gate flip back to private.
+
+## Superseded (owner, 2026-10-19)
+Not executed. Andrew made the repo public without the history rewrite and kept the internal docs in the repo. The companion repo was retired by the owner on 2026-10-19. See HISTORY.md, "Repository made public without a history rewrite".
