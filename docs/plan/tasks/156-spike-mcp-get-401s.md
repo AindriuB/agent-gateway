@@ -62,3 +62,9 @@ if anything, to change.
    - Of the 2333 GET 401s, 2331 had NO Authorization header and only 2 had one. 2327 had no `Mcp-Session-Id`. The user agent was `codex-mcp-client` for all 2333.
    - For the 2 GET 401s that carried a header, the time since the same client IP's last successful POST to the token endpoint was under 55 min for one and 55-65 min for the other.
    Conclusion to record: the 401s are ChatGPT's client opening the GET stream without a bearer token, not token expiry. Per the findings' own rule ("if the sample shows no header was sent, make no change"), recommend no gateway change. At most, optionally make the discovery 401 cheaper or quieter.
+
+## Review round 2 — findings
+
+1. **[STYLE] Two headings run past 100 columns.** findings.md:64 and :72: wrap them at 100 columns, like the rest of the file.
+2. **[P3] The 429 body text can't separate all three sources.** findings.md:56-58 and :136-137: the discovery limiter and `PUBLIC_CLIENT_RPS` both reply `too many requests`. Say that the body text together with whether an `Authorization` header was present tells the three apart, not the body text alone.
+3. **[P3] Stale text contradicts the new conclusion.** Candidate 2's "Against" still says "unproven either way" (:74-75); line 58 says the sample is "below" when it is above; and "Pinned behaviour" (:148) still refers to "the recommended change", although the recommendation is now no change. Update all three.
