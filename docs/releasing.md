@@ -6,7 +6,7 @@ A release is one local command. GitHub Actions runs the tests on pull requests, 
 before you push is still expected. Quench and remote OAuth conformance are not gates yet.
 
 ```
-npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image]
+npm run release -- <version> [--allow-missing-v13] [--allow-skipped-image] [--publish-npm] [--push-image]
 ```
 
 ## What the script does
@@ -23,7 +23,12 @@ npm run release -- <version> [--allow-missing-v13] [--publish-npm] [--push-image
    `AGENT_GATEWAY_E2E_V13_URL` and `AGENT_GATEWAY_E2E_V13_STATE_DIR` (default
    `~/.config/agent-gateway/e2e-v13`), read from the environment or `~/.config/agent-gateway/test.env`,
    so v13 never reuses v14's pairings. The script prints each e2e gate's URL and state directory, and
-   stops if the two state directories are the same.
+   stops if the two state directories are the same. Both e2e gates turn on the three native image
+   suites (`AGENT_GATEWAY_E2E_IMAGE=1`, `AGENT_GATEWAY_E2E_UPLOAD=1`). A suite that did not run
+   (no summary line, or 0 passed) aborts the release with `image suites skipped: <names>` unless
+   `--allow-skipped-image` is passed; the summary then says so. The upload suite cannot delete what
+   it uploads: it leaves the files under `agent-gateway/uploads/<userId>/` in the Foundry data
+   directory and prints each path (`RESIDUE:`), and the operator deletes them after the run.
 4. Builds `agent-gateway.zip`, `foundry-agent-gateway-<version>.tgz` and
    `foundry-agent-gateway.mcpb` into `dist/release/` and prints each SHA-256.
 5. Builds and tags the server-mode image locally as `foundry-agent-gateway:<version>` with

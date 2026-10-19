@@ -8,6 +8,7 @@ import {
   MAX_FRAME_BYTES,
   ToolsetMessage,
   PROTOCOL_VERSION,
+  protocolAtLeast,
   checkCompat,
   parseLinkMessage,
   type ErrorCode,
@@ -798,6 +799,7 @@ export class LinkServer {
         userName: recordedName,
         isGM: hello.user.isGM,
         headless,
+        protocolVersion: hello.protocolVersion,
       },
     );
     this.socketByConnection.set(conn, ws);
@@ -927,6 +929,11 @@ export class LinkServer {
     send: (m: LinkMessage) => void,
   ): void {
     const now = this.opts.now ?? Date.now;
+    // Only a 7.3+ module can parse `attestResult`; older ones get nothing, as before.
+    const answer = (outcome: 'paired' | 'refused'): void => {
+      if (protocolAtLeast(conn.info.protocolVersion ?? null, '7.3.0'))
+        send({ type: 'attestResult', nonce: msg.nonce, outcome });
+    };
     // Only an operator-set admin pairing may vouch; `hello.user.isGM` is never consulted.
     if (!this.isAdmin(conn)) {
       send({ type: 'error', id: '', code: 'FORBIDDEN', message: 'not an admin GM' });
@@ -952,11 +959,13 @@ export class LinkServer {
       this.attempts.recordFailure(p.client);
       this.opts.onOriginRejected?.(p.claim.origin, 'pairing was confirmed for a different user');
       p.handle.reject('PAIRING_INVALID', 'no valid invite');
+      answer('refused');
       return;
     }
     if (msg.authorIsGM) {
       this.vouches.take(p.nonce);
       p.handle.reject('PAIRING_UNCONFIRMED', GM_USER_MESSAGE);
+      answer('refused');
       return;
     }
     this.vouches.take(p.nonce);
@@ -965,10 +974,14 @@ export class LinkServer {
     if (!out.ok) {
       if (out.reason === 'internal') p.handle.reject('INTERNAL', 'Could not redeem the invite');
       else p.handle.reject('PAIRING_INVALID', 'no valid invite');
+      answer('refused');
       return;
     }
     const c = this.admit(p.handle, out.pairing.id, p.claim.userName, out.token, out.pairing.admin);
-    if (c) p.handle.admitted(c);
+    if (c) {
+      p.handle.admitted(c);
+      answer('paired');
+    }
   }
 }
 

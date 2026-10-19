@@ -9,7 +9,7 @@ const ok = (v: unknown): boolean => parseLinkMessage(JSON.stringify(v)).ok;
 const t = (over: Record<string, unknown>) => ({ type: 'approvalState', ...over });
 
 describe('approvalState frame', () => {
-  it('is protocol 7.2.0', () => expect(PROTOCOL_VERSION).toBe('7.2.0'));
+  it('is protocol 7.3.0', () => expect(PROTOCOL_VERSION).toBe('7.3.0'));
   it('accepts a transition for every state', () => {
     for (const state of ['pending', 'approved', 'denied', 'expired'])
       expect(ok(t({ id: 'abc', state }))).toBe(true);
