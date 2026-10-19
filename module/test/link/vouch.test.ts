@@ -200,6 +200,76 @@ describe('admin side', () => {
     await Promise.resolve();
     expect(c.attest).toHaveBeenCalledTimes(1);
   });
+  describe('gateway acknowledgement (protocol 7.3)', () => {
+    const KEY = 'AGENT_GATEWAY.Pairing.Vouch.';
+    function waitingClient() {
+      let resolve!: (o: 'paired' | 'refused' | null) => void;
+      const cancel = vi.fn();
+      const result = new Promise<'paired' | 'refused' | null>((r) => (resolve = r));
+      return {
+        c: { ...client(), expectAttestResult: vi.fn(() => ({ result, cancel })) },
+        resolve,
+        cancel,
+      };
+    }
+    const shown = () => {
+      const n = (globalThis as any).ui.notifications;
+      return { info: n.info.mock.calls, warn: n.warn.mock.calls };
+    };
+
+    it('paired shows only the pairing-confirmed info', async () => {
+      const { handleVouchMessage } = await load();
+      const w = waitingClient();
+      const done = handleVouchMessage(message(), w.c);
+      w.resolve('paired');
+      await done;
+      expect(shown()).toEqual({ info: [[`${KEY}paired`]], warn: [] });
+    });
+
+    it('refused shows only the warn', async () => {
+      const { handleVouchMessage } = await load();
+      const w = waitingClient();
+      const done = handleVouchMessage(message(), w.c);
+      w.resolve('refused');
+      await done;
+      expect(shown()).toEqual({ info: [], warn: [[`${KEY}refused`]] });
+    });
+
+    it('no reply within 10 s falls back to the confirmation-sent info, once', async () => {
+      const { handleVouchMessage } = await load();
+      vi.useFakeTimers();
+      try {
+        const w = waitingClient();
+        const m = message();
+        const done = handleVouchMessage(m, w.c);
+        await vi.advanceTimersByTimeAsync(9_999);
+        expect(shown()).toEqual({ info: [], warn: [] });
+        await vi.advanceTimersByTimeAsync(1);
+        await done;
+        expect(shown()).toEqual({ info: [[`${KEY}confirmed`]], warn: [] });
+        expect(w.cancel).toHaveBeenCalled();
+        expect(m.delete).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a disconnect (null) falls back to confirmation sent', async () => {
+      const { handleVouchMessage } = await load();
+      const w = waitingClient();
+      const done = handleVouchMessage(message(), w.c);
+      w.resolve(null);
+      await done;
+      expect(shown()).toEqual({ info: [[`${KEY}confirmed`]], warn: [] });
+    });
+
+    it('a 7.2 gateway (no waiter) shows confirmation sent at once', async () => {
+      const { handleVouchMessage } = await load();
+      const c = { ...client(), expectAttestResult: vi.fn(() => null) };
+      await handleVouchMessage(message(), c);
+      expect(shown()).toEqual({ info: [[`${KEY}confirmed`]], warn: [] });
+    });
+  });
 });
 
 describe('pairing window and indicator', () => {
