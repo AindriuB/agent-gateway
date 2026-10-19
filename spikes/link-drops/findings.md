@@ -109,9 +109,9 @@ Proposed (described, not made; both files belong to task 157), all in `module/sr
 Which signal separates which candidate: `freeze`/`resume` events mean a frozen tab. The `onclose`
 timings with no `freeze` event rule out a freeze and leave sleep, network or a long task, which the
 next two signals split. Clock drift means a machine sleep. A long Foundry task needs a matching
-main-thread `longtask` entry (or page-sampled event-loop lag) covering the gap; a gap with `visibilityState: visible`, no
-drift, no `freeze` and no `longtask` is a network or transport stall, unresolved, and stays an open
-candidate. The cost
-is a few listeners and one console line on a rare event; the risk is console noise, bounded by
+main-thread `longtask` entry (or page-sampled event-loop lag) covering the gap; a gap with
+`visibilityState: visible`, no drift, no `freeze` and no `longtask` is a network or transport
+stall, unresolved, and stays an open candidate. The cost is a few listeners and one console line
+on a rare event; the risk is console noise, bounded by
 logging only above the thresholds. Re-read the next playtest console. If a long task is the cause,
 the fix belongs to whatever runs it, not to the link.
