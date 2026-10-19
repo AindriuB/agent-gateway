@@ -103,7 +103,11 @@ export function installUploadProvisioning(): void {
   const permissions = (setting: any): void => {
     if (setting?.key === 'core.permissions') trigger();
   };
-  Hooks.on('updateUser', trigger);
+  const userChanged = (_user: unknown, changed: unknown): void => {
+    if (typeof changed !== 'object' || changed === null) return;
+    if (Object.hasOwn(changed, 'role') || Object.hasOwn(changed, 'permissions')) trigger();
+  };
+  Hooks.on('updateUser', userChanged);
   Hooks.on('createUser', trigger);
   Hooks.on('createSetting', permissions);
   Hooks.on('updateSetting', permissions);
