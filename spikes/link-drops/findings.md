@@ -46,7 +46,7 @@ backgrounded target, not OS-level occlusion or an idle laptop.
 | Main thread blocked by a long task   | `blocked`: a 40 s synchronous loop in the page                                                                                       | One gap of 38.0 s, then all queued pings answered and the socket stayed open. The page's own `longtask` observer recorded one 39984 ms entry, so this candidate is the one with a matching main-thread observation                                    | Yes, exactly        | Only if the block outlasts 135 s                                            |
 | Tab frozen (Page Lifecycle `freeze`) | `frozen`, 20 s via `Page.setWebLifecycleState`                                                                                       | No pong during the freeze. The server's socket then closed with 1001 at resume. Pings were not answered after.                                                                                                                                        | Yes                 | Yes, for as long as the freeze lasts. The gateway terminates at 135 s first |
 | Tab discarded (Memory Saver)         | `discarded`: closes the target, so the socket drops                                                                                  | Immediate close, no silence. This is a stand-in only; whether Chrome discards a tab holding an open WebSocket was not verified here. Unverified: a discarded page loses its socket and reconnects on reload, so it would be a close, not a silent gap | Not as a silent gap | Not as a silent gap                                                         |
-| Network or proxy                     | Not re-tested. Evidence from 108: Caddy v2.11.4 had no `/link` timeouts and no reload; closes landed on 15 s ticks                   | Ruled out by 108                                                                                                                                                                                                                                      | No                  | No                                                                          |
+| Proxy (Caddy timeouts or reload)     | Not re-tested. Evidence from 108: Caddy v2.11.4 had no `/link` timeouts and no reload; closes landed on 15 s ticks                   | Ruled out by 108                                                                                                                                                                                                                                      | No                  | No                                                                          |
 | Network stall in the path (30-45 s)  | Not testable here. 108 ruled out Caddy timeouts and reloads, but not a stall that delays frame delivery while the page keeps running | Open. Heartbeat termination shows who closed the connection, not why frames stopped arriving. Indistinguishable from a long task unless the page records a `longtask` entry                                                                           | Yes                 | Only if the stall outlasts 135 s                                            |
 | Gateway or stand-in artefact         | Reading `server.ts`                                                                                                                  | Heartbeat logic is as 108 described; since 109 any inbound frame resets `missed`                                                                                                                                                                      | No                  | No                                                                          |
 
@@ -66,7 +66,8 @@ Notes on the two live candidates:
 
 Ranking by evidence: (1) main thread blocked or tab frozen/suspended by the OS or browser, which
 the gateway cannot tell apart; (2) whole-machine stall; (3) throttling (excluded by the probe);
-(4) proxy (excluded by 108).
+(4) proxy (excluded by 108); a network or transport stall is an open candidate that ranks with (1)
+because the data cannot separate it from a long task.
 
 ## Does 109 cover it?
 
@@ -107,8 +108,8 @@ Proposed (described, not made; both files belong to task 157), all in `module/sr
 
 Which signal separates which candidate: `freeze`/`resume` events mean a frozen tab. The `onclose`
 timings with no `freeze` event rule out a freeze and leave sleep, network or a long task, which the
-next two signals split. Clock drift means a machine sleep. A long Foundry task needs a matching main-thread `longtask`
-entry (or page-sampled event-loop lag) covering the gap; a gap with `visibilityState: visible`, no
+next two signals split. Clock drift means a machine sleep. A long Foundry task needs a matching
+main-thread `longtask` entry (or page-sampled event-loop lag) covering the gap; a gap with `visibilityState: visible`, no
 drift, no `freeze` and no `longtask` is a network or transport stall, unresolved, and stays an open
 candidate. The cost
 is a few listeners and one console line on a rare event; the risk is console noise, bounded by
