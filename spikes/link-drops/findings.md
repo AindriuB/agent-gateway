@@ -77,8 +77,9 @@ Add a diagnostic first, then decide. Do not change heartbeat constants.
 
 The probe's `frozen` scenario (10 s, `node spikes/link-drops/probe.mjs frozen 10`) read the page
 clocks before the freeze and after resume: 10015 ms of wall time passed and `Date.now()` and
-`performance.now()` drifted apart by only 0.3 ms (one run), so a clock-drift check cannot detect a freeze. After a freeze the server also sees a
-1001 close and no queued ping is delivered, so a check inside the `ping` handler never runs in the
+`performance.now()` drifted apart by only 0.3 ms (one run), so a clock-drift check cannot detect
+a freeze. After a freeze the server also
+sees a 1001 close and no queued ping is delivered, so a check inside the `ping` handler never runs in the
 frozen case. The diagnostic therefore uses signals that survive a freeze.
 
 Proposed (described, not made; both files belong to task 157), all in `module/src/link/client.ts`:
