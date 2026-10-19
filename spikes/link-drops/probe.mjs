@@ -48,6 +48,10 @@ const http = createServer((_, res) => {
   res.end(`<script>
   const ws = new WebSocket('ws://127.0.0.1:${wsPort}');
   ws.onmessage = () => ws.send('{"type":"pong"}');
+  window.longTasks = [];
+  new PerformanceObserver((l) => {
+    for (const e of l.getEntries()) window.longTasks.push(Math.round(e.duration));
+  }).observe({ type: 'longtask', buffered: true });
   </script>`);
 });
 await new Promise((r) => http.listen(0, '127.0.0.1', r));
@@ -119,10 +123,20 @@ if (scenario === 'hidden') {
 } else if (scenario === 'blocked') {
   log('blocking main thread');
   await page('Runtime.evaluate', {
-    expression: `(() => { const e = Date.now() + ${secs * 1000}; while (Date.now() < e); })()`,
+    // Run the loop from a page timer task: a longtask entry is not recorded for a CDP evaluate.
+    expression: `setTimeout(() => { const e = Date.now() + ${secs * 1000}; while (Date.now() < e); }, 0)`,
   });
+  await sleep(secs + 1);
   log('unblocked');
   await sleep(PING_MS / 1000 + 2);
+  // A gap is a long Foundry task only if the page itself saw a matching longtask entry.
+  const tasks = (
+    await page('Runtime.evaluate', {
+      expression: 'JSON.stringify(window.longTasks)',
+      returnByValue: true,
+    })
+  ).result.result.value;
+  log(`page longtask entries (ms): ${tasks}`);
 } else if (scenario === 'discarded') {
   // Closing the target is what a discard does to the socket; reported for completeness.
   await call('Target.closeTarget', { targetId });
