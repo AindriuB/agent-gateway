@@ -75,3 +75,10 @@ whether anything more should be done.
 ## Review round 3 — findings
 
 1. **[STYLE] Two paragraphs are filled unevenly.** Refill the "A frozen tab explains both windows" bullet (findings.md:54-57) and the "The probe's `frozen` scenario" paragraph (:79-83) to 100 columns, with no short orphan lines. Do not change the wording.
+
+## Verify attempt 1 — failed
+
+The reviewer asked for changes. The orchestrator ruled on each point:
+- **Paragraph fill short of 100 columns:** not a defect. No conventions rule sets a fill width, and code review accepted it. Leave it.
+- **FIX [P2] The `discarded` result contradicts its own probe.** spikes/link-drops/probe.mjs:34-37: the ping interval is never cleared when the socket closes. After a discard, pings pile up in `pending` and the probe reports a silence of about `secs`, while findings.md:44 says "Immediate close, no silence". Clear the interval on close, and stop counting pings sent after close. Rerun `discarded`, and make the findings row match the output.
+- **FIX [P3] The probe can pick the wrong blank page.** probe.mjs:90-92: `find(t => t.url === 'about:blank')` can pick Chrome's initial target. Use the targetId that createTarget returns.
