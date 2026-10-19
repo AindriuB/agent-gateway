@@ -23,18 +23,24 @@ await new Promise((r) => wss.on('listening', r));
 const wsPort = wss.address().port;
 const gaps = []; // {sentAt, gapMs|null}
 let pending = [];
+let closedAt = 0; // set when the socket closes; the silence is measured up to this moment
 wss.on('connection', (ws) => {
   log('server: page connected');
-  ws.on('close', (c) => log(`server: socket closed ${c}`));
+  const timer = setInterval(() => {
+    pending.push(Date.now());
+    ws.send('{"type":"ping"}');
+  }, PING_MS);
+  timer.unref();
+  ws.on('close', (c) => {
+    clearInterval(timer); // no pings after close; a closed socket is not a silence
+    closedAt = Date.now();
+    log(`server: socket closed ${c}`);
+  });
   ws.on('message', () => {
     const now = Date.now();
     for (const sentAt of pending) gaps.push({ sentAt, gap: now - sentAt });
     pending = [];
   });
-  setInterval(() => {
-    pending.push(Date.now());
-    ws.send('{"type":"ping"}');
-  }, PING_MS).unref();
 });
 
 const http = createServer((_, res) => {
@@ -85,12 +91,8 @@ const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 log(`scenario ${scenario}, ${secs}s`);
 if (scenario === 'hidden') {
   // A second target in front hides the first; emulation off so the page sees real visibility.
-  await call('Target.createTarget', { url: 'about:blank', background: false });
-  await call('Target.activateTarget', {
-    targetId: (await call('Target.getTargets')).result.targetInfos.find(
-      (t) => t.url === 'about:blank',
-    )?.targetId,
-  });
+  const blank = await call('Target.createTarget', { url: 'about:blank', background: false });
+  await call('Target.activateTarget', { targetId: blank.result.targetId });
   await sleep(secs);
 } else if (scenario === 'frozen') {
   // Clock readout before and after: does a freeze separate Date.now() from performance.now()?
@@ -131,7 +133,7 @@ if (scenario === 'hidden') {
 const done = gaps.map((g) => g.gap);
 // Silence = age of the oldest ping still unanswered (0 when none). Covers frozen and discarded,
 // where no ping is ever answered and the answered-gap statistics are empty.
-const silenceMs = pending.length ? Date.now() - Math.min(...pending) : 0;
+const silenceMs = pending.length ? (closedAt || Date.now()) - Math.min(...pending) : 0;
 log(`pings answered: ${done.length}, unanswered: ${pending.length}`);
 log(
   `ping-to-pong ms: ${done.length ? `min ${Math.min(...done)} max ${Math.max(...done)}` : 'none answered'}; oldest unanswered ping age ${silenceMs} ms`,
