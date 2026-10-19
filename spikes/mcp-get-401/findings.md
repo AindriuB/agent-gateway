@@ -75,7 +75,8 @@ all GET 401s had no bearer, but the body text is not yet checked.
    2333).** `codex-mcp-client` may send the standalone
    GET before attaching credentials, or on a transport object that dropped them. For: the volume
    and the 0 s median fit a probe-and-retry pattern; 401 without `Authorization` is legitimate
-   discovery here. Against: nothing in the code distinguishes it, but the log sample now confirms it.
+   discovery here. Against: nothing in the code distinguishes it, but the log sample now
+   confirms it.
    Would predict: 401s without `Authorization`, no `/token` call afterward.
 3. **The client keeps using a token after a failed refresh or a revoked grant.** For: revocation
    and the 429 failed-auth tail fit. Against: fewer grants are revoked than 388 would need.
@@ -100,7 +101,7 @@ all GET 401s had no bearer, but the body text is not yet checked.
   cases. This is a SHOULD gap, not a violation, but it matters: a client cannot tell "go
   discover" from "your token expired, refresh it", so a client that treats a bare challenge as
   "start OAuth discovery again" may loop through 401s instead of using its refresh token.
-  This is the strongest reason candidate 1 produces many 401s.
+  If candidate 1 were true, this would be the strongest reason it produces many 401s.
 
 ## Recommendation
 
