@@ -39,9 +39,10 @@ async function challenged(): Promise<{ p: TestClient; nonce: string; first: Link
   return { p, nonce: (first as { nonce: string }).nonce, first };
 }
 
-async function flush(c: TestClient): Promise<void> {
+/** The very next frame must be the pong, so any stray frame queued before it fails the test. */
+async function expectQuiet(c: TestClient): Promise<void> {
   c.send({ type: 'ping' });
-  await c.next('pong');
+  expect(await c.next()).toMatchObject({ type: 'pong' });
 }
 
 const attest = (c: TestClient, nonce: string, authorId: string, authorIsGM = false): void =>
@@ -55,7 +56,7 @@ describe('attestResult', () => {
     attest(a, nonce, 'p1');
     expect(await a.next()).toEqual({ type: 'attestResult', nonce, outcome: 'paired' });
     expect(await p.next()).toMatchObject({ type: 'welcome' });
-    await flush(a);
+    await expectQuiet(a);
   });
 
   it('an author mismatch and a GM author each get refused', async () => {
@@ -64,16 +65,18 @@ describe('attestResult', () => {
     const one = await challenged();
     attest(a, one.nonce, 'someone-else');
     expect(await a.next()).toEqual({ type: 'attestResult', nonce: one.nonce, outcome: 'refused' });
+    await expectQuiet(a);
     const two = await challenged();
     attest(a, two.nonce, 'p1', true);
     expect(await a.next()).toEqual({ type: 'attestResult', nonce: two.nonce, outcome: 'refused' });
+    await expectQuiet(a);
   });
 
   it('an unknown nonce gets no frame', async () => {
     h = await startServer({ serverMode: true, now });
     const a = await admin();
     attest(a, 'no-such-nonce', 'p1');
-    await flush(a);
+    await expectQuiet(a);
   });
 
   it('a 7.2 admin gets no attestResult in any case, and pairing still completes', async () => {
