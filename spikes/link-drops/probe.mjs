@@ -93,11 +93,26 @@ if (scenario === 'hidden') {
   });
   await sleep(secs);
 } else if (scenario === 'frozen') {
+  // Clock readout before and after: does a freeze separate Date.now() from performance.now()?
+  const clocks = async () =>
+    (
+      await page('Runtime.evaluate', {
+        expression: 'JSON.stringify({ d: Date.now(), p: performance.now() })',
+        returnByValue: true,
+      })
+    ).result.result.value;
+  const before = JSON.parse(await clocks());
   await page('Page.setWebLifecycleState', { state: 'frozen' });
   log('page frozen');
   await sleep(secs);
   await page('Page.setWebLifecycleState', { state: 'active' });
   log('page resumed');
+  const after = JSON.parse(await clocks());
+  const wallMs = after.d - before.d;
+  const driftMs = wallMs - (after.p - before.p);
+  log(
+    `freeze clocks: wall ${wallMs} ms, Date.now minus performance.now drift ${driftMs.toFixed(1)} ms`,
+  );
   await sleep(PING_MS / 1000 + 2);
 } else if (scenario === 'blocked') {
   log('blocking main thread');
