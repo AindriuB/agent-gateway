@@ -23,7 +23,11 @@ Foundry is needed. It reports the longest ping-to-pong time among answered pings
 the age of the oldest unanswered ping (the silence length), which is the figure that matters for
 `frozen` and `discarded`, where nothing is answered. In the `frozen` scenario it also reads the
 page's `Date.now()` and `performance.now()` just before the freeze and just after resume, and
-prints the wall time and the drift between the two clocks.
+prints the wall time and the drift between the two clocks. The page also runs a
+`PerformanceObserver` for `longtask`; the `blocked` scenario prints its entries after the block ends
+(a `longtask` is only recorded for a task the page scheduled, so the loop runs from a `setTimeout`).
+Run: `node spikes/link-drops/probe.mjs blocked 40` gave `page longtask entries (ms): [39984]` and
+`ping-to-pong ms: min 1 max 37983`.
 
     node spikes/link-drops/probe.mjs <baseline|hidden|frozen|blocked|discarded> <seconds>
 
@@ -36,14 +40,15 @@ backgrounded target, not OS-level occlusion or an idle laptop.
 
 ## Results by candidate
 
-| Candidate                            | How tested                                                                                                         | Result                                                                                                                                                                                                                                                | Explains 30-45 s    | Explains over 135 s                                                         |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------- |
-| Tab hidden, timers throttled         | `hidden`, 40 s, a second target brought to front                                                                   | Every ping answered; worst ping-to-pong time was about 1 ms (no added delay)                                                                                                                                                                          | No                  | No                                                                          |
-| Main thread blocked by a long task   | `blocked`: a 40 s synchronous loop in the page                                                                     | One gap of 37.8 s, then all queued pings answered and the socket stayed open                                                                                                                                                                          | Yes, exactly        | Only if the block outlasts 135 s                                            |
-| Tab frozen (Page Lifecycle `freeze`) | `frozen`, 20 s via `Page.setWebLifecycleState`                                                                     | No pong during the freeze. The server's socket then closed with 1001 at resume. Pings were not answered after.                                                                                                                                        | Yes                 | Yes, for as long as the freeze lasts. The gateway terminates at 135 s first |
-| Tab discarded (Memory Saver)         | `discarded`: closes the target, so the socket drops                                                                | Immediate close, no silence. This is a stand-in only; whether Chrome discards a tab holding an open WebSocket was not verified here. Unverified: a discarded page loses its socket and reconnects on reload, so it would be a close, not a silent gap | Not as a silent gap | Not as a silent gap                                                         |
-| Network or proxy                     | Not re-tested. Evidence from 108: Caddy v2.11.4 had no `/link` timeouts and no reload; closes landed on 15 s ticks | Ruled out by 108                                                                                                                                                                                                                                      | No                  | No                                                                          |
-| Gateway or stand-in artefact         | Reading `server.ts`                                                                                                | Heartbeat logic is as 108 described; since 109 any inbound frame resets `missed`                                                                                                                                                                      | No                  | No                                                                          |
+| Candidate                            | How tested                                                                                                                           | Result                                                                                                                                                                                                                                                | Explains 30-45 s    | Explains over 135 s                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------- |
+| Tab hidden, timers throttled         | `hidden`, 40 s, a second target brought to front                                                                                     | Every ping answered; worst ping-to-pong time was about 1 ms (no added delay)                                                                                                                                                                          | No                  | No                                                                          |
+| Main thread blocked by a long task   | `blocked`: a 40 s synchronous loop in the page                                                                                       | One gap of 38.0 s, then all queued pings answered and the socket stayed open. The page's own `longtask` observer recorded one 39984 ms entry, so this candidate is the one with a matching main-thread observation                                    | Yes, exactly        | Only if the block outlasts 135 s                                            |
+| Tab frozen (Page Lifecycle `freeze`) | `frozen`, 20 s via `Page.setWebLifecycleState`                                                                                       | No pong during the freeze. The server's socket then closed with 1001 at resume. Pings were not answered after.                                                                                                                                        | Yes                 | Yes, for as long as the freeze lasts. The gateway terminates at 135 s first |
+| Tab discarded (Memory Saver)         | `discarded`: closes the target, so the socket drops                                                                                  | Immediate close, no silence. This is a stand-in only; whether Chrome discards a tab holding an open WebSocket was not verified here. Unverified: a discarded page loses its socket and reconnects on reload, so it would be a close, not a silent gap | Not as a silent gap | Not as a silent gap                                                         |
+| Network or proxy                     | Not re-tested. Evidence from 108: Caddy v2.11.4 had no `/link` timeouts and no reload; closes landed on 15 s ticks                   | Ruled out by 108                                                                                                                                                                                                                                      | No                  | No                                                                          |
+| Network stall in the path (30-45 s)  | Not testable here. 108 ruled out Caddy timeouts and reloads, but not a stall that delays frame delivery while the page keeps running | Open. Heartbeat termination shows who closed the connection, not why frames stopped arriving. Indistinguishable from a long task unless the page records a `longtask` entry                                                                           | Yes                 | Only if the stall outlasts 135 s                                            |
+| Gateway or stand-in artefact         | Reading `server.ts`                                                                                                                  | Heartbeat logic is as 108 described; since 109 any inbound frame resets `missed`                                                                                                                                                                      | No                  | No                                                                          |
 
 Notes on the two live candidates:
 
@@ -55,8 +60,9 @@ Notes on the two live candidates:
   Whether Chrome would freeze a page with an open WebSocket on its own was not verified
   here. Whether a real user's browser froze the GM tab is unknown; the playtest logs hold
   no `visibilityState` or lifecycle data.
-- A machine sleep, or a network stall over 30 s, looks the same from the gateway's side as either
-  of the above and cannot be separated from them with the data in hand.
+- A machine sleep, or a network or transport stall over 30 s, looks the same from the gateway's
+  side as either of the above and cannot be separated from them with the data in hand. A network
+  stall stays an open candidate: nothing here rules it out.
 
 Ranking by evidence: (1) main thread blocked or tab frozen/suspended by the OS or browser, which
 the gateway cannot tell apart; (2) whole-machine stall; (3) throttling (excluded by the probe);
@@ -93,14 +99,18 @@ Proposed (described, not made; both files belong to task 157), all in `module/sr
    `freeze` line points at a sleep, a network stall or a long task.
 3. In the `ping` handler, compare the time since the previous inbound frame with the expected
    interval, and when it exceeds 20 s log the gap, `document.visibilityState` and the
-   `performance.now()` versus `Date.now()` drift. This check applies only to the long-task and
-   sleep cases: a drift means the machine slept, no drift with no `freeze` line means a long task.
-   Add a `PerformanceObserver` for `longtask` entries over 5 s and log those too.
+   `performance.now()` versus `Date.now()` drift, and the longest `longtask` entry since the
+   previous inbound frame. Add a `PerformanceObserver` for `longtask` entries over 5 s (kept in a
+   small ring) to feed this and to log them as they arrive. A drift means the machine slept. A gap
+   with no `freeze`, no drift and no `longtask` is logged as "network or transport stall,
+   unresolved", not as a long task.
 
 Which signal separates which candidate: `freeze`/`resume` events mean a frozen tab. The `onclose`
 timings with no `freeze` event rule out a freeze and leave sleep, network or a long task, which the
-next two signals split. Clock drift means a machine sleep. A `longtask` entry, or a ping-handler
-gap with `visibilityState: visible`, no drift and no `freeze`, means a long Foundry task. The cost
+next two signals split. Clock drift means a machine sleep. A long Foundry task needs a matching main-thread `longtask`
+entry (or page-sampled event-loop lag) covering the gap; a gap with `visibilityState: visible`, no
+drift, no `freeze` and no `longtask` is a network or transport stall, unresolved, and stays an open
+candidate. The cost
 is a few listeners and one console line on a rare event; the risk is console noise, bounded by
 logging only above the thresholds. Re-read the next playtest console. If a long task is the cause,
 the fix belongs to whatever runs it, not to the link.
