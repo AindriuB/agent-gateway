@@ -71,3 +71,7 @@ whether anything more should be done.
 1. **[P2] The freeze-drift figure can't be reproduced.** findings.md:75-78 cites "0.5 ms drift over a 10 s freeze", but that came from the round-1 reviewer's measurement, which isn't committed. Add a drift readout to the probe's `frozen` scenario: record the page's `Date.now()` and `performance.now()` just before the freeze and just after resume, and print the wall time and the drift. Run it, then cite that run's own figures in the findings. If the readout can't be added, attribute the figure to the round-1 review and say probe.mjs doesn't measure it.
 2. **[STYLE] Two lines are too long, and one line is orphaned.** findings.md:22 and :53 run past 100 columns; wrap them, along with the orphaned line after "split;" in the "Which signal separates which candidate" paragraph.
 3. **[NOTE, do it] One discard statement isn't marked as unverified.** findings.md:43: mark "A discarded page loses its socket and reconnects on reload" as unverified, like the sentence before it.
+
+## Review round 3 — findings
+
+1. **[STYLE] Two paragraphs are filled unevenly.** Refill the "A frozen tab explains both windows" bullet (findings.md:54-57) and the "The probe's `frozen` scenario" paragraph (:79-83) to 100 columns, with no short orphan lines. Do not change the wording.
