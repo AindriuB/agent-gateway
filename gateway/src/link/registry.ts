@@ -40,7 +40,13 @@ export class LinkConnection {
     readonly userId: string,
     private readonly transport: LinkTransport,
     /** What the module reported in `hello`; display and tool-list hints only, never authority. */
-    readonly info: { userName: string; isGM: boolean; headless?: boolean } = {
+    readonly info: {
+      userName: string;
+      isGM: boolean;
+      headless?: boolean;
+      /** The module's protocol version from `hello`; gates frames older modules cannot parse. */
+      protocolVersion?: string;
+    } = {
       userName: '',
       isGM: false,
     },

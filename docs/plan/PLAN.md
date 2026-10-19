@@ -8,7 +8,7 @@ no longer want rather than letting them rot — a plan nobody trusts is worse
 than no plan.
 
 ---
-Inventory: 93 done in `docs/plan/done/` (excluding its README.md), 19 active in `docs/plan/tasks/` (2026-10-16).
+Inventory: 114 done in `docs/plan/done/` (excluding its README.md), 17 active in `docs/plan/tasks/` (2026-10-19).
 
 Direction (Andrew, 2026-10-13): the dnd5e work stops after 32, which proved the
 adapter abstraction; 58 is parked. The next goal is MVP A (a local install),
@@ -17,6 +17,13 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
 ---
 
 ## Now
+
+### 0. State after 0.4.0 (2026-10-19)
+- **0.4.0 is released** (tag 2026-10-16 at 39b27bf; GitHub release and npm 2026-10-17; GHCR 0.4.0, 0.4 and latest). It includes the image tools (`image_upload`, `image_assign`, `image_view`; tasks 52, 53, 120-123, 149, 150, 151), image results for MCP clients, and 112 and 116. See `HISTORY.md`.
+- **Go-public is done.** The repo is public, with its history and its internal docs unchanged (owner decision, 2026-10-19). Tasks 140-146 landed; 147 and 148 were superseded and archived in `docs/plan/done/`. The companion repo was retired by the owner on 2026-10-19. Private vulnerability reporting is on, `main` requires the CI check `test`, and the GHCR package is public. Work now goes through pull requests that Andrew merges.
+- **Open follow-ups:**
+  - Add the opt-in image e2e suites (`e2e/image-upload`, `image-assign`, `image-view`) to the release gates; `scripts/release.mjs` skips them, so a release does not prove the image tools live.
+  - Task 151 review suggestions: a test with two GMs online (only the active GM provisions upload folders), and skip provisioning on `updateUser` changes that touch neither role nor permissions.
 
 ### 0a. Tasks 37, 38, 40, 43, 93, 94, 96 and 97 merged; 98 done on branch (PR #160); 0.3.0 (93 + 94) ready to cut
 - **38: stored headless agents (merged, PR #153, be8ab45; archived in `docs/plan/done/`).** `headless add|list|remove`, agents stored in SQLite (migration 013, no password column), passwords only from `headless.<name>.password` config keys or `AGENT_GATEWAY_HEADLESS_<NAME>_PASSWORD`; one runner per agent, reconciled on the revocation sweep. The agent password stays required (empty is a ConfigError), which closes 37's empty-password residual as by design. Manual run passed on Foundry 14.369 / pf2e 8.6.0. Residuals: the welcome `ownerUserId`/`headless` fields are covered by tests but not observable live; removing then re-adding the same identity within one sweep keeps the old runner until it re-pairs via a minted invite; `headless add` checks the flag/env agent only as the CLI invocation sees it (the app dedupes safely); server mode still logs "MCP stdio server started" (pre-existing). **96** has since merged (PR #154).
@@ -66,7 +73,7 @@ then MVP B (VPS/hosted). MVP A is complete. v0.1.0 is tagged on 5540b1e (include
   - **116** (headless restart re-invite flake) is done on branch `claude/task-116`; archived in `docs/plan/done/`. The cause was the test, not the product (see `HISTORY.md`).
 - **109** (link keepalive: about 135 s of silence tolerated, any authenticated inbound frame counts as liveness, a retry after a drop rejoins its pending approval in the same tab) is done in PR claude/task-109; archived in `docs/plan/done/`. Not in the go-public freeze's open items any more.
 - **112** (pending approvals survive logout and link drops; protocol 7.2.0, migration 014) is done in this PR (`claude/task-112`); archived in `docs/plan/done/`. **Pending Andrew:** the live Foundry v14 check (player requests, logs out, logs back in, GM approves, the call runs once). Merge order: after #188 (Mac 151) and the Mac's 150 PR, before 116. Follow-ups: `lang/` keys for the English-literal warning in `module/src/approvals/live.ts`; Prettier warnings on `gateway/docker/compose*.yaml`. **Held until the Mac's task 53 (image upload) merges:** 44.
-- **0.4.0 release blockers:**
+- **0.4.0 release blockers (all cleared; 0.4.0 shipped):**
   - **117** (offline queue refuses `redactArgs` tools such as `image_upload`): merged (PR #186; archived in `docs/plan/done/`). Not a go-public blocker (agreed with the Mac session).
 - **Awaiting Andrew's decisions:** 104 (consent page world and user entry without raw ids), 106 (not-paired indicator outside the pairing window).
 - **Follow-ups from wave 2:**
@@ -216,7 +223,7 @@ Not planned now: a tunnel or `share` mode, port-forwarding, and TLS in the gatew
 - **41** Superseded by 64 for MVP A; remote gates return with 39.
 - **18** Architecture-blocked; depends on 70 (origin-bound pairing and Foundry-sourced role). Immediate gateway token invalidation for another owner, including while that owner is offline, lacks trusted cross-owner attestation. Preserve that acceptance requirement; hello role hints cannot authorize it. Design a trusted gateway-controlled observer prerequisite before implementing 18; this introduces a production browser/credential/configuration surface and needs a deliberate future contract. Do not add an 18 to 36 dependency cycle or silently substitute pending revocation.
 - **44** Native write audit correlation (architect design gate first). Owns the shipped pf2e limits accepted by Andrew: pf2e's condition API, `SpellcastingEntryPF2e#consume` and strike ammunition or thrown-weapon spending write without document options, so their targets go stale and Undo refuses them; newly applied conditions are not recorded; NPC and hazard strike messages are unaudited; the conditions output has no in-band `message`. dnd5e's `Activity#use` and `toggleStatusEffect` writes are also uncorrelated. Native acceptance ran on v14.369 / pf2e 8.6.0 only.
-- **47, 48** Encounter batch tools; **50-56** GM builder (UVTT import, wall planning, presets, image upload and portraits). Planned, do not start.
+- **47, 48** Encounter batch tools; **50-56** GM builder (UVTT import, wall planning, presets; image upload and portraits shipped in 0.4.0 as 53, 121 and 123). Planned, do not start.
 - **58** dnd5e headless advancements. Parked (spike first: `AdvancementManager.forNewItem`, `forLevelChange`, `Advancement#apply`).
 
 ## Done so far
