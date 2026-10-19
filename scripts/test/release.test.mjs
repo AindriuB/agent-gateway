@@ -38,17 +38,24 @@ mkdirSync(${JSON.stringify('dist/release')}, { recursive: true });
 ${body}`;
 
 const stubNpm = `#!/usr/bin/env bash
+DEFAULT_SUMMARY='  multi: a: 1\\n  upload: 3 passed, 0 failed, 0 skipped\\n  image-assign: 2 passed, 0 failed, 0 skipped\\n  image-view: 1 passed, 0 failed, 0 skipped'
 echo "npm $*" >> "$STUB_LOG"
 case "$*" in
-  "run test:e2e"*) echo "env $*: STATE_DIR=\${AGENT_GATEWAY_E2E_STATE_DIR:--} V13_URL=\${AGENT_GATEWAY_E2E_V13_URL:--}" >> "$STUB_LOG";;
+  "run test:e2e"*) echo "img $*: IMAGE=\${AGENT_GATEWAY_E2E_IMAGE:--} UPLOAD=\${AGENT_GATEWAY_E2E_UPLOAD:--}" >> "$STUB_LOG"
+    echo "env $*: STATE_DIR=\${AGENT_GATEWAY_E2E_STATE_DIR:--} V13_URL=\${AGENT_GATEWAY_E2E_V13_URL:--}" >> "$STUB_LOG";;
 esac
 case "$*" in
-  "run verify"|"run test:scripts"|"run test:e2e -- --foundry v14") [ "$FAIL_GATE" = "$*" ] && exit 1; exit 0;;
+  "run verify"|"run test:scripts") [ "$FAIL_GATE" = "$*" ] && exit 1; exit 0;;
+  "run test:e2e -- --foundry v14")
+    [ "$FAIL_GATE" = "$*" ] && exit 1
+    printf '%b\\n' "\${SUMMARY_V14-$DEFAULT_SUMMARY}"
+    exit 0;;
   "run test:conformance")
     [ "$FAIL_GATE" = "$*" ] && exit 1
     echo "$CONFORMANCE_OUT"; exit 0;;
   "run test:e2e -- --foundry v13")
     [ -n "$V13_SKIP" ] && echo "SKIP: v13 instance not configured (set AGENT_GATEWAY_E2E_V13_URL)"
+    [ -z "$V13_SKIP" ] && printf '%b\\n' "\${SUMMARY_V13-$DEFAULT_SUMMARY}"
     [ -n "$OTHER_SKIP" ] && echo "SKIP: player2 not configured"
     exit 0;;
   pack\\ *)
@@ -307,6 +314,68 @@ describe('release e2e environment', () => {
     assert.doesNotMatch(out, /bob|hunter2|alice|swordfish|token|qq|k=v|frag/);
     assert.match(out, /e2e v13: url https:\/\/foundry13\.local:30013\/x, state /);
     assert.match(out, /e2e v14: url https:\/\/foundry\.local, state /);
+  });
+});
+
+describe('release image e2e suites', () => {
+  const line = (n, p, f = 0, k = 0) => `  ${n}: ${p} passed, ${f} failed, ${k} skipped`;
+  const up = line('upload', 3);
+  const as = line('image-assign', 2);
+  const vw = line('image-view', 1);
+
+  it('turns both image variables on for both gates, whatever the caller says', () => {
+    const r = release(['1.0.0'], {
+      input: 'no\n',
+      env: { AGENT_GATEWAY_E2E_IMAGE: '0', AGENT_GATEWAY_E2E_UPLOAD: '' },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    for (const v of ['v14', 'v13'])
+      assert.ok(calls().includes(`img run test:e2e -- --foundry ${v}: IMAGE=1 UPLOAD=1\n`), v);
+  });
+
+  it('continues when all three suites ran, and summarises both gates', () => {
+    const r = release(['1.0.0'], { input: 'yes\n' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^ {2}image e2e: ran \(v14, v13\)$/m);
+  });
+
+  it('aborts naming a missing suite, before any artefact', () => {
+    const r = release(['1.0.0', '--allow-missing-v13'], {
+      input: 'yes\n',
+      env: { SUMMARY_V14: [up, as].join('\\n') },
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /gate failed: e2e v14 image suites skipped: image-view$/m);
+    assert.ok(!existsSync(path.join(root, 'dist/release/agent-gateway.zip')));
+  });
+
+  it('aborts naming a suite with 0 passed, on v13 too', () => {
+    const r = release(['1.0.0'], {
+      input: 'yes\n',
+      env: { SUMMARY_V13: [up, line('image-assign', 0, 0, 3), vw].join('\\n') },
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /gate failed: e2e v13 image suites skipped: image-assign$/m);
+    assert.ok(!existsSync(path.join(root, 'dist/release/agent-gateway.zip')));
+  });
+
+  it('does not apply the v13 image check when v13 was skipped and allowed', () => {
+    const r = release(['1.0.0', '--allow-missing-v13'], {
+      input: 'yes\n',
+      env: { V13_SKIP: '1', SUMMARY_V13: '' },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^ {2}image e2e: ran \(v14\)$/m);
+  });
+
+  it('--allow-skipped-image turns the abort into a note and a summary line', () => {
+    const r = release(['1.0.0', '--allow-skipped-image'], {
+      input: 'yes\n',
+      env: { SUMMARY_V14: [up, as].join('\\n') },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /^ {2}image e2e: SKIPPED \(v14: image-view\)$/m);
+    assert.match(r.stdout, /! e2e v14 image suites SKIPPED: image-view/);
   });
 });
 
