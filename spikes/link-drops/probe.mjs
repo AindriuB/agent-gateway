@@ -7,7 +7,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -114,8 +114,13 @@ if (scenario === 'hidden') {
 } else await sleep(secs);
 
 const done = gaps.map((g) => g.gap);
+// Silence = age of the oldest ping still unanswered (0 when none). Covers frozen and discarded,
+// where no ping is ever answered and the answered-gap statistics are empty.
+const silenceMs = pending.length ? Date.now() - Math.min(...pending) : 0;
 log(`pings answered: ${done.length}, unanswered: ${pending.length}`);
-log(`gap ms: min ${Math.min(...done)} max ${Math.max(...done)}`);
+log(
+  `ping-to-pong ms: ${done.length ? `min ${Math.min(...done)} max ${Math.max(...done)}` : 'none answered'}; oldest unanswered ping age ${silenceMs} ms`,
+);
 console.log(
   JSON.stringify({
     scenario,
@@ -123,7 +128,11 @@ console.log(
     pingMs: PING_MS,
     maxGapMs: Math.max(...done, 0),
     unanswered: pending.length,
+    silenceMs,
   }),
 );
+const exited = new Promise((r) => proc.once('exit', r));
 proc.kill();
+await exited;
+rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 process.exit(0);
