@@ -54,14 +54,16 @@ request (oauth/server.ts:208), so a revoked grant also gives this 401.
 A 429 on `GET /mcp` has three possible sources: the failed-auth limiter (bearer present, 10
 failures in 60 s, server.ts:322-324), the discovery limiter (no bearer, server.ts:331-335), and
 `PUBLIC_CLIENT_RPS` (authenticated requests only). Which one fired is a hypothesis until the 429
-body text is read: `too many failed attempts` is the failed-auth limiter and `too many requests`
-is the discovery limiter. The log sample below shows 43 GET 429s; most are plausibly the
-discovery limiter, given that almost all GET 401s had no bearer, but the body text is not yet
-checked.
+body text is read together with whether an `Authorization` header was present: `too many failed
+attempts` is the failed-auth limiter; `too many requests` is either the discovery limiter (no
+bearer) or `PUBLIC_CLIENT_RPS` (bearer present), so the body text alone cannot separate them. The
+log sample above shows 43 GET 429s; most are plausibly the discovery limiter, given that almost
+all GET 401s had no bearer, but the body text is not yet checked.
 
 ## Ranked candidates
 
-1. **Expired access token on a long-lived stream's reconnect (ruled out as the main cause by the log sample: 2 of 2333).** An SSE GET is
+1. **Expired access token on a long-lived stream's reconnect (ruled out as the main cause by the
+   log sample: 2 of 2333).** An SSE GET is
    authenticated only when it opens. The client holds sessions for minutes to hours and reconnects
    its GET; after the 1 h TTL, the old bearer is refused with a bare 401. For: median GET duration
    0 s and 388 refusals imply many short retries, which fits a client retrying with a token it
@@ -69,10 +71,11 @@ checked.
    1h45m, so only some of it can be explained by a single TTL boundary, and the volume (54 percent
    of GETs) is high for one expiry per grant. Would predict: 401s carry an `Authorization` header,
    cluster after a token's issue time plus 60 min, and stop after a `/token` refresh.
-2. **The client opens the SSE GET without a bearer (confirmed by the log sample: 2331 of 2333).** `codex-mcp-client` may send the standalone
+2. **The client opens the SSE GET without a bearer (confirmed by the log sample: 2331 of
+   2333).** `codex-mcp-client` may send the standalone
    GET before attaching credentials, or on a transport object that dropped them. For: the volume
    and the 0 s median fit a probe-and-retry pattern; 401 without `Authorization` is legitimate
-   discovery here. Against: nothing in the code distinguishes it, so this is unproven either way.
+   discovery here. Against: nothing in the code distinguishes it, but the log sample now confirms it.
    Would predict: 401s without `Authorization`, no `/token` call afterward.
 3. **The client keeps using a token after a failed refresh or a revoked grant.** For: revocation
    and the 429 failed-auth tail fit. Against: fewer grants are revoked than 388 would need.
@@ -133,8 +136,9 @@ for each 401 `GET /mcp` by `codex-mcp-client`:
 - time since the same client's last `/token` call and since its last `initialize`;
 - whether a 404 on the same session occurred within 60 s before;
 - number of `/token` refresh grants versus 401s in the same window;
-- the 429 response body text (`too many failed attempts` versus `too many requests`), which tells
-  the failed-auth limiter, the discovery limiter and `PUBLIC_CLIENT_RPS` apart.
+- the 429 response body text (`too many failed attempts` versus `too many requests`) together with
+  whether an `Authorization` header was present, which tells the failed-auth limiter, the
+  discovery limiter and `PUBLIC_CLIENT_RPS` apart; the body text alone does not.
 
 The Caddy access log has the header presence and timing if `request>headers` is logged with the
 value redacted; the gateway log has `/token`. If Caddy does not record header presence, the
@@ -144,5 +148,6 @@ diagnostic in recommendation 1 is the only way to tell "no token" from "bad toke
 
 `gateway/test/http/mcp-get-401.test.ts` pins: no header gives 401 plus
 `Bearer resource_metadata=`; an expired token gives the identical bare challenge (no
-`invalid_token`); an unknown token gives the same; a valid token is not refused. If the
-recommended change is made, the second and third tests are the ones that flip.
+`invalid_token`); an unknown token gives the same; a valid token is not refused. The
+recommendation is no change, so none of these tests flips; if a future sample shows rejected
+tokens in volume and the optional change is made, the second and third tests are the ones that flip.
