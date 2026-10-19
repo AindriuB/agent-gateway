@@ -252,6 +252,12 @@ export const AttestMessage = z.strictObject({
   authorId: z.string().min(1).max(64),
   authorIsGM: z.boolean(),
 });
+/** The gateway's answer to an `attest` it acted on (7.3+ modules only; task 157). */
+export const AttestResultMessage = z.strictObject({
+  type: z.literal('attestResult'),
+  nonce: z.string().min(1).max(200),
+  outcome: z.enum(['paired', 'refused']),
+});
 
 /**
  * Delegated invites (task 92). An admin GM manages invites for player users of its own world. No
@@ -420,6 +426,7 @@ export const LinkMessage = z.discriminatedUnion('type', [
   ConsentCodeMessage,
   PairingChallengeMessage,
   AttestMessage,
+  AttestResultMessage,
   CreateInviteMessage,
   ListInvitesMessage,
   CancelInviteMessage,

@@ -9,6 +9,8 @@ declare const ui: any;
 const NS = 'agent-gateway';
 const FLAG_KEY = 'vouch';
 const MAX_NONCE = 200;
+/** How long to wait for the gateway's answer before falling back to "confirmation sent". */
+export const ATTEST_RESULT_TIMEOUT_MS = 10_000;
 
 /** Messages already handled here, so a re-fired hook never notifies twice. */
 const handled = new WeakSet<object>();
@@ -53,10 +55,7 @@ function nonceOf(message: any): string | undefined {
  * vouch for it over the admin's own link, then delete the message. A client that was never admin, or
  * a missing or malformed flag, does nothing.
  */
-export async function handleVouchMessage(
-  message: any,
-  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
-): Promise<void> {
+export async function handleVouchMessage(message: any, client: VouchClient): Promise<void> {
   if (!client.isAdmin && !client.wasAdmin) return;
   const nonce = nonceOf(message);
   if (nonce === undefined) return;
@@ -71,22 +70,43 @@ export async function handleVouchMessage(
     ui?.notifications?.warn(game.i18n.localize('AGENT_GATEWAY.Pairing.Vouch.notConfirmed'));
     return;
   }
-  ui?.notifications?.info(
-    game.i18n.format('AGENT_GATEWAY.Pairing.Vouch.confirmed', {
-      player: String(author.name ?? authorId),
-    }),
-  );
+  const player = String(author.name ?? authorId);
+  // Registered right after the send; the answer cannot arrive before this returns.
+  const waiter = client.expectAttestResult?.(nonce) ?? null;
   try {
     await message.delete();
   } catch {
     // Another admin may have deleted it first; the vouch is already sent.
   }
+  const outcome = waiter ? await withTimeout(waiter) : null;
+  const key = outcome === 'paired' ? 'paired' : outcome === 'refused' ? 'refused' : 'confirmed';
+  const notify = outcome === 'refused' ? ui?.notifications?.warn : ui?.notifications?.info;
+  notify?.call(
+    ui.notifications,
+    game.i18n.format(`AGENT_GATEWAY.Pairing.Vouch.${key}`, { player }),
+  );
+}
+
+type VouchClient = Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'> &
+  Partial<Pick<LinkClient, 'expectAttestResult'>>;
+
+/** The gateway's answer, or null after the timeout (the wait is dropped) or a disconnect. */
+function withTimeout(w: {
+  result: Promise<'paired' | 'refused' | null>;
+  cancel: () => void;
+}): Promise<'paired' | 'refused' | null> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      w.cancel();
+      resolve(null);
+    }, ATTEST_RESULT_TIMEOUT_MS);
+  });
+  return Promise.race([w.result, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** Register the `createChatMessage` hook on the admin's side. Idempotent callers: call once. */
-export function installVouchHook(
-  client: Pick<LinkClient, 'isAdmin' | 'wasAdmin' | 'attest'>,
-): void {
+export function installVouchHook(client: VouchClient): void {
   Hooks.on('createChatMessage', (message: unknown) => {
     void handleVouchMessage(message, client);
   });
