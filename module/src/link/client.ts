@@ -206,6 +206,7 @@ export class LinkClient {
   gatewayVersion: string | null = null;
   /** The `protocolVersion` from `welcome`; gates features a older gateway would refuse. */
   private gatewayProtocol: string | null = null;
+  private readonly attestWaiters = new Map<string, (o: 'paired' | 'refused' | null) => void>();
   private readonly grantRequests = new Map<
     string,
     {
@@ -474,6 +475,23 @@ export class LinkClient {
     if (!this.isAdmin || !this.socket) return false;
     this.send({ type: 'attest', nonce, authorId, authorIsGM });
     return true;
+  }
+
+  /**
+   * Wait for the gateway's `attestResult` for `nonce` (protocol 7.3+). Null when this gateway
+   * cannot send one. The promise resolves null on disconnect; `cancel` drops the wait (timeout).
+   */
+  expectAttestResult(nonce: string): {
+    result: Promise<'paired' | 'refused' | null>;
+    cancel: () => void;
+  } | null {
+    if (this._state.kind !== 'connected' || !protocolAtLeast(this.gatewayProtocol, '7.3.0'))
+      return null;
+    this.attestWaiters.get(nonce)?.(null);
+    const result = new Promise<'paired' | 'refused' | null>((resolve) => {
+      this.attestWaiters.set(nonce, resolve);
+    });
+    return { result, cancel: () => this.attestWaiters.delete(nonce) };
   }
 
   get state(): LinkState {
@@ -800,6 +818,15 @@ export class LinkClient {
         this.setState({ kind: 'connected', user: id.user.name, world: id.world.title });
         break;
       }
+      case 'attestResult': {
+        // Only the socket in use is believed; an unmatched nonce is ignored.
+        if (this.socket !== origin) break;
+        const resolve = this.attestWaiters.get(msg.nonce);
+        if (!resolve) break;
+        this.attestWaiters.delete(msg.nonce);
+        resolve(msg.outcome);
+        break;
+      }
       case 'pairingChallenge': {
         // Only an invite redemption can be challenged, and only on the socket in use.
         if (this.socket !== origin || this.authSource !== 'code') break;
@@ -1102,6 +1129,10 @@ export class LinkClient {
       this.welcomeOwner = null;
       this.gatewayVersion = null;
       this.gatewayProtocol = null;
+      for (const [nonce, resolve] of [...this.attestWaiters]) {
+        this.attestWaiters.delete(nonce);
+        resolve(null);
+      }
       for (const [id, p] of this.grantRequests) {
         clearTimeout(p.timer);
         this.grantRequests.delete(id);
