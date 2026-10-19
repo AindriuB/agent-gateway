@@ -68,3 +68,8 @@ if anything, to change.
 1. **[STYLE] Two headings run past 100 columns.** findings.md:64 and :72: wrap them at 100 columns, like the rest of the file.
 2. **[P3] The 429 body text can't separate all three sources.** findings.md:56-58 and :136-137: the discovery limiter and `PUBLIC_CLIENT_RPS` both reply `too many requests`. Say that the body text together with whether an `Authorization` header was present tells the three apart, not the body text alone.
 3. **[P3] Stale text contradicts the new conclusion.** Candidate 2's "Against" still says "unproven either way" (:74-75); line 58 says the sample is "below" when it is above; and "Pinned behaviour" (:148) still refers to "the recommended change", although the recommendation is now no change. Update all three.
+
+## Review round 3 — findings
+
+1. **[STYLE]** spikes/mcp-get-401/findings.md:78 is 101 columns long. Wrap it at 100 columns.
+2. **[NOTE, optional]** In the RFC 6750 bullet, the phrase "the strongest reason candidate 1 produces many 401s" should read as a conditional, because the sample rules candidate 1 out.
