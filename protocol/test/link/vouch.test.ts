@@ -5,7 +5,7 @@ const ok = (f: unknown) => parseLinkMessage(JSON.stringify(f)).ok;
 
 describe('vouch messages', () => {
   it('is protocol 7 and refuses 6 naming the side to upgrade', () => {
-    expect(PROTOCOL_VERSION).toBe('7.2.0');
+    expect(PROTOCOL_VERSION).toBe('7.3.0');
     const r = checkCompat('6.0.0', PROTOCOL_VERSION);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.message).toMatch(/upgrade the local side/i);
@@ -41,5 +41,17 @@ describe('vouch messages', () => {
     expect(ok(w)).toBe(true);
     expect(ok({ ...w, admin: true })).toBe(true);
     expect(ok({ ...w, admin: 'yes' })).toBe(false);
+  });
+});
+
+describe('attestResult (7.3)', () => {
+  it('parses a valid frame', () => {
+    expect(ok({ type: 'attestResult', nonce: 'n'.repeat(22), outcome: 'paired' })).toBe(true);
+    expect(ok({ type: 'attestResult', nonce: 'n', outcome: 'refused' })).toBe(true);
+  });
+  it('rejects an unknown outcome, an over-long nonce and extra keys', () => {
+    expect(ok({ type: 'attestResult', nonce: 'n', outcome: 'maybe' })).toBe(false);
+    expect(ok({ type: 'attestResult', nonce: 'n'.repeat(201), outcome: 'paired' })).toBe(false);
+    expect(ok({ type: 'attestResult', nonce: 'n', outcome: 'paired', x: 1 })).toBe(false);
   });
 });

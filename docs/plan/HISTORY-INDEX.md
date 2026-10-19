@@ -20,6 +20,12 @@ no row is one `planner` cannot find, and will re-plan.
 
 | Date | Task IDs | Summary | Heading (grep this exact string) |
 |---|---|---|---|
+| 2026-10-19 | 147, 148 (superseded) | Repo made public with full history and internal docs kept; gitleaks 8.30.1 clean; private vuln reporting on, `test` required, GHCR public; companion repo and filter-repo runbook never used; companion retired | `## 2026-10-19 — Repository made public without a history rewrite (tasks 147, 148 superseded)` |
+| 2026-10-17 | none (release) | 0.4.0 tagged 2026-10-16 at 39b27bf; GitHub release and npm published 2026-10-17; GHCR 0.4.0, 0.4, latest | `## 2026-10-17 — Release 0.4.0 published` |
+| 2026-10-16 | 150 | Image e2e suites on the multi-user Rig; pf2e LIMITED default ownership fixtures; 6 review rounds; live v14 4/4, 8/8, 5/5 | `## 2026-10-16 — Image e2e suites run on the multi-user Rig (task 150)` |
+| 2026-10-16 | 151 | Player uploads fixed: browse-first folder check, active GM provisions upload folders, sceneBackgroundLevel helper; live v14 5/5 | `## 2026-10-16 — Image upload works for players on v14 (task 151)` |
+| 2026-10-16 | 140-146 | Go-public cleanup: community files, neutral plugins, README, scrubs, CI on PRs from forks | `## 2026-10-16 — Go-public cleanup: community files, README, scrub, CI on pull requests (tasks 140-146)` |
+| 2026-10-16 | 52, 120, 121, 122, 123, 53, 149 | image_upload, image_assign, image_view; protocol 7.1.0 image results; redactArgs; folder allowlist; path contract is Foundry's encoded form | `## 2026-10-16 — Image tools: image_upload, image_assign, image_view (tasks 52, 120, 121, 122, 123, 53, 149)` |
 | 2026-10-16 | 112 | Pending approvals mirrored into the offline queue (migration 014); protocol 7.2.0 `approvalState` + `approvalOwnership`; always re-ask; hold-until-reconnected, gateway-confirmed ownership; residual: `approved` frame lost as socket dies | `## 2026-10-16 — Pending approvals survive logout and link drops (task 112)` |
 | 2026-10-16 | 116 | Headless restart test waits for the fake module to store its token before stopping the first app; test-only, assertions unchanged; 188/200 failures before, 0/200 after | `## 2026-10-16 — Headless restart test no longer flakes (task 116)` |
 | 2026-10-16 | 109 | Link tolerates ~135 s of silence (MAX_MISSED_PONGS 8), any inbound frame is liveness; a retry after a drop rejoins its pending approval in the same tab; WORLD_OFFLINE says retry | `## 2026-10-16 — Link keepalive tolerates stalls; a retry after a drop rejoins its approval (task 109)` |
