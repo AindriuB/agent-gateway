@@ -56,3 +56,12 @@ whether anything more should be done.
   task 157 in this wave; propose the change in the findings instead.
 - Changing heartbeat constants (109's decision).
 - docs/** (scribe records the findings).
+
+## Review round 1 — findings
+
+1. **[P2] The recommended diagnostic can't detect a freeze.** spikes/link-drops/findings.md:69-79. A forced 10 s freeze shows 0.5 ms drift between `Date.now()` and `performance.now()`, so the clock-drift rule would class a freeze as a long task. After a freeze the server sees a 1001 close and no queued ping is ever delivered, so a check inside the ping `message` handler never runs for the frozen case. Rework the recommendation to use signals that survive a freeze: document `freeze`/`resume` events, and logging in `onclose` the time since the last inbound frame and the last ping. Keep the clock-drift check only for the long-task and sleep case. State which signal separates which candidate.
+2. **[P3] The probe summary undercounts silences.** spikes/link-drops/probe.mjs:115-127: `maxGapMs` covers only answered pings, so `frozen` and `discarded` print 0 and `min Infinity max -Infinity`. Report the age of the oldest unanswered ping (or the silence length) as well.
+3. **[P3] The hidden row reports the wrong quantity.** findings.md:37 says the "worst gap equalled the 5 s ping interval", but the probe measures time from ping to pong (about 1 ms). Report what the probe actually measured.
+4. **[P3] A claim isn't backed by the probe.** findings.md:62-64 says the module saw 1001/1006 on resume and reconnected in about 2 s. The probe has no reconnect logic and logs nothing on the page side. Say that only the stand-in server saw the 1001, and cite `backoffDelay` (module/src/link/client.ts:159-165, first retry at 1 s) for the reconnect timing.
+5. **[P3] The probe leaks Chrome profiles.** probe.mjs:50 creates a profile directory with `mkdtempSync` and never removes it. Remove it on exit.
+6. **[NOTE, do it] Discard and freeze are mixed up.** findings.md:41: the discard row cites Chrome's freeze exclusion for pages with open connections. Correct it, or mark the statement as unverified and about freezing.
