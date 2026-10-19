@@ -93,3 +93,8 @@ Source: an external review of PR #200, forwarded by Andrew.
    - Keep network stalls as an open candidate in the results table, not ruled out.
    - Update the "which signal separates which candidate" text to match.
    - If you add a long-task readout to the probe's `blocked` scenario, cite its output.
+
+## Review round 5 — findings
+
+1. **[STYLE] One line is over the limit.** findings.md:110 is 118 columns. Wrap it at 100 or fewer.
+2. **[P3] The network is still called ruled out in two places.** findings.md:48 and :67-69. Rename the old "Network or proxy … Ruled out by 108" row to the proxy only (for example "Proxy (Caddy timeouts or reload)"). Add the network or transport stall to the ranking paragraph as an open candidate, and remove "(excluded by 108)" from any wording that covers the network as a whole. Wording only.
