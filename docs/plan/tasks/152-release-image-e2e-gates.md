@@ -67,3 +67,8 @@ is proved with the stubbed `npm` in the script tests.
 - `docs/testing.md` and every other doc except docs/releasing.md (scribe).
 - Running the real release or a live e2e run.
 - Changing what the image suites test.
+
+## Review round 1 — findings
+
+1. **[P3] A `reset()` helper does nothing.** scripts/test/release.test.mjs:324-327, and its call at :382: `beforeEach` already gives every test a fresh repo. Delete both.
+2. **[NOTE, do it] The stub ignores `FAIL_GATE` on the v14 gate.** In scripts/test/release.test.mjs:48-51 the stub `npm` no longer honours `FAIL_GATE` for `run test:e2e -- --foundry v14`. Restore it, so a future test can fail the v14 gate.
