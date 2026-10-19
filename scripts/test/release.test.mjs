@@ -47,6 +47,7 @@ esac
 case "$*" in
   "run verify"|"run test:scripts") [ "$FAIL_GATE" = "$*" ] && exit 1; exit 0;;
   "run test:e2e -- --foundry v14")
+    [ "$FAIL_GATE" = "$*" ] && exit 1
     printf '%b\\n' "\${SUMMARY_V14-$DEFAULT_SUMMARY}"
     exit 0;;
   "run test:conformance")
@@ -321,10 +322,6 @@ describe('release image e2e suites', () => {
   const up = line('upload', 3);
   const as = line('image-assign', 2);
   const vw = line('image-view', 1);
-  const reset = () => {
-    git('checkout', '-q', '--', '.');
-    git('clean', '-fdq');
-  };
 
   it('turns both image variables on for both gates, whatever the caller says', () => {
     const r = release(['1.0.0'], {
@@ -379,7 +376,6 @@ describe('release image e2e suites', () => {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^ {2}image e2e: SKIPPED \(v14: image-view\)$/m);
     assert.match(r.stdout, /! e2e v14 image suites SKIPPED: image-view/);
-    reset();
   });
 });
 
