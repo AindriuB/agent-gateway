@@ -15,7 +15,7 @@ Code style: TypeScript strict, ESM, Prettier (`.prettierrc`) and ESLint (`eslint
 
 ### Test suites
 
-Tests are split into fast and slow. Slow tests (scaling oracles, min-of-runs timing tables, full oracle sweeps) are named `*.slow.test.ts` and run in their own vitest project (`module-slow`, `module/vitest.slow.config.ts`). `npm test` runs the fast suites only; `npm run test:slow` runs the slow ones; `npm run verify` runs both, then the script tests (`npm run test:scripts`), and is the gate. When a slow oracle is added, keep a representative fast sample of it in the fast suite so ordinary runs still catch regressions.
+Tests are split into fast and slow. Slow tests (scaling oracles, min-of-runs timing tables, full oracle sweeps) are named `*.slow.test.ts` and run in their own vitest project (`module-slow`, `module/vitest.slow.config.ts`). `npm test` runs the fast suites only; `npm run test:slow` runs the slow ones; `npm run verify` runs both, then the offline e2e harness tests (`npm run test:e2e-unit`) and the type check of `e2e/` (`npm run typecheck:e2e`), then the script tests (`npm run test:scripts`), and is the gate. When a slow oracle is added, keep a representative fast sample of it in the fast suite so ordinary runs still catch regressions.
 
 In a fresh worktree run `npm ci` before `npm run verify`. Without its own `node_modules`, `@agent-gateway/protocol` resolves from the main checkout's possibly stale build and verify fails with unrelated TypeScript errors.
 
