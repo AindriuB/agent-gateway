@@ -73,11 +73,11 @@ export async function handleVouchMessage(message: any, client: VouchClient): Pro
   const player = String(author.name ?? authorId);
   // Registered right after the send; the answer cannot arrive before this returns.
   const waiter = client.expectAttestResult?.(nonce) ?? null;
-  try {
-    await message.delete();
-  } catch {
-    // Another admin may have deleted it first; the vouch is already sent.
-  }
+  // Deletion runs alongside; a stall or failure (another admin may have deleted it first) must
+  // neither delay nor suppress the notice.
+  void Promise.resolve()
+    .then(() => message.delete())
+    .catch(() => undefined);
   const outcome = waiter ? await withTimeout(waiter) : null;
   const key = outcome === 'paired' ? 'paired' : outcome === 'refused' ? 'refused' : 'confirmed';
   const notify = outcome === 'refused' ? ui?.notifications?.warn : ui?.notifications?.info;

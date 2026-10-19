@@ -279,6 +279,46 @@ describe('admin side', () => {
       await handleVouchMessage(msg(), c);
       expect(shown()).toEqual({ info: [[named('confirmed')]], warn: [] });
     });
+
+    describe('a deletion that never resolves', () => {
+      const stalled = () =>
+        message({ content: 'Mallory', delete: vi.fn(() => new Promise(() => undefined)) });
+
+      it('still shows the paired notice', async () => {
+        const { handleVouchMessage } = await load();
+        useFormat();
+        const w = waitingClient();
+        const done = handleVouchMessage(stalled(), w.c);
+        w.resolve('paired');
+        await done;
+        expect(shown()).toEqual({ info: [[named('paired')]], warn: [] });
+      });
+
+      it('shows the timeout notice at 10 s', async () => {
+        const { handleVouchMessage } = await load();
+        useFormat();
+        vi.useFakeTimers();
+        try {
+          const w = waitingClient();
+          const done = handleVouchMessage(stalled(), w.c);
+          await vi.advanceTimersByTimeAsync(9_999);
+          expect(shown()).toEqual({ info: [], warn: [] });
+          await vi.advanceTimersByTimeAsync(1);
+          await done;
+          expect(shown()).toEqual({ info: [[named('confirmed')]], warn: [] });
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it('on a 7.2 gateway shows confirmation sent at once', async () => {
+        const { handleVouchMessage } = await load();
+        useFormat();
+        const c = { ...client(), expectAttestResult: vi.fn(() => null) };
+        await handleVouchMessage(stalled(), c);
+        expect(shown()).toEqual({ info: [[named('confirmed')]], warn: [] });
+      });
+    });
   });
 });
 
